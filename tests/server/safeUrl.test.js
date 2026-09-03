@@ -337,3 +337,25 @@ describe("ALLOWED_NODE_HOSTS", () => {
         assert.match(result.reason, /ALLOWED_NODE_HOSTS/);
     });
 });
+
+/**
+ * A name that does not resolve is the host's condition, not the address's.
+ * The proxy answers it as a gateway failure and every other refusal as a bad
+ * request, so the two have to be told apart here, where the refusal is made.
+ */
+describe("a node whose name does not resolve", () => {
+    it("is refused as unreachable rather than as a bad address", async () => {
+        const result = await checkNodeTarget("http://nowhere.invalid:5216");
+
+        assert.equal(result.safe, false);
+        assert.equal(result.unreachable, true, "an unresolvable name is not told apart from a forbidden one");
+        assert.match(result.reason, /resolved/);
+    });
+
+    it("does not mark a forbidden address the same way", async () => {
+        const result = await checkNodeTarget("http://169.254.169.254");
+
+        assert.equal(result.safe, false);
+        assert.equal(result.unreachable, undefined, "a policy refusal was reported as the host being away");
+    });
+});

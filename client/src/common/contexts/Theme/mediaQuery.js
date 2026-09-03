@@ -7,12 +7,18 @@
  * light" - and resolveTheme's documented rule is the opposite: a machine that
  * cannot state a preference has not stated light, and stays dark. The same
  * distinction themeBoot.js draws inline, since a pre-paint script cannot
- * import - tests/client/themeBoot.test.js holds that copy to the same three
- * answers this one is held to.
+ * import - tests/client/themeBoot.test.js runs that copy against this one on
+ * every MediaQueryList shape either can be handed, which is what caught the two
+ * of them having drifted apart on the malformed ones.
  *
- * Only a serialised media of "not all" is that verdict: a list with no media
- * at all - a stub, a webview stranger still - is not thereby a machine that
- * prefers light.
+ * A serialised media of "not all" is not the only way a list fails to answer:
+ * one with no media at all - a stub, a webview stranger still - has not
+ * answered either, and is not thereby a machine that prefers light. Which is
+ * why the guard reads the media's type before it reads its value.
+ *
+ * And `matches === true` rather than the field itself, so a list that never
+ * filled it in answers "not dark" rather than handing an undefined out of here
+ * to be read back as "no preference at all".
  *
  * A change event carries matches and media the same way the list does, so the
  * subscription's handler reads through this too - a change event for an

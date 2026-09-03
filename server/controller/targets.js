@@ -380,20 +380,6 @@ export const targetProblem = (target) => {
 };
 
 /**
- * The optimal values a target's runs are judged against: its own where set,
- * the instance-wide ones everywhere else. The one home of the fallback rule,
- * so the grading and whatever else reads limits cannot drift apart.
- *
- * @param target the target row, or {} for rows with no target
- * @param global the stored config values, as strings the way config keeps them
- */
-export const resolveLimits = (target, global) => ({
-    ping: target.optimalPing ?? Number(global.ping),
-    download: target.optimalDownload ?? Number(global.download),
-    upload: target.optimalUpload ?? Number(global.upload)
-});
-
-/**
  * What a read-only visitor may know of a target: enough to label and order
  * the interface (name, provider, the optimal values the grading needs), and
  * nothing that describes the operator's network - the endpoint can carry a

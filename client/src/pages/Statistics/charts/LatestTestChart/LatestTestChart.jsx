@@ -11,7 +11,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {StatusContext} from "@/common/contexts/Status";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {TargetsContext} from "@/common/contexts/Targets";
-import {resolveLimits} from "@/common/utils/TargetUtil";
+import {resolveLimits, roundIndexById, targetColour} from "@/common/utils/TargetUtil";
 import {
     formatLatency, formatLatencyWithUnit, formatWhole, formatWithUnit, getSpeedUnit, wholeSpeed
 } from "@/common/utils/FormatUtil";
@@ -23,7 +23,7 @@ export const LatestTestChart = (props) => {
     const [config] = useContext(ConfigContext);
     const [status] = useContext(StatusContext);
     const [preferences] = useContext(PreferencesContext);
-    const {byId} = useContext(TargetsContext);
+    const {targets = [], byId, selectedTarget = null} = useContext(TargetsContext);
     const speedUnit = getSpeedUnit(preferences);
 
     if (!props.test) return <></>;
@@ -86,8 +86,37 @@ export const LatestTestChart = (props) => {
      */
     const speedText = (mbps) => formatWithUnit(wholeSpeed(mbps, preferences), speedUnit);
 
+    /*
+     * Which target these three figures were measured against, drawn the way a
+     * mixed history list draws it - the same dot, in the same colour, with the
+     * name beside it so the colour is not carrying the answer alone.
+     *
+     * Only where the question arises, which is the history list's pair of gates
+     * and its reasons: one target leaves nothing to tell apart, and a chip
+     * narrowing the page has already answered it above every card on it. Both
+     * cases render the heading exactly as they always have. roundIndexById
+     * answers -1 for a target since deleted and for a row from before targets
+     * existed, which is the third case that names none.
+     */
+    const dotIndex = targets.length >= 2 && selectedTarget === null
+        ? roundIndexById(targets, props.test.targetId) : -1;
+
+    // The name is the target's own, so no locale carries a key for it - and the
+    // dot's tooltip and its accessible name are that same name.
+    const title = dotIndex < 0 ? t("latest.latest") : (
+        <>
+            {t("latest.latest")}
+            <span className="latest-target">
+                <span className="target-dot" title={targets[dotIndex].name}
+                      role="img" aria-label={targets[dotIndex].name}
+                      style={{background: targetColour(dotIndex)}}/>
+                <span className="latest-target-name">{targets[dotIndex].name}</span>
+            </span>
+        </>
+    );
+
     return (
-        <StatisticContainer title={t("latest.latest")} onClick={props.onClick} running={status.running}>
+        <StatisticContainer title={title} onClick={props.onClick} running={status.running}>
             <div className="info-container">
                 <PanelRow icon={faPingPongPaddleBall} title={t("latest.ping")}
                           level={getIconBySpeed(ping, limits.ping, false)}

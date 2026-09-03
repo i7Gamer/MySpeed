@@ -1,4 +1,5 @@
 import { checkOutboundTarget } from "./safeUrl.js";
+import { authorityWithoutCredentials } from "./urlCredentials.js";
 // The deadline and the activity note both live beside each other now, because
 // the SMTP integration needs both and neither is HTTP's to own alone.
 // integrationActivity.js carries the reasoning for each.
@@ -47,7 +48,7 @@ const jsonInit = (method, json, headers) => ({
 });
 
 /**
- * The host to name in a failure report, or the URL itself when there is none.
+ * The host to name in a failure report, and never more than that.
  *
  * The report is built inside a catch, so parsing there could not be allowed to
  * throw: when the reason the request failed *was* an unparseable URL - an
@@ -56,12 +57,27 @@ const jsonInit = (method, json, headers) => ({
  * from inside the handler. postJson then rejected instead of answering null,
  * and triggerEvent awaits each integration in turn, so every integration
  * registered after the broken one silently missed the event.
+ *
+ * The fallback used to be the whole string, which is an address for a webhook
+ * and a credential for three of the integrations: healthChecks.js, ntfy.js and
+ * webhook.js all declare their URL `secret: true`, and behind the
+ * /^https?:\/\/\S+$/ they satisfy, the secret is the path. Two ordinary typos
+ * reach that branch - a host written without its brackets, and a port outside
+ * the range - and for healthchecks the line repeated on every ping tick until
+ * somebody read the log.
+ *
+ * So the fallback is the authority, which is what says which endpoint failed,
+ * and it goes through urlCredentials.js to get there: the authority is also
+ * where userinfo lives, so cutting the path off a value is not on its own
+ * enough to make it safe to print.
  */
 const hostOf = (url) => {
+    const value = String(url);
+
     try {
-        return new URL(String(url)).host;
+        return new URL(value).host;
     } catch {
-        return String(url);
+        return authorityWithoutCredentials(value);
     }
 };
 

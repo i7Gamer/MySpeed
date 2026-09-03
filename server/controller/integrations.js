@@ -1,5 +1,7 @@
 import IntegrationData from '../models/IntegrationData.js';
+import Config from '../models/Config.js';
 import integrationModules from '../integrations/index.js';
+import { zoneFromName } from '../util/timezone.js';
 import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, ALERT_SUMMARY, alertSummary, breachesThreshold,
     crossedLimits, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
@@ -19,6 +21,13 @@ const registerEvent = (module) => (name, callback) => {
     events[name].push({module, callback});
 }
 
+const MS_PER_MINUTE = 60_000;
+
+// How early a minute tick may land and still count as the next ping. The
+// scheduler is not exact, and a window of exactly the interval would skip
+// every tick that arrives a few seconds ahead of it.
+const PING_THROTTLE_TOLERANCE_MS = 30_000;
+
 const shouldThrottlePing = (eventName, integration) => {
     if (eventName !== "minutePassed") return false;
 
@@ -28,7 +37,7 @@ const shouldThrottlePing = (eventName, integration) => {
 
     const now = Date.now();
     const last = lastPings[integration.id];
-    if (last !== undefined && now - last < interval * 60 * 1000 - 30 * 1000) return true;
+    if (last !== undefined && now - last < interval * MS_PER_MINUTE - PING_THROTTLE_TOLERANCE_MS) return true;
 
     lastPings[integration.id] = now;
     return false;
@@ -73,8 +82,52 @@ const triggerActivity = async (id, error) => {
     await IntegrationData.update(update, {where: {id: id}});
 }
 
+/**
+ * The clock the instance keeps, for the messages that name an hour.
+ *
+ * Off the model rather than through controller/config.js's getValue, which is
+ * the same one-line read: that module imports this one for triggerEvent and
+ * withoutSecrets, so an import back would be the first cycle between two
+ * controllers here - and it would drag the scheduler, the migrations and the
+ * session store into every suite that loads a notifier. IntegrationData is read
+ * straight off the model three lines up for the same reason it is here.
+ *
+ * zoneFromName answers the host's own clock for "none" - the sentinel every
+ * optional setting uses - for a missing row, and for any name the platform's
+ * zone database does not know, so neither an instance that set no timezone nor
+ * one carrying a hand-written value renders anything but what it always did.
+ * A stored name is refused by the door in any case (validateInput does), so a
+ * bad one is historical or hand-written.
+ *
+ * The read itself is left to fail like the row read below it, which runs a
+ * moment later against the same connection: a database this cannot reach is
+ * one the fan-out cannot read its integrations from either, and catching here
+ * would only change which of the two rejections the caller sees.
+ */
+const TIMEZONE_SETTING = "timezone";
+
+const instanceZone = async () => zoneFromName((await Config.findByPk(TIMEZONE_SETTING))?.value);
+
 export const triggerEvent = async (name, data) => {
     if (!events[name]) return;
+
+    /*
+     * Resolved once for the whole fan-out, and ahead of it.
+     *
+     * The six clock names a message template may use - %year% through %second%
+     * - were rendered from the process clock, while the schedule, the digests,
+     * the quiet hours and the /status countdown all read this setting; the
+     * Docker image pins `ENV TZ=Etc/UTC`, so a Berlin instance sent "09:14" for
+     * a test that ran at 11:14. Here rather than inside replaceVariables
+     * because a reader that has to await the setting cannot stay synchronous,
+     * and every notifier composes its message inside an expression -
+     * `balancedForTelegram(replaceVariables(...))` would be handed a promise.
+     *
+     * Once rather than per integration: every recipient of one event is told
+     * the same time in any case, and this path already runs a query per
+     * registered module every minute.
+     */
+    const zone = await instanceZone();
 
     const tasks = [];
 
@@ -132,13 +185,15 @@ export const triggerEvent = async (name, data) => {
              * every armed metric would be described as unmeasured - true, and
              * useless beside the %error% the failure template already has.
              */
+            const settings = composingSettings(module.module, integration.data);
             const described = name === "testFinished"
-                ? {...data, [ALERT_CROSSED]: crossedLimits(data, integration.data),
-                    [ALERT_SUMMARY]: alertSummary(data, integration.data)}
+                ? {...data, [ALERT_CROSSED]: crossedLimits(data, settings),
+                    [ALERT_SUMMARY]: alertSummary(data, settings)}
                 : data;
 
             tasks.push(Promise.resolve()
-                .then(() => module.callback(integration, described, (error = false) => triggerActivity(integration.id, error)))
+                .then(() => module.callback(integration, described,
+                    (error = false) => triggerActivity(integration.id, error), zone))
                 .catch((e) => {
                     console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
                     return triggerActivity(integration.id, true).catch(() => undefined);
@@ -207,8 +262,8 @@ const DIGEST_FIELDS = [
 
 /**
  * The language a notifier writes its per-test messages in - the finished and
- * failed templates and the alert summary - offered to every notifier for the
- * reason the two lists above are. The digest is composed once per instance
+ * failed templates and the alert summary - offered for the reason the two
+ * lists above are declared once. The digest is composed once per instance
  * before any recipient is known (tasks/digestReport.js) and does not read it
  * yet. A choice from the locales the interface ships -
  * the list is read off the locale directory, so it cannot name a language
@@ -233,6 +288,37 @@ const LANGUAGE_FIELDS = [
  * notice when it changes.
  */
 const isNotifier = (definition) => definition?.notifier === true;
+
+/**
+ * Whether a module asked to be offered the language setting.
+ *
+ * A second opt-in rather than a reading of the first, because "can be asked to
+ * stay quiet" and "writes prose somebody reads" are not the same property, and
+ * the webhook is the integration that separates them. It calls itself a
+ * notifier - it carries the thresholds, and staying quiet while the line is
+ * fine is exactly what an operator wants of it - but what it delivers is a
+ * JSON document a program reads. The only thing the language reached there was
+ * the `alertCrossed` and `alertSummary` strings inside that document, so a
+ * German setting rewrote the fields a script was matching on, in a place no
+ * human was reading the wording anyway.
+ *
+ * The six that do set it are the ones with message templates: their whole
+ * output is the sentence the setting is about.
+ */
+const isLocalised = (definition) => definition?.localised === true;
+
+/**
+ * The settings a message is composed from, with the language dropped for a
+ * module that was never offered one.
+ *
+ * The stored column is whatever was last written to it, and rows saved while
+ * the webhook was offered the field still carry a language. Read here rather
+ * than migrated away, so a row that is later reconfigured onto a notifier
+ * keeps the choice its operator made.
+ */
+const composingSettings = (moduleName, data) => isLocalised(getIntegration(moduleName))
+    ? data
+    : {...data, [LANGUAGE_FIELD]: undefined};
 
 /**
  * The variables each message template accepts.
@@ -283,9 +369,11 @@ export const initialize = async () => {
         // fields: initialize() runs from the server's boot and again from the
         // integration test harness, and the definition is handed out by
         // reference, so appending in place stacks another copy on every pass.
-        const fields = (isNotifier(definition)
-            ? [...definition.fields, ...ALERT_FIELDS, ...DIGEST_FIELDS, ...LANGUAGE_FIELDS]
-            : definition.fields).map(withVariables);
+        const fields = [
+            ...definition.fields,
+            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS] : []),
+            ...(isLocalised(definition) ? LANGUAGE_FIELDS : [])
+        ].map(withVariables);
 
         integrations[name] = {...definition, fields};
 
@@ -534,7 +622,15 @@ export const validateInput = (module, data, isPatch = false) => {
             // Held to the list the field declares. `includes` is a strict
             // comparison, so a number, an array or an object holding a valid
             // code is refused with the rest.
-            if (field.type === "select" && !field.options.includes(data[field.name])) return false;
+            //
+            // A select that declares no list refuses everything rather than
+            // throwing on the read: the only such list today is built from the
+            // locale directory, which answers an empty array where no source
+            // could be found - and a field with nothing to offer has no value
+            // it can accept. A TypeError here would come out of the route as a
+            // 500 on an ordinary save.
+            if (field.type === "select"
+                && (!Array.isArray(field.options) || !field.options.includes(data[field.name]))) return false;
             if (field.type === "number") {
                 // Checked before coercing, for the same reason the text branch
                 // above checks its own type: Number([]) is 0 and Number(true) is

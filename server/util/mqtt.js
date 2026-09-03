@@ -1,6 +1,7 @@
 import net from "node:net";
 import tls from "node:tls";
 import { randomBytes } from "node:crypto";
+import { bareHost } from './helpers.js';
 
 /**
  * Enough of MQTT 3.1.1 to publish a message, and nothing else.
@@ -235,8 +236,18 @@ export const readyEvent = (secure) => secure ? "secureConnect" : "connect";
 export const openSocket = ({host, port, secure}) =>
     secure ? tls.connect({host, port, servername: host}) : net.connect({host, port});
 
-export const publishAll = ({host, port, secure, username, password, clientId, messages,
-                               qos = 0, timeout, connect = openSocket}) => new Promise((resolve, reject) => {
+export const publishAll = ({host: configuredHost, port, secure, username, password, clientId,
+                               messages, qos = 0, timeout, connect = openSocket}) => new Promise((resolve, reject) => {
+    /*
+     * The host field accepts the bracketed spelling of an IPv6 address, because
+     * that is how one is written in a URL and how an operator copies it, and
+     * checkOutboundHost strips the brackets before judging it. Nothing stripped
+     * them before the socket was opened, so a broker at [fd00::1] was accepted,
+     * shown as configured and never once reached: getaddrinfo read the brackets
+     * as part of a name. Here rather than in openSocket, so that every caller
+     * gets it - including a test holding its own stand-in socket.
+     */
+    const host = bareHost(configuredHost);
     let settled = false;
     let received = Buffer.alloc(0);
     let socket;

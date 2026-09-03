@@ -361,9 +361,16 @@ export const REGISTRY = {
              *
              * Read through usableFigure because an imported history can hold
              * "50" where a number belongs - a rate somebody really named.
+             *
+             * Held to the bounds the field itself declares rather than to
+             * "above zero", so the two agree about what a rate is. The door
+             * refuses anything outside them, and a row that got past the door
+             * is a row nobody vetted: half a megabit is not a rate a datagram
+             * run can be steered by, and ten gigabits and up is the flood the
+             * zero case is about, aimed a little more slowly.
              */
             const rate = usableFigure(target.iperfBitrate);
-            if (udp && (rate === null || rate <= 0))
+            if (udp && (rate === null || rate < IPERF_MIN_BITRATE_MBPS || rate > IPERF_MAX_BITRATE_MBPS))
                 throw new Error("This UDP target names no usable rate to send at - "
                     + "edit the target and set its bitrate");
 

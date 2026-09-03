@@ -55,6 +55,14 @@ describe("parseOokla", () => {
         assert.equal(parseOokla({...ooklaResult, ping: {latency: 0.42, jitter: 1}}).ping, 0.42);
     });
 
+    // Both directions have to answer for a duration to exist. Adding an absent
+    // one gave NaN, and NaN is not a value an INTEGER column can hold - the
+    // insert was refused and a perfectly good measurement was lost with it.
+    it("stores no duration rather than NaN when the CLI omits the elapsed figures", () => {
+        const {elapsed, ...download} = ooklaResult.download;
+        assert.equal(parseOokla({...ooklaResult, download}).time, 0);
+    });
+
     it("reports the elapsed time of both directions in seconds", () => {
         assert.equal(parseOokla(ooklaResult).time, 10);
     });
@@ -392,6 +400,11 @@ describe("parseLibre", () => {
 
     it("names itself as the row's provider", () => {
         assert.equal(parseLibre(libreResult).provider, "libre");
+    });
+
+    it("stores no duration rather than NaN when the CLI omits the elapsed figure", () => {
+        const {elapsed, ...withoutElapsed} = libreResult;
+        assert.equal(parseLibre(withoutElapsed).time, 0);
     });
 
     it("converts the elapsed milliseconds to seconds and has no result id", () => {

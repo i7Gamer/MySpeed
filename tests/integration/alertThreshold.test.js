@@ -5,6 +5,7 @@ import { bootServer, api } from "./helpers/boot.js";
 let server;
 let triggerEvent;
 let getActive;
+let IntegrationData;
 
 const realFetch = globalThis.fetch;
 let sent = [];
@@ -15,6 +16,10 @@ before(async () => {
     const controller = await import("../../server/controller/integrations.js");
     triggerEvent = controller.triggerEvent;
     getActive = controller.getActive;
+
+    // Imported after the boot, like the controller above: the model resolves
+    // its database file against the working directory the harness moves into.
+    IntegrationData = (await import("../../server/models/IntegrationData.js")).default;
 });
 
 after(async () => {
@@ -353,23 +358,59 @@ describe("what the message can say about the crossing", () => {
         }
     });
 
-    it("adds nothing to a healthy result's default message", async () => {
-        const id = await createTelegram({alert_download_below: 10});
+    /**
+     * The finished message telegram ships, in English, with its summary token
+     * still on it - pinned as a fixture in tests/server/integrationSends.test.js.
+     */
+    const SHIPPED_FINISHED =
+        "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)"
+        + "\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps%alertSummary%";
+
+    /** What one telegram row makes of a finished result, as it goes on the wire. */
+    const messageFor = async (settings, result = GOOD) => {
+        const id = await createTelegram(settings);
+
         try {
-            await triggerEvent("testFinished", GOOD);
+            sent = [];
+            await triggerEvent("testFinished", result);
 
             assert.equal(sent.length, 1);
-            const body = String(sent[0].body);
-            // Not asserting on N/A: the payload here names no target, and the
-            // default's %targetName% legitimately reads unmeasured - what must
-            // not appear is the summary's prose or its raw token.
-            assert.doesNotMatch(body, /Crossed limits|Below its usual|%alertSummary%/,
-                "a healthy message carries alert prose or the raw token");
-            assert.match(body, /Download.*: 500 Mbps/,
-                "the default message lost its own last line");
+            return JSON.parse(String(sent[0].body)).text;
         } finally {
             await remove(id);
         }
+    };
+
+    /**
+     * Byte for byte against the same template with the token cut out, rather
+     * than a pattern saying the prose is absent.
+     *
+     * "Nothing" has to mean nothing at all here. alertSummary composes its
+     * lines as `\n` plus each line and joins them, so an empty summary that
+     * still answered a newline would leave the message ending in a blank line -
+     * which every pattern for the prose passes, which no reviewer sees in a
+     * diff of the expected string, and which telegram and discord both render
+     * as a gap under the last figure of every healthy notification.
+     *
+     * The comparison is against a custom template, so both sides go through
+     * the identical render - the only difference between them is the token.
+     * If the shipped default has moved on from the constant above, the two
+     * stop matching and this says so.
+     */
+    it("adds nothing to a healthy result's default message", async () => {
+        const fromDefault = await messageFor({alert_download_below: 10});
+        const withoutToken = await messageFor({alert_download_below: 10,
+            finished_message: SHIPPED_FINISHED.replace("%alertSummary%", "")});
+
+        assert.equal(fromDefault, withoutToken,
+            "a healthy result added something to the shipped message, or the shipped message has changed");
+
+        // And the message is still the whole of itself: an empty summary read
+        // off a template that lost its last line would satisfy the equality.
+        assert.match(fromDefault, /Download.*: 500 Mbps$/,
+            "the default message lost its own last line");
+        assert.doesNotMatch(fromDefault, /Crossed limits|Below its usual|%alertSummary%/,
+            "a healthy message carries alert prose or the raw token");
     });
 
     // A failure carries no readings at all, so every armed metric would be
@@ -384,6 +425,74 @@ describe("what the message can say about the crossing", () => {
             assert.equal(sent.length, 1);
             assert.doesNotMatch(String(sent[0].body), /not measured/,
                 "a failed run was described as a crossed limit");
+        } finally {
+            await remove(id);
+        }
+    });
+});
+
+/**
+ * The webhook's own payload, which is machine-read and stays English.
+ *
+ * It carries the threshold settings like every other notifier - an operator
+ * wants it quiet while the line is fine - but what it posts is a JSON document
+ * a script consumes, and the only thing a language ever reached inside it was
+ * the `alertCrossed` and `alertSummary` strings. Translating those changes the
+ * fields a receiving script matches on, in the one place where nobody is
+ * reading the wording.
+ */
+describe("what the webhook posts", () => {
+    const createWebhook = async (settings) => {
+        const {status, body} = await api(server.baseUrl, "/integrations/webhook", {
+            method: "PUT",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({
+                url: "https://hooks.example.com/mine", send_finished: true,
+                integration_name: "hooked", ...settings
+            })
+        });
+
+        assert.equal(status, 200, `could not create the integration: ${JSON.stringify(body)}`);
+
+        return body.id;
+    };
+
+    const posted = async () => {
+        assert.equal(sent.length, 1);
+        return JSON.parse(String(sent[0].body));
+    };
+
+    it("is not offered a language to store in the first place", async () => {
+        const id = await createWebhook({alert_download_below: 100, language: "de"});
+        try {
+            assert.equal((await rowOf(id)).data.language, undefined,
+                "the webhook stored a language it declares no field for");
+        } finally {
+            await remove(id);
+        }
+    });
+
+    /**
+     * And ignores one it already holds. Rows saved while the field was offered
+     * to every notifier still carry the choice, and importConfig writes rows
+     * without validateInput at all - so the stored column is not evidence that
+     * a field was ever declared.
+     */
+    it("writes English even for a row that already carries a language", async () => {
+        const id = await createWebhook({alert_download_below: 100});
+        try {
+            const stored = (await rowOf(id)).data;
+            await IntegrationData.update({data: {...stored, language: "de"}}, {where: {id}});
+
+            // The row really holds it, or the rest of this asserts nothing.
+            assert.equal((await rowOf(id)).data.language, "de");
+
+            sent = [];
+            await triggerEvent("testFinished", SLOW);
+
+            const {data} = await posted();
+            assert.equal(data.alertCrossed, "download 40 Mbps under 100");
+            assert.equal(data.alertSummary, "\nCrossed limits: download 40 Mbps under 100");
         } finally {
             await remove(id);
         }

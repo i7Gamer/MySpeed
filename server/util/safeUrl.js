@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import dnsCallback from 'node:dns';
+import { bareHost } from './helpers.js';
 
 /**
  * Guards the one place the server fetches a URL the user typed: adding a remote
@@ -386,8 +387,9 @@ export const safeLookup = (hostname, options, callback) => {
  * Unique-Local rather than link-local, so the first check does not reach it.
  */
 export const checkOutboundHost = (value) => {
-    // Strips the brackets an IPv6 literal carries in a URL.
-    const hostname = String(value ?? "").replace(/^\[|]$/g, "");
+    // Strips the brackets an IPv6 literal carries in a URL, the same way the
+    // dialers now do before they open the socket.
+    const hostname = bareHost(value);
 
     if (hostname === "") return {safe: false, reason: "No host was given"};
 
@@ -452,11 +454,15 @@ export const checkNodeTarget = async (value) => {
     // hand, so the lookup costs nothing and closes the name-to-loopback case
     // outright. The notification path cannot afford the same round trip - see
     // the note there.
+    // Marked as the host's condition rather than the address's: a name that
+    // does not resolve today may resolve tomorrow, and nothing about it is
+    // forbidden. The proxy answers this one as a gateway failure, where every
+    // other refusal here is a policy the operator can read and fix.
     let resolved;
     try {
         resolved = await dns.lookup(hostname, {all: true});
     } catch {
-        return {safe: false, reason: "The node URL could not be resolved"};
+        return {safe: false, reason: "The node URL could not be resolved", unreachable: true};
     }
 
     if (resolved.some((entry) => isBlockedAddress(entry.address)))

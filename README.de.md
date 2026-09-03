@@ -49,9 +49,13 @@ kein `avx2`-Flag enthält.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
-  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+  https://github.com/i7Gamer/MySpeed/releases/latest/download/install.sh
 sudo bash /tmp/myspeed-install.sh
 ```
+
+Das Installationsskript prüft den Download vor der Installation gegen die
+`SHA256SUMS` des Releases. Wer lieber gefragt werden möchte, welche der beiden
+Installationsarten laufen soll, nimmt `chooser.sh` unter derselben Adresse.
 
 Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* Linux
 geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die
@@ -133,9 +137,13 @@ Benötigt [bun](https://bun.sh).
 git clone https://github.com/i7Gamer/MySpeed.git
 cd MySpeed
 bun install
+cd client && bun install && cd ..
 bun run build
+node scripts/move-client-build.js
 bun run server/index.js
 ```
+
+Der Client hat eigene Abhängigkeiten, und der Server liefert die Oberfläche aus `build/` im Wurzelverzeichnis aus - dorthin verschiebt sie der vorletzte Schritt.
 
 MySpeed ist danach unter **http://localhost:5216** erreichbar.
 
@@ -184,7 +192,7 @@ Das Docker-Image enthält die Laufzeitumgebung und den Servercode, aber keine
 kompilierte Binärdatei – dort wird deshalb der Einstiegspunkt direkt ausgeführt:
 
 ```bash
-docker exec <container> bun server/index.js --reset-password
+docker exec -u bun <container> bun server/index.js --reset-password
 ```
 
 Der Befehl muss im selben Verzeichnis laufen wie der Server – er löst
@@ -243,6 +251,8 @@ Die Bindung des Ports an `127.0.0.1` sorgt dafür, dass der Container ausschlie�
 über den Proxy erreichbar ist.
 
 #### Umgebungsvariablen
+
+Die vollständige Liste, die der Server liest - auch die hier nicht gezeigten Datenbank- und Vorschau-Variablen - steht mit Standardwerten und je einer Zeile Zweck in [`.env.example`](.env.example) im Wurzelverzeichnis.
 
 | Variable | Standard | Bedeutung |
 | --- | --- | --- |

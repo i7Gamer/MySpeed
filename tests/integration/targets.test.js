@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, setConfig } from "./helpers/boot.js";
+import { bootServer, api, setConfig, waitFor } from "./helpers/boot.js";
 
 /**
  * The targets API end to end: the list an operator manages, what a read-only
@@ -599,11 +599,10 @@ describe("the manual-only target", () => {
         // Drained before the file moves on: no CLI is installed, so the round
         // fails in milliseconds, but leaving it in flight would meet the next
         // test with a 409 and the suite's close with an open database.
-        for (let attempt = 0; attempt < 100; attempt++) {
+        await waitFor(async () => {
             const {body} = await api(server.baseUrl, "/speedtests/status/live");
-            if (!body.running) break;
-            await new Promise((resolve) => setTimeout(resolve, 100));
-        }
+            return !body.running;
+        }, {interval: 100, message: "the round never drained before the file moved on"});
     });
 
     it("never joins the round but runs by name", async () => {
@@ -619,10 +618,7 @@ describe("the manual-only target", () => {
         });
         assert.equal(status, 200);
 
-        for (let attempt = 0; attempt < 50; attempt++) {
-            if (await server.tests.count() > 0) break;
-            await new Promise((resolve) => setTimeout(resolve, 100));
-        }
+        await waitFor(() => server.tests.count(), {interval: 100, message: "the manual run never wrote its row"});
 
         const [row] = await server.tests.findAll();
         assert.equal(row.targetId, id, "the manual run did not record against its target");

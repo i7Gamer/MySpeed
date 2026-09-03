@@ -157,6 +157,7 @@
     "cron_title": "Nastavit frekvenci testů",
     "cron_next_test": "Další test:",
     "custom_cron": "Vlastní výraz cron",
+    "cron_help": "Nápověda k syntaxi cron",
     "schedule_offset": "Posunout plán",
     "schedule_offset_desc": "Přidá malé zpoždění, aby testy nezačínaly v přesných časech",
     "pause_title": "Pozastavit testy rychlosti na...",
@@ -268,13 +269,20 @@
   },
   "time": {
     "now": "chvílí",
-    "seconds": "{{seconds}} sekundami",
-    "minute": "1 minutou",
-    "minutes": "{{minutes}} minutami",
-    "hour": "1 hodinou",
-    "hours": "{{hours}} hodinami",
-    "day": "1 dnem",
-    "days": "{{days}} dny"
+    "seconds": "{{seconds}} sekundy",
+    "seconds_ago": "{{seconds}} sekundami",
+    "minute": "1 minuta",
+    "minute_ago": "1 minutou",
+    "minutes": "{{minutes}} minuty",
+    "minutes_ago": "{{minutes}} minutami",
+    "hour": "1 hodina",
+    "hour_ago": "1 hodinou",
+    "hours": "{{hours}} hodiny",
+    "hours_ago": "{{hours}} hodinami",
+    "day": "1 den",
+    "day_ago": "1 dnem",
+    "days": "{{days}} dny",
+    "days_ago": "{{days}} dny"
   },
   "test": {
     "not_available": "Momentálně nejsou k dispozici žádné testy",
@@ -337,7 +345,11 @@
     "latency_failed": "Test odezvy selhal, takže rychlost nebylo možné změřit.",
     "rate_limited": "Poskytovatel test odmítl, protože jich v poslední době proběhlo příliš mnoho. Další test je automaticky odložen.",
     "no_measurement": "Test skončil, aniž by nahlásil jakékoli měření.",
-    "impossible_measurement": "Test nahlásil měření, které nemůže být správné, proto bylo zahozeno."
+    "impossible_measurement": "Test nahlásil měření, které nemůže být správné, proto bylo zahozeno.",
+    "stopped_by_shutdown": "Test byl zastaven, protože se MySpeed vypínal.",
+    "stopped_by_signal": "Test byl zvenčí zastaven dříve, než skončil.",
+    "cli_missing": "Měřicí program se nepodařilo nainstalovat, takže test neproběhl.",
+    "interface_unusable": "Nastavené síťové rozhraní nemá použitelnou adresu, takže test neproběhl."
   },
   "statistics": {
     "average": "Průměr",
@@ -416,6 +428,8 @@
       "median": "Medián"
     },
     "failed_test": "Neúspěšný test",
+    "failed_in_period": "{{failed}} neúspěšných v tomto období",
+    "failed_in_period_single": "1 neúspěšný v tomto období",
     "hourly": {
       "title": "Rychlost podle denní doby",
       "sample_count": "Testy"
@@ -453,6 +467,7 @@
   },
   "nodes": {
     "add": "Přidat server",
+    "context_menu": "Akce serveru",
     "create": "Přidat",
     "this_server": "Tento server",
     "created": "Server byl úspěšně přidán",

@@ -43,7 +43,16 @@ export const configDefaults = {
     timezone: "none"
 }
 
-const MAX_RETENTION_DAYS = 10000;
+/**
+ * The longest history the server will keep, in days.
+ *
+ * Exported for the parity test rather than for any caller here, the way
+ * providers/registry.js exposes the iperf3 bounds: the storage dialog states
+ * this ceiling to the operator - in the input's `max` and in the gate that
+ * greys Save - and a copy that drifts is a spinner offering a value the save
+ * then refuses.
+ */
+export const MAX_RETENTION_DAYS = 10000;
 
 /**
  * A speed or latency threshold: anything that reads as a number, and nothing
@@ -353,7 +362,12 @@ export const validateInput = async (key, value) => {
         value = await bcrypt.hash(value, PASSWORD_HASH_ROUNDS);
     }
 
-    if (key === "cron" && !cron.isValidCron(value.toString()))
+    // The scheduler's own options rather than this door's own idea of them -
+    // see CRON_OPTIONS in tasks/timer.js. Asked with the defaults, this refused
+    // "0 0 * * MON" and the other standard crontab spellings both engines
+    // behind it run, so the frequency dialog drew a next-test line for an
+    // expression the save then rejected as invalid.
+    if (key === "cron" && !cron.isValidCron(value.toString(), timer.CRON_OPTIONS))
         return "Not a valid cron expression";
 
     if ((key === "quietHoursStart" || key === "quietHoursEnd") && !isValidTimeOfDay(value.toString()))

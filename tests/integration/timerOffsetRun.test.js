@@ -479,3 +479,47 @@ describe("nextRun through the configured quiet hours", () => {
         assert.equal(timer.nextRun("not a cron", {start: "23:00", end: "08:00"}), null);
     });
 });
+
+/**
+ * RUN_TEST_ON_STARTUP asks for a test the moment the server is up, and used
+ * to get one after the offset's sleep - during which a real tick could take
+ * the latch first and drop the startup run as an overlap. The unit suite pins
+ * the shape of the guards; this runs them, so a run that silently went back
+ * to sleeping its offset would fail here rather than pass by spelling.
+ */
+describe("a run asked for now", () => {
+    beforeEach(async () => {
+        await setWindow("none", "none");
+    });
+
+    after(async () => {
+        await setWindow("none", "none");
+    });
+
+    it("takes no offset, however the schedule is configured", async () => {
+        await setConfig(server.config, "scheduleOffset", "true");
+        timer.startTimer(DISTANT_CRON);
+
+        const run = timer.runTask({immediate: true});
+        const slept = await reachedDelay();
+        // Released rather than left to hold the suite for its whole offset.
+        if (slept) timer.stopTimer();
+        await run;
+
+        assert.equal(slept, false, "an immediate run slept its offset like a scheduled one");
+        assert.equal(await countTests(), 1, "an immediate run recorded nothing");
+    });
+
+    // The offset is the only guard it skips. The quiet hours bind the round
+    // itself for an "auto" run, so an exemption here would only move the
+    // refusal one call down.
+    it("is still held to the quiet hours", async () => {
+        await setConfig(server.config, "scheduleOffset", "false");
+        await setWindow(clockAt(-MINUTES_PER_HOUR), clockAt(MINUTES_PER_HOUR));
+        timer.startTimer(DISTANT_CRON);
+
+        await timer.runTask({immediate: true});
+
+        assert.equal(await countTests(), 0, "a run asked for now ignored the quiet hours");
+    });
+});

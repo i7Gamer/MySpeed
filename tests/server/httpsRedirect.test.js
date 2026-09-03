@@ -43,6 +43,39 @@ describe("httpsRedirect", () => {
         assert.match(res.location, /\/api\/speedtests\?limit=5&from=2026-08-01$/);
     });
 
+    /**
+     * The Location is built from the caller's own Host header, which is the
+     * only way one instance can answer on several names - but the header is
+     * whatever the caller wrote. `victim.example@attacker.example` is read by a
+     * browser as userinfo followed by a host, so the redirect the instance
+     * emitted landed the reader on somebody else's server, with the instance's
+     * own name still visible at the front of the URL.
+     */
+    it("refuses to redirect to a host header carrying userinfo", () => {
+        const {res, passedThrough} = run(middleware(),
+            request({hostname: "myspeed.example@attacker.example"}));
+
+        assert.equal(res.location, null, "the instance redirected its reader to an attacker's host");
+        assert.equal(passedThrough, true);
+    });
+
+    // The same trick spelled with the pieces a URL parser splits on.
+    for (const hostname of ["myspeed.example/attacker.example", "myspeed.example\\attacker.example",
+        "myspeed.example?x", "myspeed.example#x", "evil .example"]) {
+        it(`refuses to redirect to the host header ${JSON.stringify(hostname)}`, () => {
+            assert.equal(run(middleware(), request({hostname})).res.location, null);
+        });
+    }
+
+    // A name, an address and an IPv6 literal in the brackets express keeps are
+    // all ordinary, and none of them may be turned away by the guard above.
+    for (const hostname of ["myspeed.example", "my-speed.lan", "192.168.1.5", "[fd00::1]", "localhost"]) {
+        it(`still redirects the ordinary host ${hostname}`, () => {
+            assert.equal(run(middleware(), request({hostname})).res.location,
+                `https://${hostname}:${HTTPS_PORT}/api/config`);
+        });
+    }
+
     it("leaves an already-secure request alone", () => {
         assert.equal(run(middleware(), request({secure: true})).passedThrough, true);
     });

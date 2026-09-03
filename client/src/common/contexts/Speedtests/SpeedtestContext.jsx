@@ -28,6 +28,22 @@ const RETRY_AFTER_ERROR_MS = 3000;
 export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
     const [loading, setLoading] = useState(false);
+    /**
+     * Why the first page is not on screen, when it is not.
+     *
+     * The list alone cannot say. A failed load writes the same empty answer an
+     * empty instance does - no rows, no cursor, no further pages - and the only
+     * word about the difference went to the console, so the overview reported
+     * "there are currently no tests available" over an instance with years of
+     * them. Any 500, dropped connection or ten second RequestUtil timeout on
+     * the first `/speedtests?limit=30` was enough, and recovery was by chance:
+     * changing the range, or leaving the tab and coming back.
+     *
+     * The rejection itself rather than a flag, so the page can show what the
+     * server said instead of a sentence written here that describes none of the
+     * reasons - the statistics page keeps its own for the same reason.
+     */
+    const [loadError, setLoadError] = useState(null);
     const [hasMore, setHasMore] = useState(true);
     // Where the next page starts: the last row's `created` and its id, because
     // that pair is what the list is ordered by. The id alone was the cursor
@@ -35,6 +51,39 @@ export const SpeedtestProvider = (props) => {
     // newest test - it asked for pages the list had already shown.
     const [cursor, setCursor] = useState(null);
     const loadingRef = useRef(false);
+
+    /**
+     * The list and the query as they are *now*, for the readers that decide
+     * something with them rather than merely displaying them.
+     *
+     * Both were read out of the closure, and a callback here outlives the
+     * render that made it in two ordinary ways. RunUtil awaits the status and
+     * the run before calling updateTests(), so it holds a reference from before
+     * whatever the reader did in between; and refreshTests is called while a
+     * load it shares a generation with is still in flight, so its closure is one
+     * render behind the failure that cleared the list.
+     *
+     * The list one was the sharper: applyRefresh asked "does this answer overlap
+     * what is on screen" of rows that were no longer on screen, answered "merge"
+     * where the truth was "replace", and put thirty rows back on top of the
+     * cursor and hasMore the failure had reset - a full page under "No more
+     * tests to load", with paging dead for the life of the page.
+     *
+     * For refreshTests alone. The two loads keep reading both out of their
+     * closures, because their dependency lists make those current anyway - and
+     * the range effect is keyed on loadInitialTests' identity, so taking
+     * listQuery out of its dependencies would stop a range change reloading the
+     * list at all. refreshTests is the one with no dependencies, by design: it
+     * is held across awaits and re-read on every visibility change, and a stable
+     * object there is what stops the two effects holding it re-subscribing on
+     * every page.
+     *
+     * Assigned during render rather than in an effect: an effect runs after the
+     * paint, and a refresh firing in that window would read the value it was
+     * meant to replace.
+     */
+    const speedtestsRef = useRef(speedtests);
+    const listQueryRef = useRef(null);
     // Bumped by every fresh query, so a response for one the user has moved on
     // from can tell that it is no longer wanted. See loadInitialTests.
     const requestGeneration = useRef(0);
@@ -102,6 +151,9 @@ export const SpeedtestProvider = (props) => {
         return params.toString();
     }, [range, targetFilter]);
 
+    speedtestsRef.current = speedtests;
+    listQueryRef.current = listQuery;
+
     // Replaced rather than pushed: narrowing a range is refining one view, not
     // arriving at a new one, and stacking every adjustment would make Back walk
     // through each of them.
@@ -135,10 +187,15 @@ export const SpeedtestProvider = (props) => {
 
         loadingRef.current = true;
         setLoading(true);
+        // Cleared as the query is issued, so the error on screen always belongs
+        // to the newest attempt: left standing, the retry below would report
+        // the previous failure over the page it had just succeeded in drawing.
+        setLoadError(null);
         try {
             const tests = await jsonRequest(`/speedtests?${listQuery()}`);
             if (superseded()) return;
 
+            setLoadError(null);
             setSpeedtests(tests);
             if (tests.length > 0) {
                 setCursor(cursorOf(tests));
@@ -151,6 +208,25 @@ export const SpeedtestProvider = (props) => {
             if (superseded()) return;
 
             console.error("Failed to load initial tests:", error);
+            setLoadError(error);
+            /*
+             * And the rows still go, which is not the obvious half.
+             *
+             * Keeping the previous query's list through a failure is the exact
+             * fault the statistics page shipped and fixed - its error branch
+             * was gated on having no payload, so a later failure drew the
+             * previous range's numbers under the new range's heading. Here it
+             * would be worse. This provider deliberately does not clear on a
+             * range or target change, and TestArea's hooks all run above its
+             * early returns: the scroll listener stays live inside the error
+             * branch and fires loadMoreTests() on `hasMore &&
+             * speedtests.length > 0`, which pages the new query's rows onto the
+             * tail of the old query's list from a cursor into a result set
+             * nobody is showing - and superseded() cannot catch that, because
+             * the retry shares no generation with the load that failed. It also
+             * leaks past the page: the status bar reads speedtests[0] as its
+             * last-test fallback and has no error branch of its own.
+             */
             setSpeedtests([]);
             setCursor(null);
             setHasMore(false);
@@ -262,10 +338,29 @@ export const SpeedtestProvider = (props) => {
         const generation = requestGeneration.current;
 
         try {
-            const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
+            const newTests = await jsonRequest(`/speedtests?${listQueryRef.current()}`);
             if (generation !== requestGeneration.current) return;
 
-            const {tests, replaced} = applyRefresh(speedtests, newTests);
+            /*
+             * The rows are here, so whatever the last load could not fetch
+             * is over - and this is the only place that can say so. A
+             * refresh is not the failed load's generation, so nothing about
+             * that failure supersedes it, and clearing only in the two
+             * loads left a page holding its rows behind an error branch
+             * that returns above them: unreachable but for the retry, with
+             * TestArea's scroll listener live behind it paging a history
+             * nobody is being shown.
+             */
+            // A 200 that is not a list is not an answer. Nothing below can use
+            // it - applyRefresh hands back what it was given and calls that a
+            // merge - and clearing the error over it would take down the one
+            // thing on screen that was true.
+            if (!Array.isArray(newTests)) return;
+
+            setLoadError(null);
+
+            // Against the list as it is, not as it was when this call was made.
+            const {tests, replaced} = applyRefresh(speedtestsRef.current, newTests);
 
             if (!replaced) {
                 // Still through an updater so a page load landing at the same
@@ -291,7 +386,10 @@ export const SpeedtestProvider = (props) => {
         } catch (error) {
             console.error("Failed to refresh tests:", error);
         }
-    }, [speedtests, listQuery]);
+        // No dependency on either: both are read through the refs above, so
+        // this callback stays the same object across a list change and the two
+        // effects that hold it stop re-subscribing on every page.
+    }, []);
 
     // The list changes through an updater so a concurrent refresh cannot be
     // clobbered; the cursor comes from a fold over the snapshot, which is safe
@@ -415,9 +513,9 @@ export const SpeedtestProvider = (props) => {
      */
     const contextValue = useMemo(() => ({
         speedtests, updateTests, reloadTests: loadInitialTests, deleteTest,
-        loadMoreTests, loading, hasMore, timeframe, range, selectTimeframe, selectRange
-    }), [speedtests, updateTests, loadInitialTests, deleteTest, loadMoreTests, loading, hasMore,
-        timeframe, range, selectTimeframe, selectRange]);
+        loadMoreTests, loading, loadError, hasMore, timeframe, range, selectTimeframe, selectRange
+    }), [speedtests, updateTests, loadInitialTests, deleteTest, loadMoreTests, loading, loadError,
+        hasMore, timeframe, range, selectTimeframe, selectRange]);
 
     return (
         <SpeedtestContext.Provider value={contextValue}>

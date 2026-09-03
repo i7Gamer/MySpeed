@@ -25,6 +25,31 @@ export const errors = () => ({
     // missed: nobody thinks to register a sentence they wrote.
     "finished without reporting any measurement": t("errors.no_measurement"),
     "reported an impossible": t("errors.impossible_measurement"),
+    // A third of MySpeed's own, from server/util/speedtest.js, where the
+    // constant SHUTDOWN_STOP_MESSAGE holds the whole sentence this is the
+    // middle of. It is what a `docker stop` or a service restart writes onto a
+    // run it interrupted, so it arrives on an ordinary upgrade rather than on a
+    // fault - and the row it lands on is one the operator can do nothing about,
+    // which is exactly the kind that has to explain itself.
+    "stopped because MySpeed was shutting down": t("errors.stopped_by_shutdown"),
+    // And the other half of that sentence pair, from the same file: a signal
+    // that was not our own shutdown - a `pkill`, an OOM kill, a control-group
+    // stop that reached the CLI - is named rather than explained there, because
+    // claiming a shutdown that is not happening would be worse than a bare
+    // fact. Which left the row with a bare fact and no translation of it. The
+    // signal itself is dropped here and kept in the raw output the panel below
+    // shows, since a phrase table has nowhere to put it.
+    "was stopped by": t("errors.stopped_by_signal"),
+    // And the three the *runner* writes, in server/util/speedtest.js rather than
+    // in the task - which is why they were missed twice over: the coverage test
+    // reads the task, and the two files are one subsystem to everybody except a
+    // scan. The timeout is the sharpest of them. A hung CLI is the commonest way
+    // a test fails, and "timed out" above does not appear in the sentence the
+    // runner actually writes, so the single most ordinary failure on this page
+    // rendered as "Unknown error".
+    "did not finish within": t("errors.timed_out"),
+    "is not there and could not be downloaded": t("errors.cli_missing"),
+    "has no usable address": t("errors.interface_unusable"),
 });
 
 /**

@@ -4,6 +4,7 @@ import { parseDateRange, previousRange, truncateToElapsed } from "../../server/u
 import { resolveTimezone, zoneFromName } from "../../server/util/timezone.js";
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const MS_PER_HOUR = 60 * 60 * 1000;
 
 // UTC+2, the way getTimezoneOffset reports it: minutes behind UTC.
 const BERLIN_SUMMER = -120;
@@ -204,6 +205,43 @@ describe("truncateToElapsed", () => {
         assert.equal(window.to.toISOString(), "2026-03-22T01:30:00.000Z");
         assert.equal(window.to - previous.from, now - current.from,
             "the two windows no longer cover the same elapsed time");
+    });
+
+    /**
+     * A recorded limitation, asserted at the size it actually is.
+     *
+     * The three tests above hold the spans equal because in each of them the
+     * shift is the cut day's own, or `now`'s. It is not equal when the shift
+     * sits between them - earlier in the range, on a day both windows have
+     * already passed. The elapsed offset is measured against the day `now` is
+     * in and laid onto the cut day, so an hour the calendar dropped between
+     * those two days is counted by neither, and the comparison window covers
+     * one hour more than the range has lived.
+     *
+     * Accepted rather than fixed: one hour in a window measured in days, twice
+     * a year per zone, against a correction that would have to walk the
+     * calendar between the two days to find the shift at all. The number is
+     * pinned so that a change here is a decision somebody made rather than a
+     * drift - and so the docblock on truncateToElapsed, which says this, has
+     * something holding it true.
+     */
+    it("covers an hour more than the range lived when the shift is behind both days", () => {
+        // 12:00 CEST on 30 March 2026, the day after the spring forward. The
+        // range started on the 23rd, a week before the shift; the cut lands on
+        // 16 March, a week before that, and neither day is the one that moved.
+        const current = range("2026-03-23", "2026-04-05");
+        const previous = previousOf(current);
+        const now = new Date("2026-03-30T10:00:00.000Z");
+
+        const window = truncateToElapsed(current, previous, now);
+
+        const lived = now - current.from;
+        const covered = window.to - previous.from;
+
+        assert.equal(lived / MS_PER_HOUR, 179);
+        assert.equal(covered / MS_PER_HOUR, 180);
+        assert.equal(covered - lived, MS_PER_HOUR,
+            "the known one-hour overhang changed size; decide what it should be rather than re-pinning it");
     });
 
     /**

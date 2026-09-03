@@ -17,6 +17,13 @@ const read = (name) => {
     }
 };
 
+// Comments describe the intent; they are not the thing being asserted, and a
+// requirement satisfied only by a comment that mentions it is not satisfied.
+const withoutComments = (source) => source
+    .split("\n")
+    .filter((line) => !/^\s*#/.test(line))
+    .join("\n");
+
 const release = read("create_release.yml");
 const dockerBuild = read("build-docker.yml");
 const dockerPublish = read("publish-docker.yml");
@@ -39,6 +46,12 @@ const jobsOf = (workflow) => {
         if (opener) {
             current = opener[1];
             jobs[current] = [];
+        } else if (/^ {2}#/.test(line)) {
+            // A comment at the jobs indent introduces the *next* job, and
+            // ran on into the previous one's block: checksums-msi came back
+            // carrying finalize-release's docblock, so a match anywhere in
+            // it could be satisfied by text about a different job.
+            current = null;
         } else if (current) {
             jobs[current].push(line);
         }
@@ -48,11 +61,16 @@ const jobsOf = (workflow) => {
 };
 
 /**
- * What a job waits for, in either spelling the release chain uses: `needs: one`
- * and `needs: [a, b]`.
+ * What a job waits for, in the three spellings the release chain uses:
+ * `needs: one`, `needs: [a, b]`, and a bracketed list wrapped over two lines.
+ *
+ * The bracket alternative comes first and is not anchored to the line end,
+ * because `.` stops at one: the wrapped list this workflow grew read as far
+ * as the comma and dropped finalize-release, so the job that publishes the
+ * release looked to this file like something nothing waited for.
  */
 const needsOf = (block) => {
-    const declared = /^ {4}needs:\s*(.+)$/m.exec(block);
+    const declared = /^ {4}needs:\s*(\[[^\]]*]|.+)$/m.exec(block);
     if (!declared) return [];
 
     return declared[1].replace(/[[\]]/g, "").split(",").map((name) => name.trim()).filter(Boolean);
@@ -147,5 +165,122 @@ describe("what a failed release can leave on Docker Hub", () => {
 
         assert.ok(needsOf(publisher[1]).length > 0,
             "the manual deploy tags before its own builds have pushed their digests");
+    });
+});
+
+/**
+ * SHA256SUMS described everything on the release except the two things Windows
+ * installs with.
+ *
+ * The hashing job lives inside build-binaries.yml and enumerates the assets the
+ * release carries *at that moment*; build-msi needs the whole of that workflow,
+ * so it necessarily uploads MySpeed-installer.msi and its baseline twin
+ * afterwards, and nothing went back to hash them. Not the one-release bootstrap
+ * gap - this one never closes on its own, and the installer is the artifact with
+ * no install script to verify it on the user's behalf.
+ *
+ * The second pass appends rather than replacing the first, so a failing MSI leg
+ * still leaves the binaries with the checksums they had.
+ */
+describe("the checksum list and the installers", () => {
+    // The block with its prose taken out. A requirement satisfied only by a
+    // comment saying the job does it is not satisfied - the sibling suite
+    // over build-binaries.yml has carried this for the same reason.
+    const appender = withoutComments(releaseJobs["checksums-msi"] ?? "");
+
+    it("hashes the installers after the job that uploads them", () => {
+        assert.ok(appender, "nothing hashes the MSI installers");
+        assert.ok(needsOf(appender).includes("build-msi"),
+            "the second checksum pass can run before the installers exist");
+    });
+
+    /**
+     * And it does the thing it is named for.
+     *
+     * Everything else here is about when this job runs and what waits for
+     * it, which a job body of `echo nothing` satisfies in full - so the
+     * suite went green over a workflow that published no checksum at all.
+     * These four are the program: read the release's assets, hash the ones
+     * the earlier pass did not, and put the file back under its own name.
+     */
+    it("reads the release's own assets and hashes them", () => {
+        assert.match(appender, /listReleaseAssets/,
+            "the job hashes some fixed list rather than what the release carries");
+        assert.match(appender, /createHash\('sha256'\)/,
+            "nothing in this job computes a digest");
+    });
+
+    it("publishes the list under the name the install scripts fetch", () => {
+        assert.match(appender, /uploadReleaseAsset\(\{[^}]*name: 'SHA256SUMS'/s,
+            "the completed list is uploaded under some other name, or not at all");
+        assert.match(appender, /deleteReleaseAsset/,
+            "a release cannot carry two assets of one name, so the old list has to go first");
+    });
+
+    /**
+     * Appended rather than rewritten, which is the whole reason this is a
+     * second pass instead of a change to the first: the binaries were hashed
+     * from the bytes as uploaded, and re-downloading six of them to reach the
+     * same answer is transfer paid for nothing.
+     */
+    it("keeps the digests the earlier pass already wrote", () => {
+        assert.match(appender, /assets\.find\(\(asset\) => asset\.name === 'SHA256SUMS'\)/,
+            "the job never looks for the list build-binaries left");
+        assert.match(appender, /digests\.has\(asset\.name\)/,
+            "every asset is re-hashed, so a failing MSI leg can lose the binaries their checksums");
+    });
+
+    /**
+     * !cancelled(), because the default is success(): a failed MSI leg would
+     * otherwise skip this job and take the whole file's completion with it,
+     * which is worse than the state it replaces. always() did that too, and
+     * also ran on a cancelled workflow - where the release is being deleted
+     * or reported and an upload has nothing to win.
+     */
+    it("runs even when the MSI legs did not, but not on a cancelled run", () => {
+        assert.match(appender, /!cancelled\(\)/,
+            "one failing installer leg suppresses the checksum pass entirely");
+        assert.doesNotMatch(appender, /always\(\)/,
+            "a cancelled release run still uploads to a release being torn down");
+    });
+
+    // The failure cleanup-on-failure deletes the whole release over. An
+    // upload landing in the middle of that deletion races it for nothing:
+    // finalize-release needs build-binaries too, so there is no release left
+    // for this file to be published with.
+    it("stands down when the binaries themselves failed", () => {
+        assert.ok(needsOf(appender).includes("build-binaries"),
+            "the checksum pass runs against a release that is being deleted");
+        assert.match(appender, /needs\.build-binaries\.result == 'success'/,
+            "waiting for build-binaries is not the same as requiring it under !cancelled()");
+    });
+
+    /**
+     * finalize-release is what turns the draft into a published release, so a
+     * release made public ahead of this job hands out installers that nothing
+     * can check.
+     */
+    it("completes the list before the release is published", () => {
+        assert.ok(needsOf(releaseJobs["finalize-release"]).includes("checksums-msi"),
+            "the release is un-drafted before its checksum list is finished");
+    });
+
+    // And a draft left behind says so. The partial-release report is the only
+    // thing that explains an unpublished release, and a job that can hold the
+    // publish back while leaving no row in that table is a draft nobody can
+    // account for.
+    it("is named in the report a partial release leaves behind", () => {
+        const report = withoutComments(releaseJobs["report-partial-release"] ?? "");
+
+        assert.ok(needsOf(report).includes("checksums-msi"),
+            "the report can be written before the job that held the publish back has finished");
+        assert.match(report, /needs\.checksums-msi\.result/,
+            "the report cannot read the result of the job that held the publish back");
+
+        // The row, not the env line that feeds it. Reading the result into the
+        // environment and never printing it satisfied the assertion above while
+        // the table said nothing about the job.
+        assert.match(report, /echo "\| [^|]*\| \$CHECKSUMS_RESULT \|"/,
+            "the table skips the one job that can keep a complete release in draft");
     });
 });

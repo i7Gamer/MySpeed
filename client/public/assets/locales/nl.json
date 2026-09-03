@@ -157,6 +157,7 @@
     "cron_title": "Testfrequentie instellen",
     "cron_next_test": "Volgende test:",
     "custom_cron": "Aangepaste cron expressie",
+    "cron_help": "Hulp bij cron-syntaxis",
     "schedule_offset": "Verschuiving schema",
     "schedule_offset_desc": "Voegt een kleine vertraging toe om te voorkomen dat testen op exacte tijdstippen starten",
     "pause_title": "Snelheidstests pauzeren voor...",
@@ -274,7 +275,8 @@
     "hour": "1 uur",
     "hours": "{{hours}} uur",
     "day": "1 dag",
-    "days": "{{days}} dagen"
+    "days": "{{days}} dagen",
+    "days_ago": "{{days}} dagen"
   },
   "test": {
     "not_available": "Er zijn momenteel geen tests beschikbaar",
@@ -337,7 +339,11 @@
     "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten.",
     "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",
     "no_measurement": "De test is geëindigd zonder ook maar één meting te melden.",
-    "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid."
+    "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid.",
+    "stopped_by_shutdown": "De test is gestopt omdat MySpeed werd afgesloten.",
+    "stopped_by_signal": "De test is van buitenaf gestopt voordat hij klaar was.",
+    "cli_missing": "Het meetprogramma kon niet worden geïnstalleerd, dus de test is niet uitgevoerd.",
+    "interface_unusable": "De ingestelde netwerkinterface heeft geen bruikbaar adres, dus de test is niet uitgevoerd."
   },
   "statistics": {
     "average": "Gemiddeld",
@@ -416,6 +422,8 @@
       "median": "Mediaan"
     },
     "failed_test": "Mislukte test",
+    "failed_in_period": "{{failed}} mislukt in deze periode",
+    "failed_in_period_single": "1 mislukt in deze periode",
     "hourly": {
       "title": "Snelheid door de dag heen",
       "sample_count": "Tests"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Server toevoegen",
+    "context_menu": "Serveracties",
     "create": "Voeg toe",
     "this_server": "Deze server",
     "created": "De server is succesvol toegevoegd",

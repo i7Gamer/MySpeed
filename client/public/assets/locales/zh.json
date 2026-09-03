@@ -157,6 +157,7 @@
     "cron_title": "设置测试频率",
     "cron_next_test": "下一次测试：",
     "custom_cron": "自定义 Cron 表达式",
+    "cron_help": "Cron 语法帮助",
     "schedule_offset": "偏移计划",
     "schedule_offset_desc": "添加小幅延迟以防止测试在整点启动",
     "pause_title": "暂停测速...",
@@ -274,7 +275,8 @@
     "hour": "1小时",
     "hours": "{{hours}} 小时",
     "day": "1 天",
-    "days": "{{days}} 天"
+    "days": "{{days}} 天",
+    "days_ago": "{{days}} 天"
   },
   "test": {
     "not_available": "目前没有任何测试",
@@ -337,7 +339,11 @@
     "latency_failed": "延迟测试失败，因此无法测出速度。",
     "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",
     "no_measurement": "测速已结束，但未报告任何测量值。",
-    "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。"
+    "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。",
+    "stopped_by_shutdown": "由于 MySpeed 正在关闭，测速已停止。",
+    "stopped_by_signal": "测速在完成前被外部停止。",
+    "cli_missing": "无法安装测速程序，因此测速未执行。",
+    "interface_unusable": "配置的网络接口没有可用的地址，因此测速未执行。"
   },
   "statistics": {
     "average": "平均",
@@ -416,6 +422,8 @@
       "median": "中位数"
     },
     "failed_test": "失败的测试",
+    "failed_in_period": "此期间有 {{failed}} 次失败",
+    "failed_in_period_single": "此期间有 1 次失败",
     "hourly": {
       "title": "分时段速度",
       "sample_count": "测速"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "添加服务器",
+    "context_menu": "服务器操作",
     "create": "添加",
     "this_server": "该服务器",
     "created": "服务器已成功添加",

@@ -157,6 +157,7 @@
     "cron_title": "Estableix la freqüència de les proves",
     "cron_next_test": "Propera prova:",
     "custom_cron": "Expressió cron personalitzada",
+    "cron_help": "Ajuda amb la sintaxi cron",
     "schedule_offset": "Desplaçament de la programació",
     "schedule_offset_desc": "Afegeix un petit retard per evitar que les proves comencin en hores exactes",
     "pause_title": "Posa en pausa les proves de velocitat durant...",
@@ -274,7 +275,8 @@
     "hour": "1 hora",
     "hours": "{{hours}} hores",
     "day": "1 dia",
-    "days": "{{days}} dies"
+    "days": "{{days}} dies",
+    "days_ago": "{{days}} dies"
   },
   "test": {
     "not_available": "Ara mateix no hi ha cap prova disponible",
@@ -337,7 +339,11 @@
     "latency_failed": "La prova de latència ha fallat, així que no s'ha pogut mesurar cap velocitat.",
     "rate_limited": "El proveïdor ha rebutjat la prova perquè se n'han executat massa fa poc. La següent es retarda automàticament.",
     "no_measurement": "La prova ha acabat sense informar de cap mesura.",
-    "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat."
+    "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat.",
+    "stopped_by_shutdown": "La prova s'ha aturat perquè MySpeed s'estava tancant.",
+    "stopped_by_signal": "La prova s'ha aturat des de fora abans d'acabar.",
+    "cli_missing": "No s'ha pogut instal·lar el programa de mesura, així que la prova no s'ha executat.",
+    "interface_unusable": "La interfície de xarxa configurada no té cap adreça utilitzable, així que la prova no s'ha executat."
   },
   "statistics": {
     "average": "Mitjana",
@@ -416,6 +422,8 @@
       "median": "Mediana"
     },
     "failed_test": "Prova fallida",
+    "failed_in_period": "{{failed}} amb error en aquest període",
+    "failed_in_period_single": "1 amb error en aquest període",
     "hourly": {
       "title": "Velocitat per hora del dia",
       "sample_count": "Proves"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Afegeix un servidor",
+    "context_menu": "Accions del servidor",
     "create": "Afegeix",
     "this_server": "Aquest servidor",
     "created": "El servidor s'ha afegit correctament",

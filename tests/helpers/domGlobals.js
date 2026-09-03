@@ -67,14 +67,48 @@ if (!("AnimationEvent" in window)) {
     };
 }
 
+/**
+ * The observer jsdom does not implement, as the no-op it can honestly be here.
+ *
+ * useFitStages watches the toolbar to decide which of its controls still fit,
+ * and constructs one in a layout effect - so a page carrying a toolbar threw
+ * "ResizeObserver is not defined" the moment it mounted, before anything under
+ * it rendered. A stub rather than a shim with sizes in it, because jsdom lays
+ * nothing out: every box it would report is zero, and a fit decision taken from
+ * that would be fiction. Nothing is ever measured, so the stages stay where
+ * they start and the fitting itself remains the preview's to check.
+ */
+if (!("ResizeObserver" in window)) {
+    window.ResizeObserver = class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    };
+}
+
+// And the one TestArea watches its last row with, to page the next block in.
+// jsdom implements neither, and only a list long enough to have a last row
+// reaches it - so it went unnoticed until a test rendered a full page.
+//
+// Inert, like the one above: what it would do is fetch another page, and a test
+// that has not asked for one should not get one. A test that wants the paging
+// drives loadMoreTests itself.
+if (!("IntersectionObserver" in window)) {
+    window.IntersectionObserver = class IntersectionObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+    };
+}
+
 // Everything a component or React DOM reaches for as a bare global. Defined
 // rather than assigned, because node already owns a `navigator` and a
 // `localStorage` of its own on the global, and neither of them is jsdom's.
 for (const name of ["window", "document", "navigator", "localStorage", "sessionStorage",
     "HTMLElement", "HTMLInputElement", "HTMLButtonElement", "HTMLAnchorElement", "SVGElement",
     "Element", "Node", "Text", "DocumentFragment", "Event", "CustomEvent", "KeyboardEvent",
-    "MouseEvent", "FocusEvent", "InputEvent", "MutationObserver", "getComputedStyle",
-    "requestAnimationFrame", "cancelAnimationFrame"])
+    "MouseEvent", "FocusEvent", "InputEvent", "MutationObserver", "ResizeObserver", "IntersectionObserver",
+    "getComputedStyle", "requestAnimationFrame", "cancelAnimationFrame"])
     Object.defineProperty(globalThis, name, {value: window[name], configurable: true, writable: true});
 
 // What a browser hands an export: a URL for the blob it just built. jsdom

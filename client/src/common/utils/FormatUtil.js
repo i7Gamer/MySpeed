@@ -28,6 +28,55 @@ export const appLocale = () => i18n.language || undefined;
 
 const locale = appLocale;
 
+/** ISO numbering, which is what Intl's week info speaks: 1 Monday, 7 Sunday. */
+export const WEEK_STARTS_MONDAY = 1;
+export const WEEK_STARTS_SUNDAY = 7;
+
+/**
+ * The tags this interface ships whose readers start a week on Sunday, read
+ * out of the runtime's own week data: English, Indonesian, Japanese, Korean,
+ * Portuguese and Traditional Chinese. Mainland Chinese is not among them and
+ * neither is Irish, which both surprise, and which is the reason this is a
+ * transcription rather than a guess.
+ *
+ * Whole tags as well as bare languages, because zh-TW parts company with zh.
+ */
+const SUNDAY_FIRST = new Set(["en", "id", "ja", "ko", "pt", "zh-tw"]);
+
+/**
+ * Which day the reader's week begins on.
+ *
+ * The calendar was Monday-first for everybody: the grid was built from
+ * `day === 0 ? 6 : day - 1` and the weekday row was a fixed Mon-Sun list, so a
+ * reader in Tokyo or São Paulo got a month laid out the way Berlin reads it.
+ *
+ * Intl knows the answer per region, and knows it better than any table here
+ * can - en-GB starts on Monday where en-US starts on Sunday, and only the tag
+ * says which reader this is. It is spelled two ways though (a getWeekInfo()
+ * method in Chrome, a weekInfo property elsewhere) and missing altogether in
+ * some browsers, so the set above answers when the runtime will not. Monday is
+ * the fallback's fallback, which is what the calendar always did.
+ */
+export const firstWeekday = (localeTag = appLocale()) => {
+    const tag = String(localeTag ?? "");
+
+    try {
+        const parsed = new Intl.Locale(tag);
+        const info = parsed.getWeekInfo?.() ?? parsed.weekInfo;
+
+        if (Number.isInteger(info?.firstDay)) return info.firstDay;
+    } catch {
+        // An empty or malformed tag. The language below is still readable from
+        // it, and an unparseable tag has no region to be right about anyway.
+    }
+
+    const lowered = tag.toLowerCase();
+    const language = lowered.split(/[-_]/)[0];
+
+    return SUNDAY_FIRST.has(lowered) || SUNDAY_FIRST.has(language)
+        ? WEEK_STARTS_SUNDAY : WEEK_STARTS_MONDAY;
+};
+
 const toDate = (value) => {
     if (value instanceof Date) return value;
 
@@ -53,29 +102,6 @@ export const formatDay = (value) => {
 };
 
 /**
- * A calendar day without its year, for a label that has no room for one.
- *
- * The averaged rows in the test list used to build this by hand as `DD.MM` -
- * the last numeric date left in the interface, read as MM.DD by about half the
- * people who saw it. The month is named instead, which is unambiguous in every
- * locale; the year stays off because the list is already bounded by the range
- * the reader chose.
- *
- * Nothing calls this any more. Those averaged rows were its only caller, and
- * they have not been produced since listAverage left the speedtest controller
- * in June 2025; the overview row's dead branch on them was removed with this
- * note. Kept rather than deleted because it is an exported formatter with a
- * suite of its own - but it is dead weight until something wants a bare day
- * again, and worth removing if nothing does.
- */
-export const formatShortDay = (value) => {
-    const date = toDate(value);
-    if (isNaN(date.getTime())) return "";
-
-    return date.toLocaleDateString(locale(), {day: "2-digit", month: "short"});
-};
-
-/**
  * A month and its year, for the calendar's heading.
  *
  * Sits directly above weekday names that come from the translations, so a
@@ -92,8 +118,7 @@ export const formatMonth = (value) => {
 /**
  * A whole date with its weekday spelled out, for the date pill that floats over
  * the test list. The rows beneath it print a clock time, so the pill is the only
- * place the day itself is named - it used to share that job with formatShortDay
- * on the averaged rows, which is why both had to agree on a language.
+ * place the day itself is named at all.
  */
 export const formatFullDay = (value) => {
     const date = toDate(value);
@@ -232,6 +257,28 @@ export const roundsToZeroLatency = (ms) => {
     return latency !== null && latency > 0 && formatLatency(latency) === 0;
 };
 
+/** The smallest throughput wholeSpeed's whole-number rounding can express. */
+export const SPEED_STEP = 1;
+
+/**
+ * The identical question one column over, in whichever unit the reader sees:
+ * is this deviation real but too small for the collapsed card's whole-number
+ * rounding to show at all.
+ *
+ * wholeSpeed rounds the raw quotient to a whole number in the displayed unit,
+ * so a spread of 0.4 Mbps - or, in MB/s, of 3.9 Mbit/s, which converts to
+ * 0.4875 MB/s before it rounds - prints "±0" beside a consistency percentage
+ * that is nowhere near 100%. Defined below wholeSpeed and rawSpeed rather
+ * than beside them: both are read here by reference, and neither has to be
+ * hoisted above roundsToZeroLatency for that to be safe - nothing calls this
+ * before the module has finished loading.
+ */
+export const roundsToZeroSpeed = (mbps, preferences) => {
+    const speed = rawSpeed(mbps, preferences);
+
+    return typeof speed === "number" && speed > 0 && wholeSpeed(mbps, preferences) === 0;
+};
+
 const MBITS_PER_MBYTE = 8;
 
 /**
@@ -328,21 +375,34 @@ const JUST_NOW_SECONDS = 5;
  * a statement about the clock, which only the caller measuring from it can
  * make, and a three-second span is three seconds.
  */
-export const spanInWords = (seconds) => {
+/**
+ * The i18next context a span wears when it sits inside "… ago". Some
+ * languages inflect the unit there - German says "7 Tage" on its own and
+ * "vor 7 Tagen" behind "vor" - so a locale may carry a `_ago` variant of any
+ * unit key, and i18next falls back to the plain one where it does not.
+ */
+export const AGO_CONTEXT = "ago";
+
+// `options` is unpacked inside the body rather than destructured in the
+// signature: the suite reads functions through bodyOf(), which balances the
+// first brace after the declaration.
+export const spanInWords = (seconds, options = undefined) => {
+    const context = options?.context;
+
     if (seconds < SECONDS_PER_MINUTE) {
-        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}});
+        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}, context});
     } else if (seconds < SECONDS_PER_HOUR) {
         return Math.floor(seconds / SECONDS_PER_MINUTE) === 1
-            ? t("time.minute")
-            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}});
+            ? t("time.minute", {context})
+            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}, context});
     } else if (seconds < SECONDS_PER_DAY) {
         return Math.floor(seconds / SECONDS_PER_HOUR) === 1
-            ? t("time.hour")
-            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}});
+            ? t("time.hour", {context})
+            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}, context});
     }
 
     const days = Math.floor(seconds / SECONDS_PER_DAY);
-    return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
+    return days === 1 ? t("time.day", {context}) : t("time.days", {replace: {days: days}, context});
 };
 
 /**
@@ -366,7 +426,10 @@ export function generateRelativeTime(created) {
         return t("time.now");
     }
 
-    return spanInWords(diff);
+    // Every caller puts this behind "ago" - the status bar's "Last test … ago",
+    // the integration card's "Last run before …" - so the span wears that
+    // context, and a language that inflects the unit there gets its case.
+    return spanInWords(diff, {context: AGO_CONTEXT});
 }
 
 /**

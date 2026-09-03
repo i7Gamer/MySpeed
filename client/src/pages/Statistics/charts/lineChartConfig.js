@@ -290,6 +290,17 @@ export const seriesAverage = (values) => {
 /** A failure sits on the axis (0); everything else stays off the series (null). */
 export const failureMarkers = (failed) => failed.map((isFailed) => isFailed ? 0 : null);
 
+// The components a colour states before its alpha. A 4- or 8-digit hex and a
+// slash-form functional notation both append one, and the alpha this function
+// is asked for replaces it rather than sitting behind it - two alphas is not a
+// colour any canvas would take.
+const COLOUR_COMPONENTS = 3;
+
+// Up to this many digits a hex spells each component as one digit and doubles
+// it; beyond it, as a pair. Four and eight are the same two forms carrying an
+// alpha digit or pair on the end.
+const SHORTHAND_HEX_DIGITS = 4;
+
 /**
  * A colour at an alpha, whatever notation it arrived in.
  *
@@ -300,14 +311,27 @@ export const failureMarkers = (failed) => failed.map((isFailed) => isFailed ? 0 
  * was declared as. The replace would have found nothing to replace and handed
  * `#0891b2` back unchanged for both stops of a gradient, drawing a flat fill at
  * full opacity over the chart below it.
+ *
+ * "Whatever notation it arrived in" means the notations a stylesheet in this
+ * repo can hand it: hex in three, four, six or eight digits, and hsl()/rgb() in
+ * either separator. Deliberately not CSS Color 4's wider grammar - `none` as a
+ * component, color(), lab(), a colour named in words - none of which the
+ * palette authors and each of which would want a parser rather than a pattern.
+ * They fall through to the last line and are returned unchanged, which draws
+ * the flat opaque fill this function exists to avoid rather than throwing.
  */
 export const withAlpha = (color, alpha) => {
-    const hex = /^#([\da-f]{3}|[\da-f]{6})$/i.exec(String(color).trim());
+    // Four digits and eight are the alpha-carrying spellings of the three and
+    // the six. They were not accepted at all, so `#0891b2ff` fell past every
+    // branch and came back unchanged - both stops of a gradient at full opacity.
+    const hex = /^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.exec(String(color).trim());
 
     if (hex) {
-        const pairs = hex[1].length === 3 ? [...hex[1]].map((digit) => digit + digit) : hex[1].match(/../g);
+        const pairs = hex[1].length <= SHORTHAND_HEX_DIGITS
+            ? [...hex[1]].map((digit) => digit + digit)
+            : hex[1].match(/../g);
 
-        return `rgba(${pairs.map((pair) => parseInt(pair, 16)).join(", ")}, ${alpha})`;
+        return `rgba(${pairs.slice(0, COLOUR_COMPONENTS).map((pair) => parseInt(pair, 16)).join(", ")}, ${alpha})`;
     }
 
     // The a-form of whichever function it is. Sliced to three arguments so a
@@ -323,7 +347,13 @@ export const withAlpha = (color, alpha) => {
     const functional = /^(hsl|rgb)a?\((.+)\)$/i.exec(String(color).trim());
 
     if (functional) {
-        const parts = functional[2].split(/[,\s/]+/).slice(0, 3).map((part) => part.trim());
+        // Trimmed before the split, not after it. Outside the parentheses the
+        // trim tidied the whole result and not the components, so the padding a
+        // stylesheet is free to write - `rgb( 8, 145, 178 )`, which
+        // getComputedStyle hands back on a custom property verbatim - opened
+        // the split with an empty token and produced `rgba(, 8, 145, 0.25)`:
+        // the same thrown SyntaxError, through a different door.
+        const parts = functional[2].trim().split(/[,\s/]+/).slice(0, COLOUR_COMPONENTS);
 
         return `${functional[1].toLowerCase()}a(${parts.join(", ")}, ${alpha})`;
     }
@@ -396,18 +426,22 @@ const maxTicksFor = (isSingleDay) => isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_
 /**
  * The whole options object of a statistics line chart.
  *
- * @param themeColors from chartThemeColors
- * @param labels      the ISO timestamps under the points
- * @param errors      per-point error text, for the tooltip of a failure
- * @param isSingleDay from isSingleDaySeries, decides the tick format
- * @param pointStyle  from pointStyleFor - the density-aware marker size
- * @param lineTension from lineTensionFor
- * @param use12h      the stored clock preference
- * @param valueUnit   appended to every tooltip value line
- * @param yStepSize   optional fixed y-tick step (the speed charts use 100)
+ * @param themeColors  from chartThemeColors
+ * @param labels       the ISO timestamps under the points
+ * @param errors       per-point error text, for the tooltip of a failure
+ * @param failedCounts per-point count of a downsampled bucket's own mixed
+ *                      failures, from server/util/statistics.js - undefined
+ *                      wholesale on a node too old to send one, in which case
+ *                      the tooltip reads errors exactly as it always has
+ * @param isSingleDay  from isSingleDaySeries, decides the tick format
+ * @param pointStyle   from pointStyleFor - the density-aware marker size
+ * @param lineTension  from lineTensionFor
+ * @param use12h       the stored clock preference
+ * @param valueUnit    appended to every tooltip value line
+ * @param yStepSize    optional fixed y-tick step (the speed charts use 100)
  */
 export const lineChartOptions = ({
-    themeColors, labels, errors, isSingleDay,
+    themeColors, labels, errors, failedCounts, isSingleDay,
     pointStyle, lineTension, use12h, valueUnit, yStepSize
 }) => ({
     responsive: true,
@@ -455,6 +489,53 @@ export const lineChartOptions = ({
                 },
                 label: (item) => {
                     if (item.dataset.label === t("statistics.failed_test")) {
+                        /*
+                         * The counted, localisable wording first: a current
+                         * server sends failedCounts beside errors so the
+                         * tooltip can compose the sentence itself from
+                         * statistics.failed_in_period instead of printing the
+                         * English one the server used to build inline.
+                         *
+                         * A number, not merely defined - a proxied node old
+                         * enough to have never learned failedCounts leaves the
+                         * whole array undefined, so every index reads
+                         * undefined here too, and a point this array knows
+                         * nothing about (the joined-all-failed-messages shape)
+                         * is null rather than a count. Either way this falls
+                         * through to errors below, which is exactly where
+                         * both cases were already handled.
+                         */
+                        const failedCount = failedCounts?.[item.dataIndex];
+                        if (typeof failedCount === "number") {
+                            /*
+                             * One is its own sentence, the way every other
+                             * counted phrase in this client is. A single
+                             * form filled with "1" reads correctly in
+                             * English and wrongly in the languages that
+                             * inflect the noun with the number: "1
+                             * nieudanych" is a plural ending on a singular
+                             * count. Two keys, chosen here, which is what
+                             * the `_ago` context and time.minute/minutes
+                             * each do.
+                             *
+                             * Two is what those languages need and not what
+                             * they have. Polish, Czech and Ukrainian take a
+                             * third form for 2-4 ("2 nieudane"), and Russian
+                             * and Ukrainian want the singular again at 21 and
+                             * 31 - so this is right for one and for five
+                             * upwards, and wrong in the middle. Covering it
+                             * properly means i18next's own plural suffixes
+                             * with a `count`, which give each language a
+                             * different set of keys and so cannot pass the
+                             * parity test that requires every key in every
+                             * file. That trade is written up in the register
+                             * rather than made here.
+                             */
+                            return `${t("statistics.failed_test")}: ` + (failedCount === 1
+                                ? t("statistics.failed_in_period_single")
+                                : t("statistics.failed_in_period", {failed: failedCount}));
+                        }
+
                         const error = errors[item.dataIndex];
                         return error ? `${t("statistics.failed_test")}: ${error}` : t("statistics.failed_test");
                     }

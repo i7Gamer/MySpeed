@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { resolveInterfaces, externalAddresses, preferAnswered } from "../../server/util/loadInterfaces.js";
-import { bodyIn } from "../helpers/source.js";
+import { bodyIn, readSource } from "../helpers/source.js";
 
 /**
  * The interface map is module state that the hourly sweep refreshes, and it
@@ -146,6 +146,18 @@ describe("preferAnswered", () => {
  */
 describe("the hourly refresh", () => {
     const requestInterfaces = bodyIn("server/util/loadInterfaces.js", "export const requestInterfaces");
+
+    // The config read and write at the end of a refresh can reject on a
+    // database outage. The retention sweep on the line below already says
+    // what failed; this one reached the process-level hook and was logged as
+    // a bare server fault naming nothing.
+    it("names its own failure when the interval run rejects", () => {
+        const source = readSource("server/index.js");
+        const line = source.split("\n").find((candidate) => candidate.includes("setInterval(() => requestInterfaces()"));
+
+        assert.ok(line, "the refresh is no longer scheduled from index.js");
+        assert.match(line, /\.catch\(/, "a refresh that rejects is logged as a bare server fault");
+    });
 
     it("admits the adapters the probe could not vouch for", () => {
         assert.match(requestInterfaces, /externalAddresses\(interfacesNode\)/,

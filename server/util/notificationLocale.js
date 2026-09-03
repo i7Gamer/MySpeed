@@ -79,9 +79,19 @@ try {
  * where the code runs from source - the image copies the build alone, the
  * binary carries the embed alone - so preferring it changes nothing anywhere
  * else.
+ *
+ * The build is looked for twice, beside this file and beside the process. The
+ * source archive ships `build`, `server` and a package.json side by side, and
+ * a service unit or a shell that starts the server from somewhere other than
+ * that directory - which is the ordinary way an init system starts anything -
+ * leaves the working directory pointing elsewhere entirely. Anchored to ROOT
+ * the build is found wherever the release was unpacked; the working directory
+ * stays in the list because the image's own layout is exactly that, a ./build
+ * beside the process rather than beside the server tree.
  */
 const DIRECTORIES = [
     path.join(ROOT, "client", "public", ...LOCALES_PATH),
+    path.join(ROOT, "build", ...LOCALES_PATH),
     path.join(process.cwd(), "build", ...LOCALES_PATH)
 ];
 
@@ -96,13 +106,26 @@ const localeFileName = (code) => `${code}${LOCALE_EXTENSION}`;
  * Exported for the test alone.
  */
 export const localeCodesIn = (directory) => {
-    if (!fs.existsSync(directory)) return null;
+    try {
+        if (!fs.existsSync(directory)) return null;
 
-    const codes = fs.readdirSync(directory)
-        .filter((name) => name.endsWith(LOCALE_EXTENSION))
-        .map((name) => name.slice(0, -LOCALE_EXTENSION.length));
+        const codes = fs.readdirSync(directory)
+            .filter((name) => name.endsWith(LOCALE_EXTENSION))
+            .map((name) => name.slice(0, -LOCALE_EXTENSION.length));
 
-    return codes.length > 0 ? codes : null;
+        return codes.length > 0 ? codes : null;
+    } catch {
+        /*
+         * A directory that cannot be listed is not this source either.
+         * existsSync answers true for one the process may not read, and for a
+         * plain file sitting where a directory was expected - so the throw
+         * came out of readdirSync, which runs while this module is still
+         * being evaluated. An ESM evaluation that throws takes every importer
+         * with it: the server did not start at all, over a locale directory
+         * whose only job is to supply the wording of a notification.
+         */
+        return null;
+    }
 };
 
 const embeddedLocalePrefix = `/${LOCALES_PATH.join("/")}/`;
@@ -128,7 +151,11 @@ const codesInEmbed = () => {
  * integration dialog's field definition is built from this once.
  */
 export const NOTIFICATION_LANGUAGES = (() => {
-    const codes = localeCodesIn(DIRECTORIES[0]) ?? localeCodesIn(DIRECTORIES[1]) ?? codesInEmbed() ?? [];
+    // The first directory that answers wins, and `??` short-circuits the call
+    // for the rest - the list is walked rather than spelled out, so a source
+    // added to DIRECTORIES is consulted without a second edit here.
+    const onDisk = DIRECTORIES.reduce((found, directory) => found ?? localeCodesIn(directory), null);
+    const codes = onDisk ?? codesInEmbed() ?? [];
     const sorted = codes.filter((code) => code !== DEFAULT_LANGUAGE).sort();
 
     return codes.includes(DEFAULT_LANGUAGE) ? [DEFAULT_LANGUAGE, ...sorted] : sorted;
@@ -195,13 +222,52 @@ const interpolate = (template, values) => template.replace(PLACEHOLDER, (whole, 
     Object.hasOwn(values, name) && values[name] !== undefined ? String(values[name]) : whole);
 
 /**
+ * The English phrases, as this module's own literal.
+ *
+ * Not a second catalog to maintain - the locale files stay the source every
+ * key is read from, and the test beside this one holds the two equal
+ * key-for-key so they cannot drift. This is the floor under them: when no
+ * source answers at all, every shipped template used to render as its own
+ * keys, so an operator whose instance could not find its locales was sent
+ * "finished:" and "target: WAN" instead of a notification. A source can fail
+ * to answer for reasons that are nobody's mistake - a release started from
+ * the wrong directory, a build directory left by an older version, a locale
+ * directory the service account cannot read - and a message written in keys
+ * is worse than one written in a language the reader did not pick.
+ *
+ * Exported for the test that pins it against en.json.
+ */
+export const ENGLISH_PHRASES = Object.freeze({
+    finished: "A speedtest is finished",
+    failed: "A speedtest has failed",
+    finished_subject: "MySpeed: speedtest finished",
+    failed_subject: "MySpeed: speedtest failed",
+    target: "Target",
+    ping: "Ping",
+    download: "Download",
+    upload: "Upload",
+    reason: "Reason",
+    metric_ping: "ping",
+    metric_download: "download",
+    metric_upload: "upload",
+    crossed_limits: "Crossed limits: {{clauses}}",
+    limit_over: "{{metric}} {{value}} {{unit}} over {{limit}}",
+    limit_under: "{{metric}} {{value}} {{unit}} under {{limit}}",
+    not_measured: "{{metric}} (not measured)",
+    below_usual: "Below its usual speed: {{crossings}} under",
+    shortfall: "{{metric}} {{shortfall}}%",
+    and: " and "
+});
+
+/**
  * One phrase, in the language asked for.
  *
  * Falls back one key at a time: a locale that has not caught up with a key
  * added later answers that key in English and the rest in its own, which is
- * how the interface's own strings behave. When even English lacks the key the
- * key itself is answered, so a missing string is visible in the message rather
- * than an empty line nobody can trace.
+ * how the interface's own strings behave. Then the literal above, for a key
+ * no source could answer at all. When even that lacks the key the key itself
+ * is answered, so a phrase asked for and never written is visible in the
+ * message rather than an empty line nobody can trace.
  *
  * @param language  a locale code, or anything falsy for the default
  * @param key       a key under the locale's `notification` section
@@ -209,7 +275,8 @@ const interpolate = (template, values) => template.replace(PLACEHOLDER, (whole, 
  */
 export const phrase = (language, key, values = {}) => {
     const own = sectionOf(language || DEFAULT_LANGUAGE)[key];
-    const template = typeof own === "string" ? own : sectionOf(DEFAULT_LANGUAGE)[key];
+    const english = typeof own === "string" ? own : sectionOf(DEFAULT_LANGUAGE)[key];
+    const template = typeof english === "string" ? english : ENGLISH_PHRASES[key];
 
     return interpolate(typeof template === "string" ? template : key, values);
 };

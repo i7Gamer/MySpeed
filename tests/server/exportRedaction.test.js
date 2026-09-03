@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, bodyOf } from "../helpers/source.js";
-import { withoutUrlCredentials } from "../../server/util/urlCredentials.js";
+import { REDACTED_URL, withoutUrlCredentials } from "../../server/util/urlCredentials.js";
 import { announcedValue } from "../../server/controller/config.js";
 
 /**
@@ -62,8 +62,8 @@ describe("withoutUrlCredentials", () => {
      * A value that will not parse is answered with, rather than dropped or
      * thrown over: an unparseable node URL is already stored on some instance -
      * an unbracketed IPv6 literal is the realistic way - and an export is not
-     * the place to discover it. It carries no userinfo a URL parser can find,
-     * so passing it through leaks nothing.
+     * the place to discover it. What it carries is another matter, and the
+     * describe below is about that.
      */
     it("hands back something it cannot parse", () => {
         assert.equal(withoutUrlCredentials("not a url"), "not a url");
@@ -133,6 +133,113 @@ describe("withoutUrlCredentials", () => {
 });
 
 /**
+ * And a credential does not stop being one for living inside a URL the parser
+ * refuses.
+ *
+ * This branch used to hand the value straight back, on a docstring that said it
+ * "carries no userinfo a parser could find, so passing it through leaks
+ * nothing". The first half is true and the second does not follow: a parser
+ * cannot find it, and the credential is still in the text - which is the thing
+ * that leaves.
+ *
+ * Where it leaves to is the reason this is not merely untidy. Gotify's and
+ * influxdb's `url` fields are not `secret: true` and use the same permissive
+ * /^https?:\/\/\S+$/, so `withoutSecrets` never blanks them and this function is
+ * the whole of what protects them - and `withoutSecrets` answers an untrusted
+ * reader at routes/integrations.js as well as building the export stamped
+ * `secretsRedacted: true`. So `http://myspeed:hunter2@fd00::1:8086` - an
+ * unbracketed IPv6 literal with basic auth, which is exactly the way this
+ * module's own docstring says an unparseable URL comes to be stored - went to a
+ * demo instance's visitor and into the backup people attach to bug reports.
+ */
+describe("withoutUrlCredentials on a URL that will not parse", () => {
+    // Each of these throws in `new URL`, which is what makes them this
+    // describe's business rather than the one above's.
+    const UNPARSEABLE = [
+        "http://admin:hunter2@fd00::1:5216",
+        "http://myspeed:hunter2@fd00::1:8086",
+        "https://user:s3cret@2001:db8::1/webhook/x",
+        "https://u:p@n8n.example.com:84433/webhook/2f8c1e",
+        "http://admin:hunt@er2@fd00::1:5216"
+    ];
+
+    it("is the branch these actually take", () => {
+        for (const url of UNPARSEABLE)
+            assert.throws(() => new URL(url), `${url} parses, so it never reaches the branch under test`);
+    });
+
+    // The two typos that get an unparseable URL stored in the first place: a
+    // host written without its brackets, and a port outside the range.
+    it("strips userinfo from an unbracketed IPv6 literal", () => {
+        assert.equal(withoutUrlCredentials("http://admin:hunter2@fd00::1:5216"), "http://fd00::1:5216");
+        assert.equal(withoutUrlCredentials("http://myspeed:hunter2@fd00::1:8086"), "http://fd00::1:8086");
+    });
+
+    it("strips it from an out-of-range port, and keeps the path", () => {
+        assert.equal(withoutUrlCredentials("https://u:p@n8n.example.com:84433/webhook/2f8c1e"),
+            "https://n8n.example.com:84433/webhook/2f8c1e");
+    });
+
+    // The last @, because a password is allowed to contain one - the same rule
+    // the parseable walk follows, for the same reason.
+    it("strips a password that carries an at sign", () => {
+        assert.equal(withoutUrlCredentials("http://admin:hunt@er2@fd00::1:5216"), "http://fd00::1:5216");
+    });
+
+    /**
+     * And an address with no credential in it comes back byte for byte, which
+     * is what keeps a restore honest: the unparseable URL an instance already
+     * stores is not something the export gets to quietly rewrite.
+     */
+    it("leaves an unparseable URL that carries no credential exactly as it was", () => {
+        for (const url of ["http://fd00::1:8086/write", "https://2001:db8::1/ping/1c0e3a9f", "http://host:PORT/"])
+            assert.equal(withoutUrlCredentials(url), url);
+    });
+
+    /**
+     * Where the walk cannot vouch for its answer, the answer is a placeholder.
+     *
+     * The parseable path re-parses what the surgery produced and holds it
+     * against what went in; there is no parse to appeal to here, so the guard
+     * has to be textual too: every "@" the value carries has to fall inside the
+     * authority the walk found. One that does not means the walk and the
+     * credential disagree about where the authority ended - `user:pa/ss@host`
+     * is a password with a slash in it to the person who typed it and a host of
+     * `user:pa` to the walk - and the safe answer to a disagreement is to drop
+     * the value. A placeholder is useless to a restore; a credential handed to
+     * a stranger is worse.
+     */
+    it("drops a value whose at signs the walk cannot place", () => {
+        assert.equal(withoutUrlCredentials("http://user:pa/ss@fd00::1:8086/write"), REDACTED_URL);
+        assert.equal(withoutUrlCredentials("http://admin:pw@fd00::1:5216\\@good.com/"), REDACTED_URL);
+    });
+
+    /**
+     * The general form, and the one that actually holds this closed: whatever
+     * comes back out of the unparseable branch carries no "@" at all. Userinfo
+     * is by definition the text before one, so a value with none has none - no
+     * case analysis needed, and no fixture list that the next spelling can slip
+     * past.
+     */
+    it("never answers with anything that could still hold userinfo", () => {
+        const values = [
+            ...UNPARSEABLE,
+            "http://user:pa/ss@fd00::1:8086/write",
+            "http://admin:pw@fd00::1:5216\\@good.com/",
+            "http://fd00::1:8086/write?to=a@b.com"
+        ];
+
+        for (const value of values) {
+            const redacted = withoutUrlCredentials(value);
+
+            assert.doesNotMatch(redacted, /@/, `${value} came back with an at sign still in it`);
+            assert.doesNotMatch(redacted, /hunter2|s3cret|hunt@er2|:p@|:pw@|pa\/ss/,
+                `${value} came back with its credential`);
+        }
+    });
+});
+
+/**
  * And the export applies it - to the nodes, and to the one config value that is
  * a URL an operator can put a credential in.
  *
@@ -140,6 +247,50 @@ describe("withoutUrlCredentials", () => {
  * withholds it from a reader who is not the operator - so the redacted backup
  * was handing out a value the live API refuses to that same caller.
  */
+/**
+ * Not every string this touches is a URL, and the ones that are not must come
+ * back exactly as they went in.
+ *
+ * withoutSecrets runs this over *every* remaining string field of every
+ * integration - deliberately, so the next integration with an endpoint does not
+ * have to be remembered there - and several of those fields are free text that
+ * is not secret: an e-mail subject, a Discord display name, a Gotify title. An
+ * "@" is ordinary in all of them. The walk that redacts an unparseable URL will
+ * happily read "Alerts@office" as userinfo on a host called "office", so the
+ * unparseable branch is gated on the value looking like one of the schemes this
+ * app actually stores credentials in.
+ *
+ * The cost of getting this wrong is not cosmetic: withoutSecrets answers an
+ * untrusted reader and builds the export a restore reads back, so a subject
+ * line that lost its first half would be restored that way.
+ */
+describe("withoutUrlCredentials on something that is not a URL", () => {
+    const UNTOUCHED = [
+        "MySpeed @ home: test failed",
+        "Alerts@office",
+        "Report: results @ noon",
+        "notify@myspeed",
+        "alerts@example.com",
+        "Company Alerts <alerts@example.com>",
+        "ops+myspeed@example.org",
+        "a plain subject line",
+        "myspeed/tests",
+        "#alerts"
+    ];
+
+    for (const value of UNTOUCHED)
+        it(`hands back ${JSON.stringify(value)} unchanged`, () => {
+            assert.equal(withoutUrlCredentials(value), value);
+        });
+
+    // The gate is the scheme, not the "@": a real credential in a real URL is
+    // still redacted, parseable or not.
+    it("still redacts the schemes it is for", () => {
+        assert.equal(withoutUrlCredentials("http://admin:hunter2@fd00::1:5216"), "http://fd00::1:5216");
+        assert.equal(withoutUrlCredentials("http://admin:hunter2@node.lan:5216"), "http://node.lan:5216");
+    });
+});
+
 describe("the redacted export", () => {
     const source = readSource("server/controller/config.js");
 

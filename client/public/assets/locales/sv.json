@@ -157,6 +157,7 @@
     "cron_title": "Ange testfrekvens",
     "cron_next_test": "Nästa test:",
     "custom_cron": "Eget cron-uttryck",
+    "cron_help": "Hjälp med cron-syntax",
     "schedule_offset": "Förskjut schemat",
     "schedule_offset_desc": "Lägger till en liten fördröjning så att tester inte startar på exakta klockslag",
     "pause_title": "Pausa hastighetstester i...",
@@ -274,7 +275,8 @@
     "hour": "1 timme",
     "hours": "{{hours}} timmar",
     "day": "1 dag",
-    "days": "{{days}} dagar"
+    "days": "{{days}} dagar",
+    "days_ago": "{{days}} dagar"
   },
   "test": {
     "not_available": "Det finns inga tester just nu",
@@ -337,7 +339,11 @@
     "latency_failed": "Latenstestet misslyckades, så ingen hastighet kunde mätas.",
     "rate_limited": "Leverantören nekade testet eftersom för många har körts nyligen. Nästa test fördröjs automatiskt.",
     "no_measurement": "Testet avslutades utan att rapportera något mätvärde.",
-    "impossible_measurement": "Testet rapporterade ett mätvärde som inte kan stämma, så det förkastades."
+    "impossible_measurement": "Testet rapporterade ett mätvärde som inte kan stämma, så det förkastades.",
+    "stopped_by_shutdown": "Testet stoppades eftersom MySpeed höll på att avslutas.",
+    "stopped_by_signal": "Testet stoppades utifrån innan det blev klart.",
+    "cli_missing": "Mätprogrammet kunde inte installeras, så testet kördes inte.",
+    "interface_unusable": "Det valda nätverksgränssnittet har ingen användbar adress, så testet kördes inte."
   },
   "statistics": {
     "average": "Genomsnitt",
@@ -416,6 +422,8 @@
       "median": "Median"
     },
     "failed_test": "Misslyckat test",
+    "failed_in_period": "{{failed}} misslyckades under denna period",
+    "failed_in_period_single": "1 misslyckades under denna period",
     "hourly": {
       "title": "Hastighet efter tid på dygnet",
       "sample_count": "Tester"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Lägg till server",
+    "context_menu": "Serveråtgärder",
     "create": "Lägg till",
     "this_server": "Den här servern",
     "created": "Servern har lagts till",

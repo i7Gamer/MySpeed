@@ -30,10 +30,32 @@ const TEMPORARY_REDIRECT = 307;
 
 const isEnabled = () => process.env.HTTPS_REDIRECT !== "false" && isHttpsListening();
 
+/**
+ * A host this middleware is willing to write into a Location.
+ *
+ * The target has to carry the name the caller asked for - one instance answers
+ * on several, and rewriting the host would send every reader to whichever one
+ * the operator happened to configure - but the name comes from the Host header,
+ * which is whatever the caller wrote, and it is pasted into a URL. A header of
+ * `myspeed.example@attacker.example` is read by a browser as userinfo followed
+ * by a host: the instance answered a plain request by sending its reader to
+ * somebody else's server, with its own name still at the front of the URL to
+ * make the trip look right.
+ *
+ * So: letters, digits, dots and hyphens, or the bracketed IPv6 literal express
+ * hands back with its brackets still on. Everything a URL parser splits on -
+ * `@`, `/`, `\`, `?`, `#`, a space - is refused, and a request wearing one is
+ * served over plain HTTP instead of redirected, which is what it was already
+ * getting.
+ */
+const REDIRECTABLE_HOST = /^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+])$/;
+
 export default ({enabled = isEnabled, port = () => httpsPort} = {}) => (req, res, next) => {
     // Evaluated per request, not once at startup: the listener may not have
     // come up yet when the middleware stack is built, and it can fail later.
     if (!enabled() || req.secure || isLoopbackRequest(req)) return next();
+
+    if (!REDIRECTABLE_HOST.test(String(req.hostname ?? ""))) return next();
 
     res.setHeader("Cache-Control", "no-store");
     return res.redirect(TEMPORARY_REDIRECT, `https://${req.hostname}:${port()}${req.originalUrl}`);

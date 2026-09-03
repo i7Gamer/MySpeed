@@ -384,7 +384,25 @@ export const Statistics = () => {
                 console.error("Failed to load the recent tests:", tests.reason);
 
             startTransition(() => {
-                setStatistics(stats.value);
+                /*
+                 * Tagged with whether the request that fetched it asked for a
+                 * comparison at all, the way compareStats stores the key its
+                 * figures answer for.
+                 *
+                 * Because the page never clears `statistics` on a range change:
+                 * from choosing a bounded range until its answer lands, what is
+                 * on screen is the previous range's payload. Coming from all
+                 * time that payload has no `previous` key - all time asks for
+                 * no comparison - and the sentence below that reads a missing
+                 * key as "this node is too old" accused every current server of
+                 * it, for as long as the second request took.
+                 *
+                 * `dateRange` here is the one this callback was built with, not
+                 * whatever the toolbar says by the time the answer arrives:
+                 * updateStats is rebuilt per range, so the tag belongs to the
+                 * request rather than to the moment it finished.
+                 */
+                setStatistics(stats.value && {...stats.value, askedCompare: Boolean(dateRange)});
                 setRecentTests(tests.status === "fulfilled" && Array.isArray(tests.value) ? tests.value : []);
                 setLoading(false);
             });
@@ -663,9 +681,20 @@ export const Statistics = () => {
                 `=== undefined`, not falsy: null is a current server saying
                 "nothing to compare against", which stays silent on purpose -
                 nothing has elapsed and the heading already names the range.
-                Absent is a server that never understood the question. All time
-                sends no comparison and gates itself out through dateRange. */}
-            {dateRange && deferredStatistics && previousWindow === undefined && (
+                Absent is a server that never understood the question.
+
+                Asked of the payload's own tag rather than of the range the
+                toolbar currently shows. `statistics` is never cleared on a
+                range change, so between choosing a bounded range and its
+                answer arriving this read the all-time payload still on screen
+                - which has no `previous` key because all time asks for no
+                comparison - and every current server accused itself of being
+                too old for as long as the request took. askedCompare travels
+                with the answer, so a payload fetched without a comparison
+                cannot be mistaken for one that asked and was ignored. It also
+                answers for the range on its own: an all-time payload is never
+                tagged, and the row around this only exists for a bounded one. */}
+            {deferredStatistics?.askedCompare && previousWindow === undefined && (
                 <p className="statistics-compare-note">
                     {t("statistics.compare.unsupported")}
                 </p>
@@ -772,11 +801,11 @@ export const Statistics = () => {
                                          ranges={{download: deferredStatistics.download, upload: deferredStatistics.upload,
                                              ping: deferredStatistics.ping, jitter: deferredStatistics.jitter}}/>;
             case 'download':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={source.failed} errors={source.errors} failedCounts={source.failedCounts} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'upload':
-                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
+                return <SpeedChart labels={source.labels} data={source.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={source.failed} errors={source.errors} failedCounts={source.failedCounts} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints} />;
             case 'ping':
-                return <PingChart labels={source.labels} data={source.data} failed={source.failed} errors={source.errors} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints}/>;
+                return <PingChart labels={source.labels} data={source.data} failed={source.failed} errors={source.errors} failedCounts={source.failedCounts} downsampled={source.downsampled} dataPoints={source.dataPoints} rawDataPoints={source.rawDataPoints}/>;
             case 'hourly':
                 return <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages}/>;
             case 'avgDownload':
@@ -842,9 +871,9 @@ export const Statistics = () => {
                 other, naming different ones. Nothing else decides this - every
                 card takes the same share of the row - so the pairing is a
                 property of this order and statisticsReflow.test.js holds it. */}
-            <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('ping')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
-            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={deferredStatistics.failed} errors={deferredStatistics.errors} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
+            <PingChart labels={deferredStatistics.labels} data={deferredStatistics.data} failed={deferredStatistics.failed} errors={deferredStatistics.errors} failedCounts={deferredStatistics.failedCounts} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('ping')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="download" titleKey={CHART_MODAL_LABELS.download} failed={deferredStatistics.failed} errors={deferredStatistics.errors} failedCounts={deferredStatistics.failedCounts} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('download')} compact/>
+            <SpeedChart labels={deferredStatistics.labels} data={deferredStatistics.data} dataKey="upload" titleKey={CHART_MODAL_LABELS.upload} failed={deferredStatistics.failed} errors={deferredStatistics.errors} failedCounts={deferredStatistics.failedCounts} downsampled={deferredStatistics.downsampled} dataPoints={deferredStatistics.dataPoints} rawDataPoints={deferredStatistics.rawDataPoints} onClick={() => setExpandedChart('upload')} compact/>
 
             <HourlyChart hourlyAverages={deferredStatistics.hourlyAverages} onClick={() => setExpandedChart('hourly')}/>
 

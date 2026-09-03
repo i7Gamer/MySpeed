@@ -20,6 +20,7 @@ import * as pauseController from '../controller/pause.js';
 import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
+import { trackRound } from '../util/activeRound.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -432,8 +433,14 @@ export const create = async (type = "auto", targetId = undefined, options = unde
     }
     _isRunning = true;
 
+    // Tracked, so the shutdown can wait for the round and not only for the
+    // child measuring it: the row, the baseline keys and the recommendations
+    // are all written after the child has gone, through the handle that
+    // onCleanup closes - see util/activeRound.js.
+    const round = trackRound(executeRound(type, targetId));
+
     try {
-        return await executeRound(type, targetId);
+        return await round;
     } finally {
         // The one guarantee that the latch is dropped however this ends. It
         // used to be cleared only on the paths that were thought of, so a throw
@@ -1192,7 +1199,12 @@ const executeTarget = async (target, type, retried = false) => {
             downloadLatency: usableFigure(downloadLatency), uploadLatency: usableFigure(uploadLatency),
             isp, externalIp, provider, bytesDownloaded, bytesUploaded});
         console.log(`Test #${testResult.id}${target.name ? ` (${target.name})` : ""} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
-        createRecommendations().catch(err =>
+        // Awaited, so the write is inside the round the shutdown waits for; still
+        // contained, so a failed recommendation cannot fail the test it follows.
+        // A write that hangs holds the round's latch - and so does the
+        // tests.create above it, through the same connection, so this adds no
+        // exposure the row did not already carry.
+        await createRecommendations().catch(err =>
             console.error(`Could not update the recommendations: ${toErrorMessage(err)}`));
         // Everything the row records, not the five figures this used to send:
         // a webhook is how MySpeed feeds anything else, and a consumer that
@@ -1227,7 +1239,7 @@ const executeTarget = async (target, type, retried = false) => {
         // that failed once and then measured reports the measurement.
         return {failed: false};
     } catch (e) {
-        console.log(e)
+        console.error(e);
 
         // A thrown string or a plain object has no `message`, and storing
         // undefined writes NULL - which marks the row as *successful* and lets

@@ -129,48 +129,63 @@ const PATTERNS = [
  * and the reason it is allowed there. An entry names one construct - the
  * honesty check below fails an entry that stops matching, and one whose
  * pattern covers a second flagged line is a file-wide skip in narrow clothes.
+ *
+ * A file may carry more than one entry - each is still one construct with its
+ * own reason, checked against the file's flagged lines independently. That is
+ * deliberately not the same thing as widening one entry's pattern to reach a
+ * second line: a wider pattern would go on matching whatever lands on that
+ * line next, where a second named entry only ever excuses the one construct
+ * it names.
  */
 const ALLOWED = new Map([
-    ["common/utils/FormatUtil.js", {
+    ["common/utils/FormatUtil.js", [{
         pattern: /return figure === null \? NOT_MEASURED : `\$\{figure\}%`;/,
         reason: "the formatter the whole rule points at: formatPercent's own body is where the % is finally glued, "
             + "behind the refusal the rule exists to route values through"
-    }],
-    ["common/components/TargetsDialog/TargetEditor.jsx", {
+    }]],
+    ["common/components/TargetsDialog/TargetEditor.jsx", [{
         pattern: /\{label\} <span className="target-optimal-unit">/,
         reason: "a form field's caption beside the unit the field is asked in - a label, not a measurement"
-    }],
-    ["pages/Statistics/charts/HourlyChart.jsx", {
+    }]],
+    ["pages/Statistics/charts/HourlyChart.jsx", [{
         pattern: /\$\{item\.formattedValue\} \$\{speedUnit\}/,
         reason: "a Chart.js tooltip over the library's own formattedValue - no absent case reaches it"
-    }],
-    ["pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx", {
-        pattern: /±<\$\{LATENCY_STEP\} \$\{t\("latest\.ping_unit"\)\}/,
-        reason: "a module constant stating the display floor, not a stored figure"
-    }],
-    ["pages/Home/components/Speedtest/SpeedtestComponent.jsx", {
+    }]],
+    ["pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx", [
+        {
+            pattern: /±<\$\{LATENCY_STEP\} \$\{t\("latest\.ping_unit"\)\}/,
+            reason: "a module constant stating the display floor, not a stored figure"
+        },
+        {
+            pattern: /±<\$\{SPEED_STEP\} \$\{speedUnit\}/,
+            reason: "the throughput deviation's own display floor, printed only when roundsToZeroSpeed says "
+                + "wholeSpeed rounded a real spread away - the ping construct above, one column over, and a "
+                + "second module constant rather than the same one widened to cover a different line"
+        }
+    ]],
+    ["pages/Home/components/Speedtest/SpeedtestComponent.jsx", [{
         pattern: /`\$\{props\.packetLoss\}%`/,
         reason: "the loss chip prints its stored column raw by policy, behind a readableFigure gate that "
             + "overviewQuality.test.js executes across measured, text, placeholder and absent spellings"
-    }],
-    ["common/components/TestDetails/TestDetails.jsx", {
+    }]],
+    ["common/components/TestDetails/TestDetails.jsx", [{
         pattern: /const lossText = `\$\{test\.packetLoss\}%`;/,
         reason: "the pane's loss chip and its label share one glue site, same stored-column-raw policy behind "
             + "the same gate - one construct, which is all a file can be granted"
-    }],
-    ["common/components/IntegrationDialog/templateVariables.js", {
+    }]],
+    ["common/components/IntegrationDialog/templateVariables.js", [{
         pattern: /`%\$\{name\}%`/,
         reason: "not a percentage: the token's % signs are the delimiters the server substitutes on - "
             + "%ping% is a name, not a reading"
-    }],
-    ["pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx", {
+    }]],
+    ["pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx", [{
         pattern: /`\$\{props\.test\.packetLoss\}%`/,
         reason: "the card's loss row, same stored-column-raw policy behind the same gate"
-    }],
-    ["pages/Statistics/charts/OverviewChart/OverviewChart.jsx", {
+    }]],
+    ["pages/Statistics/charts/OverviewChart/OverviewChart.jsx", [{
         pattern: /`\$\{peak\.slowdown\}%`/,
         reason: "peakSlowdown computes the figure and the row is gated on it existing - no stored column involved"
-    }]
+    }]]
 ]);
 
 // The shared walk - .js as well as .jsx is its default, because a chart
@@ -214,16 +229,20 @@ const SPANNING_PATTERNS = PATTERNS.map(({form, pattern}) => ({
 }));
 
 const offenders = files.flatMap(({file, text}) => {
-    const allowed = ALLOWED.get(file);
+    const allowed = ALLOWED.get(file) ?? [];
 
     return flaggedIn({text})
-        .filter(({source}) => !allowed?.pattern.test(source))
+        .filter(({source}) => !allowed.some((grant) => grant.pattern.test(source)))
         .map((entry) => ({file, ...entry}));
 });
 
 describe("rendering a measurement next to its unit", () => {
     it("finds sources to check", () => {
-        assert.ok(files.length > 10, "the component scan found almost nothing - has the path moved?");
+        // The client has well over two hundred of these. Ten was a floor a
+        // scan reading one directory would clear, which is the failure it was
+        // meant to catch.
+        assert.ok(files.length > 150,
+            `the component scan found only ${files.length} sources - has the path moved?`);
     });
 
     /**
@@ -348,7 +367,7 @@ describe("rendering a measurement next to its unit", () => {
      * is dead weight.
      */
     it("keeps the allowed list honest", () => {
-        for (const [file, {pattern}] of ALLOWED) {
+        for (const [file, grants] of ALLOWED) {
             const source = files.find((entry) => entry.file === file);
             assert.ok(source, `${file} is no longer in the tree; drop it from ALLOWED`);
 
@@ -360,12 +379,15 @@ describe("rendering a measurement next to its unit", () => {
             // day one legitimately must, this widens deliberately.)
             const flagged = flaggedIn(source).map(({source: line}) => line);
 
-            // Exactly one, the -1 budget's rule: an entry names one
-            // construct, and a pattern covering a second flagged match is a
-            // file-wide skip wearing a narrow entry's clothes.
-            assert.equal(flagged.filter((line) => pattern.test(line)).length, 1,
-                `${file}'s exemption covers ${flagged.filter((line) => pattern.test(line)).length} flagged ` +
-                "matches where one construct was granted - drop the entry or narrow the pattern");
+            for (const {pattern} of grants) {
+                // Exactly one, the -1 budget's rule: an entry names one
+                // construct, and a pattern covering a second flagged match is
+                // a file-wide skip wearing a narrow entry's clothes - whether
+                // that entry is the only one for its file or one of several.
+                assert.equal(flagged.filter((line) => pattern.test(line)).length, 1,
+                    `${file}'s exemption covers ${flagged.filter((line) => pattern.test(line)).length} flagged ` +
+                    "matches where one construct was granted - drop the entry or narrow the pattern");
+            }
         }
     });
 

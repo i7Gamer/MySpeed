@@ -35,8 +35,13 @@ jobs:
       # Majors carry breaking changes that the suite cannot see - the action
       # bumps in this repository have needed their changelogs read by hand - so
       # they wait for a person.
+      # Base-image bumps wait too, whatever their size: nothing on a pull
+      # request builds the Dockerfile - test.yml never reads it, and
+      # build-docker.yml only runs from a release - so the first build of a
+      # new tag would be the release's own, the one job whose failure tears
+      # down a tag and a draft.
       - name: Enable auto-merge
-        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.metadata.outputs.package-ecosystem != 'docker'
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -47,6 +52,15 @@ jobs:
         run: |
           gh pr comment "$PR_URL" --body \
             "Tests pass, but this is a **major** version update, so it has not been auto-merged. Read the changelog for breaking changes before merging."
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Flag the base-image update for review
+        if: steps.metadata.outputs.package-ecosystem == 'docker' && steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: |
+          gh pr comment "$PR_URL" --body \
+            "Tests pass, but nothing here builds the Dockerfile, so this base-image update has not been auto-merged. Build the image once (\`docker build .\`) before merging."
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -128,7 +128,11 @@ export const sampleHandshake = ({host, port, localAddress, timeoutMs = LATENCY_T
         done(elapsed);
     });
 
-    socket.once("error", () => {
+    // on(), not once(): the first error settles the sample, and a second one
+    // - a reset during the teardown this handler starts - must find a
+    // listener too. An error nobody hears is thrown, and thrown from here
+    // reaches the process-level hook, which exits. done() is idempotent.
+    socket.on("error", () => {
         socket.destroy();
         done(null);
     });

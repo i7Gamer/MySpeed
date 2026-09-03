@@ -157,6 +157,7 @@
     "cron_title": "Angi testfrekvens",
     "cron_next_test": "Neste test:",
     "custom_cron": "Egendefinert cron-uttrykk",
+    "cron_help": "Hjelp til cron-syntaks",
     "schedule_offset": "Forskyv tidsplanen",
     "schedule_offset_desc": "Legger til en liten forsinkelse for å hindre at tester starter på nøyaktige tidspunkter",
     "pause_title": "Sett hastighetstester på pause i...",
@@ -274,7 +275,8 @@
     "hour": "1 time",
     "hours": "{{hours}} timer",
     "day": "1 dag",
-    "days": "{{days}} dager"
+    "days": "{{days}} dager",
+    "days_ago": "{{days}} dager"
   },
   "test": {
     "not_available": "Det er for øyeblikket ingen tester tilgjengelig",
@@ -337,7 +339,11 @@
     "latency_failed": "Forsinkelsestesten mislyktes, så ingen hastighet kunne måles.",
     "rate_limited": "Leverandøren avviste testen fordi det er kjørt for mange i det siste. Den neste utsettes automatisk.",
     "no_measurement": "Testen ble fullført uten å rapportere noen måling.",
-    "impossible_measurement": "Testen rapporterte en måling som ikke kan stemme, så den ble forkastet."
+    "impossible_measurement": "Testen rapporterte en måling som ikke kan stemme, så den ble forkastet.",
+    "stopped_by_shutdown": "Testen ble stoppet fordi MySpeed ble avsluttet.",
+    "stopped_by_signal": "Testen ble stoppet utenfra før den ble ferdig.",
+    "cli_missing": "Måleprogrammet kunne ikke installeres, så testen ble ikke kjørt.",
+    "interface_unusable": "Det valgte nettverksgrensesnittet har ingen brukbar adresse, så testen ble ikke kjørt."
   },
   "statistics": {
     "average": "Gjennomsnitt",
@@ -416,6 +422,8 @@
       "median": "Median"
     },
     "failed_test": "Mislykket test",
+    "failed_in_period": "{{failed}} mislyktes i denne perioden",
+    "failed_in_period_single": "1 mislyktes i denne perioden",
     "hourly": {
       "title": "Hastighet etter tid på døgnet",
       "sample_count": "Tester"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Legg til server",
+    "context_menu": "Serverhandlinger",
     "create": "Legg til",
     "this_server": "Denne serveren",
     "created": "Serveren er lagt til",

@@ -52,6 +52,68 @@ describe("an outbound call to an unparseable URL", () => {
         assert.match(logged[0], /fd00::1:8086/);
     });
 
+    /**
+     * And says only that much of it.
+     *
+     * The fallback used to be the whole string, which is the address for a
+     * webhook and the credential for three integrations: healthchecks.js,
+     * ntfy.js and webhook.js all declare their URL `secret: true`, and behind
+     * the loose /^https?:\/\/\S+$/ they satisfy, the secret is the path. Two
+     * ordinary typos put such a value in front of `new URL` and make it throw -
+     * a host written without its brackets, and a port outside the range - and
+     * for healthchecks the line repeats on every ping tick until somebody
+     * notices it in the log.
+     *
+     * So the report names the authority and stops there. It is the part that
+     * says which endpoint failed, and the only part an operator needs in order
+     * to go and look at it.
+     */
+    it("names the authority rather than the whole URL", async () => {
+        await postJson("https://hc.exam ple.net/ping/uuid", {});
+
+        assert.match(logged[0], /hc\.exam ple\.net/);
+        assert.doesNotMatch(logged[0], /ping/, "the secret path went into the log");
+    });
+
+    /**
+     * And the authority alone is not enough on its own, which is the half a
+     * first sketch of this got wrong: userinfo lives *in* the authority, so a
+     * report cut to it still carries the credential. It has to be cut past the
+     * last "@" as well.
+     */
+    it("never repeats the userinfo", async () => {
+        await postJson("https://user:s3cret@2001:db8::1/webhook/x", {});
+
+        assert.match(logged[0], /2001:db8::1/);
+        assert.doesNotMatch(logged[0], /s3cret/, "the credential went into the log");
+        assert.doesNotMatch(logged[0], /@/);
+    });
+
+    /**
+     * Where the walk cannot place every "@" the value carries, it says nothing
+     * about the address rather than guess: `user:pa/ss@host` is a password with
+     * a slash in it to whoever typed it and a host of `user:pa` to the walk,
+     * and with no parse to appeal to there is no telling the two apart. The
+     * failure is still reported - which integration and why - so nothing goes
+     * quiet; only the address it will not vouch for is withheld.
+     */
+    it("withholds an address it cannot vouch for, and still reports the failure", async () => {
+        await postJson("http://user:pa/ss@fd00::1:8086/write", {});
+
+        assert.equal(logged.length, 1);
+        assert.doesNotMatch(logged[0], /pa\/ss|user:pa/, "half the credential went into the log");
+        assert.match(logged[0], /failed/);
+    });
+
+    // An address with no credential at all is the ordinary case, and it still
+    // has to name something an operator can act on.
+    it("still names a URL that carries no credential", async () => {
+        await postJson("http://fd00::1:8086/write", {});
+
+        assert.match(logged[0], /fd00::1:8086/);
+        assert.doesNotMatch(logged[0], /write/, "the path went into the log");
+    });
+
     it("marks the integration as failed", async () => {
         let failed = null;
         await postJson("http://fd00::1:8086/write", {}, {activity: (error) => { failed = error; }});

@@ -5,8 +5,14 @@ import setupTelegram, { TELEGRAM_MESSAGE_LIMIT } from "../../server/integrations
 import setupGotify from "../../server/integrations/gotify.js";
 import setupPushover, { PUSHOVER_MESSAGE_LIMIT } from "../../server/integrations/pushover.js";
 import setupWebhook from "../../server/integrations/webhook.js";
+import setupEmail from "../../server/integrations/email.js";
+import { DEFAULT_LANGUAGE, plainDefaults } from "../../server/util/notificationLocale.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
+import setupNtfy from "../../server/integrations/ntfy.js";
+import {
+    MAX_OFFSET_MINUTES, localWallClock, serverZone, zoneFromOffset
+} from "../../server/util/timezone.js";
 import { readSource } from "../helpers/source.js";
 
 /**
@@ -55,7 +61,13 @@ const RESULT = {ping: 12, jitter: 2, download: 100, upload: 50};
  * notification could name the reason and nothing else.
  */
 const failure = (error) => ({error, id: 12, created: "2026-08-13T09:15:00.000Z", provider: "ookla"});
-const fire = (events, name, config, payload) => events[name]({data: config}, payload, () => {});
+
+// The zone is the fourth argument triggerEvent hands every callback, resolved
+// once per event from the stored timezone setting. Left off by every case that
+// does not care, which is also what an older caller does - and what
+// replaceVariables' own default then reads as the host clock.
+const fire = (events, name, config, payload, zone) =>
+    events[name]({data: config}, payload, () => {}, zone);
 
 describe("influxdb", () => {
     const config = {url: "http://influx.lan:8086", org: "o", bucket: "b", token: "t", host: "server1"};
@@ -92,6 +104,92 @@ describe("influxdb", () => {
     });
 
     /**
+     * Jitter was the one figure filled in with a zero, so the providers that
+     * do not measure it - LibreSpeed backends that report none, Cloudflare
+     * with too few latency samples, an iperf3 TCP run whose handshake spread
+     * could not be taken - charted a flat, perfect 0 ms line in Grafana
+     * instead of the gap that is the truth.
+     */
+    it("leaves out an unmeasured jitter rather than calling it zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, jitter: null});
+
+        const [written] = sent;
+        assert.match(written.body, /ping=12/);
+        assert.doesNotMatch(written.body, /jitter/);
+    });
+
+    // Zero is a measurement where the provider took one, and has to survive
+    // the same treatment absence gets.
+    it("writes a measured jitter of zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, jitter: 0});
+
+        assert.match(sent[0].body, /jitter=0/);
+    });
+
+    /**
+     * The one column where zero is the fabrication rather than the reading.
+     *
+     * parseCloudflare answers `round(avg_latency_ms) ?? 0` for a run whose
+     * latency block carried no average, and parseIperf3 does the same - a
+     * dual-stack endpoint measured over a pinned IPv4 interface stores it for
+     * the life of the target. The statistics draw a gap there and the alert
+     * gate refuses it, while this sink wrote `ping=0`: the same flat, perfect
+     * line the jitter fix above was cut for, one field over.
+     */
+    it("leaves out a latency nobody measured rather than writing it as zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: 0});
+
+        const [written] = sent;
+        assert.doesNotMatch(written.body, /ping=/);
+        assert.match(written.body, /download=100/, "the rest of a good row went with it");
+    });
+
+    // And the reading the comparison has to stay exact for: the column has held
+    // decimals since migration 0010, so a genuine sub-millisecond line arrives
+    // as the fraction it measured.
+    it("writes a real sub-millisecond latency", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: 0.24});
+
+        assert.match(sent[0].body, /ping=0\.24/);
+    });
+
+    /**
+     * A lone failure placeholder on a row that succeeded.
+     *
+     * isFailedTest asks whether all three required columns are -1, so
+     * {ping: -1, download: 480.2, upload: -1} is a success by that rule - the
+     * shape a hand-edited import produces - and the testFinished event goes out
+     * for it. Passed through, Influx charted an upload of minus one megabit.
+     */
+    it("leaves out a placeholder measurement on an otherwise successful row", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: -1, upload: -1});
+
+        const [written] = sent;
+        assert.match(written.body, /download=100/);
+        assert.doesNotMatch(written.body, /upload=/);
+        assert.doesNotMatch(written.body, /ping=/);
+    });
+
+    /**
+     * And the numeric-string spelling an imported history holds, which the
+     * field filter used to drop on the floor: buildLine keeps only what is
+     * already a number, so every measurement of such a row was lost to Influx
+     * while the statistics page charted them all.
+     */
+    it("writes a measurement stored as text", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, download: "480.2", jitter: "2.5"});
+
+        assert.match(sent[0].body, /download=480\.2/);
+        assert.match(sent[0].body, /jitter=2\.5/);
+    });
+
+    /**
      * Which member measured the point. Tags are what a series is grouped by,
      * so without them every target's points shared one series - a Grafana
      * panel averaging the WAN with the LAN box - and with precision=s, two
@@ -107,6 +205,21 @@ describe("influxdb", () => {
         assert.match(written.body, /,target=WAN\\ Box/);
         assert.match(written.body, /,targetId=3/);
         assert.match(written.body, /,provider=iperf3/);
+    });
+
+    /**
+     * The token is free text: it declares no regex, and a config import writes
+     * the field with no validation at all. A pasted credential carrying a stray
+     * newline or a character above U+00FF made fetch throw before the request
+     * left the process, so every point since was lost to a log line while the
+     * card went on showing the integration as configured.
+     */
+    it("sends despite a token carrying a character a header cannot hold", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", {...config, token: "tk—en\nx"}, RESULT);
+
+        assert.equal(sent.length, 1, "the whole write was lost to an unsendable header");
+        assert.equal(sent[0].headers["Authorization"], "Token tken x");
     });
 
     // A row from before targets existed carries nulls, and buildLine already
@@ -817,4 +930,249 @@ describe("the default templates", () => {
 
         assert.match(sent[0].body.embeds[0].description, /LAN Box/);
     });
+});
+
+/**
+ * The English the shipped templates are, written out.
+ *
+ * The words in them are no longer in the code: they come from the locale
+ * files, which translators edit through Crowdin, and English is one of the
+ * files that pipeline writes to. So the sentence an operator who edited
+ * nothing receives can now be changed by a translation round, in a file whose
+ * review is about fifteen other languages - and nothing anywhere said what it
+ * is meant to say. These eight strings are the fixture: a reword of an English
+ * phrase fails here and is read as the deliberate change it has to be, rather
+ * than shipping as a surprise.
+ *
+ * Rendered rather than read out of the source, because rendering is what has
+ * to keep working: the phrase lookup, the fallbacks under it, and the
+ * %variables% the template keeps for the sender. Fired with no payload at all,
+ * so every %variable% is left standing the way replaceVariables leaves one it
+ * was given nothing for - what is left is exactly the template.
+ *
+ * The plain trio is pinned at its shared source. gotify, ntfy and pushover
+ * carry no markup, so they take one pair between them from
+ * util/notificationLocale.js, and the describe above already holds each of
+ * them to it.
+ */
+describe("the English the default templates ship", () => {
+    const NO_PAYLOAD = {};
+
+    const telegramText = async (event, flag) => {
+        const {events} = load(setupTelegram);
+        await fire(events, event, {token: "1:t", chat_id: "42", [flag]: true}, NO_PAYLOAD);
+
+        // The last send, not the first: the recorder is reset per test and
+        // each of these fires both events.
+        return sent.at(-1).body.text;
+    };
+
+    const discordText = async (event, flag) => {
+        const {events} = load(setupDiscord);
+        await fire(events, event,
+            {url: "https://discord.com/api/webhooks/1/token", [flag]: true}, NO_PAYLOAD);
+
+        return sent.at(-1).body.embeds[0].description;
+    };
+
+    // Email speaks SMTP rather than HTTP, so the fetch recorder above cannot
+    // see it - the module takes its transport factory as a second argument and
+    // this hands in one that records instead of connecting.
+    const emailMail = async (event, flag) => {
+        const mail = [];
+        const events = {};
+        setupEmail((name, callback) => { events[name] = callback; },
+            () => ({sendMail: async (message) => { mail.push(message); return {accepted: []}; }}));
+
+        await fire(events, event, {host: "smtp.example.com", port: 587,
+            from: "myspeed@example.com", to: "ops@example.com", [flag]: true}, NO_PAYLOAD);
+
+        return mail[0];
+    };
+
+    it("writes telegram's pair", async () => {
+        assert.equal(await telegramText("testFinished", "send_finished"),
+            "✨ *A speedtest is finished*\n🎯 `Target`: %targetName%\n🏓 `Ping`: %ping% ms (±%jitter% ms)"
+            + "\n🔼 `Upload`: %upload% Mbps\n🔽 `Download`: %download% Mbps%alertSummary%");
+        assert.equal(await telegramText("testFailed", "send_failed"),
+            "❌ *A speedtest has failed*\n`Target`: %targetName%\n`Reason`: %error%");
+    });
+
+    it("writes discord's pair", async () => {
+        assert.equal(await discordText("testFinished", "send_finished"),
+            ":sparkles: **A speedtest is finished**\n > :dart: `Target`: %targetName%"
+            + "\n > :ping_pong: `Ping`: %ping% ms (±%jitter% ms)\n > :arrow_up: `Upload`: %upload% Mbps"
+            + "\n > :arrow_down: `Download`: %download% Mbps%alertSummary%");
+        assert.equal(await discordText("testFailed", "send_failed"),
+            ":x: **A speedtest has failed**\n > `Target`: %targetName%\n > `Reason`: %error%");
+    });
+
+    it("writes email's pair, and the subject over each of them", async () => {
+        const finished = await emailMail("testFinished", "send_finished");
+        assert.equal(finished.subject, "MySpeed: speedtest finished");
+        assert.equal(finished.text,
+            "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)"
+            + "\nDownload: %download% Mbps\nUpload: %upload% Mbps%alertSummary%");
+
+        const failed = await emailMail("testFailed", "send_failed");
+        assert.equal(failed.subject, "MySpeed: speedtest failed");
+        assert.equal(failed.text, "A speedtest has failed.\nTarget: %targetName%\nReason: %error%");
+    });
+
+    it("writes the pair the three plain-text notifiers share", () => {
+        assert.equal(plainDefaults(DEFAULT_LANGUAGE).finished,
+            "A speedtest is finished:\nTarget: %targetName%\nPing: %ping% ms (±%jitter% ms)"
+            + "\nUpload: %upload% Mbps\nDownload: %download% Mbps%alertSummary%");
+        assert.equal(plainDefaults(DEFAULT_LANGUAGE).failed,
+            "A speedtest has failed.\nTarget: %targetName%\nReason: %error%");
+    });
+
+    // The language nothing chose is the same one, and the same words: a row
+    // saved before the setting existed carries no language at all.
+    it("writes the same pair for a notifier that chose no language", () => {
+        assert.deepEqual(plainDefaults(undefined), plainDefaults(DEFAULT_LANGUAGE));
+    });
+});
+
+/**
+ * The clock every one of them writes on.
+ *
+ * The six %year% … %second% names were built from the process clock, while the
+ * schedule, the digests, the quiet hours and the /status countdown all resolve
+ * the stored `timezone` setting - which exists because the Docker image pins
+ * `ENV TZ=Etc/UTC`. So a Berlin instance sent "09:14" for a test that ran at
+ * 11:14, using a chip the notification dialog itself offers.
+ *
+ * The zone is resolved once per event by triggerEvent and handed to the
+ * callback as its fourth argument, so what is exercised here is the plumbing:
+ * every notifier that substitutes has to pass what it was handed through to
+ * replaceVariables, and six modules is six places for the next one to be missed.
+ */
+describe("the clock a notification is written on", () => {
+    const MINUTES_PER_HOUR = 60;
+    const SHIFT_HOURS = 6;
+    const TEMPLATE = "%hour%:%minute%";
+
+    const pad = (value) => String(value).padStart(2, "0");
+
+    /**
+     * A zone six hours from whatever this host's own is. Not a fixed named
+     * zone: on a machine already in that zone every case here would coincide
+     * with the default and assert nothing.
+     */
+    const elsewhere = () => {
+        const host = new Date().getTimezoneOffset();
+        const shift = SHIFT_HOURS * MINUTES_PER_HOUR;
+        const offset = Math.abs(host + shift) <= MAX_OFFSET_MINUTES ? host + shift : host - shift;
+
+        return zoneFromOffset(offset).zone;
+    };
+
+    // Read either side of the send, because the instant is replaceVariables'
+    // own: one reading taken before and one after cannot both be on the wrong
+    // side of a minute boundary, so accepting either is exact, not tolerant.
+    const clockOn = (zone) => {
+        const wall = localWallClock(zone, new Date());
+
+        return `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}`;
+    };
+
+    // Nodemailer is never reached: the module takes its transport factory as a
+    // second argument and this hands in a recorder, the way emailSends does.
+    let mail = [];
+
+    beforeEach(() => { mail = []; });
+
+    const notifiers = [
+        {
+            name: "discord",
+            setup: setupDiscord,
+            config: {url: "https://discord.com/api/webhooks/1/token", send_finished: true},
+            messageOf: () => sent[0].body.embeds[0].description
+        },
+        {
+            name: "telegram",
+            setup: setupTelegram,
+            config: {token: "1:abc", chat_id: "-100", send_finished: true},
+            messageOf: () => sent[0].body.text
+        },
+        {
+            name: "gotify",
+            setup: setupGotify,
+            config: {url: "https://gotify.example.net", key: "123456789012345", send_finished: true},
+            messageOf: () => sent[0].body.message
+        },
+        {
+            name: "ntfy",
+            setup: setupNtfy,
+            config: {url: "https://ntfy.example.net", topic: "myspeed", send_finished: true},
+            messageOf: () => sent[0].body
+        },
+        {
+            name: "pushover",
+            setup: setupPushover,
+            config: {token: "a".repeat(30), user_key: "b".repeat(30), send_finished: true},
+            messageOf: () => sent[0].body.message
+        },
+        {
+            name: "email",
+            setup: (register) => setupEmail(register, () => ({
+                sendMail: async (message) => { mail.push(message); return {accepted: [message.to]}; }
+            })),
+            config: {host: "smtp.example.com", port: 587, from: "myspeed@example.com",
+                to: "ops@example.com", send_finished: true},
+            messageOf: () => mail[0].text,
+            // The one notifier with a second substituting field. It goes
+            // through replaceVariables exactly as the body does and takes the
+            // zone as its own third argument, so it is its own way of losing
+            // it - and a subject reading the host's hour beside a body reading
+            // the configured one is the shape nobody would think to look for.
+            second: {what: "subject", field: "finished_subject", read: () => mail[0].subject}
+        }
+    ];
+
+    for (const {name, setup, config, messageOf, second} of notifiers) {
+        describe(name, () => {
+            const written = async (zone, field = "finished_message", read = messageOf) => {
+                const {events} = load(setup);
+                await fire(events, "testFinished", {...config, [field]: TEMPLATE}, RESULT, zone);
+
+                return read();
+            };
+
+            it("writes the hour of the zone the dispatcher resolved", async () => {
+                const zone = elsewhere();
+                const before = clockOn(zone);
+                const message = await written(zone);
+
+                assert.ok([before, clockOn(zone)].includes(message),
+                    `sent ${message} while that zone's clock read ${before}`);
+                assert.notEqual(message, clockOn(serverZone),
+                    "the zone was dropped on the way, so the message is on the host clock");
+            });
+
+            // The un-migrated shape, and what an older caller passes: the
+            // default is bit-identical to the host getters this replaced, so
+            // nothing changes for an instance that set no timezone.
+            it("falls back to the host clock when it is handed no zone", async () => {
+                const before = clockOn(serverZone);
+                const message = await written(undefined);
+
+                assert.ok([before, clockOn(serverZone)].includes(message));
+            });
+
+            if (second) {
+                it(`writes that zone's hour in the ${second.what} as well`, async () => {
+                    const zone = elsewhere();
+                    const before = clockOn(zone);
+                    const written2 = await written(zone, second.field, second.read);
+
+                    assert.ok([before, clockOn(zone)].includes(written2),
+                        `sent ${written2} while that zone's clock read ${before}`);
+                    assert.notEqual(written2, clockOn(serverZone),
+                        `the zone was dropped on the way to the ${second.what}, so it is on the host clock`);
+                });
+            }
+        });
+    }
 });

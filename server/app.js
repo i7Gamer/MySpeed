@@ -19,6 +19,7 @@ import targetsRoutes from './routes/targets.js';
 import systemRoutes from './routes/system.js';
 import storageRoutes, { isLargeBodyPath } from './routes/storage.js';
 import { isAssetPath } from './util/staticAssets.js';
+import { withBasePathMeta } from './util/indexMeta.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
@@ -172,7 +173,19 @@ app.use("/api/nodes", nodesRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/prometheus", prometheusRoutes);
 app.use('/api/opengraph', opengraphRoutes);
-app.use("/api*all", (req, res) => res.status(404).json({message: "Route not found"}));
+/*
+ * A plain prefix, and it has to stay one. `"/api*all"` needed the parameter to
+ * capture something, so it did not match the bare `/api`: GET /api fell past it
+ * into the SPA fallback below and came back as the dashboard with a 200, where
+ * every other unmatched /api/... earns this JSON 404, and POST /api matched
+ * nothing at all and got Express's own plain-text default. The string covers
+ * /api and everything under it, and drops the mirror-image over-match the
+ * pattern had at the other end - /apifoo is not an API path.
+ *
+ * Last, and nothing at /api after it: this answers everything below the prefix,
+ * so a router mounted later is somewhere nothing can reach.
+ */
+app.use("/api", (req, res) => res.status(404).json({message: "Route not found"}));
 
 let buildPath = path.join(process.cwd(), 'build');
 let buildExists = fs.existsSync(buildPath);
@@ -186,12 +199,54 @@ const spaFallback = (serveIndex) => (req, res) => {
     return serveIndex(req, res);
 };
 
+/**
+ * index.html, with the one reference BASE_PATH cannot reach from the client
+ * side - see util/indexMeta.js. Read once, because it changes when the build
+ * does and the build does not change under a running server.
+ *
+ * Without a prefix nothing is rewritten and the file is sent as it always was,
+ * by sendFile, keeping its caching and range handling. `index: false` on the
+ * static handler is what puts the two of them on one path: static answers "/"
+ * with index.html of its own accord, ahead of any fallback, so a prefixed
+ * instance would have served the unrewritten file to exactly the crawler this
+ * is for.
+ */
+const indexFor = (read) => {
+    const prefix = basePath();
+    if (!prefix) return null;
+
+    /*
+     * A page that could not be read hands the branch back to what it did
+     * before, rather than taking the process down at import or serving an empty
+     * body. A build directory with no index.html in it is a broken deployment
+     * either way - but one that answers 404 can be looked at, and one that
+     * cannot boot is a container in a restart loop.
+     */
+    let page;
+
+    try {
+        page = read();
+    } catch {
+        return null;
+    }
+
+    if (!page) return null;
+
+    const rewritten = withBasePathMeta(page, prefix);
+    return (req, res) => res.type('html').send(rewritten);
+};
+
 if (buildExists) {
-    app.use(express.static(buildPath));
-    app.get('*all', spaFallback((req, res) => res.sendFile(path.join(buildPath, 'index.html'))));
+    const indexPath = path.join(buildPath, 'index.html');
+    const rewritten = indexFor(() => fs.readFileSync(indexPath, 'utf-8'));
+
+    app.use(express.static(buildPath, {index: rewritten ? false : 'index.html'}));
+    app.get('*all', spaFallback(rewritten ?? ((req, res) => res.sendFile(indexPath))));
 } else if (embeddedClient) {
+    const rewritten = indexFor(() => String(embeddedClient.readEmbeddedFile('/index.html') ?? ''));
+
     app.use(embeddedClient.createEmbeddedMiddleware());
-    app.get('*all', spaFallback(embeddedClient.createEmbeddedFallback()));
+    app.get('*all', spaFallback(rewritten ?? embeddedClient.createEmbeddedFallback()));
 } else {
     app.get("*all", (req, res) => res.status(500).type('html').send(devModeHtml));
 }

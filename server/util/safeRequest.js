@@ -45,6 +45,17 @@ const tooLargeError = (maxBytes) => {
     return error;
 };
 
+// Named like the errno codes a socket failure carries, so a caller sorting
+// failures by code can file a request that got no answer beside a host that
+// refused one, rather than parsing the message for it.
+export const REQUEST_TIMED_OUT = "EREQUESTTIMEDOUT";
+
+const timedOutError = (timeout) => {
+    const error = new Error(`Timed out after ${timeout}ms`);
+    error.code = REQUEST_TIMED_OUT;
+    return error;
+};
+
 export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = DEFAULT_TIMEOUT, signal,
     maxBytes = MAX_RESPONSE_BYTES} = {}) =>
     new Promise((resolve, reject) => {
@@ -88,7 +99,7 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
         // request. Without this a node that accepts the connection and then says
         // nothing would hold the caller open indefinitely.
         request.on("timeout", () => {
-            request.destroy(new Error(`Timed out after ${timeout}ms`));
+            request.destroy(timedOutError(timeout));
         });
 
         if (signal) {

@@ -164,6 +164,30 @@ export const seedTarget = async (overrides = {}) => {
     return await targets.create({name: provider, provider, ...overrides});
 };
 
+/**
+ * Polls `predicate` until it returns a truthy value, or throws a descriptive
+ * error once `timeout` has passed without one.
+ *
+ * Generalised from the deadline loops that used to live in individual
+ * integration tests - a fixed `await new Promise((resolve) => setTimeout(...))`
+ * guesses how long a background write, a round, or a request takes, and either
+ * wastes that time on a fast machine or flakes on a slow one. Only fit for a
+ * condition that becomes true and stays true - a row that now exists, a count
+ * that reached its target, a flag that flipped - not for asserting that
+ * something never happens, which no amount of polling can prove.
+ */
+export const waitFor = async (predicate, {timeout = 15000, interval = 50, message} = {}) => {
+    const deadline = Date.now() + timeout;
+
+    while (Date.now() < deadline) {
+        const result = await predicate();
+        if (result) return result;
+        await new Promise((resolve) => setTimeout(resolve, interval));
+    }
+
+    throw new Error(message ?? `waitFor: condition was not met within ${timeout}ms`);
+};
+
 /** Replaces the stored speedtests with the supplied rows. */
 export const seedTests = async (model, rows) => {
     await model.destroy({where: {}});

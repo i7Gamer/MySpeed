@@ -1,7 +1,7 @@
 import nodes from '../models/Node.js';
 import { writePasswordHeaders } from '../util/passwordHeader.js';
 import { checkNodeTarget } from '../util/safeUrl.js';
-import { RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
+import { REQUEST_TIMED_OUT, RESPONSE_TOO_LARGE, safeRequest } from '../util/safeRequest.js';
 import { stripTrailingSlashes } from '../util/helpers.js';
 import { NODE_REFUSAL_HEADER, SERVER_BUSY } from '../util/authOutcome.js';
 import { isBackupExportPath, relayPolicy } from '../util/backupPolicy.js';
@@ -14,6 +14,14 @@ const SERVICE_UNAVAILABLE = 503;
 // The far end produced something this relay will not pass on - a redirect, or
 // an answer past the ceiling. The failure is the upstream's, not this server's.
 const BAD_GATEWAY = 502;
+
+// The errno codes a request answers with when the other end is simply not
+// there, plus the code safeRequest gives its own timeout. Anything outside
+// this set is a fault worth a stack trace, not an absence.
+const UPSTREAM_AWAY_CODES = new Set([
+    "ENOTFOUND", "EAI_AGAIN", "ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "ETIMEDOUT",
+    REQUEST_TIMED_OUT
+]);
 
 // The child refusing the credential this instance stores for it, which is a
 // different refusal from this instance refusing the caller's own session.
@@ -176,6 +184,13 @@ export const proxyRequest = async (url, req, res) => {
     // the guard existed - and every name that has since been repointed - as a
     // standing channel to whatever the server can reach.
     const target = await checkNodeTarget(url);
+
+    // A name that does not resolve is the upstream being away, not the address
+    // being wrong: the row passed this same check when it was added. Answered
+    // as a gateway failure, the way a node that answers nothing at all is,
+    // rather than as the caller's bad request - which it never was.
+    if (!target.safe && target.unreachable)
+        return res.status(BAD_GATEWAY).json({message: target.reason, type: "NODE_UNREACHABLE"});
     if (!target.safe) return res.status(400).json({message: target.reason, type: "INVALID_URL"});
 
     const headers = Object.fromEntries(
@@ -273,6 +288,16 @@ export const proxyRequest = async (url, req, res) => {
         // from the child - is nothing "Internal server error" would suggest.
         if (error?.code === RESPONSE_TOO_LARGE)
             return res.status(BAD_GATEWAY).json({message: "The node's answer was too large to relay"});
+
+        // The node being away - a name that stopped resolving, a port nobody
+        // listens on, a host off the network, an answer that never came - is
+        // the upstream's absence, not this server's fault. It used to be
+        // answered as "Internal server error", which sent the operator looking
+        // at the wrong machine, and the nodes page read it as a fault of its
+        // own on every visit. A gateway failure is what it is; the card reads
+        // it as "not reachable" either way.
+        if (UPSTREAM_AWAY_CODES.has(error?.code))
+            return res.status(BAD_GATEWAY).json({message: "The node could not be reached", type: "NODE_UNREACHABLE"});
 
         // Everything else stays a 500, but no longer a silent one.
         console.error(`Proxying to the node failed: ${error?.message ?? error}`);

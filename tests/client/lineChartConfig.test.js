@@ -1,9 +1,10 @@
-import { describe, it, before } from "node:test";
+import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import i18next from "i18next";
+import { escapeRegExp, readLocale } from "../helpers/source.js";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisBounds, timeAxisStep, timePoints,
@@ -119,6 +120,51 @@ describe("the charts that draw the average", () => {
                 `${name} still seeds its empty state with a measured-looking zero`);
         });
     }
+});
+
+/**
+ * The two charts are the tooltip's only callers, and both take failedCounts
+ * as a prop the same way they already take errors - lineChartOptions itself
+ * is covered above, but a chart that forgot to pass its own prop through
+ * would build a tooltip that can never read a count, silently, with nothing
+ * here to say the wiring is missing.
+ */
+describe("threading the failure count to the shared tooltip", () => {
+    const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+    const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+
+    for (const chart of ["pages/Statistics/charts/SpeedChart/SpeedChart.jsx",
+        "pages/Statistics/charts/PingChart.jsx"]) {
+        const source = read(chart);
+        const name = path.basename(chart, ".jsx");
+
+        it(`${name} passes its own failedCounts prop into lineChartOptions`, () => {
+            assert.match(source, /failedCounts: filteredData\.failedCounts/,
+                `${name} builds a tooltip that can never read a failure count`);
+        });
+    }
+
+    /**
+     * And the page that renders them has to hand the prop over.
+     *
+     * The charts read `props.failedCounts`, so a call site that passes `errors`
+     * and forgets its parallel array leaves the whole feature switched off:
+     * every tooltip falls back to the legacy English sentence, which is exactly
+     * the state this was written to end, and nothing above would notice - the
+     * chart is wired, the server sends the counts, and the reader never gets
+     * them. Counted against `errors` rather than pinned at a number, since the
+     * two travel together and a seventh chart should not need a line here.
+     */
+    it("Statistics hands both channels to every chart it renders", () => {
+        const page = read("pages/Statistics/Statistics.jsx");
+        const errors = [...page.matchAll(/\berrors=\{/g)].length;
+        const counts = [...page.matchAll(/\bfailedCounts=\{/g)].length;
+
+        assert.ok(errors > 0, "the page renders no chart with an errors prop at all");
+        assert.equal(counts, errors,
+            "a chart is given errors without the failure counts beside them, so its tooltip "
+            + "falls back to the server's English sentence");
+    });
 });
 
 describe("failureMarkers", () => {
@@ -555,6 +601,149 @@ describe("lineChartOptions", () => {
         it("says it once", () => {
             assert.equal(options().plugins.tooltip.callbacks.afterBody, undefined,
                 "the reason is printed by both the label and the body");
+        });
+    });
+
+    /**
+     * server/util/statistics.js used to be the only place in the repository
+     * that composed "X failed in period" - hard-coded English inside an
+     * otherwise localised tooltip. failedCounts is the parallel channel that
+     * lets the client word it itself, and the cross-version contract is the
+     * point of the suite: an older node's payload never carries the array at
+     * all, which is a different thing from this particular point having
+     * nothing to say - Statistics.jsx's own askedCompare === undefined check
+     * is the same idiom, named in the docstring above lineChartOptions.
+     */
+    describe("the tooltip on a downsampled bucket's failure count", () => {
+        const bucketItem = {dataset: {label: "statistics.failed_test"}, dataIndex: 2, formattedValue: "0"};
+
+        /**
+         * The two real sentences, for this block only.
+         *
+         * Everywhere else in this file t() answering with the key is what
+         * makes an assertion readable. Here it hid the whole question: with
+         * no resource behind the key, the interpolation argument is
+         * unobservable, so dropping `{failed: failedCount}` - or renaming it
+         * to something en.json does not use - left the suite green while a
+         * real UI rendered the literal "{{failed}}". Two reviewers found the
+         * same hole. Only the two keys under test are loaded, so the
+         * assertions on statistics.failed_test above and below still read the
+         * key, and the bundle goes again afterwards.
+         */
+        const FAILED_IN_PERIOD = {
+            failed_in_period: "{{failed}} failed in this period",
+            failed_in_period_single: "1 failed in this period"
+        };
+
+        before(() => {
+            i18next.addResourceBundle("en", "translation", {statistics: FAILED_IN_PERIOD}, true, true);
+        });
+
+        after(() => {
+            i18next.removeResourceBundle("en", "translation");
+            i18next.addResourceBundle("en", "translation", {});
+        });
+
+        // Held against en.json rather than retyped, so a reworded sentence
+        // there is a failure here rather than a fixture nobody updated.
+        it("is the wording the locale actually ships", () => {
+            const english = readLocale("en").statistics;
+
+            assert.deepEqual({
+                failed_in_period: english.failed_in_period,
+                failed_in_period_single: english.failed_in_period_single
+            }, FAILED_IN_PERIOD);
+        });
+
+        it("prefers the counted, localisable sentence over the server's own English one", () => {
+            const line = options({
+                errors: [null, "Too many requests", "3 failed in period"],
+                failedCounts: [null, null, 3]
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.match(line, /statistics\.failed_test/);
+            assert.match(line, /3 failed in this period/,
+                "the count never reached the translator, so the sentence renders its own placeholder");
+            assert.doesNotMatch(line, /\{\{/, "an interpolation was left unfilled");
+            assert.doesNotMatch(line, /3 failed in period/,
+                "the server's own English sentence reached the screen instead of a translated one");
+        });
+
+        /**
+         * And one is its own sentence.
+         *
+         * A single form filled with "1" reads correctly in English and
+         * wrongly in four of the languages this ships in - Polish, Czech,
+         * Russian and Ukrainian inflect the noun with the number, so
+         * "1 nieudanych" is a plural ending on a singular count. The client
+         * already splits time.minute from time.minutes for this reason.
+         */
+        /**
+         * Asked in Polish, because English cannot answer it.
+         *
+         * "1 failed in this period" is what both forms render for a count of
+         * one, so an English assertion passes whichever key the code reaches
+         * for - which is the same vacuity this block was just fixed for, one
+         * layer down. Polish is where the distinction lives, and where the
+         * defect is: the noun inflects with the number, so the plural form
+         * filled with 1 reads "1 nieudanych", and it is that string this
+         * refuses. Both forms come out of the shipped locale, so a retranslation
+         * moves the test with it rather than leaving a fixture behind.
+         */
+        it("has a form of its own for a single failure, in a language that inflects", async () => {
+            const polish = readLocale("pl").statistics;
+            const pluralWithOne = polish.failed_in_period.replace("{{failed}}", "1");
+
+            assert.notEqual(pluralWithOne, polish.failed_in_period_single,
+                "the two Polish forms are the same sentence, so this test asks nothing");
+
+            // The two keys only, so statistics.failed_test still answers with
+            // its key - the tooltip decides which dataset it is on by comparing
+            // the label against that, and a translated one takes a branch this
+            // test is not about.
+            i18next.addResourceBundle("pl", "translation", {statistics: {
+                failed_in_period: polish.failed_in_period,
+                failed_in_period_single: polish.failed_in_period_single
+            }}, true, true);
+            await i18next.changeLanguage("pl");
+
+            try {
+                const line = options({
+                    errors: [null, null, null],
+                    failedCounts: [null, null, 1]
+                }).plugins.tooltip.callbacks.label(bucketItem);
+
+                assert.match(line, new RegExp(escapeRegExp(polish.failed_in_period_single)));
+                assert.doesNotMatch(line, new RegExp(escapeRegExp(pluralWithOne)),
+                    "a single failure is reported with the plural form of the noun");
+            } finally {
+                await i18next.changeLanguage("en");
+                i18next.removeResourceBundle("pl", "translation");
+            }
+        });
+
+        it("falls back to the server's own sentence when the responding node predates the count", () => {
+            // The whole array missing - RequestUtil.getApiRoot() proxied this
+            // request to an older MySpeed, which never learned to send one -
+            // not merely absent at this one index.
+            const line = options({
+                errors: [null, "Too many requests", "3 failed in period"],
+                failedCounts: undefined
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.equal(line, "statistics.failed_test: 3 failed in period");
+        });
+
+        it("still falls back for a point the count genuinely has nothing to say about", () => {
+            // The array exists - this server knows failedCounts - but THIS
+            // point is the joined-all-failed-messages shape, which carries no
+            // count of its own and never has.
+            const line = options({
+                errors: [null, "Too many requests", "timeout; refused"],
+                failedCounts: [null, null, null]
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.equal(line, "statistics.failed_test: timeout; refused");
         });
     });
 

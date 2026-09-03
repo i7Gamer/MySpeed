@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { alertingScope, iperfTuningProblem, targetProblem, resolveLimits, viewerFacing,
+import { alertingScope, iperfTuningProblem, targetProblem, viewerFacing,
     TARGET_NAME_LIMIT } from "../../server/controller/targets.js";
 import { IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS,
     IPERF_MIN_STREAMS } from "../../server/util/providers/registry.js";
@@ -273,25 +273,6 @@ describe("alertingScope", () => {
      */
     it("keeps a target that alerts but is not in the scheduled round", () => {
         assert.deepEqual(alertingScope([{id: 7, alerts: true, enabled: false}]), [7]);
-    });
-});
-
-describe("resolveLimits", () => {
-    const global = {ping: "25", download: "100", upload: "50"};
-
-    it("inherits the global values where a target sets none", () => {
-        assert.deepEqual(resolveLimits({}, global), {ping: 25, download: 100, upload: 50});
-    });
-
-    it("lets a target's own values win, each on its own", () => {
-        const limits = resolveLimits({optimalPing: 1, optimalDownload: 940}, global);
-
-        assert.deepEqual(limits, {ping: 1, download: 940, upload: 50});
-    });
-
-    it("treats null overrides as unset rather than as zero", () => {
-        assert.deepEqual(resolveLimits({optimalPing: null, optimalDownload: null, optimalUpload: null}, global),
-            {ping: 25, download: 100, upload: 50});
     });
 });
 

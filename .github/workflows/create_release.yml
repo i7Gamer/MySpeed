@@ -17,6 +17,20 @@ permissions:
   contents: write
   pull-requests: read
 
+# One release at a time, and never cancelled halfway.
+#
+# Two dispatches used to run side by side: both bump package.json and push to the
+# default branch, so the second push can be rejected non-fast-forward after its
+# own tag guard has already passed, and both reach publish-docker, where the
+# later `imagetools create` decides what :latest means. The group is shared with
+# the manual dev deploy, which moves the same tag from the other side.
+#
+# cancel-in-progress is false on purpose: a cancelled release is the one shape
+# neither recovery job below can clean up.
+concurrency:
+  group: release-and-registry
+  cancel-in-progress: false
+
 jobs:
   # Gates everything below it: no tag, no release and no artefact gets cut
   # unless the suite passes first.
@@ -223,11 +237,127 @@ jobs:
       release_id: ${{ needs.create-release.outputs.release_id }}
     secrets: inherit
 
+  # The two installers, hashed after the fact.
+  #
+  # build-binaries' own checksums job lives inside that workflow, and build-msi
+  # needs the whole of it - so the list was always written before either .msi
+  # existed. SHA256SUMS therefore described the binaries, the source ZIP and the
+  # install scripts and never the installers, on every release rather than only
+  # on the first: a Windows user downloading the one artifact that installs a
+  # LocalSystem service found no line to check it against, and no install script
+  # checks it for them either.
+  #
+  # Appending here rather than moving the original job. Moving it would delay
+  # the three install scripts, which that job also publishes and which need
+  # nothing a build produced - and, taken literally, would make one failing MSI
+  # leg suppress the checksum file for every other asset, which is worse than
+  # today and against this workflow's own position that a partial release is
+  # still worth having.
+  checksums-msi:
+    name: "Checksums for the installers"
+    runs-on: ubuntu-latest
+    needs: [create-release, build-binaries, build-msi]
+    # !cancelled() rather than success(), so a failed or skipped MSI leg still
+    # leaves the list exactly as build-binaries wrote it - skipping this job
+    # would take with it any chance of the file being completed.
+    #
+    # And rather than always(), which runs on a cancelled workflow too: there
+    # the release is about to be deleted or reported, and a job uploading to it
+    # is at best wasted and at worst racing that.
+    #
+    # build-binaries is required rather than merely awaited for the same
+    # reason. Its failure is what cleanup-on-failure deletes the whole release
+    # over, and an upload landing in the middle of that deletion is a race with
+    # nothing to win: finalize-release needs build-binaries as well, so there is
+    # nothing left for this file to be published with.
+    if: >-
+      !cancelled()
+      && needs.create-release.result == 'success'
+      && needs.build-binaries.result == 'success'
+    steps:
+      - name: Add any unhashed asset to SHA256SUMS
+        uses: actions/github-script@v9
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const release_id = parseInt(process.env.RELEASE_ID, 10);
+            const {owner, repo} = context.repo;
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets,
+              {owner, repo, release_id, per_page: 100});
+
+            const published = assets.find((asset) => asset.name === 'SHA256SUMS');
+
+            const body = async (asset) => {
+              const {data} = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: asset.id,
+                headers: {accept: 'application/octet-stream'}
+              });
+              return Buffer.from(data);
+            };
+
+            // What the earlier job already hashed, kept as it was: those bytes
+            // have not changed, and re-downloading six binaries to prove it
+            // would double the transfer for nothing.
+            const digests = new Map();
+
+            if (published)
+              for (const line of (await body(published)).toString().split('\n')) {
+                const match = /^([0-9a-f]{64})\s\s(.+)$/.exec(line.trim());
+                if (match) digests.set(match[2], match[1]);
+              }
+
+            const added = [];
+
+            for (const asset of assets) {
+              if (asset.name === 'SHA256SUMS' || digests.has(asset.name)) continue;
+
+              digests.set(asset.name, crypto.createHash('sha256').update(await body(asset)).digest('hex'));
+              added.push(asset.name);
+            }
+
+            if (added.length === 0) {
+              core.info('Every asset is already listed; SHA256SUMS left alone.');
+              return;
+            }
+
+            core.info(`Adding: ${added.join(', ')}`);
+
+            const lines = [...digests.entries()]
+              .sort(([left], [right]) => left.localeCompare(right))
+              .map(([name, digest]) => `${digest}  ${name}`);
+
+            core.info(lines.join('\n'));
+
+            // Replaced rather than uploaded beside: a release cannot carry two
+            // assets of one name, so the old one goes first.
+            //
+            // Which is not atomic, and cannot be made so through this API: a
+            // failure between the two leaves the release with no SHA256SUMS at
+            // all. What makes that recoverable rather than silent is the gate
+            // above - finalize-release needs this job, so a release that lost
+            // its list stays a draft, and re-running the job rebuilds the whole
+            // file from the assets rather than from what it found.
+            if (published)
+              await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id: published.id});
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id,
+              name: 'SHA256SUMS',
+              data: lines.join('\n') + '\n'
+            });
+
   # After publish-docker rather than beside it: this is what turns the draft
   # into the published release, and the body it writes names the Docker tags.
+  #
+  # checksums-msi is in the list because this is what un-drafts the release: a
+  # release made public before the checksum file was completed would hand out
+  # installers nothing could verify, which is the whole point of the job above.
   finalize-release:
     name: "Finalize Release"
-    needs: [create-release, build-binaries, publish-docker, build-msi]
+    needs: [create-release, build-binaries, publish-docker, build-msi, checksums-msi]
     uses: ./.github/workflows/finalize-release.yml
     with:
       version: ${{ needs.create-release.outputs.version }}
@@ -303,13 +433,51 @@ jobs:
               console.log('Failed to delete tag:', e.message);
             }
 
+  # A cancelled run is neither of the two cases below.
+  #
+  # Both of them key on failure(), which a cancellation does not satisfy - and
+  # `cancelled()` at the workflow level is exactly the moment a tag has been cut,
+  # a version bumped and the assets left half-uploaded. Nothing said so: the run
+  # ended grey, and the next dispatch of that version was refused by
+  # create-release's own tag guard with no explanation anywhere.
+  #
+  # It reports rather than deletes. What survived a cancellation is not knowable
+  # from here - the upload may have been halfway through an asset - and deleting
+  # a release somebody stopped on purpose is not this job's decision to make.
+  report-cancelled-release:
+    name: "Report Cancelled Release"
+    runs-on: ubuntu-latest
+    needs: [create-release]
+    if: cancelled() && needs.create-release.result == 'success'
+    steps:
+      - name: Say what was left behind
+        env:
+          VERSION: ${{ needs.create-release.outputs.version }}
+        run: |
+          {
+            echo "### Release v$VERSION was cancelled part way through"
+            echo
+            echo "The tag and the draft release exist, the version bump is on the default"
+            echo "branch, and the assets are whatever had finished uploading. Dispatching"
+            echo "v$VERSION again will be refused while the tag is there."
+            echo
+            echo "Look at the draft, then either publish it by hand or free the version up:"
+            echo
+            echo '```'
+            echo "gh release delete v$VERSION --cleanup-tag --yes"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "::warning::Release v$VERSION was cancelled. Tag v$VERSION is taken - delete it before re-running this version."
+
   # The counterpart to cleanup-on-failure: the release survived, so say what is
   # sitting there and how to get rid of it, rather than leaving an unexplained
   # draft and a version number that can no longer be dispatched.
   report-partial-release:
     name: "Report Partial Release"
     runs-on: ubuntu-latest
-    needs: [create-release, build-binaries, build-docker, publish-docker, build-msi, finalize-release]
+    needs: [create-release, build-binaries, build-docker, publish-docker, build-msi, checksums-msi,
+      finalize-release]
     if: |
       failure()
       && needs.create-release.result == 'success'
@@ -321,6 +489,7 @@ jobs:
           DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
           DOCKER_PUBLISH_RESULT: ${{ needs.publish-docker.result }}
           MSI_RESULT: ${{ needs.build-msi.result }}
+          CHECKSUMS_RESULT: ${{ needs.checksums-msi.result }}
           FINALIZE_RESULT: ${{ needs.finalize-release.result }}
         run: |
           {
@@ -333,6 +502,7 @@ jobs:
             echo "| Build Docker | $DOCKER_BUILD_RESULT |"
             echo "| Publish Docker | $DOCKER_PUBLISH_RESULT |"
             echo "| Build MSI | $MSI_RESULT |"
+            echo "| Checksums for the installers | $CHECKSUMS_RESULT |"
             echo "| Finalize Release | $FINALIZE_RESULT |"
             echo
 

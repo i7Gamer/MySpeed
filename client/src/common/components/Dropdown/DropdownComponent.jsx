@@ -37,6 +37,27 @@ import PasswordDialog from "@/common/components/PasswordDialog";
 import PauseDialog from "@/common/components/PauseDialog";
 import PreferencesDialog from "@/common/components/PreferencesDialog";
 
+/**
+ * Whether this instance is offered a given entry.
+ *
+ * Three conditions, and they used to be three early returns inside the map
+ * callback below - the last of them an `if` with no `else`. Each of those
+ * paths handed React an `undefined` child rather than nothing: it draws the
+ * same, but the list stops being "the entries this instance has" and becomes
+ * "one slot per entry, some of them empty", which is what anything counting or
+ * indexing them would have to know. Asked here, and asked before the mapping,
+ * the answer is a list of the entries that exist.
+ *
+ * A separator carries none of the three marks, so it follows the plain rule -
+ * which is what it did before, and why a read-only reader has never seen one.
+ */
+export const isMenuEntryVisible = (entry, config) => {
+    if (entry.previewHidden && config.previewMode) return false;
+    if (entry.previewShown && !config.previewMode) return false;
+
+    return !config.viewMode || Boolean(entry.allowView);
+};
+
 const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [config] = useContext(ConfigContext);
     const [status, updateStatus] = useContext(StatusContext);
@@ -208,43 +229,37 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
                 <div className="dropdown-content">
                     <h2>{t("dropdown.settings")}</h2>
                     <div className="dropdown-entries">
-                        {options.map(entry => {
-                            if (entry.previewHidden && config.previewMode) return;
-                            if (entry.previewShown && !config.previewMode) return;
-                            if (!config.viewMode || (config.viewMode && entry.allowView)) {
-                                if (!entry.hr) {
-                                    const blocked = entry.previewDisabled && config.previewMode;
+                        {options.filter(entry => isMenuEntryVisible(entry, config)).map(entry => {
+                            if (entry.hr) return (<div className="center" key={entry.key}>
+                                <hr className="dropdown-hr"/>
+                            </div>);
 
-                                    /*
-                                     * A control, not a div that happens to
-                                     * answer a click. This menu is the only
-                                     * route to nine of the app's dialogs -
-                                     * optimal values, the targets, storage,
-                                     * the password, the schedule, pause,
-                                     * integrations, the language and the
-                                     * preferences - and every entry was a bare
-                                     * onClick, so Tab walked past all of them
-                                     * and a keyboard-only operator could not
-                                     * open a single one.
-                                     *
-                                     * `clickable` rather than a <button>, for
-                                     * the reason it documents: the entry holds
-                                     * an <h3>, which a button may not contain.
-                                     */
-                                    return (<div className={"dropdown-item" + (blocked ? " dropdown-item-disabled" : "")}
-                                                 {...clickable(() => {
-                                        switchDropdown();
-                                        // The explanation instead of the dialog:
-                                        // the save behind it would be refused.
-                                        (blocked ? explainPreview : entry.run)();
-                                    })} key={entry.key}>
-                                        <FontAwesomeIcon icon={entry.icon}/>
-                                        <h3>{entry.text}</h3>
-                                    </div>);
-                                } else return (<div className="center" key={entry.key}>
-                                    <hr className="dropdown-hr"/>
-                                </div>);
-                            }
+                            const blocked = entry.previewDisabled && config.previewMode;
+
+                            /*
+                             * A control, not a div that happens to answer a
+                             * click. This menu is the only route to nine of
+                             * the app's dialogs - optimal values, the targets,
+                             * storage, the password, the schedule, pause,
+                             * integrations, the language and the preferences -
+                             * and every entry was a bare onClick, so Tab
+                             * walked past all of them and a keyboard-only
+                             * operator could not open a single one.
+                             *
+                             * `clickable` rather than a <button>, for the
+                             * reason it documents: the entry holds an <h3>,
+                             * which a button may not contain.
+                             */
+                            return (<div className={"dropdown-item" + (blocked ? " dropdown-item-disabled" : "")}
+                                         {...clickable(() => {
+                                switchDropdown();
+                                // The explanation instead of the dialog: the
+                                // save behind it would be refused.
+                                (blocked ? explainPreview : entry.run)();
+                            })} key={entry.key}>
+                                <FontAwesomeIcon icon={entry.icon}/>
+                                <h3>{entry.text}</h3>
+                            </div>);
                         })}
                     </div>
                 </div>

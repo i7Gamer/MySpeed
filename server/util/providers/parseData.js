@@ -45,6 +45,20 @@ export const IPERF3 = "iperf3";
 // here - the other two do report parts of it, when their backend knows it.
 const NO_QUALITY_FIGURES = {packetLoss: null, downloadLatency: null, uploadLatency: null};
 
+const MS_PER_SECOND = 1000;
+
+// What the `time` column holds when the CLI reported no duration: its own
+// default, not null. The column is INTEGER with a default of 0 and every
+// reader takes it as a number - and NaN, which an absent elapsed used to
+// become, is refused by the insert and takes the whole measurement with it.
+const MISSING_DURATION = 0;
+
+const durationSeconds = (elapsedMs) =>
+    Number.isFinite(elapsedMs) ? Math.round(elapsedMs / MS_PER_SECOND) : MISSING_DURATION;
+
+// The same guard for a provider that already reports seconds.
+const wholeSeconds = (seconds) => Number.isFinite(seconds) ? Math.round(seconds) : MISSING_DURATION;
+
 const round = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
     ? null
     : parseFloat(Number(value).toFixed(2));
@@ -118,7 +132,7 @@ export const parseOokla = (test) => {
     let jitter = round(test.ping.jitter);
     let download = roundSpeed(test.download.bandwidth);
     let upload = roundSpeed(test.upload.bandwidth);
-    let time = Math.round((test.download.elapsed + test.upload.elapsed) / 1000);
+    let time = durationSeconds(test.download.elapsed + test.upload.elapsed);
     // text(), like the location below: an empty name used to pass through
     // unchanged, so a server answering {"name":"","location":"Glattbrugg"}
     // stored "" where every consumer of an absent value expects null. The
@@ -174,7 +188,7 @@ const libreFigures = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE
     // round() also normalises the string jitter this CLI reports, and keeps a
     // measured zero rather than nulling it as falsy.
     jitter: round(test.jitter),
-    time: Math.round(test.elapsed / 1000), resultId: null,
+    time: durationSeconds(test.elapsed), resultId: null,
     serverName: text(test.server?.name), serverHost: text(test.server?.url),
     // Its result names the backend and its URL, and nothing about where it is.
     serverLocation: null,
@@ -601,8 +615,8 @@ export const parseIperf3 = (test) => {
         // Both transfers, in seconds, as the other providers report their own
         // total. Taken from the runs' own clocks rather than the wall time,
         // which would include the latency sampling and the process starts.
-        time: Math.round((Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
-            + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0))),
+        time: wholeSeconds(Number(download?.sum_received?.seconds ?? download?.sum_sent?.seconds ?? 0)
+            + Number(upload?.sum_sent?.seconds ?? upload?.sum_received?.seconds ?? 0)),
         ...identity,
         // After the spread, which carries the null a TCP run keeps: this is
         // the one provider whose packet loss depends on how the run was asked

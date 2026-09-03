@@ -1,6 +1,6 @@
 import { plainDefaults } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
-import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 // Both templates name the target: on a multi-target instance every message
@@ -55,15 +55,19 @@ const send = ({url, key}, message, priority, activity) =>
 
 
 export default (registerEvent) => {
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting - see discord.js for why
+    // the six clock names could not go on being read off the process clock.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_message || defaults(c.language).finished, data),
+            replaceVariables(c.finished_message || defaults(c.language).finished, data, zone),
             priorityOf(c.priority, FINISHED_PRIORITY), activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_message || defaults(c.language).failed, failure), FAILED_PRIORITY, activity);
+            replaceVariables(c.error_message || defaults(c.language).failed, failure, zone),
+            FAILED_PRIORITY, activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {
@@ -77,6 +81,9 @@ export default (registerEvent) => {
         // Opts in to the shared threshold settings; isNotifier in
         // controller/integrations.js explains the flag.
         notifier: true,
+        // And to the language setting, because what it sends is prose a person
+        // reads; isLocalised in controller/integrations.js explains this one.
+        localised: true,
         icon: "fa-solid fa-bell",
         fields: [
             // Anchored at both ends and whitespace-free: `test` is unanchored,

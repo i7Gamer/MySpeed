@@ -153,7 +153,7 @@ export const previousRange = ({from, to}, {offsetMinutes, zone} = {}) => {
     const resolved = zone ? {valid: true, zone} : zoneFromOffset(offsetMinutes);
     if (!resolved.valid) return invalid(resolved.message);
 
-    const days = Math.round((to - from) / MS_PER_DAY);
+    const days = calendarDays(from, to);
 
     // The calendar day the range starts on, in the timezone that anchored it -
     // the UTC fields read the shifted instant back as that local day.
@@ -189,8 +189,18 @@ const wallDay = (carrier) => Date.UTC(carrier.getUTCFullYear(), carrier.getUTCMo
  * three and a half elapsed hours as it did at two and a half, so copying it
  * cut the previous window an hour short - and once the *earlier* day was the
  * one carrying the extra hour, the same copy cut it an hour long, for the
- * whole rest of that day. The elapsed offset from midnight is the one measure
- * both days agree on, and on the other 363 days it is the wall clock.
+ * whole rest of that day. The elapsed offset from midnight is what the two
+ * days agree on when the transition is the cut day's own, and on the other
+ * 363 days it is the wall clock.
+ *
+ * It is not what they agree on when the shift sits earlier in the range. The
+ * offset is measured against the day `now` is in and laid onto the cut day, so
+ * a transition between those two days is counted by neither: Berlin, a range
+ * of 2026-03-23 to 2026-04-05 read at 2026-03-30T10:00Z, has lived 179 hours
+ * and is compared against a window covering 180. One hour in a window of days,
+ * twice a year per zone, against a correction that would have to walk the
+ * calendar between the days to find it - so it is recorded in the tests as a
+ * limitation rather than fixed.
  *
  * Midnight itself is resolved by utcFromLocal on both sides, so a day that
  * starts inside a skipped or doubled hour - Santiago moves at exactly

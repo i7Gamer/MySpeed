@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
-import { bodyIn } from "../helpers/source.js";
+import { bodyIn, bodyOf, readSource, withoutComments } from "../helpers/source.js";
 
 /**
  * The schedule offset delays a run by a random amount so a fleet does not
@@ -78,6 +78,18 @@ describe("the schedule offset stays inside the interval", () => {
 const DISTANT_CRON = "0 3 1 1 *";
 const OTHER_CRON = "0 4 1 1 *";
 
+/**
+ * Midnight on the 31st of April, on a Monday - a date that does not exist.
+ *
+ * Every gate in front of the scheduler takes it: cron-validator reads five
+ * well-formed fields, and the cron-parser 5 the frequency dialog and nextRun
+ * both use applies day-of-month OR day-of-week, so it means "every Monday in
+ * April". node-schedule carries its own bundled cron-parser 4, which applies
+ * day-of-month AND day-of-week, finds no such day and answers null - not
+ * undefined, and not a throw.
+ */
+const UNCOMPILABLE_CRON = "0 0 31 4 1";
+
 afterEach(() => {
     timer.stopTimer();
     integrationTimer.stopTimer();
@@ -127,6 +139,55 @@ describe("the speedtest schedule", () => {
 
         assert.match(startTimer, /configDefaults\.cron/,
             "the fallback schedule must be the configured default, not a duplicated literal");
+    });
+
+    /**
+     * And the same fallback for the expression the validator takes and the
+     * scheduler cannot compile, which the refusal above can never reach.
+     *
+     * The branch that protects a running schedule only fires when the door
+     * says the cron is bad; here it says the cron is fine and node-schedule
+     * answers null anyway. That null was stored as the job, so the instance
+     * ran on no schedule at all with nothing said, and the `!== undefined`
+     * guards walked straight past it: every later reschedule and the
+     * shutdown's own stopTimer threw on null.cancel().
+     */
+    it("schedules the default when the cron compiles to no occurrence at all", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        const job = timer.currentJob();
+        assert.notEqual(job, null, "null was stored as the job, and every guard here reads !== undefined");
+        assert.notEqual(job, undefined, "a cron the scheduler refused left no schedule at all");
+        assert.notEqual(job.nextInvocation(), null);
+    });
+
+    /**
+     * And what /status announces is the schedule that is running, not the
+     * expression that was refused. nextRun answers on cron-parser 5, which
+     * reads this cron as every Monday in April - so left as the current cron
+     * the dashboard counted down to a test that could never happen.
+     */
+    it("announces the schedule it fell back to rather than the cron it could not use", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.equal(timer.nextRun(), timer.currentJob().nextInvocation().toISOString(),
+            "the countdown names a moment the running schedule will never reach");
+    });
+
+    it("does not throw on the stop that follows", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.doesNotThrow(() => timer.stopTimer(),
+            "the shutdown's stopTimer throws before it can close the database or kill the child");
+        assert.equal(timer.currentJob(), undefined);
+    });
+
+    it("does not throw on the reschedule that follows", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.doesNotThrow(() => timer.startTimer(OTHER_CRON),
+            "every later cron or timezone PATCH 500s, after the new value has already been written");
+        assert.notEqual(timer.currentJob(), undefined, "the reschedule left no schedule");
     });
 
     it("drops the job on stopTimer", () => {
@@ -300,5 +361,76 @@ describe("the pending offset run", () => {
         await timer.delayRun(10);
 
         assert.equal(timer.pendingRunAt(), null);
+    });
+});
+
+/**
+ * RUN_TEST_ON_STARTUP asked for a test the moment the server was up, and got
+ * one after the schedule offset's sleep - up to five minutes, during which a
+ * real tick could land first and take the latch, so the startup run woke to
+ * find a round in progress and was dropped as an overlap. A boot is not a
+ * tick: there is no fleet to spread across the hour.
+ */
+describe("the startup speedtest", () => {
+    const runTask = bodyIn("server/tasks/timer.js", "export const runTask = async");
+
+    it("is asked for now, from the one place that asks", () => {
+        const startup = readSource("server/index.js").split("\n")
+            .find((line) => line.includes("timerTask.runTask("));
+
+        assert.ok(startup, "index.js no longer runs the startup test through runTask");
+        assert.match(startup, /runTask\(\{immediate: true\}\)/,
+            "the startup run still sleeps its offset before it can start");
+    });
+
+    it("takes no offset when asked for now", () => {
+        assert.match(runTask, /const scheduleOffset = immediate \? undefined : await config\.getValue\("scheduleOffset"\)/,
+            "the offset sleep is not conditional on how the run was asked for");
+    });
+
+    // The quiet hours bind the round itself, member by member, for an "auto"
+    // run - so an exemption here would only move the refusal one call down.
+    it("is still held to the quiet hours", () => {
+        assert.match(runTask, /if \(await withinQuietHours\(\)\)/);
+        assert.doesNotMatch(runTask, /immediate && await withinQuietHours/,
+            "the startup run skips a check the round repeats anyway");
+    });
+
+    // The pause is someone asking for no tests at all, which a boot does not
+    // override.
+    it("still honours the pause", () => {
+        assert.notEqual(runTask.indexOf("pauseController.currentState"), -1);
+        assert.doesNotMatch(runTask, /immediate && pauseController|immediate \|\| pauseController/,
+            "a boot overrides the pause");
+    });
+
+    it("reads its option inside the body, where bodyOf() can see the whole function", () => {
+        assert.match(readSource("server/tasks/timer.js"), /export const runTask = async \(options = undefined\) =>/);
+    });
+});
+
+/**
+ * The digest list drops what could not be scheduled.
+ *
+ * Both digest rules are fixed and valid, so the only way scheduleJob answers
+ * null here is a timezone it will not take - which isValidTimezone lets
+ * through if Intl accepts it and node-schedule does not. A null in this list
+ * makes the next stopDigests() throw on `digest.cancel()`, and that teardown
+ * is the shutdown's as much as every reschedule's: one unschedulable zone
+ * would take the clean shutdown down with it.
+ *
+ * Pinned as text because the gap between the two libraries' zone tables is
+ * not a value this suite can name - the guard is for the day one of them
+ * moves, which is exactly when a test built on today's tables stops asking
+ * anything.
+ */
+describe("scheduling the digests", () => {
+    it("keeps only the jobs node-schedule actually made", () => {
+        // Comments out, for the reason the sibling suites strip them: the
+        // docblock inside this very body explains the filter, so deleting the
+        // line and leaving the prose satisfied this.
+        assert.match(withoutComments(bodyOf(readSource("server/tasks/timer.js"), "const startDigests =")),
+            /\.filter\(Boolean\)/,
+            "a zone node-schedule refuses leaves a null in the list, and the next teardown throws on it");
     });
 });

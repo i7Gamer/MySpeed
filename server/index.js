@@ -19,6 +19,7 @@ import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
 import { markShutdown, terminateActiveProcess, waitForActiveProcessExit } from './util/speedtest.js';
 import { createShutdown } from './util/shutdown.js';
+import { waitForActiveRound } from './util/activeRound.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
 } from './util/resetPassword.js';
@@ -182,6 +183,7 @@ const shutdown = createShutdown({
      */
     onCleanup: async () => {
         await waitForActiveProcessExit();
+        await waitForActiveRound();
         await db.close().catch(() => undefined);
     }
 });
@@ -303,7 +305,8 @@ const run = async () => {
     await initializeIntegrations();
 
     await requestInterfaces();
-    intervals.push(setInterval(() => requestInterfaces(), INTERFACE_REFRESH_INTERVAL));
+    intervals.push(setInterval(() => requestInterfaces().catch(err =>
+        console.error(`Could not refresh the network interfaces: ${err?.message ?? err}`)), INTERFACE_REFRESH_INTERVAL));
 
     if (process.env.PREVIEW_MODE !== "true") await loadCli();
 
@@ -315,7 +318,9 @@ const run = async () => {
 
     integrationTask.startTimer();
     if (process.env.RUN_TEST_ON_STARTUP === "true") {
-        timerTask.runTask().catch(err =>
+        // Now, not after the schedule offset: a boot is not a tick, and the
+        // sleep only let a real tick land first and drop this run as an overlap.
+        timerTask.runTask({immediate: true}).catch(err =>
             console.error(`The startup speedtest failed: ${err?.message ?? err}`));
     }
 

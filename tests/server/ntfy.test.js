@@ -165,6 +165,35 @@ describe("ntfy integration", () => {
         });
     }
 
+    /**
+     * The token is free text like the title beside it - it declares no regex,
+     * and a config import writes the field with no validation at all. A pasted
+     * credential carrying a stray newline or a character above U+00FF made
+     * undici throw before the request left the process, so every notification
+     * was lost to a log line while the card went on showing the integration as
+     * configured.
+     */
+    it("sends despite a token carrying a character a header cannot hold", async () => {
+        const {events} = load();
+
+        await events.testFinished(
+            {data: {url: baseUrl, topic: "alerts", send_finished: true, token: "tk—en\nx"}},
+            RESULT, () => {});
+
+        assert.equal(received.length, 1, "the whole notification was lost to an unsendable header");
+        assert.equal(received[0].headers.authorization, "Bearer tken x");
+    });
+
+    it("leaves an ordinary token exactly as it was typed", async () => {
+        const {events} = load();
+
+        await events.testFinished(
+            {data: {url: baseUrl, topic: "alerts", send_finished: true, token: "tk_abc123"}},
+            RESULT, () => {});
+
+        assert.equal(received[0].headers.authorization, "Bearer tk_abc123");
+    });
+
     // The ends of the range itself, so the fix cannot be an off-by-one that
     // quietly drops the two priorities an operator is most likely to choose.
     for (const priority of ["1", "5"]) {

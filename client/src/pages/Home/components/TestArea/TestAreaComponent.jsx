@@ -22,7 +22,8 @@ const STICKY_DATE_LINGER_MS = 1200;
 
 const TestArea = () => {
     const config = useContext(ConfigContext)[0];
-    const {speedtests, loadMoreTests, loading, hasMore, range, selectTimeframe} = useContext(SpeedtestContext);
+    const {speedtests, loadMoreTests, loading, loadError, hasMore, range, selectTimeframe, reloadTests}
+        = useContext(SpeedtestContext);
     const {targets, byId, selectedTarget} = useContext(TargetsContext);
     const [stickyDate, setStickyDate] = useState(null);
     const [showStickyDate, setShowStickyDate] = useState(false);
@@ -171,6 +172,45 @@ const TestArea = () => {
     if (Object.entries(config).length === 0) return (<></>);
 
     if (!initialLoadComplete || (speedtests.length === 0 && loading)) return <></>;
+
+    /**
+     * A third thing an empty list can mean, and the one it was worst at saying:
+     * the request failed.
+     *
+     * Before its own branch this fell through to the sentence below, which on
+     * all time - the default, so the ordinary case - is "There are currently no
+     * tests available" as a bare heading with nothing to click. An instance
+     * with years of history reported itself empty for a 500, a dropped
+     * connection or a ten second timeout, and the only ways out were to change
+     * the range or leave the tab and come back.
+     *
+     * Above the empty branch rather than beside it, and not gated on the list
+     * being empty. That gate is the one the statistics page had, where it made
+     * the branch unreachable once anything had loaded and a later failure drew
+     * the previous range's numbers under the new range's heading.
+     *
+     * The server's own message, because none of the reasons are alike and only
+     * it knows which one this was. An aborted request has no message of ours,
+     * so that one reads as the browser's untranslated "The operation was
+     * aborted" - inherited from the statistics page's pattern rather than
+     * introduced here.
+     */
+    if (loadError) {
+        return (
+            <div className="speedtest-empty">
+                {/* The statistics page's own shape: the reason in red at
+                    reading size, not in the 26pt headline the empty states
+                    wear. Those say one short sentence this page wrote; this
+                    one carries whatever the server or the browser said, at
+                    whatever length that turns out to be. */}
+                <p className="icon-red">{loadError.message}</p>
+                {/* reloadTests, not a page reload: it rebuilds the query from
+                    the range and the target the page is showing, exactly as
+                    the statistics page's retry does. */}
+                <button className="dialog-btn" onClick={() => reloadTests()}>{t("dialog.retry")}</button>
+            </div>
+        );
+    }
 
     /**
      * An empty list means two different things, and used to say the same

@@ -45,7 +45,12 @@ const UNUSED_VARS = {
     ignoreRestSiblings: true,
     // The conventional mark for a parameter a signature requires and the body
     // does not want.
-    argsIgnorePattern: "^_"
+    argsIgnorePattern: "^_",
+    // And the same mark for a caught error nothing reads. `catch {}` says that
+    // without a name at all, but themeBoot.js is a classic ES5 script served
+    // unbundled to whatever engine the reader has, and optional catch binding
+    // is ES2019.
+    caughtErrorsIgnorePattern: "^_"
 };
 
 export default [
@@ -74,17 +79,84 @@ export default [
             "no-unused-vars": ["warn", {...UNUSED_VARS, varsIgnorePattern: "^React$"}]
         }
     },
+    /*
+     * The pre-paint script, which the block above cannot reach: it is served
+     * straight out of public/ rather than bundled, so it is not under src/ -
+     * and it is a classic script rather than a module, which is the whole
+     * reason it can run before the parser reaches the app. Unlinted, it was the
+     * one file in the client where the `no-undef` fault this config exists for
+     * would have shipped in silence.
+     */
     {
-        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs}"],
+        files: ["client/public/*.js"],
         ...js.configs.recommended,
         languageOptions: {
             ecmaVersion: ECMA_VERSION,
-            sourceType: "module",
-            globals: {...globals.node}
+            sourceType: "script",
+            globals: {...globals.browser}
         },
         rules: {
             ...js.configs.recommended.rules,
             "no-unused-vars": ["warn", UNUSED_VARS]
+        }
+    },
+    {
+        // .jsx too: the suite renders components now, and the fixtures it
+        // renders are written as JSX like the components they stand in for.
+        //
+        // The two .mjs configs are here as well. Under flat config a file that
+        // no block claims is walked and linted with no rules at all, so it
+        // passes whatever it contains - and one of the two decides whether the
+        // client builds. `--print-config client/vite.config.mjs` showed an
+        // empty rule set; no-undef, which this config's header calls the whole
+        // reason it exists, was not applied to it.
+        files: ["server/**/*.js", "scripts/**/*.js", "tests/**/*.{js,mjs,jsx}",
+            "*.mjs", "client/*.mjs"],
+        ...js.configs.recommended,
+        languageOptions: {
+            ecmaVersion: ECMA_VERSION,
+            sourceType: "module",
+            globals: {...globals.node},
+            parserOptions: {ecmaFeatures: {jsx: true}}
+        },
+        rules: {
+            ...js.configs.recommended.rules,
+            "no-unused-vars": ["warn", UNUSED_VARS]
+        }
+    },
+    {
+        /*
+         * The hook rules, over the components the suite itself defines.
+         *
+         * The block above gives tests/ their globals and no-undef, but only the
+         * client block registers the react-hooks plugin, and it is scoped to
+         * client/src - so `--print-config` on a test fixture answered zero
+         * react-hooks rules where the same file under client/src answers
+         * sixteen. TECH_DEBT #1 asks contributors to grow exactly these jsdom
+         * fixtures as areas are converted from source-text pins, which means
+         * the next one to call a hook conditionally - the single mistake this
+         * plugin exists to catch - would have passed `eslint .` and CI.
+         *
+         * Every extension, not .jsx alone. There is one .jsx file under tests/;
+         * the harness components that actually call hooks live in .js test
+         * files beside their assertions, so a .jsx-only block would have left
+         * the whole real surface uncovered.
+         *
+         * Its own block rather than rules added to the one above, which also
+         * covers server/, scripts/ and the root .mjs configs - none of which
+         * have hooks to check. Flat config merges, so this adds the plugin and
+         * its rules while no-undef and the globals come from there.
+         */
+        files: ["tests/**/*.{js,mjs,jsx}"],
+        plugins: {"react-hooks": reactHooks},
+        rules: {
+            ...reactHooks.configs.recommended.rules,
+            // Off for the same reason and by the same list as the client block:
+            // turning the compiler-era rules on is a pass of its own, and a
+            // test harness assigning to a captured object is the shape they
+            // flag in volume.
+            ...COMPILER_RULES_PENDING_A_PASS,
+            "react-hooks/exhaustive-deps": "warn"
         }
     }
 ];

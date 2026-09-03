@@ -157,6 +157,7 @@
     "cron_title": "Definir frequência de teste",
     "cron_next_test": "Próximo Teste:",
     "custom_cron": "Expressão cron personalizada",
+    "cron_help": "Ajuda sobre a sintaxe cron",
     "schedule_offset": "Deslocar o agendamento",
     "schedule_offset_desc": "Adiciona um pequeno atraso para evitar que os testes comecem exatamente na hora marcada",
     "pause_title": "Pausar testes de velocidade por...",
@@ -274,7 +275,8 @@
     "hour": "1 hora",
     "hours": "{{hours}} horas",
     "day": "1 dia",
-    "days": "{{days}} dias"
+    "days": "{{days}} dias",
+    "days_ago": "{{days}} dias"
   },
   "test": {
     "not_available": "No momento, não há testes disponíveis",
@@ -337,7 +339,11 @@
     "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida.",
     "rate_limited": "O provedor recusou o teste porque muitos foram executados recentemente. O próximo é adiado automaticamente.",
     "no_measurement": "O teste terminou sem informar nenhuma medição.",
-    "impossible_measurement": "O teste informou uma medição que não pode estar certa, então ela foi descartada."
+    "impossible_measurement": "O teste informou uma medição que não pode estar certa, então ela foi descartada.",
+    "stopped_by_shutdown": "O teste foi interrompido porque o MySpeed estava sendo encerrado.",
+    "stopped_by_signal": "O teste foi interrompido de fora antes de terminar.",
+    "cli_missing": "Não foi possível instalar o programa de medição, por isso o teste não foi executado.",
+    "interface_unusable": "A interface de rede configurada não tem um endereço utilizável, por isso o teste não foi executado."
   },
   "statistics": {
     "average": "Média",
@@ -416,6 +422,8 @@
       "median": "Mediana"
     },
     "failed_test": "Teste com falha",
+    "failed_in_period": "{{failed}} com falha neste período",
+    "failed_in_period_single": "1 com falha neste período",
     "hourly": {
       "title": "Velocidade por horário do dia",
       "sample_count": "Testes"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Adicionar servidor",
+    "context_menu": "Ações do servidor",
     "create": "Adicionar",
     "this_server": "Esse servidor",
     "created": "O servidor foi adicionado com sucesso",

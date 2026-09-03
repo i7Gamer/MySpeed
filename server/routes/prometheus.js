@@ -10,7 +10,7 @@ import {
 } from '../middlewares/password.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { isFailedTest } from '../util/testOutcome.js';
-import { metricValue } from '../util/metricValue.js';
+import { measuredPing, metricValue, usableFigure } from '../util/metricValue.js';
 import { ownsUnlabelledSeries } from '../util/unlabelledSeries.js';
 import { createQueue } from '../util/serialiseQueue.js';
 import { clientGone } from '../util/clientGone.js';
@@ -246,12 +246,17 @@ const scrapes = createQueue();
  *
  * The attempt happened, against a server, whether or not it succeeded - and
  * which server it was is most of the diagnosis when one server is what keeps
- * failing. Every value goes through metricValue: prom-client throws for
+ * failing. Every value goes through a shared reader: prom-client throws for
  * anything that is not a number, and the throw is ahead of the response - so
  * one unreadable column in the newest test answered 500 for every scrape
  * until a newer test landed, which Prometheus reads as the exporter being
  * down. An unreadable measurement leaves its series absent instead, which is
  * what an absent series already means here - the provider did not report it.
+ *
+ * Absent is genuinely absent, not stale: collect() clears every gauge before it
+ * decides anything, and prom-client's reset() empties a labelled gauge's whole
+ * hashMap rather than zeroing it, so a series this scrape does not set is one
+ * the scrape does not carry.
  */
 const setSeries = (latest, targetLabels) => {
     const labels = {...resolveServerLabels(latest), ...targetLabels};
@@ -260,7 +265,9 @@ const setSeries = (latest, targetLabels) => {
 
     // Positive, not merely truthy: a failed test's duration is -1 like the rest
     // of its row, and exporting that would be the placeholder this branch
-    // exists to keep out.
+    // exists to keep out. Through metricValue rather than the strict reader
+    // below, because this one judges the placeholder itself - and it has to,
+    // since a duration of exactly 0 is not a run that took no time either.
     const time = metricValue(latest.time);
     if (time !== null && time > 0) timeGauge.set(labels, time);
 
@@ -271,12 +278,35 @@ const setSeries = (latest, targetLabels) => {
 
     testFailedGauge.set(labels, 0);
 
-    const measured = (gauge, value) => {
-        const reading = metricValue(value);
+    /*
+     * The reader is a parameter with a default, exactly as statistics.js's
+     * mapRange takes one, and usableFigure is that default for the same
+     * reason it is there: the next column handed here raw lands on the strict
+     * answer rather than the permissive one.
+     *
+     * It used to be bare metricValue for every column, which keeps -1 for its
+     * caller to judge - and no caller here judges it. isFailedTest asks whether
+     * *all three* required columns are the placeholder, so a hand-edited import
+     * holding {ping: -1, download: 480.2, upload: -1} is a successful row by
+     * that rule, and this route published myspeed_upload -1 beside
+     * myspeed_test_failed 0: a line delivering minus one megabit, recorded as a
+     * healthy sample. fullSeries reads the same columns through usableFigure
+     * and draws the gap.
+     */
+    const measured = (gauge, value, read = usableFigure) => {
+        const reading = read(value);
         if (reading !== null) gauge.set(labels, reading);
     };
 
-    measured(pingGauge, latest.ping);
+    // measuredPing for the idle latency alone, because it has a second lie to
+    // refuse: a successful run whose latency block carried no average is stored
+    // with exactly 0 - parseCloudflare and parseIperf3 both answer
+    // `round(...) ?? 0` - and no connection produces that. The statistics have
+    // drawn a gap there since UNMEASURED_LATENCY was written and the alert gate
+    // has refused it for longer, while this route drew Grafana a flat, perfect
+    // 0 ms line for the same row. A real sub-millisecond reading keeps its
+    // decimals and is published as it always was.
+    measured(pingGauge, latest.ping, measuredPing);
     measured(jitterGauge, latest.jitter);
     measured(downloadGauge, latest.download);
     measured(uploadGauge, latest.upload);

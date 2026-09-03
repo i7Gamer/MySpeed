@@ -9,8 +9,8 @@ import { parseIperf3 } from "../../server/util/providers/parseData.js";
 import { parseCliOutput } from "../../server/util/providers/cliOutput.js";
 import { iperf3Progress } from "../../server/util/providers/progress.js";
 import { measureLatency, median, sampleHandshake, spread } from "../../server/util/providers/iperfLatency.js";
-import { IPERF_DEFAULT_PORT, REGISTRY, joinEndpoint, splitEndpoint }
-    from "../../server/util/providers/registry.js";
+import { IPERF_DEFAULT_PORT, IPERF_MAX_BITRATE_MBPS, IPERF_MIN_BITRATE_MBPS, REGISTRY, joinEndpoint,
+    splitEndpoint } from "../../server/util/providers/registry.js";
 import { iperfEndpointProblem, targetProblem } from "../../server/controller/targets.js";
 import { fileExists, installFiles, missingFiles, partialInstallError, selectBinary }
     from "../../server/util/providers/loadIperf3.js";
@@ -157,6 +157,15 @@ describe("parsing an iperf3 test", () => {
 
     it("adds up the time the two transfers took", () => {
         assert.equal(parseIperf3(bothWays()).time, 20);
+    });
+
+    // A duration the CLI could not report is the column's own default, never
+    // NaN - which the INTEGER column refuses, taking the measurement with it.
+    it("stores no duration rather than NaN when a transfer's time is unreadable", () => {
+        const cut = bothWays();
+        cut.runs.download.data.sum_received.seconds = "unreadable";
+
+        assert.equal(parseIperf3(cut).time, 0);
     });
 
     /**
@@ -463,6 +472,27 @@ describe("an iperf3 target's own tuning", () => {
             `${JSON.stringify(bitrate)} reached the argv`);
     });
 
+    /**
+     * And to the same bounds the field itself declares, rather than to "above
+     * zero". A row that got past the door was never vetted - a hand-edited
+     * database or an import - so the two ends have to agree about what a rate
+     * is: half a megabit steers a datagram run no better than nothing does,
+     * and a rate above the maximum is the flood the zero case is about, aimed
+     * a little more slowly.
+     */
+    it("refuses a UDP rate outside the bounds the field offers", () => {
+        for (const bitrate of [IPERF_MIN_BITRATE_MBPS / 2, IPERF_MAX_BITRATE_MBPS + 1])
+            assert.throws(() => tunedArgs({endpoint: "10.0.0.5", iperfUdp: true,
+                iperfBitrate: bitrate}), /rate/i,
+            `${bitrate} Mbps reached the argv`);
+    });
+
+    it("accepts a UDP rate at either end of them", () => {
+        for (const bitrate of [IPERF_MIN_BITRATE_MBPS, IPERF_MAX_BITRATE_MBPS])
+            assert.equal(valueOf(tunedArgs({endpoint: "10.0.0.5", iperfUdp: true,
+                iperfBitrate: bitrate}), "--bitrate"), `${bitrate}M`);
+    });
+
     // The rate an imported history stored as text is a rate somebody named.
     it("still reads a rate stored as text", () => {
         assert.equal(valueOf(tunedArgs({endpoint: "10.0.0.5", iperfUdp: true, iperfBitrate: "50"}),
@@ -704,6 +734,19 @@ describe("the latency the runner measures for it", () => {
 
         return socket;
     };
+
+    // The first error settles the sample; a second one - a reset during the
+    // teardown the handler itself started - must find a listener too, because
+    // an error nobody hears is thrown, and thrown here is the whole process.
+    it("still listens after the first error", async () => {
+        const reading = await sampleHandshake({host: "h", port: 1,
+            connect: socketThat((socket) => {
+                socket.emit("error", new Error("refused"));
+                socket.emit("error", new Error("reset"));
+            })});
+
+        assert.equal(reading, null);
+    });
 
     it("times a handshake that completed", async () => {
         const reading = await sampleHandshake({host: "h", port: 1,

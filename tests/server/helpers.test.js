@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
-    mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes, truncate, writeAtomically
+    bareHost, mapFixed, mapRounded, toErrorMessage, stripTrailingSlashes, truncate, writeAtomically
 } from "../../server/util/helpers.js";
 
 const entries = [
@@ -377,5 +377,29 @@ describe("truncate", () => {
     it("stringifies whatever it is handed", () => {
         assert.equal(truncate(12345, 20), "12345");
         assert.equal(truncate(null, 20), "null");
+    });
+});
+
+/**
+ * The SMTP and MQTT host fields accept the bracketed spelling an operator
+ * copies out of a URL, and the outbound guard already strips the brackets
+ * before judging the value. The dialers passed it through verbatim, so a
+ * broker at [fd00::1] was configured, shown as configured, and never reached.
+ */
+describe("bareHost", () => {
+    it("takes the brackets off an IPv6 literal", () => {
+        assert.equal(bareHost("[fd00::1]"), "fd00::1");
+        assert.equal(bareHost("[::1]"), "::1");
+    });
+
+    it("leaves a hostname and a bare address alone", () => {
+        assert.equal(bareHost("broker.lan"), "broker.lan");
+        assert.equal(bareHost("192.168.1.5"), "192.168.1.5");
+        assert.equal(bareHost("fd00::1"), "fd00::1");
+    });
+
+    it("answers an empty string for nothing at all", () => {
+        assert.equal(bareHost(undefined), "");
+        assert.equal(bareHost(null), "");
     });
 });

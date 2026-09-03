@@ -222,6 +222,39 @@ const exitCodeReason = (code) => code === WINDOWS_DLL_NOT_FOUND
     : `The speedtest CLI exited with code ${code} without producing a result`;
 
 /**
+ * What the row says when the server's own shutdown killed the run.
+ *
+ * A constant because two places have to agree on it word for word: this, and
+ * the phrase table the client explains a stored error with - see
+ * client/src/common/components/TestDetails/utils/errors.js. The client matches
+ * on a substring, so the wording may grow at either end but the middle of this
+ * sentence is load-bearing.
+ */
+export const SHUTDOWN_STOP_MESSAGE =
+    "The speedtest was stopped because MySpeed was shutting down";
+
+/**
+ * Why a child that died of a signal died, which the exit code cannot say.
+ *
+ * `close` carries `(code, signal)` and only one of them is ever set: a signal
+ * death reports `code === null`, so the bare reason above rendered "exited with
+ * code null without producing a result" - a sentence naming no cause, stored on
+ * the row and sent to every prose notifier. The commonest way to meet it is a
+ * `docker stop` or a service restart landing on a run in progress.
+ *
+ * Whether the kill was ours is asked separately from whether there was a
+ * signal, because they are separate facts and only the caller knows the first.
+ * The systemd unit install.sh writes carries no KillMode, so the default
+ * control-group stop sends SIGTERM to the CLI alongside the server - and the
+ * OOM killer and an operator's own pkill reach it the same way. Where the
+ * shutdown is not ours the signal is named rather than explained, because a
+ * sentence claiming a shutdown that is not happening is worse than a bare fact.
+ */
+const signalReason = (signal, stopping) => stopping
+    ? SHUTDOWN_STOP_MESSAGE
+    : `The speedtest CLI was stopped by ${signal} without producing a result`;
+
+/**
  * The failure an exit code implies, or null when the streams already said
  * everything worth saying.
  *
@@ -230,10 +263,15 @@ const exitCodeReason = (code) => code === WINDOWS_DLL_NOT_FOUND
  * measurement, and the measurement is the thing worth keeping. A clean exit
  * with no result is left alone too - that is a killed run, and the timeout is
  * what should explain it.
+ *
+ * `signal` and `stopping` are third and fourth rather than second, and both
+ * default: every existing caller and its tests pass `(code, result)`, and
+ * moving `result` along would have bound an object to `signal` and read
+ * `.error` off undefined.
  */
-export const exitError = (code, result) =>
+export const exitError = (code, result, signal = null, stopping = false) =>
     code !== 0 && !result.error && Object.keys(result).length === 0
-        ? exitCodeReason(code)
+        ? (signal ? signalReason(signal, stopping) : exitCodeReason(code))
         : null;
 
 /**
@@ -525,7 +563,11 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
         // like - node emits 'error' and 'close' within milliseconds but never
         // clears that timer, and the whole process then stays alive until it
         // fires. Owning it means it is cleared however the run ends.
-        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs], {windowsHide: true}));
+        // No stdin: nothing here ever writes to the child, and a pipe left
+        // open is what a CLI that stops to ask something waits on - until the
+        // run's own timeout. EOF makes it fail at once instead.
+        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs],
+            {windowsHide: true, stdio: ["ignore", "pipe", "pipe"]}));
 
         let timedOut = false;
         let escalation;
@@ -590,7 +632,10 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
 
             // 'close' rather than 'exit': the process can exit while its pipes
             // still hold output, and parsing then would read a truncated result.
-            testProcess.on('close', (code) => {
+            // The signal beside the code is taken as well as the code: only one
+            // of the two is ever set, and a child killed by the shutdown reports
+            // a null code, which on its own says nothing a reader can act on.
+            testProcess.on('close', (code, signal) => {
                 finish();
                 result = parseCliOutput(mode, stdout.value(), stderr.value());
 
@@ -598,7 +643,7 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
                 // to say. Without it a run that failed instantly and explained
                 // itself nowhere the parser looks was reported as "test timed
                 // out".
-                const failure = exitError(code, result);
+                const failure = exitError(code, result, signal, isShuttingDown());
                 if (failure) result.error = failure;
 
                 resolve();

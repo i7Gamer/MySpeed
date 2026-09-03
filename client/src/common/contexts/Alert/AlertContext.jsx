@@ -242,7 +242,11 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                     )}
                     {alert.type === "select" && (
                         <span className="select-wrap">
+                            {/* The alert's own title, which is the only thing that says
+                                what is being chosen: the heading is drawn above the
+                                dialog body and associated with nothing. */}
                             <select className="dialog-input select-field" value={inputValue}
+                                    aria-label={alert.title}
                                     onChange={(e) => setInputValue(e.target.value)}>
                                 {Object.entries(alert.options || {}).map(([key, label]) => (
                                     <option key={key} value={key}>{label}</option>

@@ -7,9 +7,12 @@ import db from '../config/database.js';
  * `enabled` means "part of the scheduled round" - a disabled target is still
  * runnable by hand, which is what a diagnostic iperf3 box wants. `alerts`
  * decides whether thresholds and recommendations look at this target at all,
- * and the three optimal columns override the global optimal values when set -
- * null means "inherit", resolved in one place (controller/targets.js
- * resolveLimits) so the alert gate and the client's grading cannot drift.
+ * and the three optimal columns override the instance-wide optimal values
+ * when set - null means "inherit". Grading is a client concern, so the
+ * resolution lives in TargetUtil.js's resolveLimits; the server only
+ * validates these three columns and stores what it is given. The alert gate
+ * does not read them either - it grades a result against each integration's
+ * own alert_ping_above, alert_download_below and alert_upload_below fields.
  *
  * The two iperf3 columns read the same way: null is "inherit the shipped
  * default", not "unmeasured", so an instance that upgrades into these columns

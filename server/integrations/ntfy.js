@@ -1,6 +1,6 @@
 import { plainDefaults } from '../util/notificationLocale.js';
 import { postText } from "../util/http.js";
-import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { headerSafe, replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 // Both templates name the target: on a multi-target instance every message
@@ -8,32 +8,6 @@ import { wantsDigest } from "../util/digestOptIn.js";
 // The plain-text pair three notifiers share, in the integration's own
 // language - see util/notificationLocale.js.
 const defaults = plainDefaults;
-
-/**
- * What a header value is allowed to be.
- *
- * The title and the tags are free text from the integration form and go into
- * headers verbatim, so anything undici refuses is a notification that never
- * leaves the process - postText catches the throw, logs it and answers null,
- * while the integration goes on showing as configured.
- *
- * Two things are refused, not one. A line break, because a value split across
- * lines is also how a request smuggles a second header in. And any code point
- * above U+00FF, because a header is Latin-1 on the wire - which matters more in
- * practice than the newline did: ntfy's own documentation shows emoji titles,
- * and a Cyrillic or CJK instance name is entirely ordinary. Dropping those
- * characters costs a nicer-looking title; keeping them cost the whole message.
- *
- * The bounds are written as escapes rather than as the characters themselves.
- * Spelling the upper bound literally is how this class first ended up holding a
- * stray byte instead of the intended one - which git read as binary, and which
- * nothing else caught because the resulting range still behaved.
- */
-const HEADER_SAFE = /[^\x20-\xFF]/g;
-
-const headerSafe = (value) => String(value)
-    .replace(/[\r\n]+/g, " ")
-    .replace(HEADER_SAFE, "");
 
 // The range ntfy accepts, and the one the priority fields' own /^[1-5]$/ below
 // spells out - kept as numbers here because this is where a value that never
@@ -56,7 +30,14 @@ const buildHeaders = ({token, title, tags}, priority) => {
         headers["Priority"] = String(level);
     if (title) headers["Title"] = headerSafe(title);
     if (tags) headers["Tags"] = headerSafe(tags);
-    if (token) headers["Authorization"] = "Bearer " + token;
+    /*
+     * Through the same filter as the title beside it. The token declares no
+     * regex and a config import writes the field unvalidated, so a stray
+     * newline or a character above U+00FF in a pasted credential made undici
+     * throw on every send - and an integration that has stopped delivering
+     * looks exactly like one that has nothing to say.
+     */
+    if (token) headers["Authorization"] = "Bearer " + headerSafe(token);
     return headers;
 };
 
@@ -75,15 +56,18 @@ const DIGEST_PRIORITY = 3;
 
 
 export default (registerEvent) => {
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting - see discord.js for why
+    // the six clock names could not go on being read off the process clock.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_message || defaults(c.language).finished, data),
+            replaceVariables(c.finished_message || defaults(c.language).finished, data, zone),
             c.priority || 3, activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_message || defaults(c.language).failed, failure),
+            replaceVariables(c.error_message || defaults(c.language).failed, failure, zone),
             c.error_priority || 5, activity);
     });
 
@@ -99,6 +83,9 @@ export default (registerEvent) => {
         // Opts in to the shared threshold settings; isNotifier in
         // controller/integrations.js explains the flag.
         notifier: true,
+        // And to the language setting, because what it sends is prose a person
+        // reads; isLocalised in controller/integrations.js explains this one.
+        localised: true,
         icon: "fa-solid fa-bell-concierge",
         fields: [
             // `.+` stops at a newline without an end anchor to refuse it, and

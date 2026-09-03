@@ -35,3 +35,30 @@
   height: 0.8rem
   margin-right: 0.35rem
   vertical-align: -0.05rem
+
+// Which target the figures below belong to, beside the card's own heading and
+// drawn only where several targets make that a question - see the component.
+//
+// An annotation rather than a second title: the heading says what the card is,
+// and this qualifies it, so it takes the size a row's label wears and the
+// subdued colour every sub-line on the page is written in. Inline-flex to hold
+// the dot and the name on one line together, whatever the heading does around
+// them.
+.stats-header .latest-target
+  display: inline-flex
+  align-items: center
+  gap: 0.4rem
+  margin-left: 0.6rem
+  min-width: 0
+  max-width: 100%
+  font-size: row.$panel-title-size
+  font-weight: 500
+  color: $subtext
+
+// A target's name is the operator's own words and can be any length; the card
+// gives it whatever the heading leaves and cuts the rest, rather than letting
+// one long name set the height of the row of cards it sits in.
+.stats-header .latest-target-name
+  overflow: hidden
+  text-overflow: ellipsis
+  white-space: nowrap

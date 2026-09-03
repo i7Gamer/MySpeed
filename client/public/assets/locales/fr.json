@@ -157,6 +157,7 @@
     "cron_title": "Définir la fréquence de test",
     "cron_next_test": "Test suivant :",
     "custom_cron": "Expression cron personnalisée",
+    "cron_help": "Aide sur la syntaxe cron",
     "schedule_offset": "Décaler la planification",
     "schedule_offset_desc": "Ajoute un petit délai pour empêcher les tests de démarrer à l'heure exacte",
     "pause_title": "Mettre en pause les tests de vitesse pour...",
@@ -274,7 +275,8 @@
     "hour": "1 heure",
     "hours": "{{hours}} heure(s)",
     "day": "1 jour",
-    "days": "{{days}} jours"
+    "days": "{{days}} jours",
+    "days_ago": "{{days}} jours"
   },
   "test": {
     "not_available": "Il n'y a actuellement aucun test disponible",
@@ -337,7 +339,11 @@
     "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré.",
     "rate_limited": "Le fournisseur a refusé le test car trop de tests ont été lancés récemment. Le suivant est retardé automatiquement.",
     "no_measurement": "Le test s'est terminé sans signaler la moindre mesure.",
-    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée."
+    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée.",
+    "stopped_by_shutdown": "Le test a été interrompu parce que MySpeed s'arrêtait.",
+    "stopped_by_signal": "Le test a été interrompu de l'extérieur avant la fin.",
+    "cli_missing": "Le programme de mesure n'a pas pu être installé, le test n'a donc pas été exécuté.",
+    "interface_unusable": "L'interface réseau configurée n'a pas d'adresse utilisable, le test n'a donc pas été exécuté."
   },
   "statistics": {
     "average": "Moyenne",
@@ -416,6 +422,8 @@
       "median": "Médiane"
     },
     "failed_test": "Échec du test",
+    "failed_in_period": "{{failed}} en échec sur cette période",
+    "failed_in_period_single": "1 en échec sur cette période",
     "hourly": {
       "title": "Vitesse par heure de la journée",
       "sample_count": "Tests"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Ajouter un serveur",
+    "context_menu": "Actions du serveur",
     "create": "Ajouter",
     "this_server": "Ce serveur",
     "created": "Le serveur a été ajouté avec succès",

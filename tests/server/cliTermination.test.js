@@ -6,6 +6,7 @@ import {
     hasExited, terminate, trackProcess, untrackProcess, waitForActiveProcessExit
 } from "../../server/util/speedtest.js";
 import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
+import { readSource, withoutComments } from "../helpers/source.js";
 
 /**
  * What happens to a CLI that will not go when it is asked, and to one that goes
@@ -249,5 +250,80 @@ describe("exitError", () => {
     // despite the code is still a result.
     it("still keeps a result that arrived despite it", () => {
         assert.equal(exitError(WINDOWS_DLL_NOT_FOUND, {type: "result", download: {bandwidth: 1}}), null);
+    });
+
+    /**
+     * A child taken by a signal reports `code === null`, and the generic
+     * wording read "exited with code null without producing a result" - a
+     * sentence that named no cause, went into the row, and went out to every
+     * prose notifier. The commonest way to see it is a `docker stop` or a
+     * service restart landing on a run in progress, where the truth is simply
+     * that the server was leaving.
+     *
+     * Signal and shutdown are asked separately because they are separate
+     * facts: `isShuttingDown()` is read at the call site and passed in, so this
+     * stays a pure function over what it is told.
+     */
+    it("names the shutdown when the signal was ours", () => {
+        const message = exitError(null, {}, "SIGTERM", true);
+
+        assert.match(message, /shutting down/);
+        assert.doesNotMatch(message, /code null/);
+    });
+
+    /**
+     * The same death without a shutdown in progress is somebody else's kill -
+     * the OOM killer, an operator's pkill, or systemd's control-group stop
+     * reaching the CLI alongside the server. Naming the signal is honest;
+     * claiming a shutdown that is not happening is not.
+     */
+    it("names the signal when the kill was not ours", () => {
+        const message = exitError(null, {}, "SIGKILL", false);
+
+        assert.match(message, /SIGKILL/);
+        assert.doesNotMatch(message, /shutting down/);
+        assert.doesNotMatch(message, /code null/);
+    });
+
+    // Told nothing about a signal, it answers exactly what it answered before:
+    // the two-argument call is what the pure tests above use.
+    it("keeps the bare code wording when no signal is named", () => {
+        assert.match(exitError(null, {}), /code null/);
+        assert.match(exitError(2, {}, null, true), /2/);
+    });
+
+    // The gate is unchanged, so a shutdown that still produced a measurement
+    // keeps it - the round has a result and no failure to report.
+    it("keeps a result that arrived before the signal", () => {
+        assert.equal(exitError(null, {type: "result", download: {bandwidth: 1}}, "SIGTERM", true), null);
+    });
+});
+
+/**
+ * And the run that dies of a signal actually reaches all that.
+ *
+ * Everything above calls exitError directly, which leaves the four arguments
+ * the close handler passes it entirely to the source: dropping `signal` from
+ * the event's parameter list, or `isShuttingDown()` from the call, puts every
+ * killed run back to "exited with code null without producing a result" with
+ * the whole suite above still green. Read as text because the handler is a
+ * closure inside the spawn, with a child process, two stream readers and a
+ * timeout around it - the composition is what is in doubt here, not the
+ * behaviour of the function it composes.
+ */
+describe("what the close handler hands exitError", () => {
+    // Without its comments: the docblock above this handler quotes the call
+    // it is explaining, so a revert that left the prose in place satisfied
+    // both assertions below while the handler had lost the argument.
+    const source = withoutComments(readSource("server/util/speedtest.js"));
+
+    it("takes the signal off the event beside the code", () => {
+        assert.match(source, /testProcess\.on\('close', \(code, signal\) =>/,
+            "the handler never sees the signal, so a killed run has only a null code to explain itself");
+    });
+
+    it("tells it whether the shutdown was ours", () => {
+        assert.match(source, /exitError\(code, result, signal, isShuttingDown\(\)\)/,
+            "a run our own shutdown killed is reported as a signal from nowhere, or not at all");
     });
 });

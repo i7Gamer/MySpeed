@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import { describeError } from "@/common/components/TestDetails/utils/errors.js";
 import { RATE_LIMIT_MESSAGE } from "../../server/util/providers/cliOutput.js";
+import { exitError, missingInterfaceMessage, SHUTDOWN_STOP_MESSAGE } from "../../server/util/speedtest.js";
 import { localeCodes, readLocale, readSource } from "../helpers/source.js";
 
 const codes = localeCodes();
@@ -46,22 +47,33 @@ describe("the failures the server produces", () => {
     });
 
     /**
-     * Read out of the task rather than listed here. A `throw new Error` added
-     * beside these two is a new way for a test to fail, and listing them by hand
+     * Read out of the source rather than listed here. A `throw new Error` added
+     * beside these is a new way for a test to fail, and listing them by hand
      * would mean this passes for exactly as long as somebody remembers to.
+     *
+     * Both files, which is the correction. This read the task alone while the
+     * comment above it claimed the general rule - and the *runner* beside it
+     * authors sentences too. Three of them had no entry: a CLI that could not be
+     * installed, an interface with no usable address, and - the one that
+     * mattered - a run that hit the timeout, which is the commonest failure
+     * there is and does not contain the word the table matched on.
      */
     it("explains every failure the speedtest task authors itself", () => {
-        const source = readSource("server/tasks/speedtest.js");
+        const source = ["server/tasks/speedtest.js", "server/util/speedtest.js"]
+            .map((file) => readSource(file)).join("\n");
 
         // The static half of each template literal: `${mode} finished without
         // reporting any measurement` contributes " finished without reporting
         // any measurement". Fragments too short to be a phrase are skipped -
         // they are punctuation between two interpolations.
-        const authored = [...source.matchAll(/throw new Error\(`([^`]+)`\)/g)]
+        // The closing paren is not required: one of these throws concatenates a
+        // reason onto its template and passes a `cause` after it, and a pattern
+        // that insisted on it skipped exactly that one.
+        const authored = [...source.matchAll(/throw new Error\(`([^`]+)`/g)]
             .map(([, template]) => template.split(/\$\{[^}]*}/).map((part) => part.trim()))
             .map((parts) => parts.filter((part) => part.length > 12));
 
-        assert.ok(authored.length >= 2, `only found ${authored.length} authored throws to check`);
+        assert.ok(authored.length >= 4, `only found ${authored.length} authored throws to check`);
 
         const unexplained = authored
             .filter((parts) => !parts.some((part) => describeError(part) !== null))
@@ -69,6 +81,40 @@ describe("the failures the server produces", () => {
 
         assert.deepEqual(unexplained, [],
             "these are sentences MySpeed writes and cannot then translate, so the row says 'Unknown error'");
+    });
+
+    /**
+     * The two the *runner* writes, which that scan cannot reach: they live in
+     * util/speedtest.js and neither is a `throw`. One is a constant, the other
+     * is composed at the moment a child dies of a signal.
+     *
+     * Composed here rather than quoted, for the reason the constant exists at
+     * all: the client matches on a substring of the server's sentence, so the
+     * only pin worth having runs the real composition against the real table.
+     * A `code === null` with no result is exactly what `close` reports for a
+     * signal death.
+     */
+    it("explains a run that the server's own shutdown stopped", () => {
+        assert.notEqual(describeError(SHUTDOWN_STOP_MESSAGE), null,
+            "a docker stop landing on a run writes a sentence the row cannot translate");
+    });
+
+    it("explains a run that a signal from outside stopped", () => {
+        assert.notEqual(describeError(exitError(null, {}, "SIGTERM")), null,
+            "an OOM kill or a pkill writes a sentence the row cannot translate");
+    });
+
+    /**
+     * And the one that is neither a throw nor a constant: a returned string,
+     * which the runner turns into the rejection. A scan for `throw new Error`
+     * cannot see it, so it is composed here the way the signal case above is.
+     */
+    it("explains an interface with no address to test from", () => {
+        const message = missingInterfaceMessage("ookla", "win32", "eth0", null);
+
+        assert.notEqual(message, null, "this is no longer the branch that reports it");
+        assert.notEqual(describeError(message), null,
+            "a misconfigured interface writes a sentence the row cannot translate");
     });
 });
 

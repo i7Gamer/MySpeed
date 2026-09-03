@@ -28,14 +28,31 @@ const DEFAULTS = {
     gradeValues: false
 };
 
-const loadPreferences = () => {
+/**
+ * What was actually chosen, which is all the store holds.
+ *
+ * The defaults used to be merged in here and written back out on the next
+ * save, so every preference the reader had never touched was stamped into the
+ * store the first time they saved any other one. `defaultTimeframe` is the one
+ * that hurt: no control in this dialog writes it - the statistics toolbar does,
+ * when a range is picked - so saving a clock format recorded a default range
+ * nobody had chosen, frozen at whatever DEFAULT_TIMEFRAME was that release and
+ * afterwards indistinguishable from a range somebody meant.
+ *
+ * Absent and "set to the current default" are different answers, and only the
+ * first of them can follow a default that later moves.
+ */
+const loadStored = () => {
     try {
         const raw = readStored(STORAGE_KEY);
-        if (!raw) return {...DEFAULTS};
+        if (!raw) return {};
+
+        // A store holding "null", a number or an array is a store somebody else
+        // wrote; the defaults answer for all of it.
         const parsed = JSON.parse(raw);
-        return {...DEFAULTS, ...parsed};
+        return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
     } catch {
-        return {...DEFAULTS};
+        return {};
     }
 };
 
@@ -52,7 +69,12 @@ const persistPreferences = (preferences) => {
 export const PreferencesContext = createContext({});
 
 export const PreferencesProvider = (props) => {
-    const [preferences, setPreferences] = useState(loadPreferences);
+    const [chosen, setChosen] = useState(loadStored);
+
+    // The defaults fill the gaps for every reader of this context, so nothing
+    // downstream can tell a preference that was chosen from one that was not -
+    // and nothing downstream should. Only the store keeps them apart.
+    const preferences = useMemo(() => ({...DEFAULTS, ...chosen}), [chosen]);
 
     /**
      * The one preference the stylesheets read for themselves.
@@ -67,8 +89,11 @@ export const PreferencesProvider = (props) => {
             preferences.gradeValues ? GRADE_VALUES_ON : GRADE_VALUES_OFF);
     }, [preferences.gradeValues]);
 
+    // Written onto what was chosen before, never onto the merged object: a
+    // save records the fields it names and leaves every other preference where
+    // the reader left it, unset ones included.
     const updatePreferences = useCallback((partial) => {
-        setPreferences(prev => {
+        setChosen(prev => {
             const next = {...prev, ...partial};
             persistPreferences(next);
             return next;

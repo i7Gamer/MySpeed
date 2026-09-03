@@ -218,4 +218,42 @@ describe("withAlpha", () => {
 
         assert.equal(withAlpha("rgba(139, 153, 171, 0.6)", 0.1), "rgba(139, 153, 171, 0.1)");
     });
+
+    /**
+     * The padding a stylesheet is free to carry, and getComputedStyle hands
+     * back on a custom property verbatim - `--accent: rgb( 8, 145, 178 )` is
+     * read as exactly that string, spaces and all.
+     *
+     * The trim was written outside the parentheses rather than inside them, so
+     * it tidied the whole result and not the components: the split then began
+     * on a leading space and produced an empty first token, and the fill came
+     * out `rgba(, 8, 145, 0.25)`. addColorStop answers that with a thrown
+     * SyntaxError, which blanks the chart mid-draw - the same end as the
+     * mixed-syntax fault above, through a different door.
+     */
+    it("takes a padded functional notation", async () => {
+        const {withAlpha} = await import("../../client/src/pages/Statistics/charts/lineChartConfig.js");
+
+        assert.equal(withAlpha("rgb( 8, 145, 178 )", 0.25), "rgba(8, 145, 178, 0.25)");
+        assert.equal(withAlpha("rgb( 8 145 178 )", 0.25), "rgba(8, 145, 178, 0.25)");
+        assert.equal(withAlpha("hsl( 38, 92%, 50% )", 0.25), "hsla(38, 92%, 50%, 0.25)");
+    });
+
+    /**
+     * The hex forms that carry their own alpha. They are the hex spelling of
+     * the same "already has an alpha" case the functional notations are
+     * already read for - and the pattern accepted three digits or six, so an
+     * `#0891b2ff` fell past every branch and was handed back unchanged: both
+     * stops of a gradient the same opaque colour, which is the fault this
+     * whole function exists to fix.
+     */
+    it("takes the hex forms that carry an alpha", async () => {
+        const {withAlpha} = await import("../../client/src/pages/Statistics/charts/lineChartConfig.js");
+
+        assert.equal(withAlpha("#08bf", 0.25), "rgba(0, 136, 187, 0.25)");
+        assert.equal(withAlpha("#0891b2ff", 0.25), "rgba(8, 145, 178, 0.25)");
+        // And the alpha it arrived with is replaced, not kept beside the new
+        // one - the same rule the slash form is held to.
+        assert.equal(withAlpha("#0891b200", 0.5), "rgba(8, 145, 178, 0.5)");
+    });
 });

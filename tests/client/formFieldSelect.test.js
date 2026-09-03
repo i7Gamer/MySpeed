@@ -43,6 +43,20 @@ describe("a select form field", () => {
         assert.deepEqual(entries, [["", "English (default)"], ["en", "English"], ["de", "Deutsch"]]);
     });
 
+    /**
+     * A field whose definition names no placeholder still has to name its
+     * blank entry. It was drawn empty - a nameless first option in an open
+     * list, which a screen reader announces as nothing at all and a reader
+     * cannot tell from a rendering fault. The label is the one name the field
+     * always has, and it is what IntegrationDialog's getPlaceholder already
+     * falls back to for the other three field types.
+     */
+    it("names the blank entry after the label when nothing else does", () => {
+        const {select} = mount({placeholder: undefined});
+
+        assert.equal(select.options[0].textContent, "Message language");
+    });
+
     it("shows the value it was given", () => {
         assert.equal(mount().select.value, "de");
         assert.equal(mount({value: undefined}).select.value, "", "an unset value did not land on the blank entry");

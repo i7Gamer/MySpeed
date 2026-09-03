@@ -12,7 +12,7 @@ import PanelRow from "@/pages/Statistics/components/PanelRow";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import {
     convertSpeed, formatLatency, formatLatencyWithUnit, formatPercent, formatWithUnit, getSpeedUnit,
-    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency, wholeSpeed
+    LATENCY_STEP, NOT_MEASURED, roundsToZeroLatency, roundsToZeroSpeed, SPEED_STEP, wholeSpeed
 } from "@/common/utils/FormatUtil";
 import "./styles.sass";
 
@@ -105,6 +105,14 @@ export const ConsistencyChart = (props) => {
      * render there.
      */
     const stdDev = (value) => {
+        // Collapsed only: the pane below states this same spread at two
+        // decimals, where a legitimate ±0.4 must not borrow the "rounded
+        // away" wording this guards the card against - roundsToZeroLatency's
+        // ping sibling above draws the identical line between its two views.
+        if (!props.expanded && roundsToZeroSpeed(value, preferences)) {
+            return `±<${SPEED_STEP} ${speedUnit}`;
+        }
+
         // wholeSpeed when collapsed, for the same single rounding the speed
         // beside it gets - re-rounding the two-decimal conversion printed the
         // [8n+3.96, 8n+4) bands one high.

@@ -83,6 +83,8 @@ describe("locale files", () => {
         return value && typeof value === "object" ? flatten(value, full) : [full];
     });
 
+    const AGO_INFLECTION = /^time\.[a-z]+_ago$/;
+
     const read = (code) => JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"));
     const english = new Set(flatten(read("en")));
 
@@ -91,7 +93,13 @@ describe("locale files", () => {
     // own schedule.
     for (const {name, code} of registered.filter(({code}) => code !== "en")) {
         it(`${name} carries no key English has dropped`, () => {
-            const stale = flatten(read(code)).filter((key) => !english.has(key));
+            const stale = flatten(read(code))
+                // time.<unit>_ago is the inflection a language wears behind
+                // "ago" - see the family's note in localeParity.test.js. Which
+                // units need one is a fact about the language, so a locale
+                // carrying one English does not is right rather than stale.
+                .filter((key) => !AGO_INFLECTION.test(key))
+                .filter((key) => !english.has(key));
 
             assert.deepEqual(stale, [], `${code}.json translates keys that no longer exist`);
         });

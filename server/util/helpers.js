@@ -3,6 +3,9 @@ import fs from 'node:fs';
 // this file's string helpers are imported by every integration, and the
 // testOutcome door would drag sequelize along with them.
 import { usableFigure } from './metricValue.js';
+// A leaf of its own: timezone.js imports nothing from the app, so the clock
+// the message templates are rendered on costs the notifiers nothing either.
+import { localWallClock, serverZone } from './timezone.js';
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -39,15 +42,32 @@ export const writeAtomically = (file, contents) => {
  */
 export const DATE_VARIABLES = ["year", "month", "day", "hour", "minute", "second"];
 
-const getDateVariables = () => {
-    const now = new Date();
+/**
+ * The six of them, on the clock the instance keeps rather than the one the
+ * process happens to run on.
+ *
+ * They were built from `new Date().getHours()` and its siblings, which is the
+ * host clock - while the schedule, the digests, the quiet hours and the
+ * /status countdown all resolve the stored `timezone` setting. That setting
+ * exists because the Docker image pins `ENV TZ=Etc/UTC`, so on a Berlin
+ * instance every one of those surfaces said 11:14 and the notification said
+ * 09:14, for the same test, using a chip the dialog itself offers.
+ *
+ * Through localWallClock and the UTC getters, exactly as digestReport's
+ * localParts builds the date it names a period by: the returned Date is a
+ * carrier for those fields and not a moment in time, which is why nothing here
+ * stores it.
+ */
+const getDateVariables = (zone) => {
+    const wall = localWallClock(zone, new Date());
+
     return {
-        year: now.getFullYear(),
-        month: pad(now.getMonth() + 1),
-        day: pad(now.getDate()),
-        hour: pad(now.getHours()),
-        minute: pad(now.getMinutes()),
-        second: pad(now.getSeconds())
+        year: wall.getUTCFullYear(),
+        month: pad(wall.getUTCMonth() + 1),
+        day: pad(wall.getUTCDate()),
+        hour: pad(wall.getUTCHours()),
+        minute: pad(wall.getUTCMinutes()),
+        second: pad(wall.getUTCSeconds())
     };
 };
 
@@ -83,9 +103,26 @@ const VARIABLE_TOKEN = /%(\w+)%/g;
  *   happened to spell a later name was replaced again on that name's turn - a
  *   server named "%isp%" had the ISP written into it. A single pass never
  *   revisits what it has already written.
+ *
+ * The zone comes third and last, behind the two parameters every call site
+ * already passes, because tests/server/templateVariableOffers.test.js reads
+ * these calls to pair a substituting field with the chips the dialog offers
+ * for it - and a zone in front of them is a scan that matches nothing, which
+ * fails that assertion and turns the two beside it vacuously green.
+ *
+ * It defaults to the host's own clock, which is what the six parts were built
+ * from before: localWallClock(serverZone, now) shifts by exactly the offset
+ * getHours() would have applied, so a call site that has not been given a zone
+ * renders precisely what it always did rather than half of the fix.
+ *
+ * Deliberately not async, and deliberately not reading the setting itself. The
+ * zone is resolved once per event at the dispatch point - triggerEvent, which
+ * is already async and is already where the per-recipient alert passages are
+ * filled in - and handed down. An async reader here would hand every
+ * `balancedForTelegram(replaceVariables(...))` a promise instead of a message.
  */
-export const replaceVariables = (message, variables) => {
-    const allVariables = {...getDateVariables(), ...variables};
+export const replaceVariables = (message, variables, zone = serverZone) => {
+    const allVariables = {...getDateVariables(zone), ...variables};
 
     return message.replace(VARIABLE_TOKEN, (token, name) => {
         // A name nothing was given for is left standing, as it always was: the
@@ -113,6 +150,49 @@ export const stripTrailingSlashes = (value) => {
 
     return text.slice(0, end);
 };
+
+/**
+ * What a header value is allowed to be.
+ *
+ * Free text from an integration form goes into headers verbatim, so anything
+ * undici refuses is a notification that never leaves the process - the poster
+ * catches the throw, logs it and answers null, while the integration goes on
+ * showing as configured.
+ *
+ * Two things are refused, not one. A line break, because a value split across
+ * lines is also how a request smuggles a second header in. And any code point
+ * above U+00FF, because a header is Latin-1 on the wire - which matters more in
+ * practice than the newline did: ntfy's own documentation shows emoji titles,
+ * and a Cyrillic or CJK instance name is entirely ordinary. Dropping those
+ * characters costs a nicer-looking title; keeping them cost the whole message.
+ *
+ * The bounds are written as escapes rather than as the characters themselves.
+ * Spelling the upper bound literally is how this class first ended up holding a
+ * stray byte instead of the intended one - which git read as binary, and which
+ * nothing else caught because the resulting range still behaved.
+ *
+ * Here rather than in ntfy, where it was written, because the credentials go
+ * through it too now and two integrations need the same rule.
+ */
+const HEADER_SAFE = /[^\x20-\xFF]/g;
+
+export const headerSafe = (value) => String(value)
+    .replace(/[\r\n]+/g, " ")
+    .replace(HEADER_SAFE, "");
+
+/**
+ * A host as a socket can dial it: the brackets an IPv6 literal wears in a URL
+ * taken off again.
+ *
+ * `[fd00::1]` is how an address is written in a URL, and it is the spelling an
+ * operator copies out of one - so the SMTP and MQTT host fields accept it, and
+ * the outbound guard strips the brackets before judging it. The dialers did
+ * not: net.connect({host: "[fd00::1]"}) resolves the brackets as part of a
+ * name, finds nothing, and every notification is lost to a getaddrinfo failure
+ * on a value the interface said was fine. A hostname or a bare address passes
+ * through untouched.
+ */
+export const bareHost = (value) => String(value ?? "").replace(/^\[|]$/g, "");
 
 /**
  * The mark a cut message ends in, so that a trimmed one is visibly incomplete

@@ -157,6 +157,7 @@
     "cron_title": "テスト頻度を設定",
     "cron_next_test": "次のテスト:",
     "custom_cron": "カスタム cron 式",
+    "cron_help": "cron 構文のヘルプ",
     "schedule_offset": "スケジュールをずらす",
     "schedule_offset_desc": "ちょうどの時刻にテストが始まらないよう、わずかな遅延を加えます",
     "pause_title": "スピードテストを一時停止する期間...",
@@ -274,7 +275,8 @@
     "hour": "1 時間",
     "hours": "{{hours}} 時間",
     "day": "1 日",
-    "days": "{{days}} 日"
+    "days": "{{days}} 日",
+    "days_ago": "{{days}} 日"
   },
   "test": {
     "not_available": "現在、利用できるテストはありません",
@@ -337,7 +339,11 @@
     "latency_failed": "レイテンシーテストに失敗したため、速度を測定できませんでした。",
     "rate_limited": "短時間に実行されたテストが多すぎるため、プロバイダーがテストを拒否しました。次のテストは自動的に延期されます。",
     "no_measurement": "テストは終了しましたが、測定値が報告されませんでした。",
-    "impossible_measurement": "テストがあり得ない測定値を報告したため、破棄されました。"
+    "impossible_measurement": "テストがあり得ない測定値を報告したため、破棄されました。",
+    "stopped_by_shutdown": "MySpeed のシャットダウン中だったため、テストは中止されました。",
+    "stopped_by_signal": "テストは終了する前に外部から停止されました。",
+    "cli_missing": "計測プログラムをインストールできなかったため、テストは実行されませんでした。",
+    "interface_unusable": "設定されたネットワークインターフェースに使用可能なアドレスがないため、テストは実行されませんでした。"
   },
   "statistics": {
     "average": "平均",
@@ -416,6 +422,8 @@
       "median": "中央値"
     },
     "failed_test": "失敗したテスト",
+    "failed_in_period": "この期間に {{failed}} 件が失敗",
+    "failed_in_period_single": "この期間に 1 件が失敗",
     "hourly": {
       "title": "時間帯別の速度",
       "sample_count": "テスト"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "サーバーを追加",
+    "context_menu": "サーバーの操作",
     "create": "追加",
     "this_server": "このサーバー",
     "created": "サーバーを追加しました",

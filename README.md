@@ -50,9 +50,13 @@ has no `avx2` flag.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
-  https://raw.githubusercontent.com/i7Gamer/MySpeed/development/scripts/install.sh
+  https://github.com/i7Gamer/MySpeed/releases/latest/download/install.sh
 sudo bash /tmp/myspeed-install.sh
 ```
+
+The installer verifies the download against the release's `SHA256SUMS` before it
+installs anything. If you would rather be asked which of the two installations to
+run, `chooser.sh` at the same address puts the question first.
 
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
 Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
@@ -133,9 +137,13 @@ Requires [bun](https://bun.sh).
 git clone https://github.com/i7Gamer/MySpeed.git
 cd MySpeed
 bun install
+cd client && bun install && cd ..
 bun run build
+node scripts/move-client-build.js
 bun run server/index.js
 ```
+
+The client has its own dependencies, and the server serves the interface from `build/` at the repository root, which is where the last step moves it.
 
 MySpeed then listens on **http://localhost:5216**.
 
@@ -182,7 +190,7 @@ The Docker image ships the runtime and the server sources rather than a compiled
 binary, so run the entry point there instead:
 
 ```bash
-docker exec <container> bun server/index.js --reset-password
+docker exec -u bun <container> bun server/index.js --reset-password
 ```
 
 Run it from the same directory the server runs in — it resolves
@@ -240,6 +248,8 @@ Binding the published port to `127.0.0.1` keeps the container reachable only
 through the proxy.
 
 #### Environment variables
+
+The full list the server reads — including database and preview/testing variables not shown here — is in [`.env.example`](.env.example) at the repository root, with defaults and a one-line purpose for each.
 
 | Variable | Default | What it does |
 | --- | --- | --- |

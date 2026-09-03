@@ -53,7 +53,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: Move-Item -Path client/build -Destination .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -200,7 +200,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -301,7 +301,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -369,7 +369,7 @@ jobs:
         run: bun run build
 
       - name: Move build folder
-        run: mv client/build .
+        run: bun scripts/move-client-build.js
 
       - name: Install server dependencies
         run: bun install --frozen-lockfile
@@ -381,7 +381,11 @@ jobs:
         run: bun run generate-integrations
 
       - name: Create zip archive
-        run: zip -r MySpeed.zip build server package.json
+        # bun.lock too: the archive is advertised as "requires Bun runtime", and
+        # without the lockfile `bun install` re-resolves every range - two people
+        # unpacking one release get different builds of express and sequelize,
+        # neither of them the one that was tested.
+        run: zip -r MySpeed.zip build server package.json bun.lock
 
       - name: Upload to Release
         uses: actions/github-script@v9
@@ -397,4 +401,82 @@ jobs:
               release_id: parseInt(process.env.RELEASE_ID, 10),
               name: process.env.ASSET_NAME,
               data: fs.readFileSync(process.env.ASSET_NAME)
+            });
+
+  # Last, and needing every job that uploads an asset: it hashes what the
+  # release actually carries rather than what a build thought it produced.
+  checksums:
+    name: "Install scripts and checksums"
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-linux, build-macos, build-zip]
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+        with:
+          ref: v${{ inputs.version }}
+
+      # The documented install command fetches these. Served from the release
+      # rather than from a branch, so what a new installer runs is a version
+      # that was cut, not whatever the working branch holds this hour.
+      - name: Upload the install scripts
+        uses: actions/github-script@v9
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+        with:
+          script: |
+            const fs = require('fs');
+
+            for (const name of ['install.sh', 'docker-install.sh', 'chooser.sh']) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: parseInt(process.env.RELEASE_ID, 10),
+                name,
+                data: fs.readFileSync(`scripts/${name}`)
+              });
+            }
+
+      # What a download is supposed to be.
+      #
+      # install.sh runs the binary it fetched as root and checked only that the
+      # file was not empty, and a person downloading by hand had nothing to
+      # compare against at all - the whole guarantee was TLS to two hosts. The
+      # project already pins the digests of the provider CLIs it downloads;
+      # this is the same promise for its own artifacts.
+      #
+      # Hashed from the published assets, so the file describes the bytes a
+      # user will actually receive.
+      - name: Publish SHA256SUMS
+        uses: actions/github-script@v9
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+        with:
+          script: |
+            const crypto = require('crypto');
+            const release_id = parseInt(process.env.RELEASE_ID, 10);
+            const {owner, repo} = context.repo;
+
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets,
+              {owner, repo, release_id, per_page: 100});
+
+            const lines = [];
+
+            for (const asset of assets.sort((a, b) => a.name.localeCompare(b.name))) {
+              if (asset.name === 'SHA256SUMS') continue;
+
+              const {data} = await github.rest.repos.getReleaseAsset({
+                owner, repo, asset_id: asset.id,
+                headers: {accept: 'application/octet-stream'}
+              });
+
+              const digest = crypto.createHash('sha256').update(Buffer.from(data)).digest('hex');
+              lines.push(`${digest}  ${asset.name}`);
+            }
+
+            core.info(lines.join('\n'));
+
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id,
+              name: 'SHA256SUMS',
+              data: lines.join('\n') + '\n'
             });

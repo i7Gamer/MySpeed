@@ -157,6 +157,7 @@
     "cron_title": "Ajustar la frecuencia de los tests",
     "cron_next_test": "Próximo test:",
     "custom_cron": "Expresión cron personalizada",
+    "cron_help": "Ayuda con la sintaxis cron",
     "schedule_offset": "Desplazar la programación",
     "schedule_offset_desc": "Añade un pequeño retraso para evitar que las pruebas comiencen en horas exactas",
     "pause_title": "Pausar tests durante:",
@@ -274,7 +275,8 @@
     "hour": "1 hora",
     "hours": "{{hours}} horas",
     "day": "1 día",
-    "days": "{{days}} días"
+    "days": "{{days}} días",
+    "days_ago": "{{days}} días"
   },
   "test": {
     "not_available": "Actualmente no hay tests disponibles",
@@ -337,7 +339,11 @@
     "latency_failed": "El test de latencia falló, así que no se pudo medir ninguna velocidad.",
     "rate_limited": "El proveedor rechazó el test porque se han ejecutado demasiados hace poco. El siguiente se retrasa automáticamente.",
     "no_measurement": "El test terminó sin informar de ninguna medición.",
-    "impossible_measurement": "El test informó de una medición que no puede ser correcta, así que se descartó."
+    "impossible_measurement": "El test informó de una medición que no puede ser correcta, así que se descartó.",
+    "stopped_by_shutdown": "El test se detuvo porque MySpeed se estaba apagando.",
+    "stopped_by_signal": "El test se detuvo desde fuera antes de terminar.",
+    "cli_missing": "No se pudo instalar el programa de medición, por lo que el test no se ejecutó.",
+    "interface_unusable": "La interfaz de red configurada no tiene una dirección utilizable, por lo que el test no se ejecutó."
   },
   "statistics": {
     "average": "Promedio",
@@ -416,6 +422,8 @@
       "median": "Mediana"
     },
     "failed_test": "Prueba fallida",
+    "failed_in_period": "{{failed}} con error en este periodo",
+    "failed_in_period_single": "1 con error en este periodo",
     "hourly": {
       "title": "Velocidad por hora del día",
       "sample_count": "Pruebas"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Añadir servidor",
+    "context_menu": "Acciones del servidor",
     "create": "Añadir",
     "this_server": "Este servidor",
     "created": "El servidor se ha añadido correctamente",

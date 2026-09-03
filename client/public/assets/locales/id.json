@@ -157,6 +157,7 @@
     "cron_title": "Atur frekuensi pengujian",
     "cron_next_test": "Pengujian Berikutnya:",
     "custom_cron": "Ekspresi cron khusus",
+    "cron_help": "Bantuan sintaks cron",
     "schedule_offset": "Geser jadwal",
     "schedule_offset_desc": "Menambahkan sedikit jeda agar pengujian tidak dimulai tepat pada waktu bulat",
     "pause_title": "Jeda speedtest selama...",
@@ -274,7 +275,8 @@
     "hour": "1 jam",
     "hours": "{{hours}} jam",
     "day": "1 hari",
-    "days": "{{days}} hari"
+    "days": "{{days}} hari",
+    "days_ago": "{{days}} hari"
   },
   "test": {
     "not_available": "Saat ini tidak ada pengujian yang tersedia",
@@ -337,7 +339,11 @@
     "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
     "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
     "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
-    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang."
+    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang.",
+    "stopped_by_shutdown": "Pengujian dihentikan karena MySpeed sedang dimatikan.",
+    "stopped_by_signal": "Pengujian dihentikan dari luar sebelum selesai.",
+    "cli_missing": "Program pengukuran tidak dapat dipasang, sehingga pengujian tidak berjalan.",
+    "interface_unusable": "Antarmuka jaringan yang dikonfigurasi tidak memiliki alamat yang dapat digunakan, sehingga pengujian tidak berjalan."
   },
   "statistics": {
     "average": "Rata-rata",
@@ -416,6 +422,8 @@
       "median": "Median"
     },
     "failed_test": "Pengujian gagal",
+    "failed_in_period": "{{failed}} gagal dalam periode ini",
+    "failed_in_period_single": "1 gagal dalam periode ini",
     "hourly": {
       "title": "Kecepatan menurut waktu dalam sehari",
       "sample_count": "Pengujian"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Tambah server",
+    "context_menu": "Tindakan server",
     "create": "Tambah",
     "this_server": "Server ini",
     "created": "Server telah berhasil ditambahkan",

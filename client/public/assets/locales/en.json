@@ -157,6 +157,7 @@
     "cron_title": "Set test frequency",
     "cron_next_test": "Next Test:",
     "custom_cron": "Custom cron expression",
+    "cron_help": "Cron syntax help",
     "schedule_offset": "Offset schedule",
     "schedule_offset_desc": "Adds a small delay to prevent tests from starting at exact times",
     "pause_title": "Pause speedtests for...",
@@ -274,7 +275,8 @@
     "hour": "1 hour",
     "hours": "{{hours}} hours",
     "day": "1 day",
-    "days": "{{days}} days"
+    "days": "{{days}} days",
+    "days_ago": "{{days}} days"
   },
   "test": {
     "not_available": "There are currently no tests available",
@@ -337,7 +339,11 @@
     "latency_failed": "The latency test failed, so no speed could be measured.",
     "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",
     "no_measurement": "The test finished without reporting any measurement.",
-    "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded."
+    "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded.",
+    "stopped_by_shutdown": "The test was stopped because MySpeed was shutting down.",
+    "stopped_by_signal": "The test was stopped from outside MySpeed before it finished.",
+    "cli_missing": "The speedtest program could not be installed, so the test did not run.",
+    "interface_unusable": "The configured network interface has no usable address, so the test did not run."
   },
   "statistics": {
     "average": "Average",
@@ -416,6 +422,8 @@
       "median": "Median"
     },
     "failed_test": "Failed test",
+    "failed_in_period": "{{failed}} failed in this period",
+    "failed_in_period_single": "1 failed in this period",
     "hourly": {
       "title": "Speed by Time of Day",
       "sample_count": "Tests"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "Add server",
+    "context_menu": "Server actions",
     "create": "Add",
     "this_server": "This server",
     "created": "The server has been successfully added",

@@ -1,10 +1,22 @@
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { escapeRegExp, readSource, withoutJsComments } from "../helpers/source.js";
 import { compile, rules } from "../helpers/sass.mjs";
+import { act, cleanup, createElement, render, settle } from "../helpers/renderHarness.js";
 import {
     COMPARE_CHOICES, DEFAULT_COMPARE, compareToParams, parseCompareParams, rangeKey
 } from "@/common/utils/TimeframeUtil.js";
+import { ConfigContext } from "@/common/contexts/Config";
+import { NodeContext } from "@/common/contexts/Node";
+import { PreferencesContext } from "@/common/contexts/Preferences";
+import { StatusContext } from "@/common/contexts/Status";
+import { SpeedtestContext } from "@/common/contexts/Speedtests";
+import { TargetsContext } from "@/common/contexts/Targets";
+import { ThemeContext } from "@/common/contexts/Theme";
+import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
+import { AlertProvider } from "@/common/contexts/Alert";
+import { Statistics } from "@/pages/Statistics/Statistics.jsx";
 import { COMPARE_OFFSETS } from "../../server/routes/speedtests.js";
 
 const params = (query) => new URLSearchParams(query);
@@ -308,14 +320,170 @@ describe("the statistics page and its comparison choice", () => {
      * compare against", which stays silent on purpose - nothing has elapsed,
      * and the heading already names the range. Absent is a server that never
      * understood the question.
+     *
+     * And asked of a payload that says whether a comparison was asked for,
+     * which the describe below drives: the missing key only means "too old"
+     * where the request carried the parameter, and the page holds the previous
+     * range's payload while the new one is in flight.
      */
     it("says so when the node is too old to answer the comparison", () => {
         const body = withoutJsComments(statistics);
 
         assert.match(body, /previousWindow === undefined/,
             "an old node's missing key is indistinguishable from a deliberate null");
+        assert.match(body, /askedCompare: Boolean\(dateRange\)/,
+            "the stored payload no longer records whether its own request asked for a comparison");
+        assert.match(body, /askedCompare && previousWindow === undefined/,
+            "the sentence is gated on something other than the payload's own tag");
         assert.match(body, new RegExp(`t\\("${escapeRegExp("statistics.compare.unsupported")}"`),
             "the unsupported wording is not a literal call, so nothing checks it against the locales");
+    });
+});
+
+/**
+ * And the same sentence, driven rather than read.
+ *
+ * The pin above says the page distinguishes an absent `previous` key from a
+ * null one. It cannot say WHICH payload the page asks that of - and the answer
+ * was "whichever one is still on screen". `statistics` is never cleared on a
+ * range change, so between choosing a bounded range and its answer arriving the
+ * page held the all-time payload, which carries no `previous` because all time
+ * asks for no comparison. Every current server therefore accused itself of
+ * being too old, for as long as the second request took: a sentence about the
+ * node's version, appearing and vanishing as a reader stepped through the
+ * presets.
+ *
+ * So the page has to tag the answer with whether a comparison was asked for,
+ * the way compareStats stores the key its figures answer for. Read that way the
+ * question is about one payload rather than about two, and a payload from
+ * before the range change cannot answer it at all.
+ *
+ * Mounted rather than scanned, because both spellings read identically as text:
+ * the fault is entirely in which payload is in hand when the sentence is drawn.
+ * The empty-state branch is what makes mounting a page affordable here - it
+ * draws the toolbar, and the comparison row inside it, with no chart and so no
+ * canvas, which is where jsdom stops being a browser.
+ */
+describe("the unsupported-comparison sentence, on a page that is loading", () => {
+    afterEach(cleanup);
+
+    const realFetch = globalThis.fetch;
+    afterEach(() => { globalThis.fetch = realFetch; });
+
+    const noop = () => undefined;
+
+    // The page reveals itself in two staged timers before it asks the server
+    // anything. Waited for one at a time and with a margin: a single wait
+    // flushes React once at the end, and the second timer is armed by the
+    // effect that the first one's render runs.
+    const FIRST_STAGE_MS = 80;
+    const SECOND_STAGE_MS = 200;
+
+    const STATISTICS_PATH = "/speedtests/statistics/";
+    const UNSUPPORTED = "This node runs an older MySpeed and answered without the comparison";
+
+    // No `previous` key at all, which is what a node from before the compare
+    // parameter answers - and also what a current node answers for all time,
+    // which asks for no comparison. Telling those two apart is the whole point.
+    // No tests either, so the page draws its empty state and no chart.
+    const WITHOUT_COMPARISON = {tests: {total: 0}};
+
+    const json = (body) => new Response(JSON.stringify(body),
+        {status: 200, headers: {"content-type": "application/json"}});
+
+    /**
+     * Every statistics request is held open until the test answers it, which is
+     * the state this whole describe is about. Everything else the page asks for
+     * - the ten recent tests behind the latest-test card - answers at once with
+     * nothing, which is what a fresh instance has.
+     */
+    const holdTheStatistics = () => {
+        const asked = [];
+
+        globalThis.fetch = (url) => {
+            const path = String(url);
+            if (!path.includes(STATISTICS_PATH)) return Promise.resolve(json([]));
+
+            return new Promise((resolve) => asked.push({path, answer: (body) => resolve(json(body))}));
+        };
+
+        return asked;
+    };
+
+    // The page reads its range out of the URL, so changing the range means
+    // changing the URL - through the same hook the toolbar's own controls use.
+    const controls = {};
+    const Driver = () => {
+        [, controls.setParams] = useSearchParams();
+        return null;
+    };
+
+    const nest = (child, ...layers) =>
+        layers.reduceRight((inner, [Provider, value]) => createElement(Provider, {value}, inner), child);
+
+    const mount = (entry) => render(createElement(MemoryRouter, {initialEntries: [entry]},
+        nest(createElement(AlertProvider, null,
+            createElement("div", null, createElement(Driver), createElement(Statistics))),
+        [ConfigContext.Provider, [{viewMode: false, previewMode: false}, noop, noop]],
+        [NodeContext.Provider, [[], noop, 0, noop, () => undefined]],
+        [PreferencesContext.Provider, [{}, noop]],
+        [StatusContext.Provider, [{paused: false, running: false}, noop, noop]],
+        [ToastNotificationContext.Provider, noop],
+        [SpeedtestContext.Provider, {speedtests: [], updateTests: noop}],
+        [ThemeContext.Provider, {theme: "dark", palette: "slate", setTheme: noop, setPalette: noop}],
+        [TargetsContext.Provider,
+            {targets: [], reloadTargets: noop, pageTargetFor: () => null, selectedTarget: null}])));
+
+    const reachTheFirstRequest = async () => {
+        await settle(FIRST_STAGE_MS);
+        await settle(SECOND_STAGE_MS);
+        await settle();
+    };
+
+    const answer = async (request, body) => {
+        request.answer(body);
+        await settle();
+    };
+
+    const notes = (container) => [...container.querySelectorAll(".statistics-compare-note")]
+        .map((paragraph) => paragraph.textContent);
+
+    it("does not accuse a current node while its ranged answer is in flight", async () => {
+        const asked = holdTheStatistics();
+        const {container} = mount("/?range=all");
+
+        await reachTheFirstRequest();
+        assert.equal(asked.length, 1, "the page asked for something other than one statistics payload");
+        assert.doesNotMatch(asked[0].path, /compare=/, "all time asked for a comparison");
+        await answer(asked[0], WITHOUT_COMPARISON);
+
+        act(() => controls.setParams({range: "7d"}));
+        await settle();
+
+        assert.equal(asked.length, 2, "the range change asked the server nothing");
+        assert.deepEqual(notes(container), [],
+            "the page read the all-time payload's missing comparison as the new range's answer");
+    });
+
+    /**
+     * And it still says so once the answer really is the ranged one. The gate
+     * has to distinguish two payloads, not silence itself - a fix that only
+     * removed the sentence would take the third silence back with it.
+     */
+    it("says so once a ranged answer really arrives without a comparison", async () => {
+        const asked = holdTheStatistics();
+        const {container} = mount("/?range=all");
+
+        await reachTheFirstRequest();
+        await answer(asked[0], WITHOUT_COMPARISON);
+
+        act(() => controls.setParams({range: "7d"}));
+        await settle();
+        assert.match(asked[1].path, /compare=/, "the ranged request asked for no comparison");
+        await answer(asked[1], WITHOUT_COMPARISON);
+
+        assert.deepEqual(notes(container), [UNSUPPORTED],
+            "a node that answered a ranged request without the comparison said nothing about it");
     });
 });
 

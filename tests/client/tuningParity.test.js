@@ -239,9 +239,16 @@ describe("the editor and the door judge a UDP run the same way", () => {
     it("prints each default on the field it belongs to", () => {
         const editor = readSource("client/src/common/components/TargetsDialog/TargetEditor.jsx");
         const fieldBlock = (key) => {
-            // Generous enough for the field's own attributes and comments,
-            // tight enough that it cannot reach the next field's input.
-            const match = editor.match(new RegExp(`dialog\\.provider\\.${key}[\\s\\S]{0,900}?onChange`));
+            // Bounded by the next field rather than by a character count. A
+            // count has to be guessed generously enough for the field's own
+            // attributes and comments, and a block that grows past the guess
+            // stops matching - a green test turned red by a comment. Grow the
+            // guess and it reaches into the field after this one instead,
+            // which is the failure that stays green. Neither can happen to a
+            // stretch that ends at the next label key, since that is where the
+            // next field demonstrably begins.
+            const untilNextField = "(?:(?!dialog\\.provider\\.)[\\s\\S])*?";
+            const match = editor.match(new RegExp(`dialog\\.provider\\.${key}${untilNextField}onChange`));
             assert.ok(match, `no ${key} field found in the editor`);
             return match[0];
         };

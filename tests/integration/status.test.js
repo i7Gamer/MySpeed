@@ -283,14 +283,24 @@ describe("scoped to the targets the alerting speaks for", () => {
             "the failure count blames the line for the diagnostic box");
     });
 
-    it("reports no last test when every target has opted out", async () => {
+    /**
+     * Switching alerts off everywhere says "do not page me", not "forget the
+     * instance ever ran". The keep-alive keeps its empty scope - nothing is
+     * watched, nothing is reported - but this body answers what the instance
+     * last measured, and it used to answer that an instance testing hourly had
+     * never tested at all.
+     */
+    it("stays instance-wide when every target has opted out", async () => {
         const lonely = await seedTarget({name: "quiet", alerts: false});
-        await seedTests(server.tests, [{created: hoursAgo(1), targetId: lonely.id}]);
+        await seedTests(server.tests, [
+            {created: hoursAgo(1), download: 321, targetId: lonely.id},
+            {created: hoursAgo(2), ping: -1, download: -1, upload: -1, error: "asleep", targetId: lonely.id}
+        ]);
 
         const body = await status();
 
-        assert.equal(body.lastTest, null, "a row nobody watches was presented as the last test");
-        assert.equal(body.recentFailures, 0);
+        assert.equal(body.lastTest?.download, 321, "an instance whose targets all opted out lost its last test");
+        assert.equal(body.recentFailures, 1, "the count and the last test spoke for different targets");
     });
 
     // The pre-target install and the demo: rows carry no targetId, and the

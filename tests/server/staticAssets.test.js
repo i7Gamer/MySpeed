@@ -58,9 +58,20 @@ describe("the SPA fallback wiring", () => {
     it("guards both client delivery branches", () => {
         assert.match(source, /isAssetPath/, "app.js no longer consults the asset guard");
 
-        assert.match(source, /app\.get\('\*all', spaFallback\(\(req, res\) => res\.sendFile/,
-            "the built client hands index.html to missing assets again");
-        assert.match(source, /app\.get\('\*all', spaFallback\(embeddedClient\.createEmbeddedFallback\(\)\)/,
-            "the embedded client hands index.html to missing assets again");
+        /*
+         * What each branch hands the fallback is its own business - a rewritten
+         * page under BASE_PATH, sendFile, the embedded bundle - and pinning the
+         * spelling made this fail for a change that kept the guard exactly where
+         * it was. What has to hold is that neither branch mounts a catch-all
+         * without it.
+         */
+        const mounted = [...source.matchAll(/app\.get\('\*all', ([\s\S]*?)\);\r?\n/g)]
+            .map(([, handler]) => handler.trim());
+
+        assert.equal(mounted.length, 2, "the two client delivery branches are no longer two");
+
+        for (const handler of mounted)
+            assert.ok(handler.startsWith("spaFallback("),
+                `a client branch hands index.html to missing assets again: ${handler}`);
     });
 });

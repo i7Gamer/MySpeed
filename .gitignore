@@ -19,5 +19,8 @@
 /MySpeed
 /MySpeed.exe
 
+# local environment
+.env
+
 # tooling caches
 .token-savior-cache.json

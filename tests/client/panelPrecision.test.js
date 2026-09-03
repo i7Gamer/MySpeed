@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { convertSpeed, formatWithUnit, NOT_MEASURED, wholeSpeed } from "@/common/utils/FormatUtil.js";
+import {
+    convertSpeed, formatWithUnit, NOT_MEASURED, roundsToZeroSpeed, SPEED_STEP, wholeSpeed
+} from "@/common/utils/FormatUtil.js";
 import { readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
@@ -66,7 +68,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
 
     const stdDev = (expanded, preferences = {}) => helper(consistency, "const stdDev = (value) => {", {
         props: {expanded}, preferences, speedUnit: preferences === MBYTES ? "MB/s" : "Mbps",
-        convertSpeed, wholeSpeed, deviation: realDeviation()
+        convertSpeed, wholeSpeed, roundsToZeroSpeed, SPEED_STEP, deviation: realDeviation()
     });
 
     it("the value cards' speeds", () => {
@@ -88,6 +90,34 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
         assert.equal(stdDev(true)(123.12), "±123.12 Mbps");
         assert.equal(stdDev(false, MBYTES)(99.97), "±12 MB/s",
             "the spread is re-rounded through the two-decimal conversion again");
+    });
+
+    /**
+     * A spread wholeSpeed rounds away to nothing is not the same claim as a
+     * spread that measured zero - roundsToZeroLatency's reasoning, one column
+     * over. 0.4 Mbps of deviation beside a consistency score under 100% is a
+     * real wobble the collapsed card must not print as "±0 Mbps".
+     */
+    it("says less than one rather than rounding a real spread to nothing", () => {
+        assert.equal(stdDev(false)(0.4), `±<${SPEED_STEP} Mbps`,
+            "0.4 Mbps rounds away to 0 in the collapsed card");
+        // MB/s is an eighth of Mbit/s, so the same rounding floor sits at 4
+        // Mbit/s there rather than at 0.5 - the unit the card actually prints.
+        assert.equal(stdDev(false, MBYTES)(3.9), `±<${SPEED_STEP} MB/s`,
+            "3.9 Mbit/s (0.4875 MB/s) rounds away to 0 in MB/s mode too");
+    });
+
+    // The pane states the same spread at two decimals, and a legitimate ±0.4
+    // must not borrow the collapsed card's "rounded away" wording - the
+    // amendment the review round added to the first sketch.
+    it("but the expanded pane keeps stating it exactly", () => {
+        assert.equal(stdDev(true)(0.4), "±0.4 Mbps");
+    });
+
+    // Exactly at the floor a whole unit is printed, not "<1": Math.round(0.5)
+    // is 1, so only a spread strictly under it is the case this guards.
+    it("does not borrow the wording for a spread that rounds up instead", () => {
+        assert.equal(stdDev(false)(0.5), "±1 Mbps");
     });
 
     it("says nothing was measured rather than rounding an absent figure", () => {

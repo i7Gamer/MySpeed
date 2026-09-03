@@ -10,9 +10,8 @@ import { faGithub } from "@fortawesome/free-brands-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { jsonRequest } from "@/common/utils/RequestUtil";
 import { ConfigContext } from "@/common/contexts/Config";
-import { PROJECT_URL, RELEASES_URL } from "@/common/utils/InvariantText";
+import { GITHUB_LABEL, PROJECT_URL, RELEASES_URL } from "@/common/utils/InvariantText";
 import {withBasePath} from "@/common/utils/BasePath";
-import {GITHUB_LABEL} from "@/common/utils/InvariantText";
 
 export const AboutDialog = ({ open, onClose }) => {
   const [config] = useContext(ConfigContext);

@@ -306,7 +306,7 @@ const loadedLatencyOver = (succeeded, placeable) => {
 };
 
 const emptySeries = () => ({
-    labels: [], failed: [], errors: [],
+    labels: [], failed: [], errors: [], failedCounts: [],
     data: {ping: [], jitter: [], download: [], upload: [], time: [],
         downloadLatency: [], uploadLatency: []}
 });
@@ -331,6 +331,10 @@ const fullSeries = (sorted) => ({
     labels: sorted.map(entry => new Date(entry.created).toISOString()),
     failed: sorted.map(isFailedTest),
     errors: sorted.map(entry => entry.error),
+    // Null throughout: this path never buckets more than one test into a
+    // point, so there is no bucket-of-failures count to carry - only
+    // downsampledSeries's mixed bucket below ever produces one.
+    failedCounts: sorted.map(() => null),
     data: {
         // A gap where the latency was fabricated rather than measured, exactly
         // as jitter and the loaded latencies below already draw an absent
@@ -412,6 +416,10 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
             series.labels.push(new Date(midTime).toISOString());
             series.failed.push(true);
             series.errors.push(bucket.errors.join('; '));
+            // Not a count: this bucket has no success to be the OTHER half of
+            // a mix, so it is the joined-message shape rather than the "N
+            // failed in period" one, and must not be read as a number of it.
+            series.failedCounts.push(null);
             Object.values(series.data).forEach(values => values.push(null));
             return;
         }
@@ -428,7 +436,22 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
 
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
+        // English, unconditionally: a proxied node older than failedCounts
+        // below never sends that array at all, and this sentence is the only
+        // thing such a node's tooltip has ever had to read. lineChartConfig's
+        // tooltip prefers the translated one when failedCounts names a count,
+        // so a current server keeps writing this for no reader still on this
+        // build - never for one that just upgraded past it.
         series.errors.push(bucket.errors.length > 0 ? `${bucket.errors.length} failed in period` : null);
+        // The same count the sentence above already names, sent again as a
+        // number rather than English prose: statistics.failed_in_period is
+        // what a current client composes it from instead. Parallel to errors
+        // and null everywhere that is not this exact mixed-bucket case - an
+        // absent failedCounts array (an older node's whole payload) is the
+        // signal to fall back to the sentence above; a null AT one index,
+        // once the array exists, is this index's own producer saying it has
+        // no count to give, not the array being missing.
+        series.failedCounts.push(bucket.errors.length > 0 ? bucket.errors.length : null);
         // Measured-only like the three below it: a fabricated zero folded into
         // a bucket average is a dip of the wrong depth rather than a visible
         // nought, which is the harder of the two to catch. Null when a bucket
@@ -626,6 +649,12 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         labels: series.labels,
         failed: series.failed,
         errors: series.errors,
+        // Undefined only ever at the whole-payload level, not per-index: a
+        // node built before this existed omits the key entirely (JSON drops
+        // it), which is what lets the client tell "too old to send a count"
+        // apart from "this point has none" - Statistics.jsx's own
+        // askedCompare === undefined check is the same cross-version idiom.
+        failedCounts: series.failedCounts,
         hourlyAverages: buildHourlyAverages(succeeded.filter(isPlaceable), bucketZone),
         consistency: {
             download: consistencyScore(succeeded.map(entry => usableFigure(entry.download))),

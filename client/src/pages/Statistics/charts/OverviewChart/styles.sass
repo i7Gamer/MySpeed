@@ -178,3 +178,12 @@ $overview-wrap: 20rem
     // the width of its text. Given the row to grow into, a label that starts in
     // the middle of the card reads as a value that lost its number.
     justify-content: flex-start
+
+  // And the figure keeps the edge it has on every row that did not stack.
+  // space-between decides nothing on a line holding one item, so a stacked
+  // value sat at the start of its line, under the icon, while the four rows
+  // above it held their figures flush right - the column of figures broke at
+  // exactly the width the card is read at on a phone. The auto margin is the
+  // whole of what space-between was doing for it before the row wrapped.
+  .overview-items .panel-row .panel-row-value
+    margin-left: auto

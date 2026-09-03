@@ -157,6 +157,7 @@
     "cron_title": "테스트 빈도 설정",
     "cron_next_test": "다음 테스트:",
     "custom_cron": "사용자 지정 cron 표현식",
+    "cron_help": "cron 구문 도움말",
     "schedule_offset": "일정 오프셋",
     "schedule_offset_desc": "테스트가 정각에 시작되지 않도록 약간의 지연을 추가합니다",
     "pause_title": "속도 테스트 일시 중지...",
@@ -274,7 +275,8 @@
     "hour": "1시간",
     "hours": "{{hours}}시간",
     "day": "1일",
-    "days": "{{days}}일"
+    "days": "{{days}}일",
+    "days_ago": "{{days}}일"
   },
   "test": {
     "not_available": "현재 이용 가능한 테스트가 없습니다",
@@ -337,7 +339,11 @@
     "latency_failed": "지연 시간 테스트가 실패하여 속도를 측정할 수 없었습니다.",
     "rate_limited": "최근에 테스트가 너무 많이 실행되어 제공업체가 테스트를 거부했습니다. 다음 테스트는 자동으로 지연됩니다.",
     "no_measurement": "테스트가 측정값을 보고하지 않고 종료되었습니다.",
-    "impossible_measurement": "테스트가 있을 수 없는 측정값을 보고하여 해당 결과를 폐기했습니다."
+    "impossible_measurement": "테스트가 있을 수 없는 측정값을 보고하여 해당 결과를 폐기했습니다.",
+    "stopped_by_shutdown": "MySpeed가 종료되는 중이어서 테스트가 중지되었습니다.",
+    "stopped_by_signal": "테스트가 완료되기 전에 외부에서 중지되었습니다.",
+    "cli_missing": "측정 프로그램을 설치할 수 없어 테스트가 실행되지 않았습니다.",
+    "interface_unusable": "설정된 네트워크 인터페이스에 사용할 수 있는 주소가 없어 테스트가 실행되지 않았습니다."
   },
   "statistics": {
     "average": "평균",
@@ -416,6 +422,8 @@
       "median": "중앙값"
     },
     "failed_test": "실패한 테스트",
+    "failed_in_period": "이 기간에 {{failed}}개 실패",
+    "failed_in_period_single": "이 기간에 1개 실패",
     "hourly": {
       "title": "시간대별 속도",
       "sample_count": "테스트"
@@ -453,6 +461,7 @@
   },
   "nodes": {
     "add": "서버 추가",
+    "context_menu": "서버 작업",
     "create": "추가",
     "this_server": "이 서버",
     "created": "서버가 성공적으로 추가되었습니다",

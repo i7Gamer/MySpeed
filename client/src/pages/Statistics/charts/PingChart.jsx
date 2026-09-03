@@ -24,7 +24,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
     const filteredData = useMemo(() => {
-        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], loaded: [], average: null, failed: [], errors: [], isSingleDay: false };
+        if (!props.data?.ping || !props.labels) return { labels: [], data: [], jitter: [], loaded: [], average: null, failed: [], errors: [], failedCounts: [], isSingleDay: false };
 
         // The worse of the two directions per point, exactly as the grade takes
         // the worse direction - a line clean downstream and buffered upstream is
@@ -47,10 +47,15 @@ const PingChart = memo(({ compact = false, ...props }) => {
             loaded: props.labels.map((_, index) => loadedAt(index)),
             failed: props.labels.map((_, index) => props.failed?.[index] || false),
             errors: props.labels.map((_, index) => props.errors?.[index] || null),
+            // ?? rather than ||: 0 is not a value this array ever carries -
+            // buildStatistics only ever pushes a count once bucket.errors.length
+            // is already > 0 - but a nullable NUMBER is worth being exact about
+            // rather than relying on that.
+            failedCounts: props.labels.map((_, index) => props.failedCounts?.[index] ?? null),
             average: seriesAverage(values),
             isSingleDay: isSingleDaySeries(props.labels)
         };
-    }, [props.labels, props.data, props.failed, props.errors]);
+    }, [props.labels, props.data, props.failed, props.errors, props.failedCounts]);
 
     const hasJitterData = useMemo(() => filteredData.jitter.some(j => j !== null && j !== undefined), [filteredData.jitter]);
     const hasLoadedData = useMemo(() => filteredData.loaded.some(v => v !== null && v !== undefined), [filteredData.loaded]);
@@ -73,12 +78,13 @@ const PingChart = memo(({ compact = false, ...props }) => {
         themeColors,
         labels: filteredData.labels,
         errors: filteredData.errors,
+        failedCounts: filteredData.failedCounts,
         isSingleDay: filteredData.isSingleDay,
         pointStyle,
         lineTension,
         use12h,
         valueUnit: t("latest.ping_unit")
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.isSingleDay,
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failedCounts, filteredData.isSingleDay,
         pointStyle, lineTension, use12h]);
 
     const chartData = useMemo(() => ({

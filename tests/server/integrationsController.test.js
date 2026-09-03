@@ -4,8 +4,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    initialize, secretFieldNames, withoutSecrets, validateInput, getIntegrations, asDataObject
+    initialize, secretFieldNames, withoutSecrets, validateInput, getIntegration, getIntegrations,
+    asDataObject
 } from "../../server/controller/integrations.js";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
@@ -407,6 +409,34 @@ describe("validateInput", () => {
                 assert.equal(validateInput("telegram", telegram({language: value})), false,
                     `${JSON.stringify(value)} was accepted as a language`);
         });
+
+        /**
+         * A select that declares no list refuses everything rather than
+         * throwing on the read.
+         *
+         * No module ships one - the only select today is built from the locale
+         * directory, which answers an empty array when it finds nothing - so
+         * the branch is reached by handing the registered definition a field
+         * that has none, which is what a module would do the day somebody
+         * declared a select and left the options for later. Reaching a
+         * TypeError there means a 500 with a stack in the operator's log for
+         * an ordinary save, and a field with nothing to offer has no value it
+         * can accept anyway.
+         */
+        it("refuses every value for a select that declares no options", () => {
+            const definition = getIntegration("telegram");
+            const declared = definition.fields;
+
+            definition.fields = [...declared, {name: "unlisted", type: "select", required: false}];
+
+            try {
+                assert.equal(validateInput("telegram", telegram({unlisted: "anything"})), false);
+                assert.notEqual(validateInput("telegram", telegram()), false,
+                    "the empty select refused a body that never mentioned it");
+            } finally {
+                definition.fields = declared;
+            }
+        });
     });
 
     // The returned object is what gets stored, so anything not declared by the
@@ -521,5 +551,76 @@ describe("the order validateInput checks a field in", () => {
     it("checks the type before anything reads a length", () => {
         assert.ok(at('typeof data[field.name] !== "string"') < at("MAX_TEXT_LENGTH) return false"),
             "a non-string reaches a length comparison that silently passes it");
+    });
+});
+
+/**
+ * The clock every notifier writes its message on.
+ *
+ * The six %year% … %second% names were rendered from `new Date().getHours()`
+ * and its siblings - the process clock - while the schedule, the digests, the
+ * quiet hours and the /status countdown all resolve the stored `timezone`
+ * setting, which exists because the Docker image pins `ENV TZ=Etc/UTC`. So a
+ * Berlin instance sent "09:14" for a test that ran at 11:14.
+ *
+ * Resolved here rather than inside replaceVariables, and this is the whole
+ * reason the parameter exists: an async reader down there would hand every
+ * `balancedForTelegram(replaceVariables(...))` a promise instead of a message.
+ * triggerEvent is already async and is already where the per-recipient alert
+ * passages are filled in, so it is the one place both halves are in hand.
+ *
+ * Held at the source: exercising triggerEvent needs a database for the
+ * integration rows and another read for the setting, and what is asserted is
+ * the shape - resolved once, ahead of the fan-out, and handed to the callback.
+ * What each notifier then does with it is behavioural, in integrationSends.
+ */
+describe("the zone the dispatcher hands down", () => {
+    const source = readSource("server/controller/integrations.js");
+    const body = bodyOf(source, "export const triggerEvent");
+
+    const at = (needle) => {
+        const found = body.indexOf(needle);
+        assert.notEqual(found, -1, `"${needle}" is no longer in triggerEvent`);
+
+        return found;
+    };
+
+    it("resolves the instance's own clock rather than the process's", () => {
+        // Through zoneFromName, which is the one home for "what does this
+        // stored setting mean" - it answers the host clock for "none" and for
+        // a name the platform does not know, so an instance that set no
+        // timezone renders exactly what it always did.
+        assert.match(source, /zoneFromName\(/,
+            "the notifiers are back on whatever clock the host happens to keep");
+        assert.match(source, /from ['"]\.\.\/util\/timezone\.js['"]/,
+            "the zone is resolved from somewhere other than the one home for that judgement");
+    });
+
+    /*
+     * Once for the whole fan-out. Inside the loop it would be a settings read
+     * per integration per event, on a path that already runs a query per
+     * registered module every minute - and every recipient of one event must
+     * be told the same time in any case.
+     */
+    it("resolves it once, ahead of the fan-out", () => {
+        assert.ok(at("const zone = await") < at("for (const module of events[name])"),
+            "the setting is read again for every integration the event reaches");
+    });
+
+    it("hands it to the callbacks", () => {
+        assert.match(body, /module\.callback\([\s\S]*?,\s*zone\)/,
+            "the zone is resolved and then dropped, so every message is still on the host clock");
+    });
+
+    /*
+     * And reads the setting without importing the controller that holds it.
+     * controller/config.js imports this module for triggerEvent and
+     * withoutSecrets, so an import back is the first cycle between two
+     * controllers in this server - and it would drag the scheduler, the
+     * migrations and the session store into every suite that loads a notifier.
+     */
+    it("reads the setting without closing an import cycle", () => {
+        assert.doesNotMatch(source, /from ['"]\.\/config\.js['"]/,
+            "controller/config.js imports this file, so this import closes a cycle");
     });
 });

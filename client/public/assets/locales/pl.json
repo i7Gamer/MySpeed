@@ -157,6 +157,7 @@
     "cron_title": "Ustaw częstotliwość testów",
     "cron_next_test": "Następny test:",
     "custom_cron": "Własne wyrażenie crona",
+    "cron_help": "Pomoc dotycząca składni crona",
     "schedule_offset": "Przesunięcie harmonogramu",
     "schedule_offset_desc": "Dodaje niewielkie opóźnienie, aby zapobiec uruchamianiu testów w ściśle określonym czasie",
     "pause_title": "Wstrzymaj testy prędkości na...",
@@ -268,13 +269,20 @@
   },
   "time": {
     "now": "chwilą",
-    "seconds": "{{seconds}} sekundami",
-    "minute": "1 minutą",
-    "minutes": "{{minutes}} minutami",
-    "hour": "1 godziną",
-    "hours": "{{hours}} godzinami",
-    "day": "1 dniem",
-    "days": "{{days}} dniami"
+    "seconds": "{{seconds}} sekundy",
+    "seconds_ago": "{{seconds}} sekundami",
+    "minute": "1 minuta",
+    "minute_ago": "1 minutą",
+    "minutes": "{{minutes}} minuty",
+    "minutes_ago": "{{minutes}} minutami",
+    "hour": "1 godzina",
+    "hour_ago": "1 godziną",
+    "hours": "{{hours}} godziny",
+    "hours_ago": "{{hours}} godzinami",
+    "day": "1 dzień",
+    "day_ago": "1 dniem",
+    "days": "{{days}} dni",
+    "days_ago": "{{days}} dniami"
   },
   "test": {
     "not_available": "Obecnie nie ma dostępnych testów",
@@ -337,7 +345,11 @@
     "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości.",
     "rate_limited": "Dostawca odrzucił test, ponieważ ostatnio wykonano ich zbyt wiele. Następny zostanie automatycznie opóźniony.",
     "no_measurement": "Test zakończył się bez zgłoszenia jakiegokolwiek pomiaru.",
-    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony."
+    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony.",
+    "stopped_by_shutdown": "Test został zatrzymany, ponieważ MySpeed był wyłączany.",
+    "stopped_by_signal": "Test został zatrzymany z zewnątrz, zanim się zakończył.",
+    "cli_missing": "Nie udało się zainstalować programu pomiarowego, więc test się nie wykonał.",
+    "interface_unusable": "Skonfigurowany interfejs sieciowy nie ma użytecznego adresu, więc test się nie wykonał."
   },
   "statistics": {
     "average": "Średnia",
@@ -416,6 +428,8 @@
       "median": "Mediana"
     },
     "failed_test": "Test nieudany",
+    "failed_in_period": "{{failed}} nieudanych w tym okresie",
+    "failed_in_period_single": "1 nieudany w tym okresie",
     "hourly": {
       "title": "Prędkość w zależności od pory dnia",
       "sample_count": "Testy"
@@ -453,6 +467,7 @@
   },
   "nodes": {
     "add": "Dodaj serwer",
+    "context_menu": "Akcje serwera",
     "create": "Dodaj",
     "this_server": "Ten serwer",
     "created": "Serwer został pomyślnie dodany",

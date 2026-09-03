@@ -71,6 +71,29 @@ describe("the overview chart stylesheet", () => {
             "the wrap is allowed above the tightest step, where the row still has room to sit on one line");
     });
 
+    /**
+     * And a stacked figure keeps the right edge every unstacked one has.
+     *
+     * `space-between` places a lone item on a wrapped line at the start, so the
+     * one row that stacks put its value under the icon while every row above it
+     * held its figure flush right - the column of figures broke at exactly the
+     * width the card is read on a phone. Reported at 375px on "Peak-hour
+     * slowdown", which is the longest label of the five.
+     *
+     * Read off the compiled stylesheet rather than off a rendered card: jsdom
+     * has no layout, so nothing in this suite can see where a wrapped line puts
+     * its items, and the rule that decides it is the only thing there is to
+     * hold.
+     */
+    it("keeps a stacked figure against the right edge", () => {
+        const wrapping = containerBlocks(compiled)
+            .filter(({body}) => /flex-wrap:\s*wrap/.test(body));
+
+        assert.equal(wrapping.length, 1, "no container step allows the wrap any more");
+        assert.match(wrapping[0].body, /\.panel-row-value\s*\{[^}]*margin-left:\s*auto/,
+            "a value on a line of its own starts under the icon, out of the column of figures");
+    });
+
     it("establishes the list the trims measure", () => {
         const items = rules(compiled).find(({selector}) => selector === ".overview-items");
 

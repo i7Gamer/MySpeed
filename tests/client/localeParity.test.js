@@ -66,18 +66,83 @@ describe("the locale files", () => {
         assert.deepEqual(leaked, [], "these values are pipeline metadata, rendered verbatim to the reader");
     });
 
+    /**
+     * The notification phrases carry no markdown and no line breaks.
+     *
+     * These are the only strings in the files that the server composes into a
+     * message rather than the interface rendering into a DOM node, and two of
+     * the sinks parse what they are handed as markdown. Telegram's legacy
+     * parser has no escape syntax and answers a 400 for formatting that does
+     * not balance - it delivers nothing at all - and Discord renders masked
+     * links inside an embed description. util/markdown.js cleans the values
+     * that are interpolated *into* a template and deliberately leaves the
+     * template alone, because the operator's own formatting is theirs; the
+     * words a phrase supplies land inside the template, between the
+     * delimiters the shipped default puts there - `*${word("finished")}*` -
+     * so an asterisk or a backtick from a translator closes a pair early and
+     * takes the message down for a language nobody tested in.
+     *
+     * A carriage return or a newline is here for the plainer reason: the
+     * templates lay the phrases out themselves, and ntfy carries its title in
+     * a header, where a line break is also how a request smuggles a second
+     * header in.
+     *
+     * The per cent sign is not in the list, though the templates' own
+     * %variables% are written with it: `shortfall` legitimately spells a
+     * percentage in every language, and it is safe there because
+     * replaceVariables never re-reads what it substituted - a phrase is put
+     * into the message, not into the template.
+     *
+     * Every locale is clean today, English included. This is the guard that
+     * keeps the next translation from being the one that is never delivered.
+     */
+    it("keeps the notification phrases free of markup in every language", () => {
+        const FORMATTING = /[`*_[\]~|\\\r\n]/;
+
+        const marked = [SOURCE, ...codes].flatMap((code) =>
+            Object.entries(read(code).notification ?? {})
+                .filter(([, value]) => FORMATTING.test(String(value)))
+                .map(([key, value]) => `[${code}] notification.${key} = ${JSON.stringify(value)}`));
+
+        assert.deepEqual(marked, [],
+            "these land between a template's own markdown delimiters, and an unbalanced message is not delivered");
+    });
+
+    /**
+     * The one family a locale is allowed to disagree with English about.
+     *
+     * `time.<unit>_ago` is the i18next context spanInWords wears behind the
+     * word "ago" (FormatUtil.js), and which units need one is a fact about the
+     * language rather than about the interface: German inflects the day and
+     * nothing else, Polish and Czech inflect every unit after "przed"/"před",
+     * and the seventeen languages that inflect nothing need none at all.
+     *
+     * Held out of both directions on purpose. Counting a missing one as a gap
+     * would have every locale carry a copy of its own base key to say "this
+     * language does not inflect here" - and counting an extra one as a leftover
+     * would forbid Polish the six keys its grammar actually needs. What the
+     * reader gets when a key is absent is the base form, which is the right
+     * answer for the languages that do not inflect.
+     */
+    const AGO_INFLECTION = /^time\.[a-z]+_ago$/;
+
+    const withoutAgoInflection = (keys) => keys.filter((key) => !AGO_INFLECTION.test(key));
+
     for (const code of codes) {
         describe(`${code}.json`, () => {
             const locale = read(code);
             const gaps = localeGaps(english, locale, sharedKeys(code));
 
             it("translates every English key", () => {
-                assert.deepEqual(gaps.missing, [],
-                    `${gaps.missing.length} key(s) absent or empty; a ${code} instance renders these in English`);
+                const missing = withoutAgoInflection(gaps.missing);
+
+                assert.deepEqual(missing, [],
+                    `${missing.length} key(s) absent or empty; a ${code} instance renders these in English`);
             });
 
             it("carries no key English does not have", () => {
-                assert.deepEqual(gaps.extra, [], "these outlived the English they were translated from");
+                assert.deepEqual(withoutAgoInflection(gaps.extra), [],
+                    "these outlived the English they were translated from");
             });
 
             /**

@@ -2,7 +2,8 @@ import { phrase } from '../util/notificationLocale.js';
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
-import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
+import { bareHost } from "../util/helpers.js";
+import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 /**
@@ -169,7 +170,10 @@ const refuseBlocked = (host, activity) => {
  * notification, and the run that triggered it, on nodemailer's own defaults.
  */
 export const transportOptions = ({host, port, secure, username, password}) => ({
-    host,
+    // Bracketed, the way an IPv6 relay is written in a URL and the way the
+    // field accepts it: nodemailer dials this value, and the brackets turned
+    // every send into a getaddrinfo failure.
+    host: bareHost(host),
     port: Number(port),
     secure: secure === true,
     ...(username ? {auth: {user: username, pass: password ?? ""}} : {}),
@@ -215,16 +219,21 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
         }
     };
 
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting - see discord.js for why
+    // the six clock names could not go on being read off the process clock. The
+    // subject lines take it too: they substitute exactly as the bodies do, and
+    // a subject naming an hour the body contradicts is worse than either.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_subject || defaults(c.language).finished_subject, data),
-            replaceVariables(c.finished_message || defaults(c.language).finished, data), activity);
+            replaceVariables(c.finished_subject || defaults(c.language).finished_subject, data, zone),
+            replaceVariables(c.finished_message || defaults(c.language).finished, data, zone), activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_subject || defaults(c.language).error_subject, failure),
-            replaceVariables(c.error_message || defaults(c.language).failed, failure), activity);
+            replaceVariables(c.error_subject || defaults(c.language).error_subject, failure, zone),
+            replaceVariables(c.error_message || defaults(c.language).failed, failure, zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {
@@ -239,6 +248,9 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
         // Opts in to the shared threshold settings; isNotifier in
         // controller/integrations.js explains the flag.
         notifier: true,
+        // And to the language setting, because what it sends is prose a person
+        // reads; isLocalised in controller/integrations.js explains this one.
+        localised: true,
         icon: "fa-solid fa-envelope",
         fields: [
             // A host or an address, and not a URL: this is dialled directly
