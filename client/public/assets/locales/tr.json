@@ -157,6 +157,7 @@
     "cron_title": "Test sıklığını ayarla",
     "cron_next_test": "Sonraki test:",
     "custom_cron": "Özel cron ifadesi",
+    "cron_help": "Cron söz dizimi yardımı",
     "schedule_offset": "Planı kaydır",
     "schedule_offset_desc": "Testlerin tam saatlerde başlamasını önlemek için küçük bir gecikme ekler",
     "pause_title": "Speedtestleri duraklat...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Sunucu ekle",
+    "context_menu": "Sunucu işlemleri",
     "create": "Ekle",
     "this_server": "Bu sunucu",
     "created": "Sunucu başarıyla eklendi",

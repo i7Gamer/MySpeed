@@ -157,6 +157,7 @@
     "cron_title": "テスト頻度を設定",
     "cron_next_test": "次のテスト:",
     "custom_cron": "カスタム cron 式",
+    "cron_help": "cron 構文のヘルプ",
     "schedule_offset": "スケジュールをずらす",
     "schedule_offset_desc": "ちょうどの時刻にテストが始まらないよう、わずかな遅延を加えます",
     "pause_title": "スピードテストを一時停止する期間...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "サーバーを追加",
+    "context_menu": "サーバーの操作",
     "create": "追加",
     "this_server": "このサーバー",
     "created": "サーバーを追加しました",

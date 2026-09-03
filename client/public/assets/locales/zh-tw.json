@@ -157,6 +157,7 @@
     "cron_title": "設定測試頻率",
     "cron_next_test": "下次測試：",
     "custom_cron": "自訂 cron 運算式",
+    "cron_help": "Cron 語法說明",
     "schedule_offset": "排程偏移",
     "schedule_offset_desc": "加入少許延遲，避免測試每次都在固定時刻準時開始",
     "pause_title": "暫停速度測試…",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "新增伺服器",
+    "context_menu": "伺服器操作",
     "create": "新增",
     "this_server": "此伺服器",
     "created": "已成功新增伺服器",

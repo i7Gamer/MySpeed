@@ -28,6 +28,55 @@ export const appLocale = () => i18n.language || undefined;
 
 const locale = appLocale;
 
+/** ISO numbering, which is what Intl's week info speaks: 1 Monday, 7 Sunday. */
+export const WEEK_STARTS_MONDAY = 1;
+export const WEEK_STARTS_SUNDAY = 7;
+
+/**
+ * The tags this interface ships whose readers start a week on Sunday, read
+ * out of the runtime's own week data: English, Indonesian, Japanese, Korean,
+ * Portuguese and Traditional Chinese. Mainland Chinese is not among them and
+ * neither is Irish, which both surprise, and which is the reason this is a
+ * transcription rather than a guess.
+ *
+ * Whole tags as well as bare languages, because zh-TW parts company with zh.
+ */
+const SUNDAY_FIRST = new Set(["en", "id", "ja", "ko", "pt", "zh-tw"]);
+
+/**
+ * Which day the reader's week begins on.
+ *
+ * The calendar was Monday-first for everybody: the grid was built from
+ * `day === 0 ? 6 : day - 1` and the weekday row was a fixed Mon-Sun list, so a
+ * reader in Tokyo or São Paulo got a month laid out the way Berlin reads it.
+ *
+ * Intl knows the answer per region, and knows it better than any table here
+ * can - en-GB starts on Monday where en-US starts on Sunday, and only the tag
+ * says which reader this is. It is spelled two ways though (a getWeekInfo()
+ * method in Chrome, a weekInfo property elsewhere) and missing altogether in
+ * some browsers, so the set above answers when the runtime will not. Monday is
+ * the fallback's fallback, which is what the calendar always did.
+ */
+export const firstWeekday = (localeTag = appLocale()) => {
+    const tag = String(localeTag ?? "");
+
+    try {
+        const parsed = new Intl.Locale(tag);
+        const info = parsed.getWeekInfo?.() ?? parsed.weekInfo;
+
+        if (Number.isInteger(info?.firstDay)) return info.firstDay;
+    } catch {
+        // An empty or malformed tag. The language below is still readable from
+        // it, and an unparseable tag has no region to be right about anyway.
+    }
+
+    const lowered = tag.toLowerCase();
+    const language = lowered.split(/[-_]/)[0];
+
+    return SUNDAY_FIRST.has(lowered) || SUNDAY_FIRST.has(language)
+        ? WEEK_STARTS_SUNDAY : WEEK_STARTS_MONDAY;
+};
+
 const toDate = (value) => {
     if (value instanceof Date) return value;
 

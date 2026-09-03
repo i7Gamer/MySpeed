@@ -157,6 +157,7 @@
     "cron_title": "Indstil testfrekvens",
     "cron_next_test": "Næste test:",
     "custom_cron": "Tilpasset cron udtryk",
+    "cron_help": "Hjælp til cron-syntaks",
     "schedule_offset": "Forskyd tidsplanen",
     "schedule_offset_desc": "Tilføjer en lille forsinkelse for at forhindre test i at starte på nøjagtige tidspunkter",
     "pause_title": "Sæt speedtests på pause i...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Tilføj server",
+    "context_menu": "Serverhandlinger",
     "create": "Tilføj",
     "this_server": "Denne server",
     "created": "Serveren er blevet tilføjet",

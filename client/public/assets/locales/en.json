@@ -157,6 +157,7 @@
     "cron_title": "Set test frequency",
     "cron_next_test": "Next Test:",
     "custom_cron": "Custom cron expression",
+    "cron_help": "Cron syntax help",
     "schedule_offset": "Offset schedule",
     "schedule_offset_desc": "Adds a small delay to prevent tests from starting at exact times",
     "pause_title": "Pause speedtests for...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Add server",
+    "context_menu": "Server actions",
     "create": "Add",
     "this_server": "This server",
     "created": "The server has been successfully added",

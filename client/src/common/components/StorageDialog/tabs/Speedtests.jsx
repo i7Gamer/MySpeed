@@ -137,10 +137,14 @@ export default ({tests, close}) => {
                     : t("storage.tests_imported"),
                 skipped ? "orange" : "green", faFileImport);
             reloadTests();
-        } else {
-            updateToast(t("storage.import_test_error"), "red");
+            close();
+            return;
         }
-        close();
+
+        // Left open on a refusal, the way deleteHistory beside it is: closing
+        // dropped the operator back to the dashboard with a red toast and no
+        // dialog to pick another file in.
+        updateToast(t("storage.import_test_error"), "red");
     }
 
 
@@ -187,9 +191,13 @@ export default ({tests, close}) => {
                         </>
                     ) : (
                         <div className="storage-retention-select-wrap select-wrap">
+                            {/* The heading is in a sibling div, so nothing associates it
+                                with this control: it announced "1 year" without ever
+                                saying what was set to a year. */}
                             <select
                                 className="storage-select select-field"
                                 value={retentionSelected}
+                                aria-label={t("storage.retention")}
                                 onChange={(e) => handleSelectChange(e.target.value)}
                             >
                                 {RETENTION_PRESETS.map(p => (

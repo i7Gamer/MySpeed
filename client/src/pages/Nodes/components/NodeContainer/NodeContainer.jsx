@@ -6,6 +6,7 @@ import {
     faCircleNotch,
     faClock,
     faClose,
+    faEllipsisVertical,
     faExclamationTriangle,
     faKey,
     faPen,
@@ -13,7 +14,7 @@ import {
     faTableTennisPaddleBall,
     faTrash
 } from "@fortawesome/free-solid-svg-icons";
-import React, {useContext, useEffect, useState} from "react";
+import React, {useContext, useEffect, useRef, useState} from "react";
 import {NodeContext} from "@/common/contexts/Node";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
@@ -52,6 +53,7 @@ export const NodeContainer = (node) => {
     const [nodeData, setNodeData] = useState(null);
     const [nodeError, setNodeError] = useState(undefined);
     const [contextMenu, setContextMenu] = useState(null);
+    const menuButton = useRef(null);
 
     const navigate = useNavigate();
 
@@ -215,6 +217,30 @@ export const NodeContainer = (node) => {
         setContextMenu({x: event.clientX, y: event.clientY});
     };
 
+    /**
+     * The same menu, from a control that can be seen and reached.
+     *
+     * Renaming and deleting a server used to be behind the right mouse button
+     * and nothing else: no affordance on the card, nothing in a dialog, and
+     * nothing announced - so on a touch screen the two actions did not exist,
+     * and a screen reader was never told they did.
+     *
+     * Anchored under the button rather than at a pointer that has no position
+     * when the key was Enter. The menu takes the button's ref so that opening
+     * it does not count as a click outside itself.
+     */
+    const toggleContextMenu = (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        setContextMenu((open) => {
+            if (open) return null;
+
+            const box = event.currentTarget.getBoundingClientRect();
+            return {x: box.left, y: box.bottom};
+        });
+    };
+
     const closeContextMenu = () => setContextMenu(null);
 
     const handleRename = async () => {
@@ -293,6 +319,8 @@ export const NodeContainer = (node) => {
                     items={contextMenuItems}
                     position={contextMenu}
                     onClose={closeContextMenu}
+                    label={t("nodes.context_menu")}
+                    trigger={menuButton}
                 />
             )}
             <div className={"node-item hover-" + (nodeError ? "red" : (nodeData ? "green" : "orange"))} key={node.id}
@@ -304,6 +332,17 @@ export const NodeContainer = (node) => {
                         <h1>{node.name}</h1>
                         <p>{node.url.replace(/(^\w+:|^)\/\//, '')}</p>
                     </div>
+                    {/* Not on the current server's own card, which has nothing
+                        to rename or delete - the same condition the right-click
+                        handler applies. */}
+                    {!node.currentNode && (
+                        <button type="button" className="node-menu-button" ref={menuButton}
+                                aria-label={t("nodes.context_menu")} aria-haspopup="menu"
+                                aria-expanded={contextMenu !== null}
+                                onClick={toggleContextMenu}>
+                            <FontAwesomeIcon icon={faEllipsisVertical}/>
+                        </button>
+                    )}
                 </div>
                 <div className="speed-area">
 

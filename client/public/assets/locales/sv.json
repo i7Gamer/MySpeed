@@ -157,6 +157,7 @@
     "cron_title": "Ange testfrekvens",
     "cron_next_test": "Nästa test:",
     "custom_cron": "Eget cron-uttryck",
+    "cron_help": "Hjälp med cron-syntax",
     "schedule_offset": "Förskjut schemat",
     "schedule_offset_desc": "Lägger till en liten fördröjning så att tester inte startar på exakta klockslag",
     "pause_title": "Pausa hastighetstester i...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Lägg till server",
+    "context_menu": "Serveråtgärder",
     "create": "Lägg till",
     "this_server": "Den här servern",
     "created": "Servern har lagts till",

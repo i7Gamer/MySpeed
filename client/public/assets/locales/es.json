@@ -157,6 +157,7 @@
     "cron_title": "Ajustar la frecuencia de los tests",
     "cron_next_test": "Próximo test:",
     "custom_cron": "Expresión cron personalizada",
+    "cron_help": "Ayuda con la sintaxis cron",
     "schedule_offset": "Desplazar la programación",
     "schedule_offset_desc": "Añade un pequeño retraso para evitar que las pruebas comiencen en horas exactas",
     "pause_title": "Pausar tests durante:",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Añadir servidor",
+    "context_menu": "Acciones del servidor",
     "create": "Añadir",
     "this_server": "Este servidor",
     "created": "El servidor se ha añadido correctamente",

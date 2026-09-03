@@ -56,7 +56,12 @@ before(async () => {
 
     fs.mkdirSync(path.join(buildDir, "assets", "locales"), {recursive: true});
     fs.writeFileSync(path.join(buildDir, "index.html"),
-        `<!doctype html><title>${PAGE_MARKER}</title><script type="module" src="./${ENTRY}"></script>`);
+        `<!doctype html><title>${PAGE_MARKER}</title>` +
+        // Rooted rather than relative, the way vite leaves a meta value it does
+        // not treat as an asset reference. The page below is asserted to have
+        // had the prefix put into it.
+        `<meta property="og:image" content="/api/opengraph/image" />` +
+        `<script type="module" src="./${ENTRY}"></script>`);
     fs.writeFileSync(path.join(buildDir, ENTRY), "// stand-in for the entry bundle");
     fs.writeFileSync(path.join(buildDir, "assets", "locales", "en.json"), '{"test": "ok"}');
 
@@ -100,6 +105,27 @@ describe("an instance behind a path prefix", () => {
      */
     it("still answers the API at the root, which is what the healthcheck asks", async () => {
         assert.equal((await get("/api/health")).status, 200);
+    });
+
+    /**
+     * The one reference the client cannot make relative for itself: a crawler
+     * resolves it against whichever page was shared, so it has to name the
+     * prefix outright. It pointed at the proxy's root instead, outside the
+     * application, and every link preview showed what lives there.
+     */
+    it("carries the prefix into the OpenGraph reference", async () => {
+        const html = await (await get(`${PREFIX}/`)).text();
+
+        assert.match(html, /content="\/internet_speed\/api\/opengraph\/image"/,
+            "the preview image pointed outside the application");
+    });
+
+    // The static handler answers "/" with index.html of its own accord, ahead
+    // of the SPA fallback, and that copy used to go out unrewritten.
+    it("carries it on a deep route as well", async () => {
+        const html = await (await get(`${PREFIX}/statistics`)).text();
+
+        assert.match(html, /content="\/internet_speed\/api\/opengraph\/image"/);
     });
 
     it("serves the application at the prefix itself", async () => {

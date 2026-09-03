@@ -3,7 +3,15 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
 import "./styles.sass";
 
-export const ContextMenu = ({items, position, onClose}) => {
+/**
+ * @param label    what the menu is called. Passed in rather than translated
+ * here: this component knows nothing about what it lists, and it announced as
+ * a hard-coded English "Context menu" on every instance whatever its language.
+ * @param trigger  ref to the control that opened it, if one did. A mousedown on
+ * that control is not "outside": without this the menu closed on the way down
+ * and reopened on the click, so the button that opened it could never close it.
+ */
+export const ContextMenu = ({items, position, onClose, label, trigger}) => {
     const menuRef = useRef(null);
     const [focusedIndex, setFocusedIndex] = useState(-1);
     const [adjustedPosition, setAdjustedPosition] = useState(position);
@@ -16,7 +24,8 @@ export const ContextMenu = ({items, position, onClose}) => {
         onClose();
     }, [onClose]);
 
-    useClickOutside(true, [menuRef], onClose);
+    useClickOutside(true, [menuRef], onClose,
+        {ignore: (target) => Boolean(trigger?.current?.contains(target))});
 
     useEffect(() => {
         const handleKeyDown = (event) => {
@@ -119,7 +128,7 @@ export const ContextMenu = ({items, position, onClose}) => {
             className="context-menu"
             style={{left: adjustedPosition.x, top: adjustedPosition.y}}
             role="menu"
-            aria-label="Context menu"
+            aria-label={label}
             tabIndex={-1}
         >
             {items.map((item, index) => {

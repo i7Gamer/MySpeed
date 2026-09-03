@@ -157,6 +157,7 @@
     "cron_title": "设置测试频率",
     "cron_next_test": "下一次测试：",
     "custom_cron": "自定义 Cron 表达式",
+    "cron_help": "Cron 语法帮助",
     "schedule_offset": "偏移计划",
     "schedule_offset_desc": "添加小幅延迟以防止测试在整点启动",
     "pause_title": "暂停测速...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "添加服务器",
+    "context_menu": "服务器操作",
     "create": "添加",
     "this_server": "该服务器",
     "created": "服务器已成功添加",

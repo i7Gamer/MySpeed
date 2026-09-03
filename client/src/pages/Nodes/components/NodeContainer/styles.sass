@@ -1,5 +1,6 @@
 @use "@/common/styles/colors" as *
 @use "@/common/styles/grades" as *
+@use "@/common/styles/focus" as *
 
 .node-item
   border: 2px solid $light-gray
@@ -28,6 +29,25 @@
   display: flex
   align-items: center
   gap: 1rem
+
+// The two actions a server card carries, given something to point at. The
+// glyph sits at the subtext weight until the card is hovered or the button
+// itself is focused, so it is available without competing with the name.
+.node-menu-button
+  background: none
+  border: none
+  padding: 0.25rem 0.4rem
+  border-radius: 8px
+  color: $subtext
+  cursor: pointer
+  font-size: 14pt
+  line-height: 1
+  +focus-ring
+
+.node-item:hover .node-menu-button,
+.node-menu-button:hover,
+.node-menu-button:focus-visible
+  color: $accent-primary
 
 .node-info-area svg
   font-size: 30pt

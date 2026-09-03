@@ -183,8 +183,14 @@ export const FrequencyDialog = ({open, onClose}) => {
                                             className={`dialog-input frequency-input${selected === "custom" && !isCustomValid ? " input-error" : ""}`}
                                             value={customCron} 
                                             onChange={(e) => { setCustomCron(e.target.value); setSelected("custom"); }}
+                                            aria-label={t("update.custom_cron")}
                                             placeholder="0 * * * *"/>
-                                        <a href="https://crontab.guru/" target="_blank" rel="noreferrer" className="frequency-help">
+                                        {/* FontAwesome renders its svg aria-hidden, so an
+                                            icon-only link announces as nothing at all - the
+                                            same gap the two dialog close buttons carry a
+                                            label for. */}
+                                        <a href="https://crontab.guru/" target="_blank" rel="noreferrer"
+                                           className="frequency-help" aria-label={t("update.cron_help")}>
                                             <FontAwesomeIcon icon={faQuestionCircle}/>
                                         </a>
                                     </div>

@@ -5,7 +5,7 @@ import {
 } from "@fortawesome/free-solid-svg-icons";
 import { t } from "i18next";
 import { PICKER_TIMEFRAMES, timeframeLabelKey } from "@/common/utils/TimeframeUtil";
-import { formatDay, formatMonth } from "@/common/utils/FormatUtil";
+import { firstWeekday, formatDay, formatMonth } from "@/common/utils/FormatUtil";
 import { useClickOutside } from "@/common/hooks/useClickOutside";
 import { isCurrentMonth, monthBack, monthForward, monthToShow, yearBack, yearForward } from "./calendarNav";
 import "./styles.sass";
@@ -111,20 +111,31 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         return formatDay(date);
     };
 
+    // Read per render, like every t() below it: the language can change while
+    // the picker is mounted, and the week it draws has to change with it.
+    const weekStart = firstWeekday();
+
     const getDaysInMonth = (year, month) => {
         return new Date(year, month + 1, 0).getDate();
     };
 
-    const getFirstDayOfMonth = (year, month) => {
-        const day = new Date(year, month, 1).getDay();
-        return day === 0 ? 6 : day - 1;
+    /**
+     * How many leading cells the month needs, counted from the day this
+     * reader's week starts on. It was a fixed Monday, so a calendar in
+     * Japanese or Brazilian Portuguese was laid out the way Berlin reads one.
+     */
+    const getFirstDayOfMonth = (year, month, startsOn) => {
+        // getDay is 0 for Sunday; firstWeekday speaks Intl's numbering, where
+        // Sunday is 7 and Monday is 1.
+        const day = new Date(year, month, 1).getDay() || 7;
+        return (day - startsOn + 7) % 7;
     };
 
     const calendarDays = useMemo(() => {
         const year = currentMonth.getFullYear();
         const month = currentMonth.getMonth();
         const daysInMonth = getDaysInMonth(year, month);
-        const firstDay = getFirstDayOfMonth(year, month);
+        const firstDay = getFirstDayOfMonth(year, month, weekStart);
         
         const days = [];
         
@@ -161,7 +172,10 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         }
         
         return days;
-    }, [currentMonth]);
+        // weekStart too: the header row above is rebuilt on every render, so a
+        // grid held at the old week start would be a calendar whose columns no
+        // longer mean what their headings say.
+    }, [currentMonth, weekStart]);
 
     const handleDayClick = (date) => {
         if (selecting === "from") {
@@ -287,15 +301,19 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [currentMonth]);
 
-    const weekDays = [
-        t("calendar.mon"),
-        t("calendar.tue"),
-        t("calendar.wed"),
-        t("calendar.thu"),
-        t("calendar.fri"),
-        t("calendar.sat"),
-        t("calendar.sun")
-    ];
+    /*
+     * Monday first, which is the order the keys are named in, then turned to
+     * start on whichever day this reader's week does.
+     *
+     * Whole keys rather than a `calendar.${day}` template: the suite reads the
+     * source for the keys it renders, and a name built out of pieces is a name
+     * it cannot see - seven strings that no locale would be allowed to keep.
+     */
+    const WEEKDAY_KEYS = ["calendar.mon", "calendar.tue", "calendar.wed", "calendar.thu",
+        "calendar.fri", "calendar.sat", "calendar.sun"];
+
+    const weekDays = WEEKDAY_KEYS.map((_, index) =>
+        t(WEEKDAY_KEYS[(weekStart - 1 + index) % WEEKDAY_KEYS.length]));
 
     /*
      * What the trigger says, as one string.

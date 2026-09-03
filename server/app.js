@@ -19,6 +19,7 @@ import targetsRoutes from './routes/targets.js';
 import systemRoutes from './routes/system.js';
 import storageRoutes, { isLargeBodyPath } from './routes/storage.js';
 import { isAssetPath } from './util/staticAssets.js';
+import { withBasePathMeta } from './util/indexMeta.js';
 import recommendationsRoutes from './routes/recommendations.js';
 import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
@@ -186,12 +187,37 @@ const spaFallback = (serveIndex) => (req, res) => {
     return serveIndex(req, res);
 };
 
+/**
+ * index.html, with the one reference BASE_PATH cannot reach from the client
+ * side - see util/indexMeta.js. Read once, because it changes when the build
+ * does and the build does not change under a running server.
+ *
+ * Without a prefix nothing is rewritten and the file is sent as it always was,
+ * by sendFile, keeping its caching and range handling. `index: false` on the
+ * static handler is what puts the two of them on one path: static answers "/"
+ * with index.html of its own accord, ahead of any fallback, so a prefixed
+ * instance would have served the unrewritten file to exactly the crawler this
+ * is for.
+ */
+const indexFor = (read) => {
+    const prefix = basePath();
+    if (!prefix) return null;
+
+    const rewritten = withBasePathMeta(read(), prefix);
+    return (req, res) => res.type('html').send(rewritten);
+};
+
 if (buildExists) {
-    app.use(express.static(buildPath));
-    app.get('*all', spaFallback((req, res) => res.sendFile(path.join(buildPath, 'index.html'))));
+    const indexPath = path.join(buildPath, 'index.html');
+    const rewritten = indexFor(() => fs.readFileSync(indexPath, 'utf-8'));
+
+    app.use(express.static(buildPath, {index: rewritten ? false : 'index.html'}));
+    app.get('*all', spaFallback(rewritten ?? ((req, res) => res.sendFile(indexPath))));
 } else if (embeddedClient) {
+    const rewritten = indexFor(() => String(embeddedClient.readEmbeddedFile('/index.html') ?? ''));
+
     app.use(embeddedClient.createEmbeddedMiddleware());
-    app.get('*all', spaFallback(embeddedClient.createEmbeddedFallback()));
+    app.get('*all', spaFallback(rewritten ?? embeddedClient.createEmbeddedFallback()));
 } else {
     app.get("*all", (req, res) => res.status(500).type('html').send(devModeHtml));
 }

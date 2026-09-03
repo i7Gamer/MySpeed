@@ -157,6 +157,7 @@
     "cron_title": "Test-Häufigkeit einstellen",
     "cron_next_test": "Nächster Test:",
     "custom_cron": "Eigener Cron-Ausdruck",
+    "cron_help": "Hilfe zur Cron-Syntax",
     "schedule_offset": "Zeitplan-Versatz",
     "schedule_offset_desc": "Fügt eine kleine Verzögerung hinzu, um zu verhindern, dass Tests zu exakten Zeiten starten können",
     "pause_title": "Speedtests pausieren für...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Server hinzufügen",
+    "context_menu": "Serveraktionen",
     "create": "Hinzufügen",
     "this_server": "Dieser Server",
     "created": "Der Server wurde erfolgreich hinzugefügt",

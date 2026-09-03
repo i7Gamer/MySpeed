@@ -157,6 +157,7 @@
     "cron_title": "Testfrequentie instellen",
     "cron_next_test": "Volgende test:",
     "custom_cron": "Aangepaste cron expressie",
+    "cron_help": "Hulp bij cron-syntaxis",
     "schedule_offset": "Verschuiving schema",
     "schedule_offset_desc": "Voegt een kleine vertraging toe om te voorkomen dat testen op exacte tijdstippen starten",
     "pause_title": "Snelheidstests pauzeren voor...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Server toevoegen",
+    "context_menu": "Serveracties",
     "create": "Voeg toe",
     "this_server": "Deze server",
     "created": "De server is succesvol toegevoegd",

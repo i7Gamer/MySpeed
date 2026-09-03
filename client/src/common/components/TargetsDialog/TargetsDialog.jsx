@@ -216,8 +216,15 @@ export const TargetsDialog = ({open, onClose}) => {
                                             <h3>{t("dialog.provider.interface")}</h3>
                                         </div>
                                         <span className="select-wrap provider-input-wrap">
+                                            {/* Named, like the server picker beside it in
+                                                TargetEditor: the heading above lives in a sibling
+                                                div, which associates it with nothing, and there is
+                                                no placeholder to fall back on - so a reader tabbing
+                                                onto this heard the adapter's name and nothing about
+                                                what it was set on. */}
                                             <select className="dialog-input select-field provider-input"
                                                     value={selectedInterface}
+                                                    aria-label={t("dialog.provider.interface")}
                                                     onChange={(e) => changeInterface(e.target.value)}>
                                                 {/* The stored choice, kept visible when the list does
                                                     not carry it: a controlled select with no matching

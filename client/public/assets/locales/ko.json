@@ -157,6 +157,7 @@
     "cron_title": "테스트 빈도 설정",
     "cron_next_test": "다음 테스트:",
     "custom_cron": "사용자 지정 cron 표현식",
+    "cron_help": "cron 구문 도움말",
     "schedule_offset": "일정 오프셋",
     "schedule_offset_desc": "테스트가 정각에 시작되지 않도록 약간의 지연을 추가합니다",
     "pause_title": "속도 테스트 일시 중지...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "서버 추가",
+    "context_menu": "서버 작업",
     "create": "추가",
     "this_server": "이 서버",
     "created": "서버가 성공적으로 추가되었습니다",

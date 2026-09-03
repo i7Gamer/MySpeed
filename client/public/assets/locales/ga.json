@@ -157,6 +157,7 @@
     "cron_title": "Socraigh minicíocht tástála",
     "cron_next_test": "An chéad tástáil eile:",
     "custom_cron": "Sloinntiú cron saincheaptha",
+    "cron_help": "Cabhair le comhréir cron",
     "schedule_offset": "Sceideal fritháireamh",
     "schedule_offset_desc": "Cuireann sé moill bheag leis chun cosc ​​a chur ar thástálacha tosú ag amanna beachta",
     "pause_title": "Cuir tástálacha luais ar sos le haghaidh...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Cuir freastalaí leis",
+    "context_menu": "Gníomhartha freastalaí",
     "create": "Cuir leis",
     "this_server": "An freastalaí seo",
     "created": "Tá an freastalaí curtha leis go rathúil",

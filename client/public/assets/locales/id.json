@@ -157,6 +157,7 @@
     "cron_title": "Atur frekuensi pengujian",
     "cron_next_test": "Pengujian Berikutnya:",
     "custom_cron": "Ekspresi cron khusus",
+    "cron_help": "Bantuan sintaks cron",
     "schedule_offset": "Geser jadwal",
     "schedule_offset_desc": "Menambahkan sedikit jeda agar pengujian tidak dimulai tepat pada waktu bulat",
     "pause_title": "Jeda speedtest selama...",
@@ -454,6 +455,7 @@
   },
   "nodes": {
     "add": "Tambah server",
+    "context_menu": "Tindakan server",
     "create": "Tambah",
     "this_server": "Server ini",
     "created": "Server telah berhasil ditambahkan",

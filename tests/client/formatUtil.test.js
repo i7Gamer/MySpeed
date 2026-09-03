@@ -2,7 +2,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
 import {
-    convertSpeed, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
+    convertSpeed, firstWeekday, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
     formatLatencyWithUnit, formatPercent, formatShortTime, formatTime, formatHour, formatWhole,
     formatWithUnit, generateRelativeTime, getSpeedUnit, NOT_MEASURED, printableFigure, spanInWords,
     SPEED_UNIT_MBPS, SPEED_UNIT_MBYTES, wholeSpeed, TIME_FORMAT_12H, TIME_FORMAT_24H
@@ -758,5 +758,86 @@ describe("a span behind \"ago\"", () => {
         });
 
         assert.equal(spanInWords(3 * 86400, {context: "ago"}), "3 days");
+    });
+
+    /**
+     * Polish and Czech inflect every unit behind przed/před, and both had
+     * written the instrumental into the plain keys - so the one caller that
+     * asks for a bare duration, the overview's "Largest gap between tests",
+     * read "3 dniami" where "3 dni" belongs.
+     */
+    const withLanguage = async (code, run) => {
+        const previous = i18n.language;
+        const {default: bundle} = await import(`../../client/public/assets/locales/${code}.json`,
+            {with: {type: "json"}});
+
+        i18n.addResourceBundle(code, "translation", bundle, true, true);
+
+        try {
+            await i18n.changeLanguage(code);
+            await run();
+        } finally {
+            await i18n.changeLanguage(previous);
+        }
+    };
+
+    it("takes the instrumental in Polish, and the nominative on its own", async () => {
+        await withLanguage("pl", () => {
+            assert.equal(spanInWords(3 * 86400, {context: "ago"}), "3 dniami");
+            assert.equal(spanInWords(3 * 86400), "3 dni", "a bare duration was left in the instrumental");
+            assert.equal(spanInWords(5 * 3600), "5 godziny");
+            assert.equal(spanInWords(5 * 3600, {context: "ago"}), "5 godzinami");
+            assert.equal(formatLastTest(new Date(Date.now() - 3 * 86400 * 1000).toISOString()),
+                "Ostatni test przed 3 dniami");
+        });
+    });
+
+    it("does the same in Czech", async () => {
+        await withLanguage("cs", () => {
+            assert.equal(spanInWords(20 * 60), "20 minuty");
+            assert.equal(spanInWords(20 * 60, {context: "ago"}), "20 minutami");
+            assert.equal(formatLastTest(new Date(Date.now() - 5 * 3600 * 1000).toISOString()),
+                "Poslední test před 5 hodinami");
+        });
+    });
+});
+
+/**
+ * Which day a calendar's week starts on. The picker drew Monday first for
+ * every language, so a reader in Tokyo or São Paulo got a month laid out the
+ * way Berlin reads one.
+ *
+ * Intl answers where the runtime has getWeekInfo - which this Node does not,
+ * and neither do all the browsers - so what is pinned here is the table that
+ * answers when it cannot.
+ */
+describe("firstWeekday", () => {
+    it("starts the week on Sunday for the languages whose readers do", () => {
+        for (const tag of ["en", "id", "ja", "ko", "pt", "zh-TW"])
+            assert.equal(firstWeekday(tag), 7, `${tag} was given a Monday-first calendar`);
+    });
+
+    it("starts the week on Monday everywhere else this interface speaks", () => {
+        for (const tag of ["de", "fr", "es", "it", "nl", "pl", "cs", "ru", "uk", "sv", "da", "nb",
+            "bg", "ca", "tr", "ga", "zh"])
+            assert.equal(firstWeekday(tag), 1, `${tag} was given a Sunday-first calendar`);
+    });
+
+    // A region CLDR disagrees with its language about. Only a runtime carrying
+    // week info can answer this one, so both answers are accepted - what must
+    // not happen is a throw or a nonsense day.
+    it("gives a regional tag a usable answer", () => {
+        assert.ok([1, 7].includes(firstWeekday("en-GB")));
+    });
+
+    it("falls back to Monday for a tag it cannot read", () => {
+        assert.equal(firstWeekday(""), 1);
+        assert.equal(firstWeekday("not a tag"), 1);
+    });
+
+    // No argument is the app's own language, not the browser's - the same
+    // choice every formatter in this file makes.
+    it("asks the interface's language when it is given nothing", () => {
+        assert.equal(firstWeekday(), firstWeekday(i18n.language));
     });
 });
