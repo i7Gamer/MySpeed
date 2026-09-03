@@ -274,7 +274,8 @@
     "hour": "1 jam",
     "hours": "{{hours}} jam",
     "day": "1 hari",
-    "days": "{{days}} hari"
+    "days": "{{days}} hari",
+    "days_ago": "{{days}} hari"
   },
   "test": {
     "not_available": "Saat ini tidak ada pengujian yang tersedia",

@@ -274,7 +274,8 @@
     "hour": "1 час",
     "hours": "{{hours}} часа",
     "day": "1 ден",
-    "days": "{{days}} дни"
+    "days": "{{days}} дни",
+    "days_ago": "{{days}} дни"
   },
   "test": {
     "not_available": "В момента няма налични тестове",

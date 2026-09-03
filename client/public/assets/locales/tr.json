@@ -274,7 +274,8 @@
     "hour": "1 saat",
     "hours": "{{hours}} saat",
     "day": "1 gün",
-    "days": "{{days}} gün"
+    "days": "{{days}} gün",
+    "days_ago": "{{days}} gün"
   },
   "test": {
     "not_available": "Şu anda kullanılabilir test yok",

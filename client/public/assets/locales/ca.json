@@ -274,7 +274,8 @@
     "hour": "1 hora",
     "hours": "{{hours}} hores",
     "day": "1 dia",
-    "days": "{{days}} dies"
+    "days": "{{days}} dies",
+    "days_ago": "{{days}} dies"
   },
   "test": {
     "not_available": "Ara mateix no hi ha cap prova disponible",

@@ -274,7 +274,8 @@
     "hour": "1 година",
     "hours": "{{hours}} годин",
     "day": "1 день",
-    "days": "{{days}} днів"
+    "days": "{{days}} днів",
+    "days_ago": "{{days}} днів"
   },
   "test": {
     "not_available": "Наразі немає доступних тестів",

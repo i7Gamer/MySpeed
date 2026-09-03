@@ -274,7 +274,8 @@
     "hour": "1시간",
     "hours": "{{hours}}시간",
     "day": "1일",
-    "days": "{{days}}일"
+    "days": "{{days}}일",
+    "days_ago": "{{days}}일"
   },
   "test": {
     "not_available": "현재 이용 가능한 테스트가 없습니다",

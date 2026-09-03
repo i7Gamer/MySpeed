@@ -274,7 +274,8 @@
     "hour": "1 hora",
     "hours": "{{hours}} horas",
     "day": "1 día",
-    "days": "{{days}} días"
+    "days": "{{days}} días",
+    "days_ago": "{{days}} días"
   },
   "test": {
     "not_available": "Actualmente no hay tests disponibles",

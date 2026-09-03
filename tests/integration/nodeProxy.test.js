@@ -464,6 +464,49 @@ describe("proxy revalidation", () => {
         }
     });
 
+    /**
+     * A name that does not resolve is the upstream being away, not the address
+     * being wrong: the row passed this same check when it was added. It used
+     * to be answered 400 INVALID_URL, the caller's fault - and every visit to
+     * the nodes page logged a bad request the caller never made. A gateway
+     * failure is what it is, and the card reads it as "not reachable" either
+     * way.
+     */
+    it("answers a node whose host no longer resolves as a gateway failure, not a bad request", async () => {
+        const away = await nodeModelFor().create({name: "away", url: "http://nowhere.invalid:5216", password: null});
+
+        try {
+            // Both roads to the same answer: with local nodes allowed the
+            // address check skips the lookup and the request itself fails to
+            // resolve; without it the check is what refuses the name.
+            const {status, body} = await api(server.baseUrl, `/nodes/${away.id}/speedtests?limit=1`);
+            assert.equal(status, 502, "an unresolvable node is answered as this server's own fault");
+            assert.equal(body.type, "NODE_UNREACHABLE");
+
+            delete process.env.ALLOW_LOCAL_NODES;
+            const checked = await api(server.baseUrl, `/nodes/${away.id}/speedtests?limit=1`);
+            assert.equal(checked.status, 502, "an unresolvable node is answered as the caller's mistake");
+            assert.equal(checked.body.type, "NODE_UNREACHABLE");
+        } finally {
+            process.env.ALLOW_LOCAL_NODES = "true";
+            await nodeModelFor().destroy({where: {id: away.id}});
+        }
+    });
+
+    // A name that resolves to a port nobody listens on is the same absence.
+    it("answers a node that refuses the connection the same way", async () => {
+        const closed = await nodeModelFor().create({name: "closed", url: "http://127.0.0.1:1", password: null});
+
+        try {
+            const {status, body} = await api(server.baseUrl, `/nodes/${closed.id}/speedtests?limit=1`);
+
+            assert.equal(status, 502);
+            assert.equal(body.type, "NODE_UNREACHABLE");
+        } finally {
+            await nodeModelFor().destroy({where: {id: closed.id}});
+        }
+    });
+
     // A node has no reason to redirect, and following one handed the remote host
     // a way to choose the server's destination after the check had passed.
     it("refuses a node that answers with a redirect", async () => {

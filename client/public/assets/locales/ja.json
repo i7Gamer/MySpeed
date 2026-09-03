@@ -274,7 +274,8 @@
     "hour": "1 時間",
     "hours": "{{hours}} 時間",
     "day": "1 日",
-    "days": "{{days}} 日"
+    "days": "{{days}} 日",
+    "days_ago": "{{days}} 日"
   },
   "test": {
     "not_available": "現在、利用できるテストはありません",

@@ -711,3 +711,52 @@ describe("formatBytes", () => {
             assert.equal(formatBytes(value), NOT_MEASURED, `value ${String(value)}`);
     });
 });
+
+/**
+ * German inflects a unit behind "vor": "7 Tage" on its own, "vor 7 Tagen" in
+ * the status bar. The span wears the i18next context "ago" wherever a caller
+ * puts it behind that word, and a locale carries a `_ago` key only for the
+ * units it inflects - i18next falls back to the plain key for the rest.
+ */
+describe("a span behind \"ago\"", () => {
+    const withGerman = async (run) => {
+        const previous = i18n.language;
+        const {default: german} = await import("../../client/public/assets/locales/de.json", {with: {type: "json"}});
+
+        i18n.addResourceBundle("de", "translation", german, true, true);
+
+        try {
+            await i18n.changeLanguage("de");
+            await run();
+        } finally {
+            await i18n.changeLanguage(previous);
+        }
+    };
+
+    it("takes the dative in German", async () => {
+        await withGerman(() => {
+            assert.equal(spanInWords(3 * 86400, {context: "ago"}), "3 Tagen");
+            assert.equal(spanInWords(3 * 86400), "3 Tage", "the bare span changed too");
+        });
+    });
+
+    it("reaches the status bar as a sentence that reads", async () => {
+        await withGerman(() => {
+            const threeDaysAgo = new Date(Date.now() - 3 * 86400 * 1000).toISOString();
+
+            assert.equal(generateRelativeTime(threeDaysAgo), "3 Tagen");
+            assert.equal(formatLastTest(threeDaysAgo), "Letzter Test vor 3 Tagen");
+        });
+    });
+
+    // Units German does not inflect fall back to the plain key, as does every
+    // language that carries no `_ago` variant at all.
+    it("falls back to the plain unit where nothing is inflected", async () => {
+        await withGerman(() => {
+            assert.equal(spanInWords(5 * 3600, {context: "ago"}), "5 Stunden");
+            assert.equal(spanInWords(86400, {context: "ago"}), "1 Tag");
+        });
+
+        assert.equal(spanInWords(3 * 86400, {context: "ago"}), "3 days");
+    });
+});

@@ -274,7 +274,8 @@
     "hour": "1 time",
     "hours": "{{hours}} timer",
     "day": "1 dag",
-    "days": "{{days}} dager"
+    "days": "{{days}} dager",
+    "days_ago": "{{days}} dager"
   },
   "test": {
     "not_available": "Det er for øyeblikket ingen tester tilgjengelig",

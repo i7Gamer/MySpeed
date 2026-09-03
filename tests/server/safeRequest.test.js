@@ -2,7 +2,7 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import dns from "node:dns";
-import { safeRequest, MAX_RESPONSE_BYTES } from "../../server/util/safeRequest.js";
+import { safeRequest, MAX_RESPONSE_BYTES, REQUEST_TIMED_OUT } from "../../server/util/safeRequest.js";
 import { safeLookup } from "../../server/util/safeUrl.js";
 
 const FLOOD_CHUNK_BYTES = 1024;
@@ -90,7 +90,11 @@ describe("safeRequest", () => {
     });
 
     it("gives up on a server that never answers", async () => {
-        await assert.rejects(() => safeRequest(url("/slow"), {timeout: 300}), /Timed out/);
+        // The code is what the node proxy sorts by: a request that got no
+        // answer files beside a host that refused one, as the upstream's
+        // absence, not this server's fault.
+        await assert.rejects(() => safeRequest(url("/slow"), {timeout: 300}),
+            (error) => /Timed out/.test(error.message) && error.code === REQUEST_TIMED_OUT);
     });
 
     it("can be aborted", async () => {

@@ -237,7 +237,12 @@ describe("i18n keys", () => {
             // notification.${key} - the phrases the server writes a notification
             // from, in the recipient's language (server/util/notificationLocale.js);
             // nothing in the client renders them, and nothing should.
-            /^notification\.[a-z_]+$/
+            /^notification\.[a-z_]+$/,
+            // time.${unit}_ago - the i18next context spanInWords wears behind
+            // "ago" (FormatUtil.js AGO_CONTEXT): reached as `time.${unit}` plus
+            // the context, never spelled out, and carried only by the units a
+            // language inflects there.
+            /^time\.[a-z]+_ago$/
         ];
 
         it("are all reachable from the source tree", () => {

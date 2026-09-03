@@ -304,21 +304,34 @@ const JUST_NOW_SECONDS = 5;
  * a statement about the clock, which only the caller measuring from it can
  * make, and a three-second span is three seconds.
  */
-export const spanInWords = (seconds) => {
+/**
+ * The i18next context a span wears when it sits inside "… ago". Some
+ * languages inflect the unit there - German says "7 Tage" on its own and
+ * "vor 7 Tagen" behind "vor" - so a locale may carry a `_ago` variant of any
+ * unit key, and i18next falls back to the plain one where it does not.
+ */
+export const AGO_CONTEXT = "ago";
+
+// `options` is unpacked inside the body rather than destructured in the
+// signature: the suite reads functions through bodyOf(), which balances the
+// first brace after the declaration.
+export const spanInWords = (seconds, options = undefined) => {
+    const context = options?.context;
+
     if (seconds < SECONDS_PER_MINUTE) {
-        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}});
+        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}, context});
     } else if (seconds < SECONDS_PER_HOUR) {
         return Math.floor(seconds / SECONDS_PER_MINUTE) === 1
-            ? t("time.minute")
-            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}});
+            ? t("time.minute", {context})
+            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}, context});
     } else if (seconds < SECONDS_PER_DAY) {
         return Math.floor(seconds / SECONDS_PER_HOUR) === 1
-            ? t("time.hour")
-            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}});
+            ? t("time.hour", {context})
+            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}, context});
     }
 
     const days = Math.floor(seconds / SECONDS_PER_DAY);
-    return days === 1 ? t("time.day") : t("time.days", {replace: {days: days}});
+    return days === 1 ? t("time.day", {context}) : t("time.days", {replace: {days: days}, context});
 };
 
 /**
@@ -342,7 +355,10 @@ export function generateRelativeTime(created) {
         return t("time.now");
     }
 
-    return spanInWords(diff);
+    // Every caller puts this behind "ago" - the status bar's "Last test … ago",
+    // the integration card's "Last run before …" - so the span wears that
+    // context, and a language that inflects the unit there gets its case.
+    return spanInWords(diff, {context: AGO_CONTEXT});
 }
 
 /**

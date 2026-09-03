@@ -274,7 +274,8 @@
     "hour": "1 hodinou",
     "hours": "{{hours}} hodinami",
     "day": "1 dnem",
-    "days": "{{days}} dny"
+    "days": "{{days}} dny",
+    "days_ago": "{{days}} dny"
   },
   "test": {
     "not_available": "Momentálně nejsou k dispozici žádné testy",

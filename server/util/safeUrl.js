@@ -452,11 +452,15 @@ export const checkNodeTarget = async (value) => {
     // hand, so the lookup costs nothing and closes the name-to-loopback case
     // outright. The notification path cannot afford the same round trip - see
     // the note there.
+    // Marked as the host's condition rather than the address's: a name that
+    // does not resolve today may resolve tomorrow, and nothing about it is
+    // forbidden. The proxy answers this one as a gateway failure, where every
+    // other refusal here is a policy the operator can read and fix.
     let resolved;
     try {
         resolved = await dns.lookup(hostname, {all: true});
     } catch {
-        return {safe: false, reason: "The node URL could not be resolved"};
+        return {safe: false, reason: "The node URL could not be resolved", unreachable: true};
     }
 
     if (resolved.some((entry) => isBlockedAddress(entry.address)))

@@ -274,7 +274,8 @@
     "hour": "1 uair an chloig",
     "hours": "{{hours}} uair an chloig",
     "day": "1 lá",
-    "days": "{{days}} lá"
+    "days": "{{days}} lá",
+    "days_ago": "{{days}} lá"
   },
   "test": {
     "not_available": "Níl aon tástálacha ar fáil faoi láthair",

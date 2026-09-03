@@ -5,6 +5,7 @@ import HttpApi from 'i18next-http-backend';
 import {readStored, writeStored} from "@/common/utils/Storage";
 import {supportedLanguage} from "@/common/utils/LanguageChoice";
 import {withBasePath} from "@/common/utils/BasePath";
+import {followLanguage} from "@/common/utils/DocumentLanguage";
 /*
  * The English locale, bundled rather than fetched.
  *
@@ -143,5 +144,10 @@ i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
         lookupLocalStorage: 'language'
     }
 });
+
+// The document's `lang` follows the interface language from here on;
+// index.html ships it as English and nothing else ever changed it. Guarded
+// for the one place this module is loaded without a document.
+followLanguage(i18n, typeof document === "undefined" ? null : document.documentElement);
 
 export default i18n;
