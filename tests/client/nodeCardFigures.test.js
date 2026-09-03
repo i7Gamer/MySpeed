@@ -15,7 +15,7 @@ import { ConfigContext } from "@/common/contexts/Config";
 import { NodeContext } from "@/common/contexts/Node";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
-import { NodeContainer } from "@/pages/Nodes/components/NodeContainer/NodeContainer.jsx";
+import { NodeContainer, TARGETS_RECHECK_MS } from "@/pages/Nodes/components/NodeContainer/NodeContainer.jsx";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -194,6 +194,10 @@ const INSTANCE_OPTIMA = {ping: "10", download: "1000", upload: "500"};
 const TARGET = {id: 4, name: "fritzbox", optimalPing: "30", optimalDownload: "100", optimalUpload: "40"};
 const MEASURED = {id: 9, targetId: 4, ping: 24, download: 95, upload: 38, created: "2026-09-01T10:00:00.000Z"};
 
+// A target the instance still has and this row does not name, so a lookup
+// that misses is a miss among entries rather than a miss in an empty map.
+const OTHER_TARGET = {id: 99, optimalPing: "500", optimalDownload: "1", optimalUpload: "1"};
+
 describe("the optima a node card grades against", () => {
     /**
      * The defect this fixture was written for: the card read config.ping,
@@ -217,7 +221,7 @@ describe("the optima a node card grades against", () => {
         for (const [what, targetsById, test] of [
             ["a node with no targets route", {}, MEASURED],
             ["a row that names no target", {[TARGET.id]: TARGET}, {...MEASURED, targetId: undefined}],
-            ["a target since deleted", {}, MEASURED]
+            ["a target since deleted", {[OTHER_TARGET.id]: OTHER_TARGET}, MEASURED]
         ]) {
             const data = dataFor(test, INSTANCE_OPTIMA, targetsById);
 
@@ -271,8 +275,13 @@ describe("a node card reading its node", () => {
             const path = String(url);
             asked.push(path);
 
-            if (path.includes("/targets")) return Promise.resolve(targetsStatus === 200
-                ? json(targets) : json({message: "Cannot GET /api/targets"}, targetsStatus));
+            // Read per request rather than closed over, so a test can have
+            // the node gain the route halfway through - which is what an
+            // upgrade looks like from here.
+            const status = typeof targetsStatus === "function" ? targetsStatus() : targetsStatus;
+
+            if (path.includes("/targets")) return Promise.resolve(status === 200
+                ? json(targets) : json({message: "Cannot GET /api/targets"}, status));
             if (path.includes("/config")) return Promise.resolve(json(config));
             return Promise.resolve(json(tests));
         };
@@ -304,6 +313,20 @@ describe("a node card reading its node", () => {
         act(() => window.document.dispatchEvent(new window.Event("visibilitychange")));
         await settle();
         await settle();
+    };
+
+    // Five minutes on, without spending them. The card reads Date.now() to
+    // decide whether the window has closed, so that is the clock to move -
+    // and only for the one call, since jsdom and react read it too.
+    const afterTheRecheckWindow = async (run) => {
+        const realNow = Date.now;
+        Date.now = () => realNow.call(Date) + TARGETS_RECHECK_MS + 1;
+
+        try {
+            await run();
+        } finally {
+            Date.now = realNow;
+        }
     };
 
     const seeTheCard = async () => {
@@ -364,6 +387,34 @@ describe("a node card reading its node", () => {
         assert.equal(asksFor(asked, "/config"), 2, "coming back to the tab did not re-read the node");
         assert.equal(asksFor(asked, "/targets"), 1,
             "the card asks a node that has already answered 404 again on every tick");
+    });
+
+    /**
+     * And it is asked again once, five minutes on.
+     *
+     * The first fix latched the 404 for good, on the reasoning StatusContext
+     * latches /status/live with: one card is one node for its whole life. It
+     * is the wrong reasoning here, because the fact being latched is about a
+     * *remote* node rather than about this build - a node upgraded past 1.5.0
+     * while this page sits open answers the route perfectly well, and the card
+     * went on grading its rows against the instance-wide optima until somebody
+     * reloaded, wearing a colour the dashboard it switches to disagrees with.
+     * A 404 from a proxy answering for a child mid-restart latched the same
+     * way and had no upgrade to be corrected by at all.
+     */
+    it("asks a node that has since gained the route, and grades on its answer", async () => {
+        let status = NOT_FOUND;
+        const asked = serve({targetsStatus: () => status});
+        const {container} = await seeTheCard();
+
+        assert.deepEqual(grades(container), ["red", "red", "red"], "the node answered 404 and was graded on it");
+
+        status = 200;
+        await afterTheRecheckWindow(returnToTheTab);
+
+        assert.equal(asksFor(asked, "/targets"), 2, "the upgraded node was never asked again");
+        assert.deepEqual(grades(container), ["green", "green", "green"],
+            "a node upgraded under an open page is graded against optima that were never its");
     });
 
     /**

@@ -1121,17 +1121,23 @@ describe("the clock a notification is written on", () => {
             })),
             config: {host: "smtp.example.com", port: 587, from: "myspeed@example.com",
                 to: "ops@example.com", send_finished: true},
-            messageOf: () => mail[0].text
+            messageOf: () => mail[0].text,
+            // The one notifier with a second substituting field. It goes
+            // through replaceVariables exactly as the body does and takes the
+            // zone as its own third argument, so it is its own way of losing
+            // it - and a subject reading the host's hour beside a body reading
+            // the configured one is the shape nobody would think to look for.
+            second: {what: "subject", field: "finished_subject", read: () => mail[0].subject}
         }
     ];
 
-    for (const {name, setup, config, messageOf} of notifiers) {
+    for (const {name, setup, config, messageOf, second} of notifiers) {
         describe(name, () => {
-            const written = async (zone) => {
+            const written = async (zone, field = "finished_message", read = messageOf) => {
                 const {events} = load(setup);
-                await fire(events, "testFinished", {...config, finished_message: TEMPLATE}, RESULT, zone);
+                await fire(events, "testFinished", {...config, [field]: TEMPLATE}, RESULT, zone);
 
-                return messageOf();
+                return read();
             };
 
             it("writes the hour of the zone the dispatcher resolved", async () => {
@@ -1154,6 +1160,19 @@ describe("the clock a notification is written on", () => {
 
                 assert.ok([before, clockOn(serverZone)].includes(message));
             });
+
+            if (second) {
+                it(`writes that zone's hour in the ${second.what} as well`, async () => {
+                    const zone = elsewhere();
+                    const before = clockOn(zone);
+                    const written2 = await written(zone, second.field, second.read);
+
+                    assert.ok([before, clockOn(zone)].includes(written2),
+                        `sent ${written2} while that zone's clock read ${before}`);
+                    assert.notEqual(written2, clockOn(serverZone),
+                        `the zone was dropped on the way to the ${second.what}, so it is on the host clock`);
+                });
+            }
         });
     }
 });

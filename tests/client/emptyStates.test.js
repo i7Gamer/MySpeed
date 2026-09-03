@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { useContext } from "react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { compile, rules } from "../helpers/sass.mjs";
 import { escapeRegExp } from "../helpers/source.js";
-import { act, cleanup, click, createElement, render, settle } from "../helpers/renderHarness.js";
+import { act, cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
 import { AlertProvider } from "@/common/contexts/Alert";
 import { ConfigContext } from "@/common/contexts/Config";
 import { NodeContext } from "@/common/contexts/Node";
@@ -14,7 +15,7 @@ import { PreferencesContext } from "@/common/contexts/Preferences";
 import { StatusContext } from "@/common/contexts/Status";
 import { TargetsContext } from "@/common/contexts/Targets";
 import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
-import { SpeedtestProvider } from "@/common/contexts/Speedtests/SpeedtestContext.jsx";
+import { SpeedtestContext, SpeedtestProvider } from "@/common/contexts/Speedtests/SpeedtestContext.jsx";
 import TestArea from "@/pages/Home/components/TestArea/TestAreaComponent.jsx";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -185,6 +186,12 @@ describe("a first page of the overview that failed", () => {
     const controls = {};
     const Driver = () => {
         [, controls.setParams] = useSearchParams();
+
+        // And what the provider is holding, which the page cannot be asked
+        // for: the error branch returns above the list, so counting rendered
+        // rows says nothing about whether any were kept - it reads zero
+        // either way. Two reviewers found the same vacuity here.
+        controls.tests = useContext(SpeedtestContext).speedtests;
         return null;
     };
 
@@ -276,8 +283,49 @@ describe("a first page of the overview that failed", () => {
         await settle();
 
         assert.equal(asked.length, 2, "the range change asked the server nothing");
-        assert.equal(container.querySelectorAll(".speedtest").length, 0,
-            "the previous range's rows are on screen under the new range's failure");
+        assert.equal(controls.tests.length, 0,
+            "the previous range's rows are still in hand under the new range's failure");
+        assert.equal(container.querySelectorAll(".speedtest").length, 0);
         assert.match(shown(container), new RegExp(escapeRegExp(SERVER_MESSAGE)));
+    });
+
+    /**
+     * And the error comes down when the rows arrive by some other route.
+     *
+     * The retry is not the only thing that reloads this list. A refresh
+     * fires when the tab is looked at again, when a run finishes, and from
+     * updateTests() after a delete - and not one of them is the failed
+     * load's generation, so nothing about that failure supersedes them. The
+     * first sketch cleared loadError in the two loads only, which left a
+     * page that had answered its rows still showing the error branch on top
+     * of them, with no way past it but the retry.
+     *
+     * The rows underneath are why that is not merely a stale sentence.
+     * Every one of TestArea's hooks runs above the early return, so the
+     * scroll listener is live behind the error page and fires
+     * loadMoreTests() on `hasMore && speedtests.length > 0` - the same
+     * invisible paging that keeping the list on a failure would have
+     * caused, reached from the other side.
+     */
+    it("takes the error down when a refresh answers what the load could not", async () => {
+        const asked = serve(refusal, () => json([{
+            id: 1, targetId: null, ping: 12, download: 940, upload: 480,
+            created: "2026-08-01T10:00:00.000Z"
+        }]));
+        const {container} = await seeTheList();
+
+        assert.match(shown(container), new RegExp(escapeRegExp(SERVER_MESSAGE)), "nothing failed to begin with");
+
+        // The refresh a tab getting focus again fires, which is the one
+        // route to this list that asks for no click at all.
+        await act(async () => { window.document.dispatchEvent(new window.Event("visibilitychange")); });
+        await settle();
+        await settle();
+
+        assert.equal(asked.length, 2, "the refresh asked the server nothing");
+        assert.doesNotMatch(shown(container), new RegExp(escapeRegExp(SERVER_MESSAGE)),
+            "the rows are on screen behind an error page that cannot be dismissed");
+        assert.equal(container.querySelectorAll(".speedtest").length, 1,
+            "the refreshed row never reached the page");
     });
 });

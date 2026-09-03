@@ -6,6 +6,7 @@ import {
     hasExited, terminate, trackProcess, untrackProcess, waitForActiveProcessExit
 } from "../../server/util/speedtest.js";
 import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
+import { readSource } from "../helpers/source.js";
 
 /**
  * What happens to a CLI that will not go when it is asked, and to one that goes
@@ -295,5 +296,31 @@ describe("exitError", () => {
     // keeps it - the round has a result and no failure to report.
     it("keeps a result that arrived before the signal", () => {
         assert.equal(exitError(null, {type: "result", download: {bandwidth: 1}}, "SIGTERM", true), null);
+    });
+});
+
+/**
+ * And the run that dies of a signal actually reaches all that.
+ *
+ * Everything above calls exitError directly, which leaves the four arguments
+ * the close handler passes it entirely to the source: dropping `signal` from
+ * the event's parameter list, or `isShuttingDown()` from the call, puts every
+ * killed run back to "exited with code null without producing a result" with
+ * the whole suite above still green. Read as text because the handler is a
+ * closure inside the spawn, with a child process, two stream readers and a
+ * timeout around it - the composition is what is in doubt here, not the
+ * behaviour of the function it composes.
+ */
+describe("what the close handler hands exitError", () => {
+    const source = readSource("server/util/speedtest.js");
+
+    it("takes the signal off the event beside the code", () => {
+        assert.match(source, /testProcess\.on\('close', \(code, signal\) =>/,
+            "the handler never sees the signal, so a killed run has only a null code to explain itself");
+    });
+
+    it("tells it whether the shutdown was ours", () => {
+        assert.match(source, /exitError\(code, result, signal, isShuttingDown\(\)\)/,
+            "a run our own shutdown killed is reported as a signal from nowhere, or not at all");
     });
 });

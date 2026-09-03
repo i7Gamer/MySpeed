@@ -340,7 +340,8 @@
     "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",
     "no_measurement": "The test finished without reporting any measurement.",
     "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded.",
-    "stopped_by_shutdown": "The test was stopped because MySpeed was shutting down."
+    "stopped_by_shutdown": "The test was stopped because MySpeed was shutting down.",
+    "stopped_by_signal": "The test was stopped from outside MySpeed before it finished."
   },
   "statistics": {
     "average": "Average",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Failed test",
     "failed_in_period": "{{failed}} failed in this period",
+    "failed_in_period_single": "1 failed in this period",
     "hourly": {
       "title": "Speed by Time of Day",
       "sample_count": "Tests"

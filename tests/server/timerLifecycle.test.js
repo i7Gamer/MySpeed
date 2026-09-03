@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
-import { bodyIn, readSource } from "../helpers/source.js";
+import { bodyIn, bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * The schedule offset delays a run by a random amount so a fleet does not
@@ -406,5 +406,28 @@ describe("the startup speedtest", () => {
 
     it("reads its option inside the body, where bodyOf() can see the whole function", () => {
         assert.match(readSource("server/tasks/timer.js"), /export const runTask = async \(options = undefined\) =>/);
+    });
+});
+
+/**
+ * The digest list drops what could not be scheduled.
+ *
+ * Both digest rules are fixed and valid, so the only way scheduleJob answers
+ * null here is a timezone it will not take - which isValidTimezone lets
+ * through if Intl accepts it and node-schedule does not. A null in this list
+ * makes the next stopDigests() throw on `digest.cancel()`, and that teardown
+ * is the shutdown's as much as every reschedule's: one unschedulable zone
+ * would take the clean shutdown down with it.
+ *
+ * Pinned as text because the gap between the two libraries' zone tables is
+ * not a value this suite can name - the guard is for the day one of them
+ * moves, which is exactly when a test built on today's tables stops asking
+ * anything.
+ */
+describe("scheduling the digests", () => {
+    it("keeps only the jobs node-schedule actually made", () => {
+        assert.match(bodyOf(readSource("server/tasks/timer.js"), "const startDigests ="),
+            /\.filter\(Boolean\)/,
+            "a zone node-schedule refuses leaves a null in the list, and the next teardown throws on it");
     });
 });

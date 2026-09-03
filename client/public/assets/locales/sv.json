@@ -340,7 +340,8 @@
     "rate_limited": "Leverantören nekade testet eftersom för många har körts nyligen. Nästa test fördröjs automatiskt.",
     "no_measurement": "Testet avslutades utan att rapportera något mätvärde.",
     "impossible_measurement": "Testet rapporterade ett mätvärde som inte kan stämma, så det förkastades.",
-    "stopped_by_shutdown": "Testet stoppades eftersom MySpeed höll på att avslutas."
+    "stopped_by_shutdown": "Testet stoppades eftersom MySpeed höll på att avslutas.",
+    "stopped_by_signal": "Testet stoppades utifrån innan det blev klart."
   },
   "statistics": {
     "average": "Genomsnitt",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Misslyckat test",
     "failed_in_period": "{{failed}} misslyckades under denna period",
+    "failed_in_period_single": "1 misslyckades under denna period",
     "hourly": {
       "title": "Hastighet efter tid på dygnet",
       "sample_count": "Tester"

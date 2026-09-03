@@ -340,7 +340,8 @@
     "rate_limited": "Leverandøren avviste testen fordi det er kjørt for mange i det siste. Den neste utsettes automatisk.",
     "no_measurement": "Testen ble fullført uten å rapportere noen måling.",
     "impossible_measurement": "Testen rapporterte en måling som ikke kan stemme, så den ble forkastet.",
-    "stopped_by_shutdown": "Testen ble stoppet fordi MySpeed ble avsluttet."
+    "stopped_by_shutdown": "Testen ble stoppet fordi MySpeed ble avsluttet.",
+    "stopped_by_signal": "Testen ble stoppet utenfra før den ble ferdig."
   },
   "statistics": {
     "average": "Gjennomsnitt",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Mislykket test",
     "failed_in_period": "{{failed}} mislyktes i denne perioden",
+    "failed_in_period_single": "1 mislyktes i denne perioden",
     "hourly": {
       "title": "Hastighet etter tid på døgnet",
       "sample_count": "Tester"

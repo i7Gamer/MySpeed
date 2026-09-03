@@ -8,9 +8,12 @@
  * `password` and the admin hash and stamps `secretsRedacted: true`, which made
  * that file safe to attach to a bug report in every respect but this one.
  *
- * The address survives, because a restore that dropped it would bring back a
- * node pointing nowhere; only the credential goes, and it has to be re-entered
- * the way every other redacted credential does.
+ * The address survives wherever the walk below can vouch for it, because a
+ * restore that dropped it would bring back a node pointing nowhere; only the
+ * credential goes, and it has to be re-entered the way every other redacted
+ * credential does. "Wherever it can" is not a hedge: a value carrying an "@"
+ * the walk cannot place inside the authority it found is dropped whole, and the
+ * last paragraph here is about why that is the only safe answer.
  *
  * A value that will not parse is redacted too, and this file used to say why it
  * need not be: an unparseable URL "carries no userinfo a parser could find, so
@@ -159,6 +162,16 @@ const cutUserinfo = (value, authorityOnly) => {
  *
  * A value that is not a string, or is empty, names nothing - so it gets the
  * placeholder rather than leaving a hole in the middle of a sentence.
+ *
+ * No `looksLikeStoredUrl` gate, where withoutUrlCredentials needs one, and the
+ * difference is in who calls them. That one is run over every remaining string
+ * field of every integration, most of which are free text where an "@" is
+ * ordinary. This one has a single caller: util/http.js names the endpoint a
+ * request it just attempted did not reach, so what arrives is a URL by
+ * construction - and for anything else the placeholder is the right answer
+ * anyway, since a failure report has nothing to say about a value no request
+ * was made to. A second caller would have to satisfy that, or bring the gate
+ * with it.
  */
 export const authorityWithoutCredentials = (value) =>
     typeof value === "string" && value !== "" ? cutUserinfo(value, true) : REDACTED_URL;

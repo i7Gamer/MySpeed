@@ -42,6 +42,12 @@ const POLL_INTERVAL_MS = 10000;
 // as a node in trouble - see the docblock there.
 const NOT_FOUND = 404;
 
+// How long a node that answered 404 is left alone before being asked again.
+// Exported so the suite times its own clock against the same number rather
+// than a second copy of it - see the ref that holds the deadline.
+const MINUTE_MS = 60 * 1000;
+export const TARGETS_RECHECK_MS = 5 * MINUTE_MS;
+
 export const NodeContainer = (node) => {
     const updateNodes = useContext(NodeContext)[1];
     const updateCurrentNode = useContext(NodeContext)[3];
@@ -84,15 +90,30 @@ export const NodeContainer = (node) => {
     const appliedGeneration = useRef(0);
 
     /**
-     * Whether this node answers /targets at all, assumed until a 404 says
-     * otherwise - StatusContext's latch over /status/live, for the same cost.
+     * When this node may be asked for its targets again, after answering 404.
+     *
+     * A window rather than the latch StatusContext keeps over /status/live,
+     * and the difference is what the two answers mean. "This build has no
+     * /status/live" is a fact about a binary that cannot change under a
+     * running page; "this node has no /targets" is a fact about a *remote*
+     * node, which can be upgraded while this page is open - and a permanent
+     * latch would go on grading its rows against the instance-wide optima for
+     * as long as nobody reloads, wearing a colour the dashboard it switches to
+     * disagrees with. A 404 that was never about the route at all - a proxy
+     * answering for a child mid-restart - latches the same way, and that one
+     * does not even correct itself on an upgrade.
+     *
+     * The window keeps what the latch was for. This card polls every ten
+     * seconds for as long as the page is open, so asking an old node on every
+     * tick is one wasted request - proxied to the child for a remote node -
+     * and one console 404 every ten seconds, forever. Five minutes turns that
+     * into one of each, and bounds by the same number how long an upgraded
+     * node stays graded against optima that are not its.
      *
      * A ref rather than state: nothing on screen changes with it, and a card
-     * that re-rendered on the answer would re-render on every poll. It needs no
-     * reset either, where StatusContext's does: one card is one node for the
-     * whole of its life, since the list keys them by id.
+     * that re-rendered on the answer would re-render on every poll.
      */
-    const targetsSupported = useRef(true);
+    const targetsRetryAt = useRef(0);
 
     const navigate = useNavigate();
 
@@ -119,18 +140,15 @@ export const NodeContainer = (node) => {
      * prefix, the way it already asks for its own tests and its own config.
      */
     const readTargets = async () => {
-        if (!targetsSupported.current) return {};
+        if (Date.now() < targetsRetryAt.current) return {};
 
         try {
             const request = await baseRequest(prefix + "/targets");
 
-            // Latched, so a node that has already said it has no such route is
-            // not asked again - this card polls for as long as the page is
-            // open, so the alternative is one wasted request, proxied to the
-            // child for a remote node, and one console 404 every ten seconds
-            // forever.
+            // Held off rather than given up on, for the reason the ref above
+            // states: a remote node can gain the route between two polls.
             if (request.status === NOT_FOUND) {
-                targetsSupported.current = false;
+                targetsRetryAt.current = Date.now() + TARGETS_RECHECK_MS;
                 return {};
             }
 

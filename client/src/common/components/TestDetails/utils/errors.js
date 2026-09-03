@@ -32,6 +32,14 @@ export const errors = () => ({
     // fault - and the row it lands on is one the operator can do nothing about,
     // which is exactly the kind that has to explain itself.
     "stopped because MySpeed was shutting down": t("errors.stopped_by_shutdown"),
+    // And the other half of that sentence pair, from the same file: a signal
+    // that was not our own shutdown - a `pkill`, an OOM kill, a control-group
+    // stop that reached the CLI - is named rather than explained there, because
+    // claiming a shutdown that is not happening would be worse than a bare
+    // fact. Which left the row with a bare fact and no translation of it. The
+    // signal itself is dropped here and kept in the raw output the panel below
+    // shows, since a phrase table has nowhere to put it.
+    "was stopped by": t("errors.stopped_by_signal"),
 });
 
 /**

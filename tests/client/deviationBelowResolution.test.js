@@ -3,7 +3,10 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { formatLatency, LATENCY_STEP, roundsToZeroLatency } from "@/common/utils/FormatUtil.js";
+import {
+    formatLatency, LATENCY_STEP, roundsToZeroLatency, roundsToZeroSpeed, SPEED_UNIT_MBYTES, SPEED_STEP,
+    wholeSpeed
+} from "@/common/utils/FormatUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -65,6 +68,65 @@ describe("roundsToZeroLatency", () => {
     });
 });
 
+/**
+ * The identical question one column over, and the one that shipped with the
+ * construct but none of the suite above it.
+ *
+ * Three things went uncaught for want of it: the `> 0` that keeps a genuine
+ * zero saying "±0", the value of the step the card prints as its bound, and -
+ * the one only this column has - that the reading is taken in the unit the
+ * reader chose. wholeSpeed rounds in the displayed unit, so 3.9 Mbit/s is a
+ * printable 4 to somebody reading Mbps and an unprintable 0.4875 to somebody
+ * reading MB/s, and a predicate that judged the raw Mbit/s would have told the
+ * second of them nothing.
+ */
+describe("roundsToZeroSpeed", () => {
+    const asMbytes = {speedUnit: SPEED_UNIT_MBYTES};
+
+    it("is true for a spread too small for a whole number to show", () => {
+        for (const mbps of [0.001, 0.1, 0.4, 0.49])
+            assert.equal(roundsToZeroSpeed(mbps, {}), true, `${mbps} Mbps prints as 0 and must say so`);
+
+        // The text spelling too, for the reason the latency case has one: the
+        // figure arrives from the server as whatever JSON carried it.
+        assert.equal(roundsToZeroSpeed("0.2", {}), true, "printed one way, judged another");
+    });
+
+    // The half that is this column's alone. Same measurement, two readers, and
+    // only one of them is shown a figure that rounds away.
+    it("judges the figure in the unit the reader is shown", () => {
+        assert.equal(roundsToZeroSpeed(3.9, {}), false, "3.9 Mbps prints as 4, so there is nothing to explain");
+        assert.equal(roundsToZeroSpeed(3.9, asMbytes), true,
+            "0.4875 MB/s prints as ±0 beside a consistency that is nowhere near 100%");
+    });
+
+    // Genuinely zero: every test within the range sat on the median.
+    it("is false for a real zero", () => {
+        assert.equal(roundsToZeroSpeed(0, {}), false);
+        assert.equal(roundsToZeroSpeed(0, asMbytes), false);
+    });
+
+    it("is false once a whole number can show it", () => {
+        for (const mbps of [0.5, 1, 12, 940])
+            assert.equal(roundsToZeroSpeed(mbps, {}), false, `${mbps} Mbps is printable whole`);
+    });
+
+    it("is false for anything that is not a measurement", () => {
+        for (const value of [null, undefined, NaN, Infinity, -1, "-1", "auto", {}])
+            assert.equal(roundsToZeroSpeed(value, {}), false, `${String(value)} is not a spread`);
+    });
+
+    // The bound the card prints has to be the smallest thing the card can
+    // print. Pinned to the literal rather than to the import, because an
+    // expectation built from the same constant as the code moves with it and
+    // asserts nothing - which is what panelPrecision's bound did.
+    it("names the smallest speed a whole number can express", () => {
+        assert.equal(SPEED_STEP, 1);
+        assert.equal(wholeSpeed(SPEED_STEP, {}), SPEED_STEP,
+            "the step itself does not survive the formatter it describes");
+    });
+});
+
 describe("the stability card distinguishes a small spread from none", () => {
     it("consults the check before printing the deviation", () => {
         assert.match(card, /roundsToZeroLatency\(data\.ping\.deviation\)/,
@@ -74,6 +136,15 @@ describe("the stability card distinguishes a small spread from none", () => {
     it("prints the bound rather than a figure it cannot show", () => {
         assert.match(card, /±<\$\{LATENCY_STEP}/,
             "the card states no bound for a spread below its own resolution");
+    });
+
+    // And the same on the speed column, whose predicate arrived wired but
+    // unpinned: a revert of either line here is invisible to every other test.
+    it("consults the speed check before printing the deviation", () => {
+        assert.match(card, /roundsToZeroSpeed\(value, preferences\)/,
+            "the card still prints ±0 for a throughput spread that merely rounds away");
+        assert.match(card, /±<\$\{SPEED_STEP}/,
+            "the card states no bound for a spread below its own whole-number rounding");
     });
 
     // The real zero keeps the plain reading it has always had.

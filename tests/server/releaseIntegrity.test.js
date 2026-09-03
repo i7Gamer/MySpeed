@@ -28,13 +28,33 @@ const withoutComments = (source) => source
     .filter((line) => !/^\s*#/.test(line))
     .join("\n");
 
+/**
+ * Where `anchor` is, and a failure naming it when it is nowhere.
+ *
+ * Every section in this file used to be cut with a bare
+ * `slice(indexOf(anchor))`, and the floors under those - written
+ * as `assert.notEqual(section, "")` - could not fire: `indexOf` answers -1 for
+ * an anchor that is gone, and `slice(-1)` is the last character of the file
+ * rather than the empty string. So a deleted job or a renamed step failed on
+ * whichever `assert.match` came next, with a message about the wrong thing, or
+ * passed outright where the comparison was between two indexes.
+ */
+const at = (source, anchor) => {
+    const found = source.indexOf(anchor);
+
+    assert.notEqual(found, -1, `${anchor.trim()} is not in this file any more`);
+    return found;
+};
+
+/** The same file from `anchor` onwards, or a failure that says it is gone. */
+const from = (source, anchor) => source.slice(at(source, anchor));
+
 describe("the release publishes what a download can be checked against", () => {
     const workflow = read(".github/workflows/build-binaries.yml");
 
     it("hashes the assets after every job that uploads one", () => {
-        const checksums = workflow.slice(workflow.indexOf("\n  checksums:"));
+        const checksums = from(workflow, "\n  checksums:");
 
-        assert.notEqual(checksums, "", "the checksums job is gone");
         assert.match(checksums, /needs: \[build-windows, build-linux, build-macos, build-zip\]/,
             "SHA256SUMS can be written before an asset it is supposed to cover exists");
         assert.match(checksums, /listReleaseAssets/,
@@ -46,7 +66,7 @@ describe("the release publishes what a download can be checked against", () => {
     // The documented install command fetches these from the release, so the
     // release has to carry them.
     it("uploads the install scripts it tells people to run", () => {
-        const checksums = workflow.slice(workflow.indexOf("\n  checksums:"));
+        const checksums = from(workflow, "\n  checksums:");
 
         for (const script of ["install.sh", "docker-install.sh", "chooser.sh"])
             assert.ok(checksums.includes(`'${script}'`), `${script} is not published with the release`);
@@ -85,9 +105,8 @@ describe("install.sh verifies what it downloaded", () => {
      * root under Restart=always.
      */
     it("refuses a binary that does not match, and leaves the install alone", () => {
-        const mismatch = source.slice(source.indexOf('"$EXPECTED" != "$ACTUAL"'));
+        const mismatch = from(source, '"$EXPECTED" != "$ACTUAL"');
 
-        assert.notEqual(mismatch, "", "nothing compares the two digests");
         assert.match(mismatch.slice(0, 400), /rm -f "\$DOWNLOAD_TMP"/,
             "the unverified download is left on disk");
         assert.match(mismatch.slice(0, 400), /exit 1/,
@@ -98,16 +117,15 @@ describe("install.sh verifies what it downloaded", () => {
     // install a version that was published without one helps nobody. It has to
     // say so rather than pass silently.
     it("says so when the release publishes no checksums", () => {
-        const absent = source.slice(source.indexOf('if [ -z "$CHECKSUM_URL" ]'));
+        const absent = from(source, 'if [ -z "$CHECKSUM_URL" ]');
 
-        assert.notEqual(absent, "", "the missing-checksums case is not handled at all");
         assert.match(absent.slice(0, 300), /Warning/,
             "an unverifiable download is accepted with nothing said");
     });
 
     // Verified before it is stated executable and moved into place, not after.
     it("checks before it installs", () => {
-        assert.ok(source.indexOf("sha256_of") < source.indexOf('mv -f "$DOWNLOAD_TMP" myspeed'),
+        assert.ok(at(source, "sha256_of") < at(source, 'mv -f "$DOWNLOAD_TMP" myspeed'),
             "the binary is installed and then checked");
     });
 });
@@ -121,7 +139,7 @@ describe("install.sh reports a service that did not come up", () => {
      * banner and exited 0, which a pipeline reads as a successful upgrade.
      */
     it("asks whether the service is actually running", () => {
-        const afterRestart = source.slice(source.indexOf("systemctl restart myspeed"));
+        const afterRestart = from(source, "systemctl restart myspeed");
 
         assert.match(afterRestart, /systemctl is-active/,
             "the one step in this script whose failure is never checked");
@@ -158,10 +176,9 @@ describe("docker-install.sh can be run twice", () => {
      * upgraded nothing while printing that the container had started.
      */
     it("pulls before it starts", () => {
-        const pull = source.indexOf("docker compose pull");
-        const up = source.indexOf("docker compose up -d");
+        const pull = at(source, "docker compose pull");
+        const up = at(source, "docker compose up -d");
 
-        assert.notEqual(pull, -1, "an install script that cannot upgrade anything");
         assert.ok(pull < up, "the image is pulled after the container is started");
     });
 });
@@ -180,7 +197,7 @@ describe("uninstall.sh says what it could not remove", () => {
         assert.match(source, /(if ! docker volume rm|docker volume rm[^\n]*\|\|)/,
             "a volume that could not be removed is reported as removed");
 
-        const removal = source.slice(source.indexOf("docker volume rm"));
+        const removal = from(source, "docker volume rm");
 
         assert.match(removal.slice(0, 600), /docker volume ls/,
             "nothing tells the operator how to find what was left behind");
@@ -242,9 +259,8 @@ describe("two releases cannot run over each other", () => {
      * dispatch of that version was refused with no explanation.
      */
     it("says what a cancelled run left behind", () => {
-        const job = release.slice(release.indexOf("\n  report-cancelled-release:"));
+        const job = from(release, "\n  report-cancelled-release:");
 
-        assert.notEqual(job, "", "a cancelled release still ends grey and unexplained");
         assert.match(job, /if: cancelled\(\) && needs\.create-release\.result == 'success'/);
         assert.match(job, /gh release delete v\$VERSION --cleanup-tag/,
             "the recovery command the other report prints is missing from this one");

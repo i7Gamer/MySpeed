@@ -1,9 +1,10 @@
-import { describe, it, before } from "node:test";
+import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import i18next from "i18next";
+import { escapeRegExp, readLocale } from "../helpers/source.js";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisBounds, timeAxisStep, timePoints,
@@ -616,6 +617,44 @@ describe("lineChartOptions", () => {
     describe("the tooltip on a downsampled bucket's failure count", () => {
         const bucketItem = {dataset: {label: "statistics.failed_test"}, dataIndex: 2, formattedValue: "0"};
 
+        /**
+         * The two real sentences, for this block only.
+         *
+         * Everywhere else in this file t() answering with the key is what
+         * makes an assertion readable. Here it hid the whole question: with
+         * no resource behind the key, the interpolation argument is
+         * unobservable, so dropping `{failed: failedCount}` - or renaming it
+         * to something en.json does not use - left the suite green while a
+         * real UI rendered the literal "{{failed}}". Two reviewers found the
+         * same hole. Only the two keys under test are loaded, so the
+         * assertions on statistics.failed_test above and below still read the
+         * key, and the bundle goes again afterwards.
+         */
+        const FAILED_IN_PERIOD = {
+            failed_in_period: "{{failed}} failed in this period",
+            failed_in_period_single: "1 failed in this period"
+        };
+
+        before(() => {
+            i18next.addResourceBundle("en", "translation", {statistics: FAILED_IN_PERIOD}, true, true);
+        });
+
+        after(() => {
+            i18next.removeResourceBundle("en", "translation");
+            i18next.addResourceBundle("en", "translation", {});
+        });
+
+        // Held against en.json rather than retyped, so a reworded sentence
+        // there is a failure here rather than a fixture nobody updated.
+        it("is the wording the locale actually ships", () => {
+            const english = readLocale("en").statistics;
+
+            assert.deepEqual({
+                failed_in_period: english.failed_in_period,
+                failed_in_period_single: english.failed_in_period_single
+            }, FAILED_IN_PERIOD);
+        });
+
         it("prefers the counted, localisable sentence over the server's own English one", () => {
             const line = options({
                 errors: [null, "Too many requests", "3 failed in period"],
@@ -623,13 +662,64 @@ describe("lineChartOptions", () => {
             }).plugins.tooltip.callbacks.label(bucketItem);
 
             assert.match(line, /statistics\.failed_test/);
-            // i18next has no resources loaded in this suite, so t() answers
-            // with the key itself - which is exactly what proves the count
-            // reached the translator rather than the server's own sentence
-            // reaching the screen unchanged.
-            assert.match(line, /statistics\.failed_in_period/);
+            assert.match(line, /3 failed in this period/,
+                "the count never reached the translator, so the sentence renders its own placeholder");
+            assert.doesNotMatch(line, /\{\{/, "an interpolation was left unfilled");
             assert.doesNotMatch(line, /3 failed in period/,
                 "the server's own English sentence reached the screen instead of a translated one");
+        });
+
+        /**
+         * And one is its own sentence.
+         *
+         * A single form filled with "1" reads correctly in English and
+         * wrongly in four of the languages this ships in - Polish, Czech,
+         * Russian and Ukrainian inflect the noun with the number, so
+         * "1 nieudanych" is a plural ending on a singular count. The client
+         * already splits time.minute from time.minutes for this reason.
+         */
+        /**
+         * Asked in Polish, because English cannot answer it.
+         *
+         * "1 failed in this period" is what both forms render for a count of
+         * one, so an English assertion passes whichever key the code reaches
+         * for - which is the same vacuity this block was just fixed for, one
+         * layer down. Polish is where the distinction lives, and where the
+         * defect is: the noun inflects with the number, so the plural form
+         * filled with 1 reads "1 nieudanych", and it is that string this
+         * refuses. Both forms come out of the shipped locale, so a retranslation
+         * moves the test with it rather than leaving a fixture behind.
+         */
+        it("has a form of its own for a single failure, in a language that inflects", async () => {
+            const polish = readLocale("pl").statistics;
+            const pluralWithOne = polish.failed_in_period.replace("{{failed}}", "1");
+
+            assert.notEqual(pluralWithOne, polish.failed_in_period_single,
+                "the two Polish forms are the same sentence, so this test asks nothing");
+
+            // The two keys only, so statistics.failed_test still answers with
+            // its key - the tooltip decides which dataset it is on by comparing
+            // the label against that, and a translated one takes a branch this
+            // test is not about.
+            i18next.addResourceBundle("pl", "translation", {statistics: {
+                failed_in_period: polish.failed_in_period,
+                failed_in_period_single: polish.failed_in_period_single
+            }}, true, true);
+            await i18next.changeLanguage("pl");
+
+            try {
+                const line = options({
+                    errors: [null, null, null],
+                    failedCounts: [null, null, 1]
+                }).plugins.tooltip.callbacks.label(bucketItem);
+
+                assert.match(line, new RegExp(escapeRegExp(polish.failed_in_period_single)));
+                assert.doesNotMatch(line, new RegExp(escapeRegExp(pluralWithOne)),
+                    "a single failure is reported with the plural form of the noun");
+            } finally {
+                await i18next.changeLanguage("en");
+                i18next.removeResourceBundle("pl", "translation");
+            }
         });
 
         it("falls back to the server's own sentence when the responding node predates the count", () => {

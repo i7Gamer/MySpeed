@@ -340,7 +340,8 @@
     "rate_limited": "Sağlayıcı testi reddetti, çünkü kısa süre içinde çok fazla test çalıştırıldı. Sonraki otomatik olarak ertelenir.",
     "no_measurement": "Test, hiçbir ölçüm bildirmeden sona erdi.",
     "impossible_measurement": "Test, doğru olamayacak bir ölçüm bildirdi, bu yüzden ölçüm atıldı.",
-    "stopped_by_shutdown": "MySpeed kapanmakta olduğu için test durduruldu."
+    "stopped_by_shutdown": "MySpeed kapanmakta olduğu için test durduruldu.",
+    "stopped_by_signal": "Test tamamlanmadan dışarıdan durduruldu."
   },
   "statistics": {
     "average": "Ortalama",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Başarısız test",
     "failed_in_period": "Bu dönemde {{failed}} başarısız",
+    "failed_in_period_single": "Bu dönemde 1 başarısız",
     "hourly": {
       "title": "Günün saatine göre hız",
       "sample_count": "Testler"

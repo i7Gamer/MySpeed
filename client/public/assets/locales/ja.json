@@ -340,7 +340,8 @@
     "rate_limited": "短時間に実行されたテストが多すぎるため、プロバイダーがテストを拒否しました。次のテストは自動的に延期されます。",
     "no_measurement": "テストは終了しましたが、測定値が報告されませんでした。",
     "impossible_measurement": "テストがあり得ない測定値を報告したため、破棄されました。",
-    "stopped_by_shutdown": "MySpeed のシャットダウン中だったため、テストは中止されました。"
+    "stopped_by_shutdown": "MySpeed のシャットダウン中だったため、テストは中止されました。",
+    "stopped_by_signal": "テストは終了する前に外部から停止されました。"
   },
   "statistics": {
     "average": "平均",
@@ -420,6 +421,7 @@
     },
     "failed_test": "失敗したテスト",
     "failed_in_period": "この期間に {{failed}} 件が失敗",
+    "failed_in_period_single": "この期間に 1 件が失敗",
     "hourly": {
       "title": "時間帯別の速度",
       "sample_count": "テスト"

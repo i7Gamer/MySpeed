@@ -135,7 +135,12 @@ describe("the shared readers' layer", () => {
     });
 
     it("keeps sequelize out of every integration", () => {
-        for (const file of listSources("server/integrations")) {
+        const files = listSources("server/integrations");
+
+        // A walk that found nothing passes every assertion under it.
+        assert.ok(files.length >= 8, `only ${files.length} integrations found - the scan is reading nothing`);
+
+        for (const file of files) {
             const source = readSource(`server/integrations/${file}`);
 
             assert.doesNotMatch(source, /from ["'][^"']*testOutcome\.js["']/,

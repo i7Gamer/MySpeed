@@ -256,11 +256,24 @@ jobs:
   checksums-msi:
     name: "Checksums for the installers"
     runs-on: ubuntu-latest
-    needs: [create-release, build-msi]
-    # always(), so a failed or skipped MSI leg leaves the list exactly as
-    # build-binaries wrote it rather than skipping this job and, with it, any
-    # chance of the file being completed.
-    if: always() && needs.create-release.result == 'success'
+    needs: [create-release, build-binaries, build-msi]
+    # !cancelled() rather than success(), so a failed or skipped MSI leg still
+    # leaves the list exactly as build-binaries wrote it - skipping this job
+    # would take with it any chance of the file being completed.
+    #
+    # And rather than always(), which runs on a cancelled workflow too: there
+    # the release is about to be deleted or reported, and a job uploading to it
+    # is at best wasted and at worst racing that.
+    #
+    # build-binaries is required rather than merely awaited for the same
+    # reason. Its failure is what cleanup-on-failure deletes the whole release
+    # over, and an upload landing in the middle of that deletion is a race with
+    # nothing to win: finalize-release needs build-binaries as well, so there is
+    # nothing left for this file to be published with.
+    if: >-
+      !cancelled()
+      && needs.create-release.result == 'success'
+      && needs.build-binaries.result == 'success'
     steps:
       - name: Add any unhashed asset to SHA256SUMS
         uses: actions/github-script@v9
@@ -320,6 +333,13 @@ jobs:
 
             // Replaced rather than uploaded beside: a release cannot carry two
             // assets of one name, so the old one goes first.
+            //
+            // Which is not atomic, and cannot be made so through this API: a
+            // failure between the two leaves the release with no SHA256SUMS at
+            // all. What makes that recoverable rather than silent is the gate
+            // above - finalize-release needs this job, so a release that lost
+            // its list stays a draft, and re-running the job rebuilds the whole
+            // file from the assets rather than from what it found.
             if (published)
               await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id: published.id});
 
@@ -469,6 +489,7 @@ jobs:
           DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
           DOCKER_PUBLISH_RESULT: ${{ needs.publish-docker.result }}
           MSI_RESULT: ${{ needs.build-msi.result }}
+          CHECKSUMS_RESULT: ${{ needs.checksums-msi.result }}
           FINALIZE_RESULT: ${{ needs.finalize-release.result }}
         run: |
           {
@@ -481,6 +502,7 @@ jobs:
             echo "| Build Docker | $DOCKER_BUILD_RESULT |"
             echo "| Publish Docker | $DOCKER_PUBLISH_RESULT |"
             echo "| Build MSI | $MSI_RESULT |"
+            echo "| Checksums for the installers | $CHECKSUMS_RESULT |"
             echo "| Finalize Release | $FINALIZE_RESULT |"
             echo
 

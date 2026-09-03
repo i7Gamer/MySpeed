@@ -340,7 +340,8 @@
     "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",
     "no_measurement": "De test is geëindigd zonder ook maar één meting te melden.",
     "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid.",
-    "stopped_by_shutdown": "De test is gestopt omdat MySpeed werd afgesloten."
+    "stopped_by_shutdown": "De test is gestopt omdat MySpeed werd afgesloten.",
+    "stopped_by_signal": "De test is van buitenaf gestopt voordat hij klaar was."
   },
   "statistics": {
     "average": "Gemiddeld",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Mislukte test",
     "failed_in_period": "{{failed}} mislukt in deze periode",
+    "failed_in_period_single": "1 mislukt in deze periode",
     "hourly": {
       "title": "Snelheid door de dag heen",
       "sample_count": "Tests"

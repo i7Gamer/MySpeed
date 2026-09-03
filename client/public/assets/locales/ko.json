@@ -340,7 +340,8 @@
     "rate_limited": "최근에 테스트가 너무 많이 실행되어 제공업체가 테스트를 거부했습니다. 다음 테스트는 자동으로 지연됩니다.",
     "no_measurement": "테스트가 측정값을 보고하지 않고 종료되었습니다.",
     "impossible_measurement": "테스트가 있을 수 없는 측정값을 보고하여 해당 결과를 폐기했습니다.",
-    "stopped_by_shutdown": "MySpeed가 종료되는 중이어서 테스트가 중지되었습니다."
+    "stopped_by_shutdown": "MySpeed가 종료되는 중이어서 테스트가 중지되었습니다.",
+    "stopped_by_signal": "테스트가 완료되기 전에 외부에서 중지되었습니다."
   },
   "statistics": {
     "average": "평균",
@@ -420,6 +421,7 @@
     },
     "failed_test": "실패한 테스트",
     "failed_in_period": "이 기간에 {{failed}}개 실패",
+    "failed_in_period_single": "이 기간에 1개 실패",
     "hourly": {
       "title": "시간대별 속도",
       "sample_count": "테스트"

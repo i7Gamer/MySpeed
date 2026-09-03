@@ -340,7 +340,8 @@
     "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",
     "no_measurement": "测速已结束，但未报告任何测量值。",
     "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。",
-    "stopped_by_shutdown": "由于 MySpeed 正在关闭，测速已停止。"
+    "stopped_by_shutdown": "由于 MySpeed 正在关闭，测速已停止。",
+    "stopped_by_signal": "测速在完成前被外部停止。"
   },
   "statistics": {
     "average": "平均",
@@ -420,6 +421,7 @@
     },
     "failed_test": "失败的测试",
     "failed_in_period": "此期间有 {{failed}} 次失败",
+    "failed_in_period_single": "此期间有 1 次失败",
     "hourly": {
       "title": "分时段速度",
       "sample_count": "测速"

@@ -340,7 +340,8 @@
     "rate_limited": "O provedor recusou o teste porque muitos foram executados recentemente. O próximo é adiado automaticamente.",
     "no_measurement": "O teste terminou sem informar nenhuma medição.",
     "impossible_measurement": "O teste informou uma medição que não pode estar certa, então ela foi descartada.",
-    "stopped_by_shutdown": "O teste foi interrompido porque o MySpeed estava sendo encerrado."
+    "stopped_by_shutdown": "O teste foi interrompido porque o MySpeed estava sendo encerrado.",
+    "stopped_by_signal": "O teste foi interrompido de fora antes de terminar."
   },
   "statistics": {
     "average": "Média",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Teste com falha",
     "failed_in_period": "{{failed}} com falha neste período",
+    "failed_in_period_single": "1 com falha neste período",
     "hourly": {
       "title": "Velocidade por horário do dia",
       "sample_count": "Testes"

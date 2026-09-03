@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import i18n from "i18next";
 import { describeError } from "@/common/components/TestDetails/utils/errors.js";
 import { RATE_LIMIT_MESSAGE } from "../../server/util/providers/cliOutput.js";
+import { exitError, SHUTDOWN_STOP_MESSAGE } from "../../server/util/speedtest.js";
 import { localeCodes, readLocale, readSource } from "../helpers/source.js";
 
 const codes = localeCodes();
@@ -69,6 +70,27 @@ describe("the failures the server produces", () => {
 
         assert.deepEqual(unexplained, [],
             "these are sentences MySpeed writes and cannot then translate, so the row says 'Unknown error'");
+    });
+
+    /**
+     * The two the *runner* writes, which that scan cannot reach: they live in
+     * util/speedtest.js and neither is a `throw`. One is a constant, the other
+     * is composed at the moment a child dies of a signal.
+     *
+     * Composed here rather than quoted, for the reason the constant exists at
+     * all: the client matches on a substring of the server's sentence, so the
+     * only pin worth having runs the real composition against the real table.
+     * A `code === null` with no result is exactly what `close` reports for a
+     * signal death.
+     */
+    it("explains a run that the server's own shutdown stopped", () => {
+        assert.notEqual(describeError(SHUTDOWN_STOP_MESSAGE), null,
+            "a docker stop landing on a run writes a sentence the row cannot translate");
+    });
+
+    it("explains a run that a signal from outside stopped", () => {
+        assert.notEqual(describeError(exitError(null, {}, "SIGTERM")), null,
+            "an OOM kill or a pkill writes a sentence the row cannot translate");
     });
 });
 

@@ -340,7 +340,8 @@
     "rate_limited": "El proveïdor ha rebutjat la prova perquè se n'han executat massa fa poc. La següent es retarda automàticament.",
     "no_measurement": "La prova ha acabat sense informar de cap mesura.",
     "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat.",
-    "stopped_by_shutdown": "La prova s'ha aturat perquè MySpeed s'estava tancant."
+    "stopped_by_shutdown": "La prova s'ha aturat perquè MySpeed s'estava tancant.",
+    "stopped_by_signal": "La prova s'ha aturat des de fora abans d'acabar."
   },
   "statistics": {
     "average": "Mitjana",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Prova fallida",
     "failed_in_period": "{{failed}} amb error en aquest període",
+    "failed_in_period_single": "1 amb error en aquest període",
     "hourly": {
       "title": "Velocitat per hora del dia",
       "sample_count": "Proves"

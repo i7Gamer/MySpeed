@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import { validateInput } from "../../server/controller/config.js";
-import { readSource } from "../helpers/source.js";
+import { walkSources } from "../helpers/source.js";
 
 /**
  * The door and the scheduler, asked the same question about a cron.
@@ -80,16 +80,23 @@ describe("the cron spellings the server takes", () => {
      * one guards.
      */
     it("asks with the shared options wherever it asks", () => {
-        const files = ["server/tasks/timer.js", "server/controller/config.js"];
+        // Found rather than listed, which is the difference between catching
+        // the fourth call site and describing it: a hard-coded pair of files
+        // passes over a door added in a third one, which is the whole failure
+        // this is for. The declaration in util/ is not a door.
+        const doors = walkSources("server")
+            .map(({path, source}) => ({
+                path,
+                calls: source.split("\n").filter((line) => /(?<!const )\bisValidCron\(/.test(line))
+            }))
+            .filter((door) => door.calls.length > 0 && !/util\/cron\.js$/.test(door.path));
 
-        for (const file of files) {
-            const calls = readSource(file).split("\n").filter((line) => line.includes("isValidCron("));
+        assert.ok(doors.length >= 2,
+            `only ${doors.length} cron doors found - the scan is reading the wrong tree`);
 
-            assert.notEqual(calls.length, 0, `no cron door left in ${file}`);
-
+        for (const {path, calls} of doors)
             for (const call of calls)
                 assert.match(call, /CRON_OPTIONS/,
-                    `${file} asks a narrower question than the scheduler answers: ${call.trim()}`);
-        }
+                    `${path} asks a narrower question than the scheduler answers: ${call.trim()}`);
     });
 });

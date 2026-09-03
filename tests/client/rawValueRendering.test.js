@@ -238,7 +238,11 @@ const offenders = files.flatMap(({file, text}) => {
 
 describe("rendering a measurement next to its unit", () => {
     it("finds sources to check", () => {
-        assert.ok(files.length > 10, "the component scan found almost nothing - has the path moved?");
+        // The client has well over two hundred of these. Ten was a floor a
+        // scan reading one directory would clear, which is the failure it was
+        // meant to catch.
+        assert.ok(files.length > 150,
+            `the component scan found only ${files.length} sources - has the path moved?`);
     });
 
     /**

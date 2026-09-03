@@ -305,6 +305,18 @@ export const SpeedtestProvider = (props) => {
             const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
             if (generation !== requestGeneration.current) return;
 
+            /*
+             * The rows are here, so whatever the last load could not fetch
+             * is over - and this is the only place that can say so. A
+             * refresh is not the failed load's generation, so nothing about
+             * that failure supersedes it, and clearing only in the two
+             * loads left a page holding its rows behind an error branch
+             * that returns above them: unreachable but for the retry, with
+             * TestArea's scroll listener live behind it paging a history
+             * nobody is being shown.
+             */
+            setLoadError(null);
+
             const {tests, replaced} = applyRefresh(speedtests, newTests);
 
             if (!replaced) {

@@ -79,6 +79,7 @@ app.post("/", async (req, res) => {
     clearFailedAttempts(req);
 
     res.setHeader("Set-Cookie", serialiseCookie(SESSION_COOKIE, createSession(), {
+        req,
         maxAge: SESSION_MAX_AGE_SECONDS,
         secure: req.secure
     }));
@@ -93,7 +94,7 @@ app.delete("/", (req, res) => {
     destroySession(readCookie(req, SESSION_COOKIE));
 
     // Max-Age=0 is what actually removes it from the browser.
-    res.setHeader("Set-Cookie", serialiseCookie(SESSION_COOKIE, "", {maxAge: 0, secure: req.secure}));
+    res.setHeader("Set-Cookie", serialiseCookie(SESSION_COOKIE, "", {req, maxAge: 0, secure: req.secure}));
     res.json({message: "Signed out"});
 });
 

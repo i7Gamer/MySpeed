@@ -340,7 +340,8 @@
     "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
     "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
     "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang.",
-    "stopped_by_shutdown": "Pengujian dihentikan karena MySpeed sedang dimatikan."
+    "stopped_by_shutdown": "Pengujian dihentikan karena MySpeed sedang dimatikan.",
+    "stopped_by_signal": "Pengujian dihentikan dari luar sebelum selesai."
   },
   "statistics": {
     "average": "Rata-rata",
@@ -420,6 +421,7 @@
     },
     "failed_test": "Pengujian gagal",
     "failed_in_period": "{{failed}} gagal dalam periode ini",
+    "failed_in_period_single": "1 gagal dalam periode ini",
     "hourly": {
       "title": "Kecepatan menurut waktu dalam sehari",
       "sample_count": "Pengujian"

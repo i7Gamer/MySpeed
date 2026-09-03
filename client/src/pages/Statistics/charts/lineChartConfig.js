@@ -507,8 +507,22 @@ export const lineChartOptions = ({
                          */
                         const failedCount = failedCounts?.[item.dataIndex];
                         if (typeof failedCount === "number") {
-                            return `${t("statistics.failed_test")}: ` +
-                                t("statistics.failed_in_period", {failed: failedCount});
+                            /*
+                             * One is its own sentence, the way every other
+                             * counted phrase in this client is. A single
+                             * form filled with "1" reads correctly in
+                             * English and wrongly in half the languages
+                             * this ships in: Polish, Czech, Russian and
+                             * Ukrainian all inflect the noun with the
+                             * number, so "1 nieudanych" is the plural
+                             * ending on a singular count. The same trap
+                             * the `_ago` context and time.minute/minutes
+                             * were each fixed for, so the fix is theirs:
+                             * two keys, chosen here.
+                             */
+                            return `${t("statistics.failed_test")}: ` + (failedCount === 1
+                                ? t("statistics.failed_in_period_single")
+                                : t("statistics.failed_in_period", {failed: failedCount}));
                         }
 
                         const error = errors[item.dataIndex];
