@@ -95,9 +95,25 @@ jobs:
       # beside a differently named directory - and the day that lands, candle is
       # not on PATH, build-msi fails, and a release stops with the tag cut, the
       # version bumped and no Docker tag published.
+      #
+      # That day landed on 1.5.2, by the other door. The runner image now ships
+      # 3.14 itself, so asking for 3.11.2 is a downgrade and chocolatey refuses
+      # one outright: it exits 1 with "A newer version is already installed"
+      # having changed nothing - and the discovery below then found 3.14 exactly
+      # where it looks, printed the path, and the step failed anyway on an exit
+      # code from a request the image had already satisfied.
+      #
+      # So the install is best-effort and the discovery is the gate. It exits 1
+      # itself when there is no bin directory, which is the case this step is
+      # actually here to catch; a chocolatey that declined to act is not.
       - name: Install WiX Toolset
         run: |
           choco install wixtoolset -y --version=3.11.2
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "chocolatey exited $LASTEXITCODE - using the WiX already on the image"
+            $global:LASTEXITCODE = 0
+          }
 
           $bin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset v*\bin" -Directory |
             Sort-Object Name | Select-Object -Last 1
