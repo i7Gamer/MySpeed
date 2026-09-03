@@ -54,6 +54,10 @@ curl -sSL -o /tmp/myspeed-install.sh \
 sudo bash /tmp/myspeed-install.sh
 ```
 
+The installer verifies the download against the release's `SHA256SUMS` before it
+installs anything. If you would rather be asked which of the two installations to
+run, `chooser.sh` at the same address puts the question first.
+
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
 Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
 native addons (e.g. `@resvg/resvg-js`), producing a binary that starts and then fails

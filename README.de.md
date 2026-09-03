@@ -53,6 +53,10 @@ curl -sSL -o /tmp/myspeed-install.sh \
 sudo bash /tmp/myspeed-install.sh
 ```
 
+Das Installationsskript prüft den Download vor der Installation gegen die
+`SHA256SUMS` des Releases. Wer lieber gefragt werden möchte, welche der beiden
+Installationsarten laufen soll, nimmt `chooser.sh` unter derselben Adresse.
+
 Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* Linux
 geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die
 nativen Module des Host-Systems (z. B. `@resvg/resvg-js`) in der Binary; sie startet dann
