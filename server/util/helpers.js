@@ -115,6 +115,49 @@ export const stripTrailingSlashes = (value) => {
 };
 
 /**
+ * What a header value is allowed to be.
+ *
+ * Free text from an integration form goes into headers verbatim, so anything
+ * undici refuses is a notification that never leaves the process - the poster
+ * catches the throw, logs it and answers null, while the integration goes on
+ * showing as configured.
+ *
+ * Two things are refused, not one. A line break, because a value split across
+ * lines is also how a request smuggles a second header in. And any code point
+ * above U+00FF, because a header is Latin-1 on the wire - which matters more in
+ * practice than the newline did: ntfy's own documentation shows emoji titles,
+ * and a Cyrillic or CJK instance name is entirely ordinary. Dropping those
+ * characters costs a nicer-looking title; keeping them cost the whole message.
+ *
+ * The bounds are written as escapes rather than as the characters themselves.
+ * Spelling the upper bound literally is how this class first ended up holding a
+ * stray byte instead of the intended one - which git read as binary, and which
+ * nothing else caught because the resulting range still behaved.
+ *
+ * Here rather than in ntfy, where it was written, because the credentials go
+ * through it too now and two integrations need the same rule.
+ */
+const HEADER_SAFE = /[^\x20-\xFF]/g;
+
+export const headerSafe = (value) => String(value)
+    .replace(/[\r\n]+/g, " ")
+    .replace(HEADER_SAFE, "");
+
+/**
+ * A host as a socket can dial it: the brackets an IPv6 literal wears in a URL
+ * taken off again.
+ *
+ * `[fd00::1]` is how an address is written in a URL, and it is the spelling an
+ * operator copies out of one - so the SMTP and MQTT host fields accept it, and
+ * the outbound guard strips the brackets before judging it. The dialers did
+ * not: net.connect({host: "[fd00::1]"}) resolves the brackets as part of a
+ * name, finds nothing, and every notification is lost to a getaddrinfo failure
+ * on a value the interface said was fine. A hostname or a bare address passes
+ * through untouched.
+ */
+export const bareHost = (value) => String(value ?? "").replace(/^\[|]$/g, "");
+
+/**
  * The mark a cut message ends in, so that a trimmed one is visibly incomplete
  * rather than reading as the whole of what was said.
  */

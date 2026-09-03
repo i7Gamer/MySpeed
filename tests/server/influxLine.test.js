@@ -200,9 +200,9 @@ describe("parseTags", () => {
  *
  * Not reachable from the live path today: the only caller is testFinished,
  * whose payload carries finite download, upload and ping by the time a row has
- * been written, and jitter falls back to zero. buildLine is exported and
- * therefore has other callers ahead of it, and it should not be able to produce
- * something the database refuses - so it says so instead.
+ * been written. buildLine is exported and therefore has other callers ahead of
+ * it, and it should not be able to produce something the database refuses - so
+ * it says so instead.
  */
 describe("a line with nothing to record", () => {
     it("is not built at all when no field survives the filter", () => {

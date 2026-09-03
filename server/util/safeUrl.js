@@ -1,5 +1,6 @@
 import dns from 'node:dns/promises';
 import dnsCallback from 'node:dns';
+import { bareHost } from './helpers.js';
 
 /**
  * Guards the one place the server fetches a URL the user typed: adding a remote
@@ -386,8 +387,9 @@ export const safeLookup = (hostname, options, callback) => {
  * Unique-Local rather than link-local, so the first check does not reach it.
  */
 export const checkOutboundHost = (value) => {
-    // Strips the brackets an IPv6 literal carries in a URL.
-    const hostname = String(value ?? "").replace(/^\[|]$/g, "");
+    // Strips the brackets an IPv6 literal carries in a URL, the same way the
+    // dialers now do before they open the socket.
+    const hostname = bareHost(value);
 
     if (hostname === "") return {safe: false, reason: "No host was given"};
 

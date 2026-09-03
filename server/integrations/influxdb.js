@@ -1,6 +1,6 @@
 import os from "os";
 import { postText } from "../util/http.js";
-import { stripTrailingSlashes } from "../util/helpers.js";
+import { headerSafe, stripTrailingSlashes } from "../util/helpers.js";
 
 /**
  * Line protocol escaping.
@@ -94,7 +94,10 @@ const send = (c, line, activity) => {
         `&bucket=${encodeURIComponent(c.bucket)}&precision=s`;
     return postText(url, line, {
         headers: {
-            "Authorization": `Token ${c.token}`,
+            // Same filter the other header-writing integration uses: a
+            // credential carrying a newline or a character above U+00FF
+            // made fetch throw, and every point since was lost to a log line.
+            "Authorization": `Token ${headerSafe(c.token)}`,
             "Content-Type": "text/plain; charset=utf-8"
         },
         activity
@@ -126,7 +129,7 @@ export default (registerEvent) => {
             download: data.download,
             upload: data.upload,
             ping: data.ping,
-            jitter: data.jitter ?? 0,
+            jitter: data.jitter,
             packetLoss: data.packetLoss,
             downloadLatency: data.downloadLatency,
             uploadLatency: data.uploadLatency

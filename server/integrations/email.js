@@ -2,6 +2,7 @@ import { phrase } from '../util/notificationLocale.js';
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
+import { bareHost } from "../util/helpers.js";
 import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
@@ -169,7 +170,10 @@ const refuseBlocked = (host, activity) => {
  * notification, and the run that triggered it, on nodemailer's own defaults.
  */
 export const transportOptions = ({host, port, secure, username, password}) => ({
-    host,
+    // Bracketed, the way an IPv6 relay is written in a URL and the way the
+    // field accepts it: nodemailer dials this value, and the brackets turned
+    // every send into a getaddrinfo failure.
+    host: bareHost(host),
     port: Number(port),
     secure: secure === true,
     ...(username ? {auth: {user: username, pass: password ?? ""}} : {}),

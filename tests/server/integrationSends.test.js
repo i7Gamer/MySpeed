@@ -94,6 +94,31 @@ describe("influxdb", () => {
     });
 
     /**
+     * Jitter was the one figure filled in with a zero, so the providers that
+     * do not measure it - LibreSpeed backends that report none, Cloudflare
+     * with too few latency samples, an iperf3 TCP run whose handshake spread
+     * could not be taken - charted a flat, perfect 0 ms line in Grafana
+     * instead of the gap that is the truth.
+     */
+    it("leaves out an unmeasured jitter rather than calling it zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, jitter: null});
+
+        const [written] = sent;
+        assert.match(written.body, /ping=12/);
+        assert.doesNotMatch(written.body, /jitter/);
+    });
+
+    // Zero is a measurement where the provider took one, and has to survive
+    // the same treatment absence gets.
+    it("writes a measured jitter of zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, jitter: 0});
+
+        assert.match(sent[0].body, /jitter=0/);
+    });
+
+    /**
      * Which member measured the point. Tags are what a series is grouped by,
      * so without them every target's points shared one series - a Grafana
      * panel averaging the WAN with the LAN box - and with precision=s, two
@@ -109,6 +134,21 @@ describe("influxdb", () => {
         assert.match(written.body, /,target=WAN\\ Box/);
         assert.match(written.body, /,targetId=3/);
         assert.match(written.body, /,provider=iperf3/);
+    });
+
+    /**
+     * The token is free text: it declares no regex, and a config import writes
+     * the field with no validation at all. A pasted credential carrying a stray
+     * newline or a character above U+00FF made fetch throw before the request
+     * left the process, so every point since was lost to a log line while the
+     * card went on showing the integration as configured.
+     */
+    it("sends despite a token carrying a character a header cannot hold", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", {...config, token: "tk—en\nx"}, RESULT);
+
+        assert.equal(sent.length, 1, "the whole write was lost to an unsendable header");
+        assert.equal(sent[0].headers["Authorization"], "Token tken x");
     });
 
     // A row from before targets existed carries nulls, and buildLine already

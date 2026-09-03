@@ -235,6 +235,29 @@ describe("a relay it may not reach", () => {
     });
 });
 
+/**
+ * The relay is dialled directly, so the host field takes a name or an address
+ * rather than a URL - and an IPv6 address is copied out of a URL wearing its
+ * brackets, which the field accepts and the guard strips. nodemailer got them
+ * verbatim, so `[fd00::1]` was a relay that could be saved, shown as
+ * configured, and never connected to.
+ */
+describe("an IPv6 relay", () => {
+    it("is dialled without the brackets it was written with", async () => {
+        const {events} = load();
+        await fire(events, "testFinished", {...CONFIG, host: "[fd00::1]"}, RESULT);
+
+        assert.equal(created[0].host, "fd00::1", "nodemailer was handed the brackets as part of the name");
+    });
+
+    it("leaves an ordinary hostname alone", async () => {
+        const {events} = load();
+        await fire(events, "testFinished", CONFIG, RESULT);
+
+        assert.equal(created[0].host, "smtp.example.com");
+    });
+});
+
 describe("the outcome", () => {
     it("is noted against the integration when the mail goes", async () => {
         await finish();

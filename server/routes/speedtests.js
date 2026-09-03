@@ -438,6 +438,25 @@ app.post("/run", password(false), async (req, res) => {
 });
 
 /**
+ * Whose rows the status body speaks for, read from the alerting scope.
+ *
+ * alertingScope answers the alerting question, and there its two empty answers
+ * are genuinely different: no target at all leaves the instance-wide latest as
+ * the only answer, while targets that all opted out mean nothing is watched and
+ * the keep-alive has nothing to report. This body asks a different question -
+ * what did this instance last measure - and an operator who switched alerts off
+ * everywhere did not thereby say the dashboard should forget the instance ever
+ * ran. So here the two empty answers are the same answer, and the scoping keeps
+ * only the part it was written for: the mixed case, where a diagnostic box with
+ * alerts off must not be presented as the line.
+ *
+ * Both fields read this one value, so they cannot disagree - "the last test
+ * failed" beside "0 recent failures" is exactly the confusion the scoping
+ * exists to end.
+ */
+export const statusScope = (scope) => scope === null || scope.length === 0 ? null : scope;
+
+/**
  * What the instance is doing right now, and what it last did.
  *
  * `paused` and `running` come first and keep their names: the client has always
@@ -453,11 +472,9 @@ app.get("/status", password(true), async (req, res) => {
      * row was presented as the line's last test and counted among the line's
      * recent failures - the status bar and the health summary blaming the
      * internet for a target the operator had explicitly opted out of watching.
-     * Null scope means no targets exist at all - the pre-target install and the
-     * demo, whose rows carry no targetId - and there the instance-wide answer
-     * is the only one there is.
+     * statusScope above says what an empty answer means for this body.
      */
-    const scope = targets.alertingScope(await targets.listAll());
+    const scope = statusScope(targets.alertingScope(await targets.listAll()));
     const latest = scope === null ? await tests.getLatest() : await tests.latestOfTargets(scope);
     const progress = testTask.getProgress();
 

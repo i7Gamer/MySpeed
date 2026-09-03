@@ -423,6 +423,29 @@ describe("the handshake a connection waits for", () => {
         connect: () => socket
     });
 
+    /**
+     * The host field accepts `[fd00::1]` - that is how an address is written in
+     * a URL and how an operator copies it - and the outbound guard strips the
+     * brackets before judging it. The socket got the value verbatim, so the
+     * broker was configured, shown as configured, and never reached.
+     */
+    it("dials an IPv6 literal without the brackets it was written with", async () => {
+        const socket = socketDouble();
+        let dialled;
+
+        const sent = publishAll({
+            host: "[fd00::1]", port: 1883, secure: false, qos: 0, timeout: 1000,
+            messages: [{topic: "myspeed/result", payload: "x"}],
+            connect: (options) => { dialled = options; return socket; }
+        });
+
+        socket.emit("connect");
+        socket.emit("data", CONNACK_ACCEPTED);
+        await sent;
+
+        assert.equal(dialled.host, "fd00::1", "getaddrinfo was handed the brackets as part of the name");
+    });
+
     it("writes one CONNECT over TLS, not one per handshake event", async () => {
         const socket = socketDouble();
         const sent = sendThrough(socket, true);
