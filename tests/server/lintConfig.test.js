@@ -34,7 +34,13 @@ describe("what the linter is configured to see", () => {
     // The two trees with React in them. The client's block predates the suite's
     // and is here as the control: a failure in both is a plugin that stopped
     // loading, a failure in one is a glob that stopped matching.
-    const WITH_HOOKS = ["tests/client/emptyStates.test.js", "client/src/App.jsx"];
+    //
+    // A server test among them because the block covers `tests/**` and is meant
+    // to: a jsdom harness is a component and can live either side. Sampling
+    // only tests/client left the glob free to narrow to that half, which
+    // unlints every harness under tests/server without failing anything.
+    const WITH_HOOKS = ["tests/client/emptyStates.test.js", "tests/server/sessionCookie.test.js",
+        "client/src/App.jsx"];
 
     // Everything the linter is pointed at, one file from each block, because
     // no-undef is the rule the whole config was adopted for.

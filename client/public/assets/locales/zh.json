@@ -341,7 +341,9 @@
     "no_measurement": "测速已结束，但未报告任何测量值。",
     "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。",
     "stopped_by_shutdown": "由于 MySpeed 正在关闭，测速已停止。",
-    "stopped_by_signal": "测速在完成前被外部停止。"
+    "stopped_by_signal": "测速在完成前被外部停止。",
+    "cli_missing": "无法安装测速程序，因此测速未执行。",
+    "interface_unusable": "配置的网络接口没有可用的地址，因此测速未执行。"
   },
   "statistics": {
     "average": "平均",

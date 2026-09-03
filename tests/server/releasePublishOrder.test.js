@@ -270,11 +270,17 @@ describe("the checksum list and the installers", () => {
     // publish back while leaving no row in that table is a draft nobody can
     // account for.
     it("is named in the report a partial release leaves behind", () => {
-        const report = releaseJobs["report-partial-release"];
+        const report = withoutComments(releaseJobs["report-partial-release"] ?? "");
 
         assert.ok(needsOf(report).includes("checksums-msi"),
             "the report can be written before the job that held the publish back has finished");
         assert.match(report, /needs\.checksums-msi\.result/,
+            "the report cannot read the result of the job that held the publish back");
+
+        // The row, not the env line that feeds it. Reading the result into the
+        // environment and never printing it satisfied the assertion above while
+        // the table said nothing about the job.
+        assert.match(report, /echo "\| [^|]*\| \$CHECKSUMS_RESULT \|"/,
             "the table skips the one job that can keep a complete release in draft");
     });
 });

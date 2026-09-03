@@ -2,7 +2,7 @@ import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import * as timer from "../../server/tasks/timer.js";
 import * as integrationTimer from "../../server/tasks/integrations.js";
-import { bodyIn, bodyOf, readSource } from "../helpers/source.js";
+import { bodyIn, bodyOf, readSource, withoutComments } from "../helpers/source.js";
 
 /**
  * The schedule offset delays a run by a random amount so a fleet does not
@@ -426,7 +426,10 @@ describe("the startup speedtest", () => {
  */
 describe("scheduling the digests", () => {
     it("keeps only the jobs node-schedule actually made", () => {
-        assert.match(bodyOf(readSource("server/tasks/timer.js"), "const startDigests ="),
+        // Comments out, for the reason the sibling suites strip them: the
+        // docblock inside this very body explains the filter, so deleting the
+        // line and leaving the prose satisfied this.
+        assert.match(withoutComments(bodyOf(readSource("server/tasks/timer.js"), "const startDigests =")),
             /\.filter\(Boolean\)/,
             "a zone node-schedule refuses leaves a null in the list, and the next teardown throws on it");
     });

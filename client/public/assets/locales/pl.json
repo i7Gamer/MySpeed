@@ -347,7 +347,9 @@
     "no_measurement": "Test zakończył się bez zgłoszenia jakiegokolwiek pomiaru.",
     "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony.",
     "stopped_by_shutdown": "Test został zatrzymany, ponieważ MySpeed był wyłączany.",
-    "stopped_by_signal": "Test został zatrzymany z zewnątrz, zanim się zakończył."
+    "stopped_by_signal": "Test został zatrzymany z zewnątrz, zanim się zakończył.",
+    "cli_missing": "Nie udało się zainstalować programu pomiarowego, więc test się nie wykonał.",
+    "interface_unusable": "Skonfigurowany interfejs sieciowy nie ma użytecznego adresu, więc test się nie wykonał."
   },
   "statistics": {
     "average": "Średnia",

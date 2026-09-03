@@ -341,7 +341,9 @@
     "no_measurement": "El test terminó sin informar de ninguna medición.",
     "impossible_measurement": "El test informó de una medición que no puede ser correcta, así que se descartó.",
     "stopped_by_shutdown": "El test se detuvo porque MySpeed se estaba apagando.",
-    "stopped_by_signal": "El test se detuvo desde fuera antes de terminar."
+    "stopped_by_signal": "El test se detuvo desde fuera antes de terminar.",
+    "cli_missing": "No se pudo instalar el programa de medición, por lo que el test no se ejecutó.",
+    "interface_unusable": "La interfaz de red configurada no tiene una dirección utilizable, por lo que el test no se ejecutó."
   },
   "statistics": {
     "average": "Promedio",

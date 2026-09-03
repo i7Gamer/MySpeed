@@ -347,7 +347,9 @@
     "no_measurement": "Test skončil, aniž by nahlásil jakékoli měření.",
     "impossible_measurement": "Test nahlásil měření, které nemůže být správné, proto bylo zahozeno.",
     "stopped_by_shutdown": "Test byl zastaven, protože se MySpeed vypínal.",
-    "stopped_by_signal": "Test byl zvenčí zastaven dříve, než skončil."
+    "stopped_by_signal": "Test byl zvenčí zastaven dříve, než skončil.",
+    "cli_missing": "Měřicí program se nepodařilo nainstalovat, takže test neproběhl.",
+    "interface_unusable": "Nastavené síťové rozhraní nemá použitelnou adresu, takže test neproběhl."
   },
   "statistics": {
     "average": "Průměr",

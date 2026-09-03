@@ -51,6 +51,39 @@ export const SpeedtestProvider = (props) => {
     // newest test - it asked for pages the list had already shown.
     const [cursor, setCursor] = useState(null);
     const loadingRef = useRef(false);
+
+    /**
+     * The list and the query as they are *now*, for the readers that decide
+     * something with them rather than merely displaying them.
+     *
+     * Both were read out of the closure, and a callback here outlives the
+     * render that made it in two ordinary ways. RunUtil awaits the status and
+     * the run before calling updateTests(), so it holds a reference from before
+     * whatever the reader did in between; and refreshTests is called while a
+     * load it shares a generation with is still in flight, so its closure is one
+     * render behind the failure that cleared the list.
+     *
+     * The list one was the sharper: applyRefresh asked "does this answer overlap
+     * what is on screen" of rows that were no longer on screen, answered "merge"
+     * where the truth was "replace", and put thirty rows back on top of the
+     * cursor and hasMore the failure had reset - a full page under "No more
+     * tests to load", with paging dead for the life of the page.
+     *
+     * For refreshTests alone. The two loads keep reading both out of their
+     * closures, because their dependency lists make those current anyway - and
+     * the range effect is keyed on loadInitialTests' identity, so taking
+     * listQuery out of its dependencies would stop a range change reloading the
+     * list at all. refreshTests is the one with no dependencies, by design: it
+     * is held across awaits and re-read on every visibility change, and a stable
+     * object there is what stops the two effects holding it re-subscribing on
+     * every page.
+     *
+     * Assigned during render rather than in an effect: an effect runs after the
+     * paint, and a refresh firing in that window would read the value it was
+     * meant to replace.
+     */
+    const speedtestsRef = useRef(speedtests);
+    const listQueryRef = useRef(null);
     // Bumped by every fresh query, so a response for one the user has moved on
     // from can tell that it is no longer wanted. See loadInitialTests.
     const requestGeneration = useRef(0);
@@ -117,6 +150,9 @@ export const SpeedtestProvider = (props) => {
 
         return params.toString();
     }, [range, targetFilter]);
+
+    speedtestsRef.current = speedtests;
+    listQueryRef.current = listQuery;
 
     // Replaced rather than pushed: narrowing a range is refining one view, not
     // arriving at a new one, and stacking every adjustment would make Back walk
@@ -302,7 +338,7 @@ export const SpeedtestProvider = (props) => {
         const generation = requestGeneration.current;
 
         try {
-            const newTests = await jsonRequest(`/speedtests?${listQuery()}`);
+            const newTests = await jsonRequest(`/speedtests?${listQueryRef.current()}`);
             if (generation !== requestGeneration.current) return;
 
             /*
@@ -315,9 +351,16 @@ export const SpeedtestProvider = (props) => {
              * TestArea's scroll listener live behind it paging a history
              * nobody is being shown.
              */
+            // A 200 that is not a list is not an answer. Nothing below can use
+            // it - applyRefresh hands back what it was given and calls that a
+            // merge - and clearing the error over it would take down the one
+            // thing on screen that was true.
+            if (!Array.isArray(newTests)) return;
+
             setLoadError(null);
 
-            const {tests, replaced} = applyRefresh(speedtests, newTests);
+            // Against the list as it is, not as it was when this call was made.
+            const {tests, replaced} = applyRefresh(speedtestsRef.current, newTests);
 
             if (!replaced) {
                 // Still through an updater so a page load landing at the same
@@ -343,7 +386,10 @@ export const SpeedtestProvider = (props) => {
         } catch (error) {
             console.error("Failed to refresh tests:", error);
         }
-    }, [speedtests, listQuery]);
+        // No dependency on either: both are read through the refs above, so
+        // this callback stays the same object across a list change and the two
+        // effects that hold it stop re-subscribing on every page.
+    }, []);
 
     // The list changes through an updater so a concurrent refresh cannot be
     // clobbered; the cursor comes from a fold over the snapshot, which is safe

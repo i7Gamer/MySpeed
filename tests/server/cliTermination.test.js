@@ -6,7 +6,7 @@ import {
     hasExited, terminate, trackProcess, untrackProcess, waitForActiveProcessExit
 } from "../../server/util/speedtest.js";
 import { SHUTDOWN_GRACE_MS } from "../../server/util/shutdown.js";
-import { readSource } from "../helpers/source.js";
+import { readSource, withoutComments } from "../helpers/source.js";
 
 /**
  * What happens to a CLI that will not go when it is asked, and to one that goes
@@ -312,7 +312,10 @@ describe("exitError", () => {
  * behaviour of the function it composes.
  */
 describe("what the close handler hands exitError", () => {
-    const source = readSource("server/util/speedtest.js");
+    // Without its comments: the docblock above this handler quotes the call
+    // it is explaining, so a revert that left the prose in place satisfied
+    // both assertions below while the handler had lost the argument.
+    const source = withoutComments(readSource("server/util/speedtest.js"));
 
     it("takes the signal off the event beside the code", () => {
         assert.match(source, /testProcess\.on\('close', \(code, signal\) =>/,

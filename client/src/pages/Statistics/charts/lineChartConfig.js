@@ -511,14 +511,25 @@ export const lineChartOptions = ({
                              * One is its own sentence, the way every other
                              * counted phrase in this client is. A single
                              * form filled with "1" reads correctly in
-                             * English and wrongly in half the languages
-                             * this ships in: Polish, Czech, Russian and
-                             * Ukrainian all inflect the noun with the
-                             * number, so "1 nieudanych" is the plural
-                             * ending on a singular count. The same trap
+                             * English and wrongly in the languages that
+                             * inflect the noun with the number: "1
+                             * nieudanych" is a plural ending on a singular
+                             * count. Two keys, chosen here, which is what
                              * the `_ago` context and time.minute/minutes
-                             * were each fixed for, so the fix is theirs:
-                             * two keys, chosen here.
+                             * each do.
+                             *
+                             * Two is what those languages need and not what
+                             * they have. Polish, Czech and Ukrainian take a
+                             * third form for 2-4 ("2 nieudane"), and Russian
+                             * and Ukrainian want the singular again at 21 and
+                             * 31 - so this is right for one and for five
+                             * upwards, and wrong in the middle. Covering it
+                             * properly means i18next's own plural suffixes
+                             * with a `count`, which give each language a
+                             * different set of keys and so cannot pass the
+                             * parity test that requires every key in every
+                             * file. That trade is written up in the register
+                             * rather than made here.
                              */
                             return `${t("statistics.failed_test")}: ` + (failedCount === 1
                                 ? t("statistics.failed_in_period_single")

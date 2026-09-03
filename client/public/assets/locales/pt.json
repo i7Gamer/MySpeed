@@ -341,7 +341,9 @@
     "no_measurement": "O teste terminou sem informar nenhuma medição.",
     "impossible_measurement": "O teste informou uma medição que não pode estar certa, então ela foi descartada.",
     "stopped_by_shutdown": "O teste foi interrompido porque o MySpeed estava sendo encerrado.",
-    "stopped_by_signal": "O teste foi interrompido de fora antes de terminar."
+    "stopped_by_signal": "O teste foi interrompido de fora antes de terminar.",
+    "cli_missing": "Não foi possível instalar o programa de medição, por isso o teste não foi executado.",
+    "interface_unusable": "A interface de rede configurada não tem um endereço utilizável, por isso o teste não foi executado."
   },
   "statistics": {
     "average": "Média",

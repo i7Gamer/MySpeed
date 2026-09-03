@@ -341,7 +341,9 @@
     "no_measurement": "Chríochnaigh an tástáil gan aon tomhas a thuairisciú.",
     "impossible_measurement": "Thuairiscigh an tástáil tomhas nach féidir a bheith ceart, mar sin caitheadh amach é.",
     "stopped_by_shutdown": "Stopadh an tástáil toisc go raibh MySpeed á mhúchadh.",
-    "stopped_by_signal": "Stopadh an tástáil ón taobh amuigh sula raibh sí críochnaithe."
+    "stopped_by_signal": "Stopadh an tástáil ón taobh amuigh sula raibh sí críochnaithe.",
+    "cli_missing": "Níorbh fhéidir an clár tomhais a shuiteáil, mar sin níor ritheadh an tástáil.",
+    "interface_unusable": "Níl seoladh inúsáidte ag an gcomhéadan líonra atá socraithe, mar sin níor ritheadh an tástáil."
   },
   "statistics": {
     "average": "Meán",

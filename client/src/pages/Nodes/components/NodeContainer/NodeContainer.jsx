@@ -139,7 +139,7 @@ export const NodeContainer = (node) => {
      * fault than the one this read exists to fix. Every card asks its own
      * prefix, the way it already asks for its own tests and its own config.
      */
-    const readTargets = async () => {
+    const readTargets = async (generation) => {
         if (Date.now() < targetsRetryAt.current) return {};
 
         try {
@@ -147,17 +147,33 @@ export const NodeContainer = (node) => {
 
             // Held off rather than given up on, for the reason the ref above
             // states: a remote node can gain the route between two polls.
+            //
+            // And only on the newest read's word. This runs outside the
+            // claim() that decides whether a read may touch the card, so a
+            // read a newer one had already overtaken could arm the window
+            // over an answer that had just found the route - and the next
+            // poll then skipped /targets and regraded the node's rows
+            // against the instance-wide optima. Two reads in flight is the
+            // ordinary case here, which is what the counter is for.
             if (request.status === NOT_FOUND) {
-                targetsRetryAt.current = Date.now() + TARGETS_RECHECK_MS;
+                if (generation === requestGeneration.current)
+                    targetsRetryAt.current = Date.now() + TARGETS_RECHECK_MS;
+
                 return {};
             }
 
             if (!request.ok) return {};
 
             const targets = await request.json();
-            return Array.isArray(targets)
-                ? Object.fromEntries(targets.map((target) => [target.id, target]))
-                : {};
+            if (!Array.isArray(targets)) return {};
+
+            // An answer is the route being there, whichever read got it, so
+            // a window left by an earlier 404 goes now rather than in five
+            // minutes. The two directions together are what keep an
+            // overtake from deciding this either way.
+            targetsRetryAt.current = 0;
+
+            return Object.fromEntries(targets.map((target) => [target.id, target]));
         } catch {
             return {};
         }
@@ -195,7 +211,7 @@ export const NodeContainer = (node) => {
         // generation above exists to survive.
         const [configRequest, targetsById] = await Promise.all([
             baseRequest(prefix + "/config"),
-            readTargets()
+            readTargets(generation)
         ]);
 
         if (configRequest.status === 401) return fail("PASSWORD_CHANGED");

@@ -341,7 +341,9 @@
     "no_measurement": "Der Test wurde beendet, ohne einen Messwert zu melden.",
     "impossible_measurement": "Der Test hat einen Messwert gemeldet, der nicht stimmen kann, und wurde verworfen.",
     "stopped_by_shutdown": "Der Test wurde abgebrochen, weil MySpeed heruntergefahren wurde.",
-    "stopped_by_signal": "Der Test wurde von außen abgebrochen, bevor er fertig war."
+    "stopped_by_signal": "Der Test wurde von außen abgebrochen, bevor er fertig war.",
+    "cli_missing": "Das Messprogramm konnte nicht installiert werden, daher lief der Test nicht.",
+    "interface_unusable": "Die eingestellte Netzwerkschnittstelle hat keine nutzbare Adresse, daher lief der Test nicht."
   },
   "statistics": {
     "average": "Durchschnitt",

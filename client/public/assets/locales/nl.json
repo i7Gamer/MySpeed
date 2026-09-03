@@ -341,7 +341,9 @@
     "no_measurement": "De test is geëindigd zonder ook maar één meting te melden.",
     "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid.",
     "stopped_by_shutdown": "De test is gestopt omdat MySpeed werd afgesloten.",
-    "stopped_by_signal": "De test is van buitenaf gestopt voordat hij klaar was."
+    "stopped_by_signal": "De test is van buitenaf gestopt voordat hij klaar was.",
+    "cli_missing": "Het meetprogramma kon niet worden geïnstalleerd, dus de test is niet uitgevoerd.",
+    "interface_unusable": "De ingestelde netwerkinterface heeft geen bruikbaar adres, dus de test is niet uitgevoerd."
   },
   "statistics": {
     "average": "Gemiddeld",

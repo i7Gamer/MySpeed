@@ -341,7 +341,9 @@
     "no_measurement": "La prova ha acabat sense informar de cap mesura.",
     "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat.",
     "stopped_by_shutdown": "La prova s'ha aturat perquè MySpeed s'estava tancant.",
-    "stopped_by_signal": "La prova s'ha aturat des de fora abans d'acabar."
+    "stopped_by_signal": "La prova s'ha aturat des de fora abans d'acabar.",
+    "cli_missing": "No s'ha pogut instal·lar el programa de mesura, així que la prova no s'ha executat.",
+    "interface_unusable": "La interfície de xarxa configurada no té cap adreça utilitzable, així que la prova no s'ha executat."
   },
   "statistics": {
     "average": "Mitjana",

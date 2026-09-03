@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readSource } from "../helpers/source.js";
-import { serialiseCookie } from "../../server/util/cookies.js";
+import { expiredCookies, readCookie, readCookies, serialiseCookie } from "../../server/util/cookies.js";
 
 const attribute = (header, name) =>
     header.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
@@ -174,28 +174,43 @@ describe("the session cookie's Path", () => {
  * A browser keys a cookie by name *and* path, so a sign-out that clears
  * `Path=/` after a login that set `Path=/internet_speed` does not delete
  * anything - it writes a second, empty cookie beside the first and leaves the
- * live session id in the browser. The set and the clear have to name the same
- * scope, and the way to be sure of that is for neither of them to name one:
- * both hand over the request and the helper answers, so two calls made by the
- * same browser get the same scope by construction - it loads the page under one
- * prefix or the other and asks for both endpoints the same way.
+ * live session id in the browser. So neither call site names a scope: the set
+ * hands over the request and the helper answers, and the clear names no scope
+ * at all because it covers every one the set could have used.
  */
 describe("where the cookie is set and cleared", () => {
     const source = readSource("server/routes/session.js");
-    const calls = [...source.matchAll(/serialiseCookie\((?:[^()]|\([^()]*\))*\)/g)].map((match) => match[0]);
+    const calls = [...source.matchAll(/(?:serialiseCookie|expiredCookies)\((?:[^()]|\([^()]*\))*\)/g)]
+        .map((match) => match[0]);
 
     it("writes the cookie in exactly two places", () => {
         assert.equal(calls.length, 2,
             "the login and the sign-out are no longer the only writers of the session cookie");
     });
 
-    it("has both of them hand over the request", () => {
-        for (const call of calls) {
-            assert.match(call, /\breq\b/,
-                `a call site writes the cookie without the request: ${call} - it cannot be scoped to the route asked`);
-            assert.doesNotMatch(call, /path/i,
-                `a call site names its own Path: ${call} - a set and a clear that disagree leave the session live`);
-        }
+    /**
+     * As a property of its own, not as `secure: req.secure`.
+     *
+     * The first spelling of this was `/\breq\b/`, which the `secure: req.secure`
+     * already in both calls satisfies - so deleting the `req` that scopes the
+     * cookie, the whole point of the change, left the suite green.
+     */
+    it("has the set hand over the request", () => {
+        const set = calls.filter((call) => call.startsWith("serialiseCookie"));
+
+        assert.equal(set.length, 1, "the cookie is set somewhere other than the login");
+        assert.match(set[0], /[{,]\s*req\s*[,}]/,
+            `the login writes the cookie without the request: ${set[0]} - it cannot be scoped to the route asked`);
+    });
+
+    // The clear takes none: its scope is every scope, which is a property of
+    // the instance rather than of this request.
+    it("has the clear name no scope of its own", () => {
+        const cleared = calls.filter((call) => call.startsWith("expiredCookies"));
+
+        assert.equal(cleared.length, 1, "the sign-out clears the cookie somewhere else, or not at all");
+        assert.doesNotMatch(cleared[0], /path\s*:/i,
+            `the sign-out names a Path: ${cleared[0]} - a clear that names one cannot cover the other`);
     });
 
     // And the attribute is written in one place, so there is nowhere else for a
@@ -204,5 +219,100 @@ describe("where the cookie is set and cleared", () => {
         assert.doesNotMatch(source, /Path=/, "the routes spell the Path attribute out for themselves");
         assert.match(readSource("server/util/cookies.js"), /Path=\$\{/,
             "the cookie helper hard-codes the Path again");
+    });
+});
+
+/**
+ * And a sign-out has to reach every scope a sign-in could have written.
+ *
+ * Scoping the cookie to the route the request came in on made the scope a
+ * property of the request rather than of the browser - and this server answers
+ * on two routes under BASE_PATH, on purpose. So one browser can hold two
+ * `myspeed_session` cookies at two paths: sign in through the proxy, then open
+ * the instance directly on the LAN, find yourself logged out (the first cookie
+ * does not path-match), and sign in again.
+ *
+ * Signing out then cleared one of them. The browser sends both, longest path
+ * first; the route read the first and destroyed that session; the Set-Cookie
+ * named that path alone. The other cookie path-matches everything, so the next
+ * request was still authenticated - a sign-out that reports success and leaves
+ * the session live is worse than the leak the scoping was added to fix.
+ */
+describe("signing out of every scope", () => {
+    const carrying = (...values) => ({
+        headers: {cookie: values.map((value) => `myspeed_session=${value}`).join("; ")}
+    });
+
+    it("reads every session id the browser sent, not just the first", () => {
+        assert.deepEqual(readCookies(carrying("prefixed", "rooted"), "myspeed_session"),
+            ["prefixed", "rooted"],
+            "a browser holding two scopes has one of them left live by the sign-out");
+    });
+
+    // The single reader is unchanged for the callers that want one - the
+    // active-session check answers about whichever the browser sent first.
+    it("still answers one for the readers that ask for one", () => {
+        assert.equal(readCookie(carrying("prefixed", "rooted"), "myspeed_session"), "prefixed");
+        assert.equal(readCookie(carrying(), "myspeed_session"), null);
+        assert.deepEqual(readCookies(carrying(), "myspeed_session"), []);
+    });
+
+    it("clears both scopes when a prefix is configured", () => {
+        process.env.BASE_PATH = "/internet_speed";
+
+        const headers = expiredCookies("myspeed_session", {secure: true});
+
+        assert.deepEqual(headers.map((header) => attribute(header, "Path")),
+            ["Path=/", "Path=/internet_speed"],
+            "a sign-out leaves a live cookie at the scope it did not name");
+
+        for (const header of headers) {
+            assert.match(header, /^myspeed_session=;/, "the cleared cookie carries a value");
+            assert.match(header, /Max-Age=0/, "without Max-Age=0 the browser keeps it");
+            assert.match(header, /HttpOnly/);
+            assert.match(header, /SameSite=Strict/);
+            assert.match(header, /Secure/);
+        }
+    });
+
+    // One scope, one header: there is nowhere else the cookie could have been
+    // written, and a second Set-Cookie for the same name and path is noise.
+    it("clears one scope when none is configured", () => {
+        assert.deepEqual(expiredCookies("myspeed_session", {}).map((header) => attribute(header, "Path")),
+            ["Path=/"]);
+    });
+
+    // A prefix the Path attribute cannot carry is one the set never used, so
+    // there is no second scope to clear either.
+    it("clears one scope for a prefix that could not be written", () => {
+        process.env.BASE_PATH = "/x; Domain=evil.example";
+
+        assert.deepEqual(expiredCookies("myspeed_session", {}).map((header) => attribute(header, "Path")),
+            ["Path=/"]);
+    });
+});
+
+/**
+ * And the route does both halves.
+ *
+ * Clearing every scope is only half a sign-out: the ids the browser sent are
+ * live server-side until they are destroyed, and destroying one of two leaves
+ * the other usable by anything that still holds it.
+ */
+describe("what the sign-out route does", () => {
+    const source = readSource("server/routes/session.js");
+    const signOut = source.slice(source.indexOf("app.delete("));
+
+    it("destroys every session the browser sent", () => {
+        assert.notEqual(signOut, "", "there is no sign-out route");
+        assert.match(signOut, /readCookies\(req, SESSION_COOKIE\)/,
+            "the sign-out destroys one session and leaves any other the browser holds live");
+        assert.match(signOut, /destroySession\(/);
+    });
+
+    it("clears every scope it could have written", () => {
+        assert.match(signOut, /expiredCookies\(SESSION_COOKIE/,
+            "the sign-out names one scope, so a cookie at the other one survives it");
+        assert.doesNotMatch(signOut, /paths*:/i, "the route names a Path of its own again");
     });
 });

@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
-import { readCookie, serialiseCookie } from '../util/cookies.js';
+import { expiredCookies, readCookie, readCookies, serialiseCookie } from '../util/cookies.js';
 import {
     ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt
 } from '../middlewares/password.js';
@@ -91,10 +91,15 @@ app.post("/", async (req, res) => {
 app.get("/", (req, res) => res.json({active: isValidSession(readCookie(req, SESSION_COOKIE))}));
 
 app.delete("/", (req, res) => {
-    destroySession(readCookie(req, SESSION_COOKIE));
+    // Every id the browser sent, not the first. Under BASE_PATH this instance
+    // answers on two routes and can have written a cookie at each, so a browser
+    // may hold two live sessions - and destroying one of them is a sign-out that
+    // reports success while the next request is still authenticated.
+    for (const token of readCookies(req, SESSION_COOKIE)) destroySession(token);
 
-    // Max-Age=0 is what actually removes it from the browser.
-    res.setHeader("Set-Cookie", serialiseCookie(SESSION_COOKIE, "", {req, maxAge: 0, secure: req.secure}));
+    // Max-Age=0 is what actually removes it from the browser, at every scope a
+    // sign-in could have used - for the same reason.
+    res.setHeader("Set-Cookie", expiredCookies(SESSION_COOKIE, {secure: req.secure}));
     res.json({message: "Signed out"});
 });
 

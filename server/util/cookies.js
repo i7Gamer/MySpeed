@@ -6,9 +6,24 @@ import { basePath } from "../middlewares/basePath.js";
  * Hand-rolled rather than adding cookie-parser: one cookie is read and one is
  * written, and the whole of it is shorter than the lockfile entry would be.
  */
-export const readCookie = (req, name) => {
+/**
+ * Every value the browser sent under `name`, in the order it sent them.
+ *
+ * More than one is not a malformed request: a browser keys a cookie by name
+ * *and* path, so an instance reachable at two routes - which is what BASE_PATH
+ * makes it, deliberately - can hand the same browser one cookie per route, and
+ * the browser sends both, longest path first. A sign-out that reads only the
+ * first destroys one session and leaves the other live.
+ *
+ * A value that will not decode is skipped rather than answered with. It is not
+ * one this server wrote, and returning null for it used to hide a usable cookie
+ * standing behind it in the same header.
+ */
+export const readCookies = (req, name) => {
     const header = req.headers?.cookie;
-    if (typeof header !== "string") return null;
+    if (typeof header !== "string") return [];
+
+    const values = [];
 
     for (const pair of header.split(";")) {
         const index = pair.indexOf("=");
@@ -17,14 +32,17 @@ export const readCookie = (req, name) => {
         if (pair.slice(0, index).trim() !== name) continue;
 
         try {
-            return decodeURIComponent(pair.slice(index + 1).trim());
+            values.push(decodeURIComponent(pair.slice(index + 1).trim()));
         } catch {
-            return null;
+            continue;
         }
     }
 
-    return null;
+    return values;
 };
+
+/** The first of them, for the readers that are asking a yes-or-no question. */
+export const readCookie = (req, name) => readCookies(req, name)[0] ?? null;
 
 /**
  * The characters a prefix may carry into the Path attribute.
@@ -36,12 +54,29 @@ export const readCookie = (req, name) => {
  * would widen every session cookie to a domain the operator typed by accident,
  * and a control character has node refuse the whole response.
  *
- * An allow-list rather than a list of the two characters that bite, because the
- * question here is "is this the ordinary prefix this attribute is for", and
- * every prefix anybody deploys - /myspeed, /internet_speed, /apps/speed - is
- * inside it.
+ * So: everything RFC 3986 allows in a path, less the two that break this
+ * header. A narrower list looked safe and was not - it rejected "+", "(", "@",
+ * ":", "=", "&" and "!", all of them legal unencoded path characters that the
+ * router handles perfectly well, and the fallback below then widened the cookie
+ * back to the whole origin without saying anything. Silently undoing the
+ * attribute is the failure this guard exists to prevent, so the guard must not
+ * be the thing that causes it.
  */
-const WRITABLE_PATH = /^\/[A-Za-z0-9\-._~%/]*$/;
+const WRITABLE_PATH = /^\/[A-Za-z0-9\-._~%!$&'()*+=:@/]*$/;
+
+// Said once per process rather than per response: this is a startup-time
+// misconfiguration, and a line on every request would bury it.
+let warnedAboutPath = false;
+
+const unwritablePath = (base) => {
+    if (!warnedAboutPath) {
+        warnedAboutPath = true;
+        console.warn(`BASE_PATH ${JSON.stringify(base)} cannot be written into a cookie Path, so the `
+            + "session cookie is scoped to / and will be sent to anything else this origin serves.");
+    }
+
+    return "/";
+};
 
 /**
  * Where the browser should send the session cookie back to.
@@ -70,7 +105,8 @@ const WRITABLE_PATH = /^\/[A-Za-z0-9\-._~%/]*$/;
  */
 export const cookiePath = (req) => {
     const base = basePath();
-    if (base === "" || !WRITABLE_PATH.test(base)) return "/";
+    if (base === "") return "/";
+    if (!WRITABLE_PATH.test(base)) return unwritablePath(base);
 
     const url = req?.originalUrl;
     if (typeof url !== "string") return "/";
@@ -128,3 +164,42 @@ export const serialiseCookie = (name, value, {req, maxAge, secure = false} = {})
 
     return parts.join("; ");
 };
+
+/**
+ * Every scope a set could have used, which is what a clear has to cover.
+ *
+ * Two, under a writable prefix, and the reason is the whole of the finding this
+ * function exists for: the scope above follows the route the request arrived
+ * on, and this server answers on two. So a browser can end up holding a cookie
+ * at each - sign in through the proxy, open the instance directly, be asked for
+ * the password again because the first cookie does not path-match, sign in a
+ * second time - and a sign-out naming one path leaves the other live, matching
+ * every route including the one just signed out of.
+ *
+ * Clearing a path the browser has nothing at is free: it writes an already
+ * expired cookie, which is no cookie. Clearing the wrong one is not.
+ *
+ * Config rather than the request, deliberately. What a sign-out has to reach is
+ * everything this *instance* can write, not what this one request would write.
+ */
+const cookieScopes = () => {
+    const base = basePath();
+
+    return base !== "" && WRITABLE_PATH.test(base) ? ["/", base] : ["/"];
+};
+
+/**
+ * The Set-Cookie headers that remove `name` from the browser, whichever scope
+ * it was written at. An array, because `res.setHeader` takes one and a response
+ * cannot carry two headers of one name any other way.
+ *
+ * No `req`, and no path from the caller: the two call sites still name no scope
+ * of their own, which is what keeps a set and a clear from disagreeing.
+ */
+export const expiredCookies = (name, {secure = false} = {}) => cookieScopes().map((path) => {
+    const parts = [`${name}=`, `Path=${path}`, "HttpOnly", "SameSite=Strict", "Max-Age=0"];
+
+    if (secure) parts.push("Secure");
+
+    return parts.join("; ");
+});

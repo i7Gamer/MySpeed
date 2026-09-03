@@ -341,7 +341,9 @@
     "no_measurement": "테스트가 측정값을 보고하지 않고 종료되었습니다.",
     "impossible_measurement": "테스트가 있을 수 없는 측정값을 보고하여 해당 결과를 폐기했습니다.",
     "stopped_by_shutdown": "MySpeed가 종료되는 중이어서 테스트가 중지되었습니다.",
-    "stopped_by_signal": "테스트가 완료되기 전에 외부에서 중지되었습니다."
+    "stopped_by_signal": "테스트가 완료되기 전에 외부에서 중지되었습니다.",
+    "cli_missing": "측정 프로그램을 설치할 수 없어 테스트가 실행되지 않았습니다.",
+    "interface_unusable": "설정된 네트워크 인터페이스에 사용할 수 있는 주소가 없어 테스트가 실행되지 않았습니다."
   },
   "statistics": {
     "average": "평균",

@@ -341,7 +341,9 @@
     "no_measurement": "Test, hiçbir ölçüm bildirmeden sona erdi.",
     "impossible_measurement": "Test, doğru olamayacak bir ölçüm bildirdi, bu yüzden ölçüm atıldı.",
     "stopped_by_shutdown": "MySpeed kapanmakta olduğu için test durduruldu.",
-    "stopped_by_signal": "Test tamamlanmadan dışarıdan durduruldu."
+    "stopped_by_signal": "Test tamamlanmadan dışarıdan durduruldu.",
+    "cli_missing": "Ölçüm programı kurulamadı, bu yüzden test çalıştırılmadı.",
+    "interface_unusable": "Yapılandırılan ağ arayüzünün kullanılabilir bir adresi yok, bu yüzden test çalıştırılmadı."
   },
   "statistics": {
     "average": "Ortalama",

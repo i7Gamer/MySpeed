@@ -191,7 +191,17 @@ describe("a first page of the overview that failed", () => {
         // for: the error branch returns above the list, so counting rendered
         // rows says nothing about whether any were kept - it reads zero
         // either way. Two reviewers found the same vacuity here.
-        controls.tests = useContext(SpeedtestContext).speedtests;
+        const held = useContext(SpeedtestContext);
+
+        controls.tests = held.speedtests;
+        controls.hasMore = held.hasMore;
+        controls.loadError = held.loadError;
+        controls.reloadTests = held.reloadTests;
+
+        // The reference as it was on the first render, which is what a caller
+        // that awaits something before using it is holding. RunUtil does
+        // exactly that: await the status, await the run, then updateTests().
+        controls.firstUpdate ??= held.updateTests;
         return null;
     };
 
@@ -307,6 +317,178 @@ describe("a first page of the overview that failed", () => {
      * invisible paging that keeping the list on a failure would have
      * caused, reached from the other side.
      */
+    /**
+     * A fetch that answers nothing until it is told to, so a test can settle
+     * two requests in an order the page never chooses for itself.
+     */
+    const deferred = () => {
+        const pending = [];
+        const asked = [];
+
+        globalThis.fetch = (url) => {
+            const path = String(url);
+            asked.push(path);
+
+            // Paging never answers at all. TestArea checks on a timer whether
+            // the list already reaches the bottom of the window, so whether it
+            // asks for a second page is the machine's decision rather than the
+            // test's - and every way of answering changes what is being
+            // measured: a full page doubles the row count, an empty one sets
+            // hasMore false and fakes the very state under test, and a queued
+            // one shifts the indices. Left in flight it changes nothing, which
+            // is what a test about the cursor needs.
+            if (path.includes("after=")) return new Promise(() => {});
+
+            return new Promise((resolve, reject) => pending.push({resolve, reject}));
+        };
+
+        /**
+         * The nth request, once it has actually been made.
+         *
+         * Indexing straight into the queue after a fixed number of settles is a
+         * bet on how many turns of the loop a render takes, and the whole suite
+         * running at once is where that bet loses: this file passed five times
+         * over on its own and failed inside `npm test`. Waiting for the request
+         * is the same assertion without the bet.
+         */
+        const queued = async (index) => {
+            for (let attempt = 0; attempt < SETTLE_ATTEMPTS && pending.length <= index; attempt++)
+                await settle();
+
+            assert.ok(pending[index], `request ${index} was never made - ${JSON.stringify(asked)}`);
+            return pending[index];
+        };
+
+        return {asked, pending, queued};
+    };
+
+    // Enough turns for a render and its effects on a loaded machine, and few
+    // enough that something that never happens still fails rather than hangs.
+    const SETTLE_ATTEMPTS = 40;
+
+    /**
+     * Settles until the page has caught up, then asserts that it has.
+     *
+     * A fixed pair of settles after each step is a bet on how many turns a
+     * render and its effects take, and the bet loses exactly where it costs
+     * most: this file passed on its own and failed inside `npm test`, where
+     * eleven hundred other files are competing for the same machine. Waiting
+     * for the state is the same assertion without the bet - and still an
+     * assertion, because a state that never arrives runs the attempts out.
+     */
+    const settleUntil = async (holds, message) => {
+        for (let attempt = 0; attempt < SETTLE_ATTEMPTS && !holds(); attempt++) await settle();
+
+        assert.ok(holds(), message);
+    };
+
+    const PAGE_SIZE = 30;
+
+    const page = (from = 1) => Array.from({length: PAGE_SIZE}, (unused, index) => ({
+        id: from + index, targetId: null, ping: 12, download: 940, upload: 480,
+        created: new Date(Date.UTC(2026, 7, 1, 0, from + index)).toISOString()
+    }));
+
+    /**
+     * A refresh that was already in flight when the load failed answers the
+     * question the load could not - and must leave the list able to page.
+     *
+     * It shares the failed load's generation, by construction: it reads the
+     * counter at call time and the load bumped it before starting, so nothing
+     * supersedes it. What it does *not* share is the list - it closed over the
+     * rows that were on screen when it was called, while the failure cleared
+     * them and reset the cursor and hasMore with them. Deciding merge-or-replace
+     * from that closure answered "merge", which put the rows back and left the
+     * cursor at null and hasMore at false: thirty rows under "No more tests to
+     * load" on an instance with years of them, and loadMoreTests dead for the
+     * life of the page. The error page it replaced at least had a retry.
+     */
+    it("leaves the list able to page when a refresh lands on a failed load", async () => {
+        const {queued} = deferred();
+        mount();
+
+        (await queued(0)).resolve(json(page()));
+        await settleUntil(() => controls.tests.length === PAGE_SIZE, "the first page never arrived");
+        assert.equal(controls.hasMore, true, "a full page has to leave something to page to");
+
+        // A reload starts and bumps the generation; the refresh joins it and
+        // reads that same generation, so neither supersedes the other.
+        act(() => { controls.reloadTests(); });
+        await settle();
+        await act(async () => { window.document.dispatchEvent(new window.Event("visibilitychange")); });
+        await settle();
+
+        (await queued(1)).reject(new Error("the database is locked"));
+        await settleUntil(() => controls.tests.length === 0, "the failed load kept the previous query's rows");
+
+        // And the refresh answers, with a page overlapping the rows it closed
+        // over - which is what makes its stale decision "merge".
+        (await queued(2)).resolve(json(page()));
+        await settleUntil(() => controls.tests.length === PAGE_SIZE, "the refresh answered nothing onto the page");
+
+        assert.equal(controls.hasMore, true,
+            "the rows came back with the failure's cursor, so the list says there are no more");
+    });
+
+    /**
+     * A 200 carrying something that is not a list is not an answer.
+     *
+     * applyRefresh hands back what it was given and calls that a merge, so
+     * nothing below can use it - and clearing the error over it took down the
+     * one thing on screen that was true, leaving "There are currently no tests
+     * available" on an instance with years of them.
+     */
+    it("keeps the error when a refresh answers with something that is not a list", async () => {
+        const {queued} = deferred();
+        mount();
+
+        (await queued(0)).reject(new Error(SERVER_MESSAGE));
+        await settle();
+        await settle();
+
+        await act(async () => { window.document.dispatchEvent(new window.Event("visibilitychange")); });
+        (await queued(1)).resolve(json({message: "maintenance"}));
+        await settle();
+        await settle();
+
+        assert.notEqual(controls.loadError, null,
+            "a body the page cannot use took the error down with it");
+        assert.equal(controls.tests.length, 0, "a body the page cannot use was drawn as rows");
+    });
+
+    /**
+     * And a reference held across an await asks the query the page is on.
+     *
+     * RunUtil holds one: it awaits the status, awaits the run, and only then
+     * calls updateTests() - so on a page whose range changed in between, the
+     * reference is from a render before the change and its closure spells the
+     * old query. That answer used to be merged in under the new range's heading;
+     * now it would also clear the error, which is what makes the wrong rows
+     * visible rather than hidden behind a retry.
+     */
+    it("asks the range the page is on, not the one the caller was holding", async () => {
+        // `controls` outlives a test, so the reference a previous mount left
+        // there would be answered instead of this one - and it belongs to an
+        // unmounted provider that was never on a range at all.
+        delete controls.firstUpdate;
+
+        const {asked, queued} = deferred();
+        mount("/?from=2026-08-01&to=2026-08-02");
+
+        (await queued(0)).resolve(json([]));
+        await settleUntil(() => controls.firstUpdate !== undefined, "the provider never rendered");
+
+        const held = controls.firstUpdate;
+        act(() => controls.setParams({from: "2026-08-25", to: "2026-08-31"}));
+        await settle();
+
+        const before = asked.length;
+        await act(async () => { held(); });
+        await settleUntil(() => asked.length > before, "the held reference asked for nothing");
+        assert.match(asked[asked.length - 1], /from=2026-08-25/,
+            `a reference held across an await asks the range the reader has left: ${JSON.stringify(asked)}`);
+    });
+
     it("takes the error down when a refresh answers what the load could not", async () => {
         const asked = serve(refusal, () => json([{
             id: 1, targetId: null, ping: 12, download: 940, upload: 480,

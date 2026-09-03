@@ -341,7 +341,9 @@
     "no_measurement": "Le test s'est terminé sans signaler la moindre mesure.",
     "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée.",
     "stopped_by_shutdown": "Le test a été interrompu parce que MySpeed s'arrêtait.",
-    "stopped_by_signal": "Le test a été interrompu de l'extérieur avant la fin."
+    "stopped_by_signal": "Le test a été interrompu de l'extérieur avant la fin.",
+    "cli_missing": "Le programme de mesure n'a pas pu être installé, le test n'a donc pas été exécuté.",
+    "interface_unusable": "L'interface réseau configurée n'a pas d'adresse utilisable, le test n'a donc pas été exécuté."
   },
   "statistics": {
     "average": "Moyenne",

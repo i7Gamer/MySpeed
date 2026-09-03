@@ -40,6 +40,16 @@ export const errors = () => ({
     // signal itself is dropped here and kept in the raw output the panel below
     // shows, since a phrase table has nowhere to put it.
     "was stopped by": t("errors.stopped_by_signal"),
+    // And the three the *runner* writes, in server/util/speedtest.js rather than
+    // in the task - which is why they were missed twice over: the coverage test
+    // reads the task, and the two files are one subsystem to everybody except a
+    // scan. The timeout is the sharpest of them. A hung CLI is the commonest way
+    // a test fails, and "timed out" above does not appear in the sentence the
+    // runner actually writes, so the single most ordinary failure on this page
+    // rendered as "Unknown error".
+    "did not finish within": t("errors.timed_out"),
+    "is not there and could not be downloaded": t("errors.cli_missing"),
+    "has no usable address": t("errors.interface_unusable"),
 });
 
 /**

@@ -46,6 +46,21 @@ const at = (source, anchor) => {
     return found;
 };
 
+/**
+ * One job of a workflow, from its name to the next name at that indent.
+ *
+ * `from()` alone runs to the end of the file, and the job after this one
+ * prints the same recovery command - so an assertion that the *cancelled*
+ * report names it was satisfied by the *partial* report two jobs down, and
+ * deleting the line it exists to protect left the suite green.
+ */
+const jobIn = (workflow, name) => {
+    const block = workflow.slice(at(workflow, `\n  ${name}:`) + 1);
+    const next = block.search(/\n {2}[\w-]+:/);
+
+    return next === -1 ? block : block.slice(0, next);
+};
+
 /** The same file from `anchor` onwards, or a failure that says it is gone. */
 const from = (source, anchor) => source.slice(at(source, anchor));
 
@@ -259,7 +274,7 @@ describe("two releases cannot run over each other", () => {
      * dispatch of that version was refused with no explanation.
      */
     it("says what a cancelled run left behind", () => {
-        const job = from(release, "\n  report-cancelled-release:");
+        const job = jobIn(release, "report-cancelled-release");
 
         assert.match(job, /if: cancelled\(\) && needs\.create-release\.result == 'success'/);
         assert.match(job, /gh release delete v\$VERSION --cleanup-tag/,

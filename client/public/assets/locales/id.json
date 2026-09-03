@@ -341,7 +341,9 @@
     "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
     "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang.",
     "stopped_by_shutdown": "Pengujian dihentikan karena MySpeed sedang dimatikan.",
-    "stopped_by_signal": "Pengujian dihentikan dari luar sebelum selesai."
+    "stopped_by_signal": "Pengujian dihentikan dari luar sebelum selesai.",
+    "cli_missing": "Program pengukuran tidak dapat dipasang, sehingga pengujian tidak berjalan.",
+    "interface_unusable": "Antarmuka jaringan yang dikonfigurasi tidak memiliki alamat yang dapat digunakan, sehingga pengujian tidak berjalan."
   },
   "statistics": {
     "average": "Rata-rata",

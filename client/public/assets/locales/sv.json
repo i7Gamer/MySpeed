@@ -341,7 +341,9 @@
     "no_measurement": "Testet avslutades utan att rapportera något mätvärde.",
     "impossible_measurement": "Testet rapporterade ett mätvärde som inte kan stämma, så det förkastades.",
     "stopped_by_shutdown": "Testet stoppades eftersom MySpeed höll på att avslutas.",
-    "stopped_by_signal": "Testet stoppades utifrån innan det blev klart."
+    "stopped_by_signal": "Testet stoppades utifrån innan det blev klart.",
+    "cli_missing": "Mätprogrammet kunde inte installeras, så testet kördes inte.",
+    "interface_unusable": "Det valda nätverksgränssnittet har ingen användbar adress, så testet kördes inte."
   },
   "statistics": {
     "average": "Genomsnitt",

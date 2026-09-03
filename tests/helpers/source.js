@@ -44,6 +44,25 @@ export const localeCodes = () =>
 export const readLocale = (code) => JSON.parse(readSource(`${LOCALES_DIR}/${code}.json`));
 
 /**
+ * The same text with its comment lines removed.
+ *
+ * A pin that reads source is satisfied by a comment mentioning what it looks
+ * for, and this repository's comments are long and quote the code they
+ * explain - so `assert.match(source, /exitError\(code, result, signal/)` passed
+ * over a handler that had lost the argument, because the docblock above it
+ * said what the handler used to do. Three suites had grown their own copy of
+ * this before it was worth sharing; two more wanted it and did without.
+ *
+ * Whole lines only, and by their first non-space character, so `//` inside a
+ * string or a URL is left alone. A line of a template literal that begins
+ * with `*` or `#` is taken for a comment, which no caller has yet had.
+ */
+export const withoutComments = (source) => source
+    .split("\n")
+    .filter((line) => !/^\s*(\/\/|\/\*|\*|#)/.test(line))
+    .join("\n");
+
+/**
  * The last comma at the outermost argument depth, which is where the handler
  * begins.
  *

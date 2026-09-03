@@ -341,7 +341,9 @@
     "no_measurement": "テストは終了しましたが、測定値が報告されませんでした。",
     "impossible_measurement": "テストがあり得ない測定値を報告したため、破棄されました。",
     "stopped_by_shutdown": "MySpeed のシャットダウン中だったため、テストは中止されました。",
-    "stopped_by_signal": "テストは終了する前に外部から停止されました。"
+    "stopped_by_signal": "テストは終了する前に外部から停止されました。",
+    "cli_missing": "計測プログラムをインストールできなかったため、テストは実行されませんでした。",
+    "interface_unusable": "設定されたネットワークインターフェースに使用可能なアドレスがないため、テストは実行されませんでした。"
   },
   "statistics": {
     "average": "平均",

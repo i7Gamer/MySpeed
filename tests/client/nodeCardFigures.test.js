@@ -417,6 +417,114 @@ describe("a node card reading its node", () => {
             "a node upgraded under an open page is graded against optima that were never its");
     });
 
+    // Five minutes, pinned to the literal. Built from the export alone the
+    // bound moves with the constant, so five *hours* - which is the permanent
+    // latch again on a page nobody reloads - passed the test above unchanged.
+    it("holds off for five minutes, not for the life of the page", () => {
+        assert.equal(TARGETS_RECHECK_MS, 5 * 60 * 1000);
+    });
+
+    /**
+     * And an answer clears a window another read had just armed.
+     *
+     * The guard above decides who may arm it; this is the other direction. A
+     * read can be past the window check with its request already in flight when
+     * a second read 404s and arms - and then its own 200 arrives, proving the
+     * route is there, against a window that would skip the next five minutes of
+     * polls. Whichever read got the answer, the answer is the fact.
+     */
+    it("clears a window that another read armed while its own answer was in flight", async () => {
+        const pending = [];
+        const take = (match) => pending.splice(pending.findIndex(({path}) => path.includes(match)), 1)[0];
+
+        globalThis.fetch = (url) => new Promise((resolve) => pending.push({path: String(url), resolve}));
+
+        mount();
+        await settle();
+        const olderTests = take("/speedtests");
+
+        act(() => window.document.dispatchEvent(new window.Event("visibilitychange")));
+        await settle();
+        const newerTests = take("/speedtests");
+
+        // The older read gets as far as asking for targets, so it is past the
+        // window check when the newer one arms it.
+        olderTests.resolve(json([MEASURED]));
+        await settle();
+        const olderTargets = take("/targets");
+        take("/config").resolve(json(INSTANCE_OPTIMA));
+        await settle();
+
+        newerTests.resolve(json([MEASURED]));
+        await settle();
+        take("/targets").resolve(json({message: "Cannot GET /api/targets"}, NOT_FOUND));
+        take("/config").resolve(json(INSTANCE_OPTIMA));
+        await settle();
+
+        // And only now does the older read hear that the route is there.
+        olderTargets.resolve(json([TARGET]));
+        await settle();
+
+        const asked = serve();
+        await returnToTheTab();
+
+        assert.equal(asksFor(asked, "/targets"), 1,
+            "an answer proving the route is there left the window standing");
+    });
+
+    /**
+     * And the 404 that arms the window has to be the newest answer.
+     *
+     * The write sat inside readTargets, outside the claim() that decides
+     * whether a read may touch the card at all - so a read the newer one had
+     * already overtaken could still arm it. That is the ordinary case here,
+     * not a contrived one: baseRequest gives up after ten seconds and the
+     * poll is ten seconds, so two reads in flight is what the generation
+     * counter exists for.
+     *
+     * The result was the exact regression the window was added to prevent,
+     * reached from the other side: a node whose targets had just been read
+     * successfully stopped being asked for them, and the next poll regraded
+     * its rows against the instance-wide optima.
+     */
+    it("does not let a superseded read's 404 hold off the next poll", async () => {
+        const pending = [];
+        globalThis.fetch = (url) => new Promise((resolve) => pending.push({path: String(url), resolve}));
+
+        const {container} = mount();
+        await settle();
+        const [firstRead] = pending.splice(0, 1);
+
+        act(() => window.document.dispatchEvent(new window.Event("visibilitychange")));
+        await settle();
+        const [secondRead] = pending.splice(0, 1);
+
+        // The newer read goes all the way through, and its node has targets.
+        secondRead.resolve(json([MEASURED]));
+        await settle();
+        for (const request of pending.splice(0)) request.resolve(
+            request.path.includes("/targets") ? json([TARGET]) : json(INSTANCE_OPTIMA));
+        await settle();
+        assert.deepEqual(grades(container), ["green", "green", "green"], "the newer read never landed");
+
+        // And only then does the older one reach its own /targets, and 404.
+        firstRead.resolve(json([MEASURED]));
+        await settle();
+        for (const request of pending.splice(0)) request.resolve(
+            request.path.includes("/targets")
+                ? json({message: "Cannot GET /api/targets"}, NOT_FOUND)
+                : json(INSTANCE_OPTIMA));
+        await settle();
+
+        const asked = serve();
+        await returnToTheTab();
+
+        assert.equal(asksFor(asked, "/targets"), 1,
+            "a read the card had already discarded held the next poll off its targets");
+        assert.deepEqual(grades(container), ["green", "green", "green"],
+            "the card regraded against optima that are not its node's");
+    });
+
     /**
      * The three triggers - the ten second tick, the visibility listener and the
      * password dialog - none of which waits for the one before, so two reads
