@@ -88,6 +88,10 @@ const ALLOWED = new Map([
     ["pages/Home/components/TestArea/TestAreaComponent.jsx", {
         pattern: /roundIndexById\(targets, test\.targetId\) : -1/,
         reason: "a chart index for a row outside the drawn window"
+    }],
+    ["pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx", {
+        pattern: /roundIndexById\(targets, props\.test\.targetId\) : -1/,
+        reason: "the same chart index, for the card that names the newest test's target"
     }]
 ]);
 
