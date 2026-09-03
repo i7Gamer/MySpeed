@@ -61,6 +61,20 @@ const jobIn = (workflow, name) => {
     return next === -1 ? block : block.slice(0, next);
 };
 
+/**
+ * One step of a job, from its name to the next step at that indent.
+ *
+ * `from()` for the same reason `jobIn` exists: a step's script is a handful of
+ * lines in a file of eighty, and an anchor that runs to the end of the file is
+ * satisfied by whatever a later step happens to say.
+ */
+const stepIn = (workflow, name) => {
+    const block = workflow.slice(at(workflow, `      - name: ${name}`));
+    const next = block.slice(1).search(/\n {6}- name:/);
+
+    return next === -1 ? block : block.slice(0, next + 1);
+};
+
 /** The same file from `anchor` onwards, or a failure that says it is gone. */
 const from = (source, anchor) => source.slice(at(source, anchor));
 
@@ -247,6 +261,29 @@ describe("the MSI is built from things that are pinned", () => {
         assert.doesNotMatch(workflow, /echo "C:\\Program Files \(x86\)\\WiX Toolset v3\.11\\bin"/,
             "the bin directory is asserted rather than discovered");
         assert.match(workflow, /Get-ChildItem "C:\\Program Files \(x86\)\\WiX Toolset v\*/);
+    });
+
+    /**
+     * And the pin cannot be the thing that fails the step. The runner image
+     * ships 3.14 now, so asking for 3.11.2 is a downgrade and chocolatey
+     * refuses one: it exits 1 saying a newer version is already installed,
+     * while the toolset sits exactly where the discovery below finds it. 1.5.2
+     * stopped there with the tag cut, the version bumped, no MSI and no Docker
+     * tag published - on a step that had already printed the path it wanted.
+     *
+     * The discovery is the gate, and it exits 1 itself when no bin directory
+     * exists. What chocolatey did with a request the image had already
+     * satisfied is not the step's verdict.
+     */
+    it("survives a chocolatey that will not install over what the image ships", () => {
+        const step = stepIn(workflow, "Install WiX Toolset");
+
+        assert.match(step, /\$LASTEXITCODE -ne 0/,
+            "chocolatey's exit code is the step's, so a refused downgrade stops the release");
+        assert.match(step, /LASTEXITCODE = 0/,
+            "the refusal is reported and then still handed back as the step's status");
+        assert.match(step, /-not \$bin[\s\S]{0,200}exit 1/,
+            "nothing fails the step when the toolset really is missing");
     });
 });
 
