@@ -203,7 +203,24 @@ const indexFor = (read) => {
     const prefix = basePath();
     if (!prefix) return null;
 
-    const rewritten = withBasePathMeta(read(), prefix);
+    /*
+     * A page that could not be read hands the branch back to what it did
+     * before, rather than taking the process down at import or serving an empty
+     * body. A build directory with no index.html in it is a broken deployment
+     * either way - but one that answers 404 can be looked at, and one that
+     * cannot boot is a container in a restart loop.
+     */
+    let page;
+
+    try {
+        page = read();
+    } catch {
+        return null;
+    }
+
+    if (!page) return null;
+
+    const rewritten = withBasePathMeta(page, prefix);
     return (req, res) => res.type('html').send(rewritten);
 };
 
