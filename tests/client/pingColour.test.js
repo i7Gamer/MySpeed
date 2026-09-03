@@ -107,13 +107,16 @@ describe("every view grades the ping from the figure it prints", () => {
 
     // The node card trims once, where the data is stored: the printed figure
     // and the colour are both read off that one value, the way the pane reads
-    // everything off the one ping it prints.
+    // everything off the one ping it prints. Graded against `limits` rather
+    // than the config directly, like the latest-test card above - the trimming
+    // this suite is about and the basis it is trimmed against are two separate
+    // agreements with the page the card switches to, and it has to keep both.
     it("the node card, which prints the same figure it grades", () => {
         assert.match(node, /import \{[^}]*formatLatency[^}]*} from "@\/common\/utils\/FormatUtil"/,
             "the card cannot trim anything - it never imports the formatter");
         assert.match(node, /const ping = formatLatency\(tests\[0\]\?\.ping\)/,
             "the ping is not trimmed where the card's data is built");
-        assert.match(node, /pingIcon: getIconBySpeed\(ping, config\.ping, false\)/,
+        assert.match(node, /pingIcon: getIconBySpeed\(ping, limits\.ping, false\)/,
             "the colour is not graded from that trimmed figure");
         assert.doesNotMatch(node, /ping: tests\[0\]\?\.ping/,
             "the card still stores - and so prints - the raw two-decimal column");

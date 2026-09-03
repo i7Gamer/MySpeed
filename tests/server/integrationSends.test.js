@@ -9,6 +9,10 @@ import setupEmail from "../../server/integrations/email.js";
 import { DEFAULT_LANGUAGE, plainDefaults } from "../../server/util/notificationLocale.js";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
 import setupInflux from "../../server/integrations/influxdb.js";
+import setupNtfy from "../../server/integrations/ntfy.js";
+import {
+    MAX_OFFSET_MINUTES, localWallClock, serverZone, zoneFromOffset
+} from "../../server/util/timezone.js";
 import { readSource } from "../helpers/source.js";
 
 /**
@@ -57,7 +61,13 @@ const RESULT = {ping: 12, jitter: 2, download: 100, upload: 50};
  * notification could name the reason and nothing else.
  */
 const failure = (error) => ({error, id: 12, created: "2026-08-13T09:15:00.000Z", provider: "ookla"});
-const fire = (events, name, config, payload) => events[name]({data: config}, payload, () => {});
+
+// The zone is the fourth argument triggerEvent hands every callback, resolved
+// once per event from the stored timezone setting. Left off by every case that
+// does not care, which is also what an older caller does - and what
+// replaceVariables' own default then reads as the host clock.
+const fire = (events, name, config, payload, zone) =>
+    events[name]({data: config}, payload, () => {}, zone);
 
 describe("influxdb", () => {
     const config = {url: "http://influx.lan:8086", org: "o", bucket: "b", token: "t", host: "server1"};
@@ -116,6 +126,67 @@ describe("influxdb", () => {
         await fire(events, "testFinished", config, {...RESULT, jitter: 0});
 
         assert.match(sent[0].body, /jitter=0/);
+    });
+
+    /**
+     * The one column where zero is the fabrication rather than the reading.
+     *
+     * parseCloudflare answers `round(avg_latency_ms) ?? 0` for a run whose
+     * latency block carried no average, and parseIperf3 does the same - a
+     * dual-stack endpoint measured over a pinned IPv4 interface stores it for
+     * the life of the target. The statistics draw a gap there and the alert
+     * gate refuses it, while this sink wrote `ping=0`: the same flat, perfect
+     * line the jitter fix above was cut for, one field over.
+     */
+    it("leaves out a latency nobody measured rather than writing it as zero", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: 0});
+
+        const [written] = sent;
+        assert.doesNotMatch(written.body, /ping=/);
+        assert.match(written.body, /download=100/, "the rest of a good row went with it");
+    });
+
+    // And the reading the comparison has to stay exact for: the column has held
+    // decimals since migration 0010, so a genuine sub-millisecond line arrives
+    // as the fraction it measured.
+    it("writes a real sub-millisecond latency", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: 0.24});
+
+        assert.match(sent[0].body, /ping=0\.24/);
+    });
+
+    /**
+     * A lone failure placeholder on a row that succeeded.
+     *
+     * isFailedTest asks whether all three required columns are -1, so
+     * {ping: -1, download: 480.2, upload: -1} is a success by that rule - the
+     * shape a hand-edited import produces - and the testFinished event goes out
+     * for it. Passed through, Influx charted an upload of minus one megabit.
+     */
+    it("leaves out a placeholder measurement on an otherwise successful row", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, ping: -1, upload: -1});
+
+        const [written] = sent;
+        assert.match(written.body, /download=100/);
+        assert.doesNotMatch(written.body, /upload=/);
+        assert.doesNotMatch(written.body, /ping=/);
+    });
+
+    /**
+     * And the numeric-string spelling an imported history holds, which the
+     * field filter used to drop on the floor: buildLine keeps only what is
+     * already a number, so every measurement of such a row was lost to Influx
+     * while the statistics page charted them all.
+     */
+    it("writes a measurement stored as text", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, download: "480.2", jitter: "2.5"});
+
+        assert.match(sent[0].body, /download=480\.2/);
+        assert.match(sent[0].body, /jitter=2\.5/);
     });
 
     /**
@@ -961,4 +1032,128 @@ describe("the English the default templates ship", () => {
     it("writes the same pair for a notifier that chose no language", () => {
         assert.deepEqual(plainDefaults(undefined), plainDefaults(DEFAULT_LANGUAGE));
     });
+});
+
+/**
+ * The clock every one of them writes on.
+ *
+ * The six %year% … %second% names were built from the process clock, while the
+ * schedule, the digests, the quiet hours and the /status countdown all resolve
+ * the stored `timezone` setting - which exists because the Docker image pins
+ * `ENV TZ=Etc/UTC`. So a Berlin instance sent "09:14" for a test that ran at
+ * 11:14, using a chip the notification dialog itself offers.
+ *
+ * The zone is resolved once per event by triggerEvent and handed to the
+ * callback as its fourth argument, so what is exercised here is the plumbing:
+ * every notifier that substitutes has to pass what it was handed through to
+ * replaceVariables, and six modules is six places for the next one to be missed.
+ */
+describe("the clock a notification is written on", () => {
+    const MINUTES_PER_HOUR = 60;
+    const SHIFT_HOURS = 6;
+    const TEMPLATE = "%hour%:%minute%";
+
+    const pad = (value) => String(value).padStart(2, "0");
+
+    /**
+     * A zone six hours from whatever this host's own is. Not a fixed named
+     * zone: on a machine already in that zone every case here would coincide
+     * with the default and assert nothing.
+     */
+    const elsewhere = () => {
+        const host = new Date().getTimezoneOffset();
+        const shift = SHIFT_HOURS * MINUTES_PER_HOUR;
+        const offset = Math.abs(host + shift) <= MAX_OFFSET_MINUTES ? host + shift : host - shift;
+
+        return zoneFromOffset(offset).zone;
+    };
+
+    // Read either side of the send, because the instant is replaceVariables'
+    // own: one reading taken before and one after cannot both be on the wrong
+    // side of a minute boundary, so accepting either is exact, not tolerant.
+    const clockOn = (zone) => {
+        const wall = localWallClock(zone, new Date());
+
+        return `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}`;
+    };
+
+    // Nodemailer is never reached: the module takes its transport factory as a
+    // second argument and this hands in a recorder, the way emailSends does.
+    let mail = [];
+
+    beforeEach(() => { mail = []; });
+
+    const notifiers = [
+        {
+            name: "discord",
+            setup: setupDiscord,
+            config: {url: "https://discord.com/api/webhooks/1/token", send_finished: true},
+            messageOf: () => sent[0].body.embeds[0].description
+        },
+        {
+            name: "telegram",
+            setup: setupTelegram,
+            config: {token: "1:abc", chat_id: "-100", send_finished: true},
+            messageOf: () => sent[0].body.text
+        },
+        {
+            name: "gotify",
+            setup: setupGotify,
+            config: {url: "https://gotify.example.net", key: "123456789012345", send_finished: true},
+            messageOf: () => sent[0].body.message
+        },
+        {
+            name: "ntfy",
+            setup: setupNtfy,
+            config: {url: "https://ntfy.example.net", topic: "myspeed", send_finished: true},
+            messageOf: () => sent[0].body
+        },
+        {
+            name: "pushover",
+            setup: setupPushover,
+            config: {token: "a".repeat(30), user_key: "b".repeat(30), send_finished: true},
+            messageOf: () => sent[0].body.message
+        },
+        {
+            name: "email",
+            setup: (register) => setupEmail(register, () => ({
+                sendMail: async (message) => { mail.push(message); return {accepted: [message.to]}; }
+            })),
+            config: {host: "smtp.example.com", port: 587, from: "myspeed@example.com",
+                to: "ops@example.com", send_finished: true},
+            messageOf: () => mail[0].text
+        }
+    ];
+
+    for (const {name, setup, config, messageOf} of notifiers) {
+        describe(name, () => {
+            const written = async (zone) => {
+                const {events} = load(setup);
+                await fire(events, "testFinished", {...config, finished_message: TEMPLATE}, RESULT, zone);
+
+                return messageOf();
+            };
+
+            it("writes the hour of the zone the dispatcher resolved", async () => {
+                const zone = elsewhere();
+                const before = clockOn(zone);
+                const message = await written(zone);
+
+                assert.ok([before, clockOn(zone)].includes(message),
+                    `sent ${message} while that zone's clock read ${before}`);
+                assert.notEqual(message, clockOn(serverZone),
+                    "the zone was dropped on the way, so the message is on the host clock");
+            });
+
+            // The un-migrated shape, and what an older caller passes: the
+            // default is bit-identical to the host getters this replaced, so
+            // nothing changes for an instance that set no timezone.
+            it("falls back to the host clock when it is handed no zone", async () => {
+                const before = clockOn(serverZone);
+                const message = await written(undefined);
+
+                assert.ok([before, clockOn(serverZone)].includes(message));
+            });
+        });
+    }
 });

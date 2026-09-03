@@ -134,14 +134,19 @@ const DIGEST_COLOR = 4543686;
 
 
 export default (registerEvent) => {
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting: the %hour% chips this
+    // dialog offers were rendered on the process clock, which the Docker image
+    // pins to UTC. Absent - an older caller, or a test that fires the callback
+    // directly - replaceVariables reads the host clock, exactly as it did.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c.url, c.display_name, 4572762,
-            replaceVariables(c.finished_message || defaults(c.language).finished, clean(data)), activity);
+            replaceVariables(c.finished_message || defaults(c.language).finished, clean(data), zone), activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c.url, c.display_name, 12993861,
-            replaceVariables(c.error_message || defaults(c.language).failed, clean(failure)), activity);
+            replaceVariables(c.error_message || defaults(c.language).failed, clean(failure), zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

@@ -110,16 +110,19 @@ const send = (token, chat_id, text, activity, message_thread_id) => {
 
 
 export default (registerEvent) => {
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting - see discord.js for why
+    // the six clock names could not go on being read off the process clock.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c.token, c.chat_id,
-            replaceVariables(c.finished_message || defaults(c.language).finished, stripMarkdown(data)), activity,
-            c.message_thread_id);
+            replaceVariables(c.finished_message || defaults(c.language).finished, stripMarkdown(data), zone),
+            activity, c.message_thread_id);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c.token, c.chat_id,
-            replaceVariables(c.error_message || defaults(c.language).failed, stripMarkdown(failure)), activity,
-            c.message_thread_id);
+            replaceVariables(c.error_message || defaults(c.language).failed, stripMarkdown(failure), zone),
+            activity, c.message_thread_id);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

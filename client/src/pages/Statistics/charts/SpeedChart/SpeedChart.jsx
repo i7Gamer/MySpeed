@@ -20,13 +20,13 @@ const AVERAGE_ORDER = 3;
 // still get finer ticks - chart.js scales the step down to fit them.
 const SPEED_TICK_STEP = 100;
 
-export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, failed, errors, compact = false, downsampled, dataPoints, rawDataPoints }) => {
+export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, failed, errors, failedCounts, compact = false, downsampled, dataPoints, rawDataPoints }) => {
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
     const filteredData = useMemo(() => {
-        if (!data?.[dataKey] || !labels) return { labels: [], data: [], average: null, failed: [], errors: [], isSingleDay: false };
+        if (!data?.[dataKey] || !labels) return { labels: [], data: [], average: null, failed: [], errors: [], failedCounts: [], isSingleDay: false };
 
         const values = labels.map((_, index) => convertSpeed(data[dataKey][index], preferences));
 
@@ -35,10 +35,14 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, fail
             data: values,
             failed: labels.map((_, index) => failed?.[index] || false),
             errors: labels.map((_, index) => errors?.[index] || null),
+            // ?? rather than ||: 0 is not a value this array ever carries, but
+            // a nullable NUMBER deserves the exact check rather than relying
+            // on that.
+            failedCounts: labels.map((_, index) => failedCounts?.[index] ?? null),
             average: seriesAverage(values),
             isSingleDay: isSingleDaySeries(labels)
         };
-    }, [labels, data, dataKey, failed, errors, preferences]);
+    }, [labels, data, dataKey, failed, errors, failedCounts, preferences]);
 
     const failedMarkerData = useMemo(() => failureMarkers(filteredData.failed), [filteredData]);
 
@@ -63,13 +67,14 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, fail
         themeColors,
         labels: filteredData.labels,
         errors: filteredData.errors,
+        failedCounts: filteredData.failedCounts,
         isSingleDay: filteredData.isSingleDay,
         pointStyle,
         lineTension,
         use12h,
         valueUnit: speedUnit,
         yStepSize: SPEED_TICK_STEP
-    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.isSingleDay,
+    }), [themeColors, filteredData.labels, filteredData.errors, filteredData.failedCounts, filteredData.isSingleDay,
         pointStyle, lineTension, speedUnit, use12h]);
 
     const hasFailedTests = useMemo(() => failedMarkerData.some(v => v !== null), [failedMarkerData]);

@@ -339,7 +339,8 @@
     "latency_failed": "Gecikme testi başarısız oldu, bu yüzden hiçbir hız ölçülemedi.",
     "rate_limited": "Sağlayıcı testi reddetti, çünkü kısa süre içinde çok fazla test çalıştırıldı. Sonraki otomatik olarak ertelenir.",
     "no_measurement": "Test, hiçbir ölçüm bildirmeden sona erdi.",
-    "impossible_measurement": "Test, doğru olamayacak bir ölçüm bildirdi, bu yüzden ölçüm atıldı."
+    "impossible_measurement": "Test, doğru olamayacak bir ölçüm bildirdi, bu yüzden ölçüm atıldı.",
+    "stopped_by_shutdown": "MySpeed kapanmakta olduğu için test durduruldu."
   },
   "statistics": {
     "average": "Ortalama",
@@ -418,6 +419,7 @@
       "median": "Medyan"
     },
     "failed_test": "Başarısız test",
+    "failed_in_period": "Bu dönemde {{failed}} başarısız",
     "hourly": {
       "title": "Günün saatine göre hız",
       "sample_count": "Testler"

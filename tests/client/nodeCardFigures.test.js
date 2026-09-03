@@ -1,12 +1,21 @@
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { MemoryRouter } from "react-router-dom";
 import {
     formatLatency, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
 import { getIconBySpeed, isFailedTest } from "@/common/utils/TestUtil.js";
+import { resolveLimits } from "@/common/utils/TargetUtil.js";
+import { act, cleanup, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import { AlertProvider } from "@/common/contexts/Alert";
+import { ConfigContext } from "@/common/contexts/Config";
+import { NodeContext } from "@/common/contexts/Node";
+import { PreferencesContext } from "@/common/contexts/Preferences";
+import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
+import { NodeContainer } from "@/pages/Nodes/components/NodeContainer/NodeContainer.jsx";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -35,15 +44,22 @@ const slice = (from, to) => {
 
 const CARD_END = "\n        });";
 
-/** What the card stores about one test, built by its own setNodeData call. */
-const dataFor = (test, config = {}) => {
+/**
+ * What the card stores about one test, built by its own setNodeData call.
+ *
+ * `targetsById` is what the node answered for its own /targets, keyed the way
+ * the card keys it. Empty is the ordinary case as well as the degenerate one:
+ * a node from before 1.5.0 has no such route, and a row measured before targets
+ * existed names no target - both grade against the instance-wide settings.
+ */
+const dataFor = (test, config = {}, targetsById = {}) => {
     let captured = null;
 
-    new Function("tests", "config", "setNodeData",
-        "formatLatency", "formatWhole", "isFailedTest", "getIconBySpeed",
+    new Function("tests", "config", "targetsById", "setNodeData",
+        "formatLatency", "formatWhole", "isFailedTest", "getIconBySpeed", "resolveLimits",
         slice("const ping = formatLatency", CARD_END))(
-        [test], config, (data) => { captured = data; },
-        formatLatency, formatWhole, isFailedTest, getIconBySpeed);
+        [test], config, targetsById, (data) => { captured = data; },
+        formatLatency, formatWhole, isFailedTest, getIconBySpeed, resolveLimits);
 
     assert.notEqual(captured, null, "the card never stored anything");
     return captured;
@@ -160,5 +176,236 @@ describe("the figures a node card prints", () => {
     it("formats both speeds through the one helper", () => {
         assert.ok(card.includes("{speedText(nodeData.download)}"), "the download is formatted inline again");
         assert.ok(card.includes("{speedText(nodeData.upload)}"), "the upload is formatted inline again");
+    });
+});
+
+/**
+ * The instance-wide optima and one target's own, and a test that is excellent
+ * against the second and dreadful against the first.
+ *
+ * The reported shape, kept as the fixture: a LAN target measured against
+ * settings meant for the internet line. 24 ms is 240% of a 10 ms optimum and
+ * 80% of a 30 ms one; 95 Mbit/s is 9% of 1000 and 95% of 100; 38 is 7% of 500
+ * and 95% of 40. So every one of the three glyphs changes colour with the
+ * basis, which is what makes the fixture worth having - a row that agrees
+ * either way would prove nothing about which basis was used.
+ */
+const INSTANCE_OPTIMA = {ping: "10", download: "1000", upload: "500"};
+const TARGET = {id: 4, name: "fritzbox", optimalPing: "30", optimalDownload: "100", optimalUpload: "40"};
+const MEASURED = {id: 9, targetId: 4, ping: 24, download: 95, upload: 38, created: "2026-09-01T10:00:00.000Z"};
+
+describe("the optima a node card grades against", () => {
+    /**
+     * The defect this fixture was written for: the card read config.ping,
+     * config.download and config.upload and never looked at the row's target,
+     * while the overview row, the detail pane and the latest-test card all go
+     * through resolveLimits. The comment above the grading says why they have
+     * to agree - one measurement changing colour between two views of it is
+     * the worse of the two faults - and this was three of them at once.
+     */
+    it("takes the row's own target's optima over the instance-wide settings", () => {
+        const data = dataFor(MEASURED, INSTANCE_OPTIMA, {[TARGET.id]: TARGET});
+
+        assert.deepEqual([data.pingIcon, data.downloadIcon, data.uploadIcon], ["green", "green", "green"],
+            "the card painted the instance-wide verdict over the one the dashboard shows");
+    });
+
+    // Which is the same grading the card has always done, and still the right
+    // one wherever no target's optima are known: a node too old to have the
+    // route, a row recorded before targets existed, a target since deleted.
+    it("falls back to the instance-wide settings when the row's target is not among them", () => {
+        for (const [what, targetsById, test] of [
+            ["a node with no targets route", {}, MEASURED],
+            ["a row that names no target", {[TARGET.id]: TARGET}, {...MEASURED, targetId: undefined}],
+            ["a target since deleted", {}, MEASURED]
+        ]) {
+            const data = dataFor(test, INSTANCE_OPTIMA, targetsById);
+
+            assert.deepEqual([data.pingIcon, data.downloadIcon, data.uploadIcon], ["red", "red", "red"], what);
+        }
+    });
+
+    // A target that set none of the three is graded wholly by the instance
+    // settings, and one that set some of them only by those - resolveLimits
+    // answers per field, and the card must not collapse that to all or nothing.
+    it("takes the instance settings field by field where the target set none", () => {
+        const data = dataFor(MEASURED, INSTANCE_OPTIMA, {[TARGET.id]: {id: TARGET.id, optimalDownload: "100"}});
+
+        assert.equal(data.downloadIcon, "green", "the target's own download optimum was ignored");
+        assert.equal(data.pingIcon, "red", "a ping the target says nothing about lost the instance setting");
+        assert.equal(data.uploadIcon, "red", "an upload the target says nothing about lost the instance setting");
+    });
+});
+
+/**
+ * The card driven rather than read, because everything this section is about
+ * lives in when a request lands and what the card does with the one that says
+ * nothing useful. A source pin can see that /targets is fetched; only a mounted
+ * card can show that a node answering 404 to it stays green, that it is not
+ * asked twice, and that a poll the next one overtook cannot write last.
+ *
+ * The card is affordable to mount: three requests, no canvas and no chart.
+ */
+describe("a node card reading its node", () => {
+    afterEach(cleanup);
+
+    const realFetch = globalThis.fetch;
+    afterEach(() => { globalThis.fetch = realFetch; });
+
+    const noop = () => undefined;
+
+    const json = (body, status = 200) => new Response(JSON.stringify(body),
+        {status, headers: {"content-type": "application/json"}});
+
+    const NOT_FOUND = 404;
+
+    /**
+     * A node that answers everything at once. `targetsStatus` is the whole
+     * point of the double: 404 is what every node before 1.5.0 answers, since
+     * the route did not exist there.
+     */
+    const serve = ({tests = [MEASURED], config = INSTANCE_OPTIMA, targets = [TARGET], targetsStatus = 200} = {}) => {
+        const asked = [];
+
+        globalThis.fetch = (url) => {
+            const path = String(url);
+            asked.push(path);
+
+            if (path.includes("/targets")) return Promise.resolve(targetsStatus === 200
+                ? json(targets) : json({message: "Cannot GET /api/targets"}, targetsStatus));
+            if (path.includes("/config")) return Promise.resolve(json(config));
+            return Promise.resolve(json(tests));
+        };
+
+        return asked;
+    };
+
+    const nest = (child, ...layers) =>
+        layers.reduceRight((inner, [Provider, value]) => createElement(Provider, {value}, inner), child);
+
+    const mount = () => render(createElement(MemoryRouter, null,
+        nest(createElement(AlertProvider, null,
+            createElement(NodeContainer, {id: 3, name: "kitchen", url: "http://192.168.1.50:5216"})),
+        [ConfigContext.Provider, [{}, noop]],
+        [NodeContext.Provider, [[], noop, 0, noop, () => undefined]],
+        [PreferencesContext.Provider, [{}, noop]],
+        [ToastNotificationContext.Provider, noop])));
+
+    // The three glyphs in the order the card draws them - ping, download,
+    // upload - read off the grade each publishes on its own item.
+    const grades = (container) => [...container.querySelectorAll(".speed-item")]
+        .map((item) => item.getAttribute("data-grade"));
+
+    const asksFor = (asked, route) => asked.filter((path) => path.includes(route)).length;
+
+    // The reader coming back to a tab, which is one of the card's three
+    // triggers and the one a test can raise without waiting ten seconds.
+    const returnToTheTab = async () => {
+        act(() => window.document.dispatchEvent(new window.Event("visibilitychange")));
+        await settle();
+        await settle();
+    };
+
+    const seeTheCard = async () => {
+        const mounted = mount();
+        await settle();
+        await settle();
+        return mounted;
+    };
+
+    it("paints the grade the dashboard paints, not the instance-wide one", async () => {
+        serve();
+        const {container} = await seeTheCard();
+
+        assert.deepEqual(grades(container), ["green", "green", "green"],
+            "the card graded a target's row against optima that were never its");
+    });
+
+    it("reads the targets of the node the card is for", async () => {
+        const asked = serve();
+        await seeTheCard();
+
+        assert.ok(asked.some((path) => path.endsWith("/api/nodes/3/targets")),
+            `no card-scoped targets read among ${JSON.stringify(asked)}`);
+    });
+
+    /**
+     * The reason the targets read cannot use the card's usual idiom. Every
+     * other request here answers a failure with setNodeError, and the whole
+     * healthy half of the card is gated on that being absent - so a 404 from a
+     * node that simply predates the route would paint a running node red and
+     * make switchNode refuse to navigate to it.
+     */
+    it("stays green for a node too old to have a targets route", async () => {
+        serve({targetsStatus: NOT_FOUND});
+        const {container} = await seeTheCard();
+
+        assert.equal(container.querySelector(".node-item").className, "node-item hover-green",
+            "a node that answered its tests and its config was reported as a problem");
+        assert.deepEqual(grades(container), ["red", "red", "red"],
+            "a node with no per-target optima is graded by its own instance settings");
+    });
+
+    /**
+     * And it is asked once. This card polls every ten seconds for as long as
+     * the page is open, so an unlatched 404 is one wasted request - proxied
+     * through this instance to the child, for a remote node - and one console
+     * line every tick, forever. StatusContext keeps the same latch over
+     * /status/live for the same reason.
+     */
+    it("does not ask an old node for its targets again on every tick", async () => {
+        const asked = serve({targetsStatus: NOT_FOUND});
+        await seeTheCard();
+
+        assert.equal(asksFor(asked, "/targets"), 1, "the first read never asked");
+
+        await returnToTheTab();
+
+        assert.equal(asksFor(asked, "/config"), 2, "coming back to the tab did not re-read the node");
+        assert.equal(asksFor(asked, "/targets"), 1,
+            "the card asks a node that has already answered 404 again on every tick");
+    });
+
+    /**
+     * The three triggers - the ten second tick, the visibility listener and the
+     * password dialog - none of which waits for the one before, so two reads
+     * can be in flight at once and the slower one used to write last.
+     *
+     * Here the older read is the one that times out: baseRequest gives up after
+     * ten seconds, which is exactly a tick apart, so this is the ordinary case
+     * rather than a contrived one. Without the guard the card goes red over a
+     * node the newer read has just been told is fine.
+     */
+    it("does not let an older read's answer overtake a newer one", async () => {
+        const pending = [];
+        globalThis.fetch = (url) => new Promise((resolve) => pending.push({path: String(url), resolve}));
+
+        const {container} = mount();
+        await settle();
+
+        assert.equal(pending.length, 1, "the mount asked for something other than one thing");
+        const [firstRead] = pending.splice(0, 1);
+
+        act(() => window.document.dispatchEvent(new window.Event("visibilitychange")));
+        await settle();
+        assert.equal(pending.length, 1, "coming back to the tab started no second read");
+        const [secondRead] = pending.splice(0, 1);
+
+        // The newer read settles all the way through, and the card is drawn.
+        secondRead.resolve(json([MEASURED]));
+        await settle();
+        for (const request of pending.splice(0)) request.resolve(
+            request.path.includes("/targets") ? json([TARGET]) : json(INSTANCE_OPTIMA));
+        await settle();
+
+        assert.deepEqual(grades(container), ["green", "green", "green"], "the newer read never landed");
+
+        // And only then does the older one give up.
+        firstRead.resolve(json({message: "gateway timeout"}, 504));
+        await settle();
+
+        assert.equal(container.querySelector(".node-item").className, "node-item hover-green",
+            "a stale read painted a node red over the answer that said it is running");
+        assert.deepEqual(grades(container), ["green", "green", "green"]);
     });
 });

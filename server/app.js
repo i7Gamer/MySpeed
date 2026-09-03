@@ -173,7 +173,19 @@ app.use("/api/nodes", nodesRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/prometheus", prometheusRoutes);
 app.use('/api/opengraph', opengraphRoutes);
-app.use("/api*all", (req, res) => res.status(404).json({message: "Route not found"}));
+/*
+ * A plain prefix, and it has to stay one. `"/api*all"` needed the parameter to
+ * capture something, so it did not match the bare `/api`: GET /api fell past it
+ * into the SPA fallback below and came back as the dashboard with a 200, where
+ * every other unmatched /api/... earns this JSON 404, and POST /api matched
+ * nothing at all and got Express's own plain-text default. The string covers
+ * /api and everything under it, and drops the mirror-image over-match the
+ * pattern had at the other end - /apifoo is not an API path.
+ *
+ * Last, and nothing at /api after it: this answers everything below the prefix,
+ * so a router mounted later is somewhere nothing can reach.
+ */
+app.use("/api", (req, res) => res.status(404).json({message: "Route not found"}));
 
 let buildPath = path.join(process.cwd(), 'build');
 let buildExists = fs.existsSync(buildPath);

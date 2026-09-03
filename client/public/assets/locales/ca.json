@@ -339,7 +339,8 @@
     "latency_failed": "La prova de latència ha fallat, així que no s'ha pogut mesurar cap velocitat.",
     "rate_limited": "El proveïdor ha rebutjat la prova perquè se n'han executat massa fa poc. La següent es retarda automàticament.",
     "no_measurement": "La prova ha acabat sense informar de cap mesura.",
-    "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat."
+    "impossible_measurement": "La prova ha informat d'una mesura que no pot ser correcta, així que s'ha descartat.",
+    "stopped_by_shutdown": "La prova s'ha aturat perquè MySpeed s'estava tancant."
   },
   "statistics": {
     "average": "Mitjana",
@@ -418,6 +419,7 @@
       "median": "Mediana"
     },
     "failed_test": "Prova fallida",
+    "failed_in_period": "{{failed}} amb error en aquest període",
     "hourly": {
       "title": "Velocitat per hora del dia",
       "sample_count": "Proves"

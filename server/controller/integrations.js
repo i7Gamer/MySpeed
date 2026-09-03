@@ -1,5 +1,7 @@
 import IntegrationData from '../models/IntegrationData.js';
+import Config from '../models/Config.js';
 import integrationModules from '../integrations/index.js';
+import { zoneFromName } from '../util/timezone.js';
 import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, ALERT_SUMMARY, alertSummary, breachesThreshold,
     crossedLimits, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
@@ -80,8 +82,52 @@ const triggerActivity = async (id, error) => {
     await IntegrationData.update(update, {where: {id: id}});
 }
 
+/**
+ * The clock the instance keeps, for the messages that name an hour.
+ *
+ * Off the model rather than through controller/config.js's getValue, which is
+ * the same one-line read: that module imports this one for triggerEvent and
+ * withoutSecrets, so an import back would be the first cycle between two
+ * controllers here - and it would drag the scheduler, the migrations and the
+ * session store into every suite that loads a notifier. IntegrationData is read
+ * straight off the model three lines up for the same reason it is here.
+ *
+ * zoneFromName answers the host's own clock for "none" - the sentinel every
+ * optional setting uses - for a missing row, and for any name the platform's
+ * zone database does not know, so neither an instance that set no timezone nor
+ * one carrying a hand-written value renders anything but what it always did.
+ * A stored name is refused by the door in any case (validateInput does), so a
+ * bad one is historical or hand-written.
+ *
+ * The read itself is left to fail like the row read below it, which runs a
+ * moment later against the same connection: a database this cannot reach is
+ * one the fan-out cannot read its integrations from either, and catching here
+ * would only change which of the two rejections the caller sees.
+ */
+const TIMEZONE_SETTING = "timezone";
+
+const instanceZone = async () => zoneFromName((await Config.findByPk(TIMEZONE_SETTING))?.value);
+
 export const triggerEvent = async (name, data) => {
     if (!events[name]) return;
+
+    /*
+     * Resolved once for the whole fan-out, and ahead of it.
+     *
+     * The six clock names a message template may use - %year% through %second%
+     * - were rendered from the process clock, while the schedule, the digests,
+     * the quiet hours and the /status countdown all read this setting; the
+     * Docker image pins `ENV TZ=Etc/UTC`, so a Berlin instance sent "09:14" for
+     * a test that ran at 11:14. Here rather than inside replaceVariables
+     * because a reader that has to await the setting cannot stay synchronous,
+     * and every notifier composes its message inside an expression -
+     * `balancedForTelegram(replaceVariables(...))` would be handed a promise.
+     *
+     * Once rather than per integration: every recipient of one event is told
+     * the same time in any case, and this path already runs a query per
+     * registered module every minute.
+     */
+    const zone = await instanceZone();
 
     const tasks = [];
 
@@ -146,7 +192,8 @@ export const triggerEvent = async (name, data) => {
                 : data;
 
             tasks.push(Promise.resolve()
-                .then(() => module.callback(integration, described, (error = false) => triggerActivity(integration.id, error)))
+                .then(() => module.callback(integration, described,
+                    (error = false) => triggerActivity(integration.id, error), zone))
                 .catch((e) => {
                     console.error(`Integration "${module.module}" failed to handle ${name}: ${e?.message ?? e}`);
                     return triggerActivity(integration.id, true).catch(() => undefined);

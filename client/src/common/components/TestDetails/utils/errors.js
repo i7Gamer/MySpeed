@@ -25,6 +25,13 @@ export const errors = () => ({
     // missed: nobody thinks to register a sentence they wrote.
     "finished without reporting any measurement": t("errors.no_measurement"),
     "reported an impossible": t("errors.impossible_measurement"),
+    // A third of MySpeed's own, from server/util/speedtest.js, where the
+    // constant SHUTDOWN_STOP_MESSAGE holds the whole sentence this is the
+    // middle of. It is what a `docker stop` or a service restart writes onto a
+    // run it interrupted, so it arrives on an ordinary upgrade rather than on a
+    // fault - and the row it lands on is one the operator can do nothing about,
+    // which is exactly the kind that has to explain itself.
+    "stopped because MySpeed was shutting down": t("errors.stopped_by_shutdown"),
 });
 
 /**

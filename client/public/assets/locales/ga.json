@@ -339,7 +339,8 @@
     "latency_failed": "Theip ar an tástáil aga folaigh, mar sin níorbh fhéidir aon luas a thomhas.",
     "rate_limited": "Dhiúltaigh an soláthraí don tástáil mar go ndearnadh an iomarca le déanaí. Cuirtear moill ar an gcéad cheann eile go huathoibríoch.",
     "no_measurement": "Chríochnaigh an tástáil gan aon tomhas a thuairisciú.",
-    "impossible_measurement": "Thuairiscigh an tástáil tomhas nach féidir a bheith ceart, mar sin caitheadh amach é."
+    "impossible_measurement": "Thuairiscigh an tástáil tomhas nach féidir a bheith ceart, mar sin caitheadh amach é.",
+    "stopped_by_shutdown": "Stopadh an tástáil toisc go raibh MySpeed á mhúchadh."
   },
   "statistics": {
     "average": "Meán",
@@ -418,6 +419,7 @@
       "median": "Airmheán"
     },
     "failed_test": "Theip ar an tástáil",
+    "failed_in_period": "{{failed}} teipthe sa tréimhse seo",
     "hourly": {
       "title": "Luas de réir Am an Lae",
       "sample_count": "Tástálacha"

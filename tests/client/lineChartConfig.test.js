@@ -121,6 +121,51 @@ describe("the charts that draw the average", () => {
     }
 });
 
+/**
+ * The two charts are the tooltip's only callers, and both take failedCounts
+ * as a prop the same way they already take errors - lineChartOptions itself
+ * is covered above, but a chart that forgot to pass its own prop through
+ * would build a tooltip that can never read a count, silently, with nothing
+ * here to say the wiring is missing.
+ */
+describe("threading the failure count to the shared tooltip", () => {
+    const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
+    const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+
+    for (const chart of ["pages/Statistics/charts/SpeedChart/SpeedChart.jsx",
+        "pages/Statistics/charts/PingChart.jsx"]) {
+        const source = read(chart);
+        const name = path.basename(chart, ".jsx");
+
+        it(`${name} passes its own failedCounts prop into lineChartOptions`, () => {
+            assert.match(source, /failedCounts: filteredData\.failedCounts/,
+                `${name} builds a tooltip that can never read a failure count`);
+        });
+    }
+
+    /**
+     * And the page that renders them has to hand the prop over.
+     *
+     * The charts read `props.failedCounts`, so a call site that passes `errors`
+     * and forgets its parallel array leaves the whole feature switched off:
+     * every tooltip falls back to the legacy English sentence, which is exactly
+     * the state this was written to end, and nothing above would notice - the
+     * chart is wired, the server sends the counts, and the reader never gets
+     * them. Counted against `errors` rather than pinned at a number, since the
+     * two travel together and a seventh chart should not need a line here.
+     */
+    it("Statistics hands both channels to every chart it renders", () => {
+        const page = read("pages/Statistics/Statistics.jsx");
+        const errors = [...page.matchAll(/\berrors=\{/g)].length;
+        const counts = [...page.matchAll(/\bfailedCounts=\{/g)].length;
+
+        assert.ok(errors > 0, "the page renders no chart with an errors prop at all");
+        assert.equal(counts, errors,
+            "a chart is given errors without the failure counts beside them, so its tooltip "
+            + "falls back to the server's English sentence");
+    });
+});
+
 describe("failureMarkers", () => {
     it("marks failures on the axis and leaves the rest empty", () => {
         assert.deepEqual(failureMarkers([false, true, false]), [null, 0, null]);
@@ -555,6 +600,60 @@ describe("lineChartOptions", () => {
         it("says it once", () => {
             assert.equal(options().plugins.tooltip.callbacks.afterBody, undefined,
                 "the reason is printed by both the label and the body");
+        });
+    });
+
+    /**
+     * server/util/statistics.js used to be the only place in the repository
+     * that composed "X failed in period" - hard-coded English inside an
+     * otherwise localised tooltip. failedCounts is the parallel channel that
+     * lets the client word it itself, and the cross-version contract is the
+     * point of the suite: an older node's payload never carries the array at
+     * all, which is a different thing from this particular point having
+     * nothing to say - Statistics.jsx's own askedCompare === undefined check
+     * is the same idiom, named in the docstring above lineChartOptions.
+     */
+    describe("the tooltip on a downsampled bucket's failure count", () => {
+        const bucketItem = {dataset: {label: "statistics.failed_test"}, dataIndex: 2, formattedValue: "0"};
+
+        it("prefers the counted, localisable sentence over the server's own English one", () => {
+            const line = options({
+                errors: [null, "Too many requests", "3 failed in period"],
+                failedCounts: [null, null, 3]
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.match(line, /statistics\.failed_test/);
+            // i18next has no resources loaded in this suite, so t() answers
+            // with the key itself - which is exactly what proves the count
+            // reached the translator rather than the server's own sentence
+            // reaching the screen unchanged.
+            assert.match(line, /statistics\.failed_in_period/);
+            assert.doesNotMatch(line, /3 failed in period/,
+                "the server's own English sentence reached the screen instead of a translated one");
+        });
+
+        it("falls back to the server's own sentence when the responding node predates the count", () => {
+            // The whole array missing - RequestUtil.getApiRoot() proxied this
+            // request to an older MySpeed, which never learned to send one -
+            // not merely absent at this one index.
+            const line = options({
+                errors: [null, "Too many requests", "3 failed in period"],
+                failedCounts: undefined
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.equal(line, "statistics.failed_test: 3 failed in period");
+        });
+
+        it("still falls back for a point the count genuinely has nothing to say about", () => {
+            // The array exists - this server knows failedCounts - but THIS
+            // point is the joined-all-failed-messages shape, which carries no
+            // count of its own and never has.
+            const line = options({
+                errors: [null, "Too many requests", "timeout; refused"],
+                failedCounts: [null, null, null]
+            }).plugins.tooltip.callbacks.label(bucketItem);
+
+            assert.equal(line, "statistics.failed_test: timeout; refused");
         });
     });
 

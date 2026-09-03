@@ -339,7 +339,8 @@
     "latency_failed": "延遲測試失敗，因此無法測量速度。",
     "rate_limited": "由於近期執行的測試過多，供應商拒絕了本次測試。下一次測試將自動延後。",
     "no_measurement": "測試已結束，但未回報任何測量值。",
-    "impossible_measurement": "測試回報了一個不可能正確的測量值，已將其捨棄。"
+    "impossible_measurement": "測試回報了一個不可能正確的測量值，已將其捨棄。",
+    "stopped_by_shutdown": "由於 MySpeed 正在關閉，測試已停止。"
   },
   "statistics": {
     "average": "平均",
@@ -418,6 +419,7 @@
       "median": "中位數"
     },
     "failed_test": "失敗的測試",
+    "failed_in_period": "此期間有 {{failed}} 次失敗",
     "hourly": {
       "title": "各時段速度",
       "sample_count": "測試"

@@ -339,7 +339,8 @@
     "latency_failed": "Der Latenztest ist fehlgeschlagen, daher konnte keine Geschwindigkeit gemessen werden.",
     "rate_limited": "Der Anbieter hat den Test abgelehnt, weil zuletzt zu viele ausgeführt wurden. Der nächste wird automatisch verzögert.",
     "no_measurement": "Der Test wurde beendet, ohne einen Messwert zu melden.",
-    "impossible_measurement": "Der Test hat einen Messwert gemeldet, der nicht stimmen kann, und wurde verworfen."
+    "impossible_measurement": "Der Test hat einen Messwert gemeldet, der nicht stimmen kann, und wurde verworfen.",
+    "stopped_by_shutdown": "Der Test wurde abgebrochen, weil MySpeed heruntergefahren wurde."
   },
   "statistics": {
     "average": "Durchschnitt",
@@ -418,6 +419,7 @@
       "median": "Median"
     },
     "failed_test": "Fehlgeschlagener Test",
+    "failed_in_period": "{{failed}} fehlgeschlagen in diesem Zeitraum",
     "hourly": {
       "title": "Geschwindigkeit nach Tageszeit",
       "sample_count": "Tests"

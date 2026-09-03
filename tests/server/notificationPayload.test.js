@@ -5,6 +5,9 @@ import {
 } from "../../server/util/notificationPayload.js";
 import { DATE_VARIABLES, replaceVariables } from "../../server/util/helpers.js";
 import { BASELINE_ARMED, BASELINE_BREACHED } from "../../server/util/alertThreshold.js";
+import {
+    MAX_OFFSET_MINUTES, localWallClock, serverZone, zoneFromName, zoneFromOffset
+} from "../../server/util/timezone.js";
 
 /**
  * What an integration is told about a test.
@@ -303,5 +306,133 @@ describe("replaceVariables", () => {
 
         assert.doesNotMatch(substituted, /%\w+%/);
         assert.match(substituted, /^\d{4}-/);
+    });
+
+    // The contract the dispatch point is built around: the zone is resolved
+    // once, up there, and handed down - because an async replaceVariables would
+    // hand every `balancedForTelegram(replaceVariables(...))` a promise, and
+    // every synchronous assertion in this file and in telegramMarkdown.test.js
+    // would be asserting against "[object Promise]".
+    it("answers with the message rather than a promise for it", () => {
+        assert.equal(typeof replaceVariables("%hour%", {}), "string");
+    });
+});
+
+/**
+ * And it says what the instance's clock says, not what the process's does.
+ *
+ * The six clock names were built from `new Date().getHours()` and its siblings
+ * - the host clock - while the schedule, the digests, the quiet hours and the
+ * /status countdown all resolve the stored `timezone` setting, which exists
+ * because the Docker image pins `ENV TZ=Etc/UTC`. So a Berlin instance sent
+ * "09:14" for a test that ran at 11:14, using a chip the notification dialog
+ * itself offers.
+ */
+describe("the clock a message is written on", () => {
+    const MINUTES_PER_HOUR = 60;
+    const SHIFT_HOURS = 6;
+
+    const pad = (value) => String(value).padStart(2, "0");
+
+    /**
+     * A zone six hours from whatever this host's own is.
+     *
+     * Not a fixed named zone: on a machine already in that zone the case would
+     * coincide with the default and assert nothing, which is the shape of
+     * vacuously-green this whole fix exists to avoid. Whichever direction keeps
+     * the offset inside the range zoneFromOffset accepts.
+     */
+    const elsewhere = () => {
+        const host = new Date().getTimezoneOffset();
+        const shift = SHIFT_HOURS * MINUTES_PER_HOUR;
+        const offset = Math.abs(host + shift) <= MAX_OFFSET_MINUTES ? host + shift : host - shift;
+
+        return zoneFromOffset(offset).zone;
+    };
+
+    /**
+     * What a zone's wall clock reads right now, in the shape the template
+     * renders it.
+     *
+     * Read either side of the substitution by every case below, because the
+     * instant is replaceVariables' own: one taken before and one after cannot
+     * both be on the wrong side of a minute boundary, so accepting either is
+     * exact rather than tolerant.
+     */
+    const clockOn = (zone) => {
+        const wall = localWallClock(zone, new Date());
+
+        return `${pad(wall.getUTCHours())}:${pad(wall.getUTCMinutes())}`;
+    };
+
+    const rendered = (zone) => {
+        const before = clockOn(zone);
+        const substituted = replaceVariables("%hour%:%minute%", {}, zone);
+
+        return {substituted, acceptable: [before, clockOn(zone)]};
+    };
+
+    it("reads the zone it is given rather than the host's", () => {
+        const zone = elsewhere();
+        const {substituted, acceptable} = rendered(zone);
+
+        assert.ok(acceptable.includes(substituted),
+            `rendered ${substituted}, and the zone's own clock read ${acceptable.join(" then ")}`);
+        assert.notEqual(substituted, clockOn(serverZone),
+            "the zone made no difference, so the host clock is still what a message says");
+    });
+
+    /**
+     * The default, which is what makes an un-migrated call site a genuine
+     * no-op rather than a half-fix: localWallClock(serverZone, now) shifts by
+     * exactly the offset getHours() would have applied, so the six parts come
+     * out bit-identical to the host getters they replaced.
+     */
+    it("falls back to the host's clock when it is given none", () => {
+        const before = clockOn(serverZone);
+        const substituted = replaceVariables("%hour%:%minute%", {});
+
+        assert.ok([before, clockOn(serverZone)].includes(substituted));
+    });
+
+    it("answers the same for the host zone spelt out as for no zone at all", () => {
+        assert.ok(rendered(serverZone).acceptable.includes(replaceVariables("%hour%:%minute%", {})));
+    });
+
+    // All six, not just the two the cases above read: a zone that moves the
+    // hour past midnight moves the date with it, and the year on New Year's Eve.
+    it("builds every one of the six from that zone", () => {
+        const zone = zoneFromName("Asia/Tokyo");
+        const wall = localWallClock(zone, new Date());
+
+        const expected = {
+            year: String(wall.getUTCFullYear()), month: pad(wall.getUTCMonth() + 1),
+            day: pad(wall.getUTCDate()), hour: pad(wall.getUTCHours()),
+            minute: pad(wall.getUTCMinutes()), second: pad(wall.getUTCSeconds())
+        };
+
+        for (const name of DATE_VARIABLES) {
+            const substituted = replaceVariables(`%${name}%`, {}, zone);
+
+            // The second may have turned between the reading above and the
+            // substitution, and a turning second carries the minute, the hour
+            // and the date with it at a boundary - so the reading is taken
+            // again rather than the case being loosened.
+            const after = localWallClock(zone, new Date());
+            const now = {
+                year: String(after.getUTCFullYear()), month: pad(after.getUTCMonth() + 1),
+                day: pad(after.getUTCDate()), hour: pad(after.getUTCHours()),
+                minute: pad(after.getUTCMinutes()), second: pad(after.getUTCSeconds())
+            };
+
+            assert.ok([expected[name], now[name]].includes(substituted),
+                `%${name}% rendered ${substituted}, not ${expected[name]}`);
+        }
+    });
+
+    // A value the payload carries still wins over the clock, which is what
+    // lets a template name a column called `day` without the clock eating it.
+    it("lets a given value override the clock name it shares", () => {
+        assert.equal(replaceVariables("%hour%", {hour: "given"}, zoneFromName("Asia/Tokyo")), "given");
     });
 });

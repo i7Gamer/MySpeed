@@ -113,9 +113,11 @@ describe("the digest schedules", () => {
 
     const jobCount = () => Object.keys(schedule.scheduledJobs).length;
 
+    // Asked with the options the server itself asks with, or this stops
+    // testing the door the digests actually pass through.
     it("declares two valid fixed crons", () => {
-        assert.ok(isValidCron(timer.DIGEST_WEEKLY_CRON));
-        assert.ok(isValidCron(timer.DIGEST_MONTHLY_CRON));
+        assert.ok(isValidCron(timer.DIGEST_WEEKLY_CRON, timer.CRON_OPTIONS));
+        assert.ok(isValidCron(timer.DIGEST_MONTHLY_CRON, timer.CRON_OPTIONS));
     });
 
     it("arms both alongside the speedtest schedule and cancels both with it", () => {

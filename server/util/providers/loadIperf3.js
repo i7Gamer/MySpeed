@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { iperfVersion, iperfList } from '../../config/binaries.js';
 import { downloadAndExtract, downloadBinary, extractFiles } from './downloadHelper.js';
+import { heldDownload } from './downloadHold.js';
 
 /**
  * What the executable is called on a platform - the `.exe` only where Windows
@@ -149,5 +150,7 @@ export const downloadFile = async () => {
 };
 
 export const load = async () => {
-    if (!await fileExists()) await downloadFile();
+    // Behind the existence check, so a binary an operator dropped in by
+    // hand is picked up on the next tick rather than waiting a hold out.
+    if (!await fileExists()) await heldDownload("iperf3", downloadFile);
 };

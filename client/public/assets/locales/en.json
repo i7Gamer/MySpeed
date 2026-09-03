@@ -339,7 +339,8 @@
     "latency_failed": "The latency test failed, so no speed could be measured.",
     "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",
     "no_measurement": "The test finished without reporting any measurement.",
-    "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded."
+    "impossible_measurement": "The test reported a measurement that cannot be right, so it was discarded.",
+    "stopped_by_shutdown": "The test was stopped because MySpeed was shutting down."
   },
   "statistics": {
     "average": "Average",
@@ -418,6 +419,7 @@
       "median": "Median"
     },
     "failed_test": "Failed test",
+    "failed_in_period": "{{failed}} failed in this period",
     "hourly": {
       "title": "Speed by Time of Day",
       "sample_count": "Tests"

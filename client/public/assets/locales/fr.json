@@ -339,7 +339,8 @@
     "latency_failed": "Le test de latence a échoué, aucun débit n'a donc pu être mesuré.",
     "rate_limited": "Le fournisseur a refusé le test car trop de tests ont été lancés récemment. Le suivant est retardé automatiquement.",
     "no_measurement": "Le test s'est terminé sans signaler la moindre mesure.",
-    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée."
+    "impossible_measurement": "Le test a signalé une mesure qui ne peut pas être correcte, elle a donc été écartée.",
+    "stopped_by_shutdown": "Le test a été interrompu parce que MySpeed s'arrêtait."
   },
   "statistics": {
     "average": "Moyenne",
@@ -418,6 +419,7 @@
       "median": "Médiane"
     },
     "failed_test": "Échec du test",
+    "failed_in_period": "{{failed}} en échec sur cette période",
     "hourly": {
       "title": "Vitesse par heure de la journée",
       "sample_count": "Tests"

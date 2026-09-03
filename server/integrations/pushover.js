@@ -43,14 +43,17 @@ const CREDENTIAL = /^[A-Za-z0-9]{30}$/;
 
 
 export default (registerEvent) => {
-    registerEvent('testFinished', async ({data: c}, data, activity) => {
+    // `zone` is the instance's own clock, resolved once per event by
+    // triggerEvent from the stored timezone setting - see discord.js for why
+    // the six clock names could not go on being read off the process clock.
+    registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c,
-            replaceVariables(c.finished_message || defaults(c.language).finished, data), activity);
+            replaceVariables(c.finished_message || defaults(c.language).finished, data, zone), activity);
     });
 
-    registerEvent('testFailed', async ({data: c}, failure, activity) => {
+    registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c,
-            replaceVariables(c.error_message || defaults(c.language).failed, failure), activity);
+            replaceVariables(c.error_message || defaults(c.language).failed, failure, zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

@@ -426,18 +426,22 @@ const maxTicksFor = (isSingleDay) => isSingleDay ? SINGLE_DAY_TICKS : MULTI_DAY_
 /**
  * The whole options object of a statistics line chart.
  *
- * @param themeColors from chartThemeColors
- * @param labels      the ISO timestamps under the points
- * @param errors      per-point error text, for the tooltip of a failure
- * @param isSingleDay from isSingleDaySeries, decides the tick format
- * @param pointStyle  from pointStyleFor - the density-aware marker size
- * @param lineTension from lineTensionFor
- * @param use12h      the stored clock preference
- * @param valueUnit   appended to every tooltip value line
- * @param yStepSize   optional fixed y-tick step (the speed charts use 100)
+ * @param themeColors  from chartThemeColors
+ * @param labels       the ISO timestamps under the points
+ * @param errors       per-point error text, for the tooltip of a failure
+ * @param failedCounts per-point count of a downsampled bucket's own mixed
+ *                      failures, from server/util/statistics.js - undefined
+ *                      wholesale on a node too old to send one, in which case
+ *                      the tooltip reads errors exactly as it always has
+ * @param isSingleDay  from isSingleDaySeries, decides the tick format
+ * @param pointStyle   from pointStyleFor - the density-aware marker size
+ * @param lineTension  from lineTensionFor
+ * @param use12h       the stored clock preference
+ * @param valueUnit    appended to every tooltip value line
+ * @param yStepSize    optional fixed y-tick step (the speed charts use 100)
  */
 export const lineChartOptions = ({
-    themeColors, labels, errors, isSingleDay,
+    themeColors, labels, errors, failedCounts, isSingleDay,
     pointStyle, lineTension, use12h, valueUnit, yStepSize
 }) => ({
     responsive: true,
@@ -485,6 +489,28 @@ export const lineChartOptions = ({
                 },
                 label: (item) => {
                     if (item.dataset.label === t("statistics.failed_test")) {
+                        /*
+                         * The counted, localisable wording first: a current
+                         * server sends failedCounts beside errors so the
+                         * tooltip can compose the sentence itself from
+                         * statistics.failed_in_period instead of printing the
+                         * English one the server used to build inline.
+                         *
+                         * A number, not merely defined - a proxied node old
+                         * enough to have never learned failedCounts leaves the
+                         * whole array undefined, so every index reads
+                         * undefined here too, and a point this array knows
+                         * nothing about (the joined-all-failed-messages shape)
+                         * is null rather than a count. Either way this falls
+                         * through to errors below, which is exactly where
+                         * both cases were already handled.
+                         */
+                        const failedCount = failedCounts?.[item.dataIndex];
+                        if (typeof failedCount === "number") {
+                            return `${t("statistics.failed_test")}: ` +
+                                t("statistics.failed_in_period", {failed: failedCount});
+                        }
+
                         const error = errors[item.dataIndex];
                         return error ? `${t("statistics.failed_test")}: ${error}` : t("statistics.failed_test");
                     }

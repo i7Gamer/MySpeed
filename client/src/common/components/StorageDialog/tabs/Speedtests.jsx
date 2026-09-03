@@ -9,6 +9,14 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faFileExport, faFileImport, faTrashCan, faChartLine, faClockRotateLeft, faCheck, faArrowLeft} from "@fortawesome/free-solid-svg-icons";
 import {EXPORT_FORMATS, RETENTION_DAYS_PLACEHOLDER} from "@/common/utils/InvariantText";
 
+/**
+ * The longest history the server will keep. The same number controller/
+ * config.js refuses a larger retention with, kept here because the bundle must
+ * not carry the server - tests/client/retentionParity.test.js holds the copy to
+ * the original, the way the tuning bounds are held.
+ */
+export const MAX_RETENTION_DAYS = 10000;
+
 const RETENTION_PRESETS = [
     {id: "week", days: 7},
     {id: "month", days: 30},
@@ -60,7 +68,7 @@ export default ({tests, close}) => {
         : RETENTION_PRESETS.find(p => p.id === retentionSelected)?.days;
 
     const isRetentionValid = retentionSelected !== "custom"
-        || (!isNaN(currentRetentionDays) && currentRetentionDays >= 0 && currentRetentionDays <= 10000);
+        || (!isNaN(currentRetentionDays) && currentRetentionDays >= 0 && currentRetentionDays <= MAX_RETENTION_DAYS);
 
     const isRetentionDirty = String(currentRetentionDays) !== String(initialDays);
 
@@ -179,7 +187,7 @@ export default ({tests, close}) => {
                                 <input
                                     type="number"
                                     min="0"
-                                    max="10000"
+                                    max={String(MAX_RETENTION_DAYS)}
                                     className={`storage-input${!isRetentionValid ? " input-error" : ""}`}
                                     value={retentionCustom}
                                     onChange={(e) => setRetentionCustom(e.target.value)}

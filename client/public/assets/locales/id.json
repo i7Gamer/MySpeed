@@ -339,7 +339,8 @@
     "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
     "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",
     "no_measurement": "Pengujian selesai tanpa melaporkan pengukuran apa pun.",
-    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang."
+    "impossible_measurement": "Pengujian melaporkan pengukuran yang tidak mungkin benar, jadi pengukuran itu dibuang.",
+    "stopped_by_shutdown": "Pengujian dihentikan karena MySpeed sedang dimatikan."
   },
   "statistics": {
     "average": "Rata-rata",
@@ -418,6 +419,7 @@
       "median": "Median"
     },
     "failed_test": "Pengujian gagal",
+    "failed_in_period": "{{failed}} gagal dalam periode ini",
     "hourly": {
       "title": "Kecepatan menurut waktu dalam sehari",
       "sample_count": "Pengujian"

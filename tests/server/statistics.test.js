@@ -471,6 +471,8 @@ describe("buildStatistics", () => {
         const sameLengthAsLabels = (stats) => {
             assert.equal(stats.failed.length, stats.labels.length, "failed is out of step with the labels");
             assert.equal(stats.errors.length, stats.labels.length, "errors is out of step with the labels");
+            assert.equal(stats.failedCounts.length, stats.labels.length,
+                "failedCounts is out of step with the labels");
             for (const [metric, values] of Object.entries(stats.data))
                 assert.equal(values.length, stats.labels.length, `${metric} is out of step with the labels`);
         };
@@ -506,6 +508,82 @@ describe("buildStatistics", () => {
             assert.deepEqual(stats.data.download, [100, null]);
             assert.deepEqual(stats.failed, [false, true]);
             assert.equal(stats.errors[1], "timeout");
+        });
+
+        // A row this small is returned whole - fullSeries, never a bucket - so
+        // there is no count of anything to carry; failedCounts still has to
+        // answer in step with every other per-point array.
+        it("carries no failure count on the full-resolution path", () => {
+            const stats = buildStatistics([
+                at("2026-08-07T01:00:00.000Z"),
+                at("2026-08-07T02:00:00.000Z", {download: -1, error: "timeout"})
+            ], DAY);
+            assert.deepEqual(stats.failedCounts, [null, null]);
+        });
+
+        /**
+         * The parallel channel lineChartConfig's tooltip reads instead of
+         * composing the server's own English sentence: server/util/statistics.js
+         * used to be the only place in the repository "X failed in period"
+         * appeared, with no locale file behind it. errors keeps sending that
+         * exact sentence, unmodified, for a node too old to send counts at all -
+         * this only ever ADDS a number beside it.
+         */
+        it("carries a parallel count of a bucket's own mixed failures", () => {
+            // Closely spaced and mostly successful, so more than the bucketing
+            // threshold lands together and at least one bucket mixes a success
+            // with a failure - the branch the count exists for, as opposed to a
+            // bucket where every entry failed (covered separately below).
+            const many = Array.from({length: MIN_CHART_POINTS + 10}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 7, 0, 0, 0) + index * 60_000).toISOString(),
+                    index % 5 === 0 ? {download: -1, error: `run ${index} failed`} : {}));
+
+            const stats = buildStatistics(many, DAY, {maxPoints: MIN_CHART_POINTS});
+
+            assert.ok(stats.downsampled, "the series never went through the bucketing path");
+            sameLengthAsLabels(stats);
+
+            const mixed = stats.failedCounts
+                .map((count, index) => ({count, error: stats.errors[index]}))
+                .filter(({count}) => count !== null);
+
+            assert.ok(mixed.length > 0, "no bucket mixed a success with a failure to check");
+            for (const {count, error} of mixed) {
+                assert.equal(typeof count, "number");
+                assert.ok(count > 0);
+                // The count is not a second, independent figure - it is the
+                // same number the legacy sentence already names, so an older
+                // client reading only errors and a current one reading
+                // failedCounts never disagree about how many failed.
+                assert.equal(error, `${count} failed in period`,
+                    "the count drifted from the sentence it is meant to describe");
+            }
+        });
+
+        // The OTHER bucketed shape - every entry in the bucket failed, so the
+        // existing errors producer joins each one's own message instead of
+        // naming a count. That shape carries no count either: it is not the
+        // "X failed in period" sentence, and must not be read as one.
+        it("carries no failure count where every entry in a bucket failed", () => {
+            const failing = [
+                at("2026-08-07T00:00:30.000Z", {download: -1, error: "timeout"}),
+                at("2026-08-07T00:01:00.000Z", {download: -1, error: "refused"})
+            ];
+            // Far enough past the failures' own bucket (~29 minutes wide at
+            // this resolution) to land in a different one, purely to push the
+            // set over the downsampling threshold - below it every entry is
+            // returned whole, and the joined-message shape only exists on the
+            // bucketed path.
+            const padding = Array.from({length: MIN_CHART_POINTS + 10}, (unused, index) =>
+                at(new Date(Date.UTC(2026, 7, 7, 12, 0, 0) + index * 60_000).toISOString()));
+
+            const stats = buildStatistics([...failing, ...padding], DAY, {maxPoints: MIN_CHART_POINTS});
+
+            assert.ok(stats.downsampled, "the series never went through the bucketing path");
+            const index = stats.errors.findIndex((error) => error === "timeout; refused");
+            assert.notEqual(index, -1, "the joined failure message did not reach a bucket");
+            assert.equal(stats.failedCounts[index], null,
+                "an all-failed bucket's joined message must not be mistaken for a counted one");
         });
 
         // The chart is the main reader of the latency, and a downsampled range

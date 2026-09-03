@@ -339,7 +339,8 @@
     "latency_failed": "延迟测试失败，因此无法测出速度。",
     "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",
     "no_measurement": "测速已结束，但未报告任何测量值。",
-    "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。"
+    "impossible_measurement": "测速报告了一个不可能正确的测量值，已将其丢弃。",
+    "stopped_by_shutdown": "由于 MySpeed 正在关闭，测速已停止。"
   },
   "statistics": {
     "average": "平均",
@@ -418,6 +419,7 @@
       "median": "中位数"
     },
     "failed_test": "失败的测试",
+    "failed_in_period": "此期间有 {{failed}} 次失败",
     "hourly": {
       "title": "分时段速度",
       "sample_count": "测速"

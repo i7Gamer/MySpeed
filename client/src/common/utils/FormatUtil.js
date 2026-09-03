@@ -257,6 +257,28 @@ export const roundsToZeroLatency = (ms) => {
     return latency !== null && latency > 0 && formatLatency(latency) === 0;
 };
 
+/** The smallest throughput wholeSpeed's whole-number rounding can express. */
+export const SPEED_STEP = 1;
+
+/**
+ * The identical question one column over, in whichever unit the reader sees:
+ * is this deviation real but too small for the collapsed card's whole-number
+ * rounding to show at all.
+ *
+ * wholeSpeed rounds the raw quotient to a whole number in the displayed unit,
+ * so a spread of 0.4 Mbps - or, in MB/s, of 3.9 Mbit/s, which converts to
+ * 0.4875 MB/s before it rounds - prints "±0" beside a consistency percentage
+ * that is nowhere near 100%. Defined below wholeSpeed and rawSpeed rather
+ * than beside them: both are read here by reference, and neither has to be
+ * hoisted above roundsToZeroLatency for that to be safe - nothing calls this
+ * before the module has finished loading.
+ */
+export const roundsToZeroSpeed = (mbps, preferences) => {
+    const speed = rawSpeed(mbps, preferences);
+
+    return typeof speed === "number" && speed > 0 && wholeSpeed(mbps, preferences) === 0;
+};
+
 const MBITS_PER_MBYTE = 8;
 
 /**

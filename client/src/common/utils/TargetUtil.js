@@ -8,9 +8,14 @@
 /**
  * The thresholds a test of this target is graded against: the target's own
  * optimal values where the operator set them, the instance-wide settings
- * everywhere else. Mirrors resolveLimits in server/controller/targets.js,
- * which makes the same call for notifications and recommendations - the two
- * ends judging one measurement differently would be worse than either answer.
+ * everywhere else. The one home of the fallback rule - deliberately not
+ * mirrored on the server, because grading is a client concern: the alert gate
+ * judges a result against each integration's own alert_ping_above,
+ * alert_download_below and alert_upload_below fields instead, and the
+ * server's targets controller only validates and stores these three columns,
+ * never resolves them into a verdict. Recommendations read the same way -
+ * they only ever *write* the optimal values a target carries, not grade by
+ * them.
  *
  * Works on the viewer-facing row too, which carries the optimal* fields, and
  * on no target at all - a row whose target was deleted, or recorded before

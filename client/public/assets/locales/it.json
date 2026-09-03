@@ -339,7 +339,8 @@
     "latency_failed": "Il test di latenza è fallito, quindi non è stato possibile misurare alcuna velocità.",
     "rate_limited": "Il provider ha rifiutato il test perché ne sono stati eseguiti troppi di recente. Il prossimo viene ritardato automaticamente.",
     "no_measurement": "Il test è terminato senza riportare alcuna misurazione.",
-    "impossible_measurement": "Il test ha riportato una misurazione che non può essere corretta, quindi è stata scartata."
+    "impossible_measurement": "Il test ha riportato una misurazione che non può essere corretta, quindi è stata scartata.",
+    "stopped_by_shutdown": "Il test è stato interrotto perché MySpeed si stava arrestando."
   },
   "statistics": {
     "average": "Media",
@@ -418,6 +419,7 @@
       "median": "Mediana"
     },
     "failed_test": "Test non riuscito",
+    "failed_in_period": "{{failed}} non riusciti in questo periodo",
     "hourly": {
       "title": "Velocità per ora del giorno",
       "sample_count": "Test"

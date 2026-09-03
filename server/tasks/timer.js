@@ -21,6 +21,33 @@ const MS_PER_MINUTE = 60_000;
  */
 const isValidTimezone = (timezone) => zoneFromName(timezone) !== serverZone;
 
+/**
+ * The cron spellings the door is asked about, held to what the scheduler
+ * actually runs.
+ *
+ * Out of the box cron-validator refuses day names and 7-for-Sunday, and both
+ * engines behind it take them: node-schedule schedules `0 0 * * MON`, and the
+ * cron-parser the frequency dialog validates with parses it - so the dialog
+ * drew a "next test" line, enabled Save, and the PATCH came back 400 on a
+ * standard crontab.guru expression the dialog itself links to.
+ *
+ * It lives here, beside the schedule these options describe, and the
+ * controller's door reads it from here: the three places that ask - startTimer
+ * and nextRun below, and validateInput in controller/config.js - have to ask
+ * the same question, or which spellings an instance takes depends on which
+ * door the value arrived through.
+ *
+ * Deliberately no `seconds`. Both engines read a six-field expression, but
+ * everything around them is minute-granular: OFFSET_MIN_DELAY_MS is half the
+ * tightest interval five fields can express, and MAX_QUIET_OCCURRENCES is 480
+ * occurrences of a minutely cron but only 25 minutes of a per-second one, so
+ * nextRun would answer null - no test is coming - for a schedule that fires
+ * perfectly well. Presets are out of reach either way: cron-validator has no
+ * support for them at all and refuses anything under five fields, so `@hourly`
+ * stays refused whatever is passed here.
+ */
+export const CRON_OPTIONS = {alias: true, allowSevenAsSunday: true};
+
 let job;
 let currentCron;
 
@@ -183,10 +210,17 @@ const stopDigests = () => {
 const startDigests = (timezone) => {
     stopDigests();
 
+    // Filtered rather than stored as it comes. The two rules are fixed and
+    // valid, but scheduleJob still answers null for a spec it cannot compile -
+    // here that means a zone it will not take - and a null in this list makes
+    // the next stopDigests throw on `digest.cancel()`. That teardown is the
+    // shutdown's as much as every reschedule's, so a zone nobody can schedule
+    // would have taken the clean shutdown down with the digests.
     digestJobs = DIGEST_KINDS.map(([kind, cron]) => schedule.scheduleJob(
         isValidTimezone(timezone) ? {rule: cron, tz: timezone} : cron,
         () => runDigest(kind, {timezone}).catch(err =>
-            errorHandler(err, {fatal: false, context: `The scheduled ${kind} digest failed`}))));
+            errorHandler(err, {fatal: false, context: `The scheduled ${kind} digest failed`}))))
+        .filter(Boolean);
 };
 
 export const startTimer = (cron, timezone) => {
@@ -200,8 +234,12 @@ export const startTimer = (cron, timezone) => {
      * existed at all, tests never ran again, and nothing said why. The stored
      * value is left alone either way, for the operator to see and fix.
      */
-    if (!isValidCron(cron)) {
-        if (job !== undefined) {
+    if (!isValidCron(cron, CRON_OPTIONS)) {
+        // `if (job)` rather than a comparison against undefined: node-schedule
+        // answers null for a rule it cannot compile, and a null job is no
+        // schedule at all - printing "keeping the running schedule" over one
+        // was the least of it, since there was nothing to keep.
+        if (job) {
             console.warn(`The cron "${cron}" is not valid; keeping the running schedule.`);
             // The digests still re-arm: they run on their own fixed rules,
             // and the refused cron must neither take the weekly summary down
@@ -227,9 +265,6 @@ export const startTimer = (cron, timezone) => {
     // moves the digests with it.
     startDigests(timezone);
 
-    currentCron = cron;
-    currentTimezone = timezone;
-
     /*
      * `{rule, tz}` rather than the bare expression whenever a zone is
      * configured, so "0 3 * * *" is three in the morning where the operator
@@ -241,7 +276,7 @@ export const startTimer = (cron, timezone) => {
      * already, and naming a zone would route it through cron-parser's tz
      * handling for no change in meaning.
      */
-    const spec = isValidTimezone(timezone) ? {rule: cron, tz: timezone} : cron;
+    const spec = (expression) => isValidTimezone(timezone) ? {rule: expression, tz: timezone} : expression;
 
     // Caught here, because nothing else does. create() guards its own work, but
     // runTask reaches it through the pause state, the quiet hours check and the
@@ -255,8 +290,46 @@ export const startTimer = (cron, timezone) => {
     // Reported through errorHandler rather than console.error, so it still
     // reaches data/logs/error.log - the file the log's own header points bug
     // reports at, and where the unhandledRejection route used to put it.
-    job = schedule.scheduleJob(spec, () => runTask().catch(err =>
-        errorHandler(err, {fatal: false, context: "The scheduled speedtest failed"})));
+    const run = () => runTask().catch(err =>
+        errorHandler(err, {fatal: false, context: "The scheduled speedtest failed"}));
+
+    /*
+     * node-schedule's own answer is the only authority on whether an
+     * expression can be scheduled, so it is asked rather than pre-checked.
+     * Four parsers are involved here and they disagree: node-schedule carries
+     * a bundled cron-parser 4, which applies the day-of-month AND day-of-week
+     * rule where the cron-parser 5 nextRun and the frequency dialog use
+     * applies OR - so "0 0 31 4 1" walks through the dialog, the door and the
+     * countdown and compiles to nothing at all here. A pre-check with either
+     * validator cannot see that.
+     *
+     * It says so with null - not undefined, and not a throw. Stored as it
+     * came, that null was no schedule with nothing said, and it walked
+     * straight through the two `!== undefined` guards: every later cron or
+     * timezone PATCH threw on null.cancel() after the new value had already
+     * been written, and so did the shutdown's own stopTimer, before it could
+     * close the database or kill the running child.
+     */
+    let scheduled = schedule.scheduleJob(spec(cron), run);
+
+    if (!scheduled) {
+        console.warn(`The cron "${cron}" cannot be scheduled; ` +
+            `scheduling the default "${config.configDefaults.cron}" instead.`);
+        cron = config.configDefaults.cron;
+        scheduled = schedule.scheduleJob(spec(cron), run);
+    }
+
+    // After the fallback has had its say, or /status goes on counting down to
+    // the expression that was refused - and cron-parser 5 happily names a
+    // moment for it, so the dashboard announced a test that could never run.
+    currentCron = cron;
+    currentTimezone = timezone;
+
+    // The fallback can compile to nothing too - an unusable zone answers null
+    // whatever the rule is - and then there is honestly no schedule. Never a
+    // null in the handle either way: `??` leaves the absence spelled the one
+    // way the rest of this module reads it.
+    job = scheduled ?? undefined;
 };
 
 /**
@@ -287,7 +360,7 @@ const MAX_QUIET_OCCURRENCES = 1500;
  * nothing saying why.
  */
 export const nextRun = (cron = currentCron, quietHours = null, timezone = currentTimezone) => {
-    if (!cron || !isValidCron(cron)) return null;
+    if (!cron || !isValidCron(cron, CRON_OPTIONS)) return null;
 
     try {
         // The same zone the job itself was scheduled in, or this announces a
@@ -416,12 +489,15 @@ export const stopTimer = () => {
     }
     pendingDelays.clear();
 
-    if (job !== undefined) {
+    // Truthiness rather than a comparison against undefined, for the reason
+    // startTimer gives: node-schedule's null is an absent schedule too, and it
+    // walked past this guard into a TypeError that took the shutdown's
+    // remaining work - the round's writes, the database close, the child kill -
+    // with it.
+    if (job) {
         job.cancel();
         job = undefined;
     }
 
     stopDigests();
 };
-
-export { job };

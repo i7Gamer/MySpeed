@@ -339,7 +339,8 @@
     "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten.",
     "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",
     "no_measurement": "De test is geëindigd zonder ook maar één meting te melden.",
-    "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid."
+    "impossible_measurement": "De test meldde een meting die niet kan kloppen, dus is die weggegooid.",
+    "stopped_by_shutdown": "De test is gestopt omdat MySpeed werd afgesloten."
   },
   "statistics": {
     "average": "Gemiddeld",
@@ -418,6 +419,7 @@
       "median": "Mediaan"
     },
     "failed_test": "Mislukte test",
+    "failed_in_period": "{{failed}} mislukt in deze periode",
     "hourly": {
       "title": "Snelheid door de dag heen",
       "sample_count": "Tests"

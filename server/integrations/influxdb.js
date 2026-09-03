@@ -1,6 +1,7 @@
 import os from "os";
 import { postText } from "../util/http.js";
 import { headerSafe, stripTrailingSlashes } from "../util/helpers.js";
+import { measuredPing, usableFigure } from "../util/metricValue.js";
 
 /**
  * Line protocol escaping.
@@ -121,18 +122,45 @@ export default (registerEvent) => {
             ...parseTags(c.tags)
         };
 
-        // The quality figures ride along with the throughput. They are null
-        // where the provider does not measure them, and buildLine keeps only
-        // finite numbers - so an absent figure stays out of the line rather
-        // than charting a loss-free connection nobody measured.
+        /*
+         * The quality figures ride along with the throughput, every one of
+         * them read the way the statistics read the same column.
+         *
+         * They are null where the provider does not measure them, and buildLine
+         * keeps only finite numbers - so an absent figure stays out of the line
+         * rather than charting a loss-free connection nobody measured. The
+         * payload hands over what storage holds, though, and three shapes reach
+         * here that are not measurements:
+         *
+         * - The -1 placeholder on a row that still counts as a success.
+         *   isFailedTest asks whether *all three* required columns are -1, so a
+         *   hand-edited import holding {ping: -1, download: 480.2, upload: -1}
+         *   fires testFinished, and passed through, Influx charted an upload of
+         *   minus one megabit. usableFigure refuses it, as fullSeries does.
+         * - The fabricated 0 ms latency, which no connection produces: both
+         *   parseCloudflare and parseIperf3 answer `round(...) ?? 0` for a run
+         *   whose latency block carried no average. measuredPing is the reader
+         *   that names it - the same one the statistics and the alert gate use -
+         *   and it keeps a real sub-millisecond reading, which arrives with the
+         *   decimals it measured.
+         * - A measurement stored as text, which an imported history holds. The
+         *   field filter keeps only what is already a number, so every figure
+         *   of such a row was dropped on the floor here while the page charted
+         *   them all; both readers read it as the number it spells.
+         *
+         * From metricValue.js, the dependency-free leaf, and not from
+         * testOutcome.js where the failure predicates live: that door imports
+         * sequelize, and no integration may drag it in - see the note over
+         * helpers.js's own import.
+         */
         const fields = {
-            download: data.download,
-            upload: data.upload,
-            ping: data.ping,
-            jitter: data.jitter,
-            packetLoss: data.packetLoss,
-            downloadLatency: data.downloadLatency,
-            uploadLatency: data.uploadLatency
+            download: usableFigure(data.download),
+            upload: usableFigure(data.upload),
+            ping: measuredPing(data.ping),
+            jitter: usableFigure(data.jitter),
+            packetLoss: usableFigure(data.packetLoss),
+            downloadLatency: usableFigure(data.downloadLatency),
+            uploadLatency: usableFigure(data.uploadLatency)
         };
 
         const timestamp = Math.floor(Date.now() / 1000);

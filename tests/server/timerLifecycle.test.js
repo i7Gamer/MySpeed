@@ -78,6 +78,18 @@ describe("the schedule offset stays inside the interval", () => {
 const DISTANT_CRON = "0 3 1 1 *";
 const OTHER_CRON = "0 4 1 1 *";
 
+/**
+ * Midnight on the 31st of April, on a Monday - a date that does not exist.
+ *
+ * Every gate in front of the scheduler takes it: cron-validator reads five
+ * well-formed fields, and the cron-parser 5 the frequency dialog and nextRun
+ * both use applies day-of-month OR day-of-week, so it means "every Monday in
+ * April". node-schedule carries its own bundled cron-parser 4, which applies
+ * day-of-month AND day-of-week, finds no such day and answers null - not
+ * undefined, and not a throw.
+ */
+const UNCOMPILABLE_CRON = "0 0 31 4 1";
+
 afterEach(() => {
     timer.stopTimer();
     integrationTimer.stopTimer();
@@ -127,6 +139,55 @@ describe("the speedtest schedule", () => {
 
         assert.match(startTimer, /configDefaults\.cron/,
             "the fallback schedule must be the configured default, not a duplicated literal");
+    });
+
+    /**
+     * And the same fallback for the expression the validator takes and the
+     * scheduler cannot compile, which the refusal above can never reach.
+     *
+     * The branch that protects a running schedule only fires when the door
+     * says the cron is bad; here it says the cron is fine and node-schedule
+     * answers null anyway. That null was stored as the job, so the instance
+     * ran on no schedule at all with nothing said, and the `!== undefined`
+     * guards walked straight past it: every later reschedule and the
+     * shutdown's own stopTimer threw on null.cancel().
+     */
+    it("schedules the default when the cron compiles to no occurrence at all", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        const job = timer.currentJob();
+        assert.notEqual(job, null, "null was stored as the job, and every guard here reads !== undefined");
+        assert.notEqual(job, undefined, "a cron the scheduler refused left no schedule at all");
+        assert.notEqual(job.nextInvocation(), null);
+    });
+
+    /**
+     * And what /status announces is the schedule that is running, not the
+     * expression that was refused. nextRun answers on cron-parser 5, which
+     * reads this cron as every Monday in April - so left as the current cron
+     * the dashboard counted down to a test that could never happen.
+     */
+    it("announces the schedule it fell back to rather than the cron it could not use", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.equal(timer.nextRun(), timer.currentJob().nextInvocation().toISOString(),
+            "the countdown names a moment the running schedule will never reach");
+    });
+
+    it("does not throw on the stop that follows", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.doesNotThrow(() => timer.stopTimer(),
+            "the shutdown's stopTimer throws before it can close the database or kill the child");
+        assert.equal(timer.currentJob(), undefined);
+    });
+
+    it("does not throw on the reschedule that follows", () => {
+        timer.startTimer(UNCOMPILABLE_CRON);
+
+        assert.doesNotThrow(() => timer.startTimer(OTHER_CRON),
+            "every later cron or timezone PATCH 500s, after the new value has already been written");
+        assert.notEqual(timer.currentJob(), undefined, "the reschedule left no schedule");
     });
 
     it("drops the job on stopTimer", () => {

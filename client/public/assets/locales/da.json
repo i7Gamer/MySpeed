@@ -339,7 +339,8 @@
     "latency_failed": "Forsinkelsestesten mislykkedes, så der kunne ikke måles nogen hastighed.",
     "rate_limited": "Udbyderen afviste testen, fordi der er kørt for mange for nylig. Den næste udskydes automatisk.",
     "no_measurement": "Testen sluttede uden at rapportere nogen måling.",
-    "impossible_measurement": "Testen rapporterede en måling, der ikke kan være rigtig, så den blev kasseret."
+    "impossible_measurement": "Testen rapporterede en måling, der ikke kan være rigtig, så den blev kasseret.",
+    "stopped_by_shutdown": "Testen blev stoppet, fordi MySpeed var ved at lukke ned."
   },
   "statistics": {
     "average": "Gennemsnit",
@@ -418,6 +419,7 @@
       "median": "Median"
     },
     "failed_test": "Mislykket test",
+    "failed_in_period": "{{failed}} mislykkedes i denne periode",
     "hourly": {
       "title": "Hastighed efter tid på dagen",
       "sample_count": "Test"

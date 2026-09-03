@@ -123,5 +123,40 @@ export default [
             ...js.configs.recommended.rules,
             "no-unused-vars": ["warn", UNUSED_VARS]
         }
+    },
+    {
+        /*
+         * The hook rules, over the components the suite itself defines.
+         *
+         * The block above gives tests/ their globals and no-undef, but only the
+         * client block registers the react-hooks plugin, and it is scoped to
+         * client/src - so `--print-config` on a test fixture answered zero
+         * react-hooks rules where the same file under client/src answers
+         * sixteen. TECH_DEBT #1 asks contributors to grow exactly these jsdom
+         * fixtures as areas are converted from source-text pins, which means
+         * the next one to call a hook conditionally - the single mistake this
+         * plugin exists to catch - would have passed `eslint .` and CI.
+         *
+         * Every extension, not .jsx alone. There is one .jsx file under tests/;
+         * the harness components that actually call hooks live in .js test
+         * files beside their assertions, so a .jsx-only block would have left
+         * the whole real surface uncovered.
+         *
+         * Its own block rather than rules added to the one above, which also
+         * covers server/, scripts/ and the root .mjs configs - none of which
+         * have hooks to check. Flat config merges, so this adds the plugin and
+         * its rules while no-undef and the globals come from there.
+         */
+        files: ["tests/**/*.{js,mjs,jsx}"],
+        plugins: {"react-hooks": reactHooks},
+        rules: {
+            ...reactHooks.configs.recommended.rules,
+            // Off for the same reason and by the same list as the client block:
+            // turning the compiler-era rules on is a pass of its own, and a
+            // test harness assigning to a captured object is the shape they
+            // flag in volume.
+            ...COMPILER_RULES_PENDING_A_PASS,
+            "react-hooks/exhaustive-deps": "warn"
+        }
     }
 ];

@@ -345,7 +345,8 @@
     "latency_failed": "Test odezvy selhal, takže rychlost nebylo možné změřit.",
     "rate_limited": "Poskytovatel test odmítl, protože jich v poslední době proběhlo příliš mnoho. Další test je automaticky odložen.",
     "no_measurement": "Test skončil, aniž by nahlásil jakékoli měření.",
-    "impossible_measurement": "Test nahlásil měření, které nemůže být správné, proto bylo zahozeno."
+    "impossible_measurement": "Test nahlásil měření, které nemůže být správné, proto bylo zahozeno.",
+    "stopped_by_shutdown": "Test byl zastaven, protože se MySpeed vypínal."
   },
   "statistics": {
     "average": "Průměr",
@@ -424,6 +425,7 @@
       "median": "Medián"
     },
     "failed_test": "Neúspěšný test",
+    "failed_in_period": "{{failed}} neúspěšných v tomto období",
     "hourly": {
       "title": "Rychlost podle denní doby",
       "sample_count": "Testy"

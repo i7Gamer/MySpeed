@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { libreVersion, libreList } from '../../config/binaries.js';
 import { downloadAndExtract } from './downloadHelper.js';
+import { heldDownload } from './downloadHold.js';
 
 const binaryName = `librespeed-cli${process.platform === 'win32' ? '.exe' : ''}`;
 const binaryRegex = /librespeed-cli(.exe)?$/;
@@ -26,5 +27,7 @@ export const downloadFile = async () => {
 };
 
 export const load = async () => {
-    if (!await fileExists()) await downloadFile();
+    // Behind the existence check, so a binary an operator dropped in by
+    // hand is picked up on the next tick rather than waiting a hold out.
+    if (!await fileExists()) await heldDownload("libre", downloadFile);
 };

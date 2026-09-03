@@ -345,7 +345,8 @@
     "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości.",
     "rate_limited": "Dostawca odrzucił test, ponieważ ostatnio wykonano ich zbyt wiele. Następny zostanie automatycznie opóźniony.",
     "no_measurement": "Test zakończył się bez zgłoszenia jakiegokolwiek pomiaru.",
-    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony."
+    "impossible_measurement": "Test zgłosił pomiar, który nie może być prawidłowy, więc został odrzucony.",
+    "stopped_by_shutdown": "Test został zatrzymany, ponieważ MySpeed był wyłączany."
   },
   "statistics": {
     "average": "Średnia",
@@ -424,6 +425,7 @@
       "median": "Mediana"
     },
     "failed_test": "Test nieudany",
+    "failed_in_period": "{{failed}} nieudanych w tym okresie",
     "hourly": {
       "title": "Prędkość w zależności od pory dnia",
       "sample_count": "Testy"

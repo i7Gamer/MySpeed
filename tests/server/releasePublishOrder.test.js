@@ -149,3 +149,47 @@ describe("what a failed release can leave on Docker Hub", () => {
             "the manual deploy tags before its own builds have pushed their digests");
     });
 });
+
+/**
+ * SHA256SUMS described everything on the release except the two things Windows
+ * installs with.
+ *
+ * The hashing job lives inside build-binaries.yml and enumerates the assets the
+ * release carries *at that moment*; build-msi needs the whole of that workflow,
+ * so it necessarily uploads MySpeed-installer.msi and its baseline twin
+ * afterwards, and nothing went back to hash them. Not the one-release bootstrap
+ * gap - this one never closes on its own, and the installer is the artifact with
+ * no install script to verify it on the user's behalf.
+ *
+ * The second pass appends rather than replacing the first, so a failing MSI leg
+ * still leaves the binaries with the checksums they had.
+ */
+describe("the checksum list and the installers", () => {
+    it("hashes the installers after the job that uploads them", () => {
+        const appender = releaseJobs["checksums-msi"];
+
+        assert.ok(appender, "nothing hashes the MSI installers");
+        assert.ok(needsOf(appender).includes("build-msi"),
+            "the second checksum pass can run before the installers exist");
+    });
+
+    /**
+     * always(), because the default is success(): a failed MSI leg would
+     * otherwise skip this job and take the whole file's completion with it,
+     * which is worse than the state it replaces.
+     */
+    it("runs even when the MSI legs did not", () => {
+        assert.match(releaseJobs["checksums-msi"], /if: always\(\)/,
+            "one failing installer leg suppresses the checksum pass entirely");
+    });
+
+    /**
+     * finalize-release is what turns the draft into a published release, so a
+     * release made public ahead of this job hands out installers that nothing
+     * can check.
+     */
+    it("completes the list before the release is published", () => {
+        assert.ok(needsOf(releaseJobs["finalize-release"]).includes("checksums-msi"),
+            "the release is un-drafted before its checksum list is finished");
+    });
+});
