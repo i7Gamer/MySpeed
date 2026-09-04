@@ -76,13 +76,23 @@ const USER_AGENT = "MySpeed (https://github.com/i7Gamer/MySpeed)";
  */
 const username = (name) => String(name ?? "").trim() || "MySpeed";
 
+// And the description, for the same reason: an empty template falls to the
+// shipped default through `||`, but a template of whitespace survives it,
+// substitutes to whitespace, and discord answers 400 for an embed that is
+// blank once trimmed. Judged trimmed, sent as it is: a message that fits is
+// left alone, trailing space and all.
+const description = (text) => {
+    const value = String(text ?? "");
+    return value.trim() ? value : "MySpeed";
+};
+
 // Trimmed here rather than at each call site, so a message added later cannot
 // be the one that is sent whole and refused.
-const send = (url, name, color, description, activity) =>
+const send = (url, name, color, text, activity) =>
     postJson(url, {
         content: null, username: truncate(username(name), DISCORD_USERNAME_LIMIT),
         embeds: [{
-            description: truncate(description, DISCORD_DESCRIPTION_LIMIT),
+            description: truncate(description(text), DISCORD_DESCRIPTION_LIMIT),
             color, footer: {text: "MySpeed"}, timestamp: new Date().toISOString()
         }]
     }, {headers: {"user-agent": USER_AGENT}, activity});

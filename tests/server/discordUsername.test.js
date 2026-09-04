@@ -77,3 +77,34 @@ describe("the discord webhook username", () => {
         assert.equal(await usernameFor("  Uplink  "), "Uplink");
     });
 });
+
+/**
+ * The embed's description, the same way as its username.
+ *
+ * An empty template already fell to the shipped default through `||`, but a
+ * template of whitespace survived it, substituted to whitespace, and Discord
+ * answered 400 for an embed that is blank once trimmed - dropping the
+ * notification for the same reason a blank username did.
+ */
+describe("the discord embed description", () => {
+    const descriptionFor = async (finished_message) => {
+        const events = load();
+        await events.testFinished(
+            {data: {url: URL_FIELD, send_finished: true, finished_message}}, RESULT, () => {});
+
+        return sent[0].embeds[0].description;
+    };
+
+    it("is the substituted template", async () => {
+        assert.equal(await descriptionFor("ping %ping%"), "ping 12");
+    });
+
+    it("falls back when the template substitutes to only whitespace", async () => {
+        assert.equal(await descriptionFor("   "), "MySpeed");
+        assert.equal(await descriptionFor("\t\n"), "MySpeed");
+    });
+
+    it("is otherwise sent as it is", async () => {
+        assert.equal(await descriptionFor("  ping %ping%  "), "  ping 12  ");
+    });
+});
