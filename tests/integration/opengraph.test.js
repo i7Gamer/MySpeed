@@ -355,3 +355,26 @@ describe("the single-reading fallback", () => {
             {ping: {avg: null}, download: {avg: 480.2}, upload: {avg: null}});
     });
 });
+
+/**
+ * The latency row's text - the user-visible half of "show the throughput when
+ * the latency was never measured". The gate half is held above; this is the
+ * only place that holds the row to printing N/A rather than a bare 0.
+ */
+describe("the latency row's text", () => {
+    let pingText;
+
+    before(async () => {
+        ({pingText} = await import("../../server/controller/opengraph.js"));
+    });
+
+    it("prints a measured latency as it is", () => {
+        assert.equal(pingText({ping: {avg: 12.4}}), "12.4");
+    });
+
+    it("prints a latency nobody measured as N/A, in either spelling of nothing", () => {
+        assert.equal(pingText({ping: {avg: null}}), "N/A");
+        assert.equal(pingText({ping: {avg: 0}}), "N/A");
+        assert.equal(pingText({}), "N/A");
+    });
+});

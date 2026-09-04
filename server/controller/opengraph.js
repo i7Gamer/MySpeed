@@ -43,7 +43,8 @@ const html = htm.bind((type, props, ...children) => ({type, props: {...props, ch
 const measured = (figure) => Number.isFinite(figure);
 const hasValues = (test) => Boolean(test && measured(test.download?.avg) && measured(test.upload?.avg));
 const NOT_MEASURED = "N/A";
-const pingText = (test) => (measured(test.ping?.avg) && test.ping.avg > 0 ? String(test.ping.avg) : NOT_MEASURED);
+// Exported for the test that holds the row to N/A rather than a bare 0.
+export const pingText = (test) => (measured(test.ping?.avg) && test.ping.avg > 0 ? String(test.ping.avg) : NOT_MEASURED);
 
 /**
  * The two calendar days the image averages over, named on the server's own
