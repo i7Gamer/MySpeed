@@ -15,6 +15,18 @@
   cursor: pointer
   transition: all 0.2s ease
 
+// The live region: clipped to nothing rather than hidden, because a hidden
+// element leaves the accessibility tree and a live region has to be in it
+// before its text lands.
+.toast-announcer
+  position: absolute
+  width: 1px
+  height: 1px
+  overflow: hidden
+  clip: rect(0 0 0 0)
+  clip-path: inset(50%)
+  white-space: nowrap
+
 .toast-hidden
   visibility: hidden
   transition: all 0s 0.5s

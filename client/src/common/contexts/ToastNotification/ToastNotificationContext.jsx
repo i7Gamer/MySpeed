@@ -76,9 +76,18 @@ export const ToastNotificationProvider = (props) => {
                 channel for the outcome of a mutation, and a bare div announced
                 nothing to a screen reader. Polite rather than alert - these are
                 confirmations and refusals, not emergencies - and atomic so the
-                whole line is read when the text lands. */}
-            <div className={toastClassName(toastNotification, visible)} role="status"
-                 aria-live="polite" aria-atomic="true"
+                whole line is read when the text lands.
+
+                Its own element, clipped out of view, rather than the visual
+                wrapper below: that wrapper is `visibility: hidden` whenever it
+                is idle, which takes it out of the accessibility tree exactly
+                as display: none would - so a role on it was a region nobody
+                was watching when the text landed. The visual copy is hidden
+                from the reader so the line is not read twice. */}
+            <div className="toast-announcer" role="status" aria-live="polite" aria-atomic="true">
+                {toastNotification?.text}
+            </div>
+            <div className={toastClassName(toastNotification, visible)} aria-hidden="true"
                  onAnimationEnd={onAnimationEnd} onClick={close}>
                 {toastNotification && <div className="toast-content">
                     <FontAwesomeIcon icon={toastNotification.icon} />
