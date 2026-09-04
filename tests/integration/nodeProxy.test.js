@@ -576,3 +576,45 @@ describe("proxying a compressed request body", () => {
             "the child was told a plain JSON body was gzipped");
     });
 });
+
+/**
+ * Hop-by-hop headers stop at this hop.
+ *
+ * SKIP_HEADERS held content-length and content-encoding but not
+ * transfer-encoding, and four lines below the proxy sets its own
+ * content-length beside the forwarded one. A chunked request therefore left
+ * the parent carrying both, which a real node refuses outright
+ * (HPE_INVALID_CONTENT_LENGTH) - and which, in front of a gateway that
+ * resolves the ambiguity instead of refusing it, is a request-smuggling
+ * primitive. The other hop-by-hop names go with it for the same reason.
+ */
+describe("the proxy and hop-by-hop headers", () => {
+    const chunked = (path, body) => new Promise((resolve, reject) => {
+        const url = new URL(`${server.baseUrl}/api${path}`);
+        const request = http.request({
+            hostname: url.hostname, port: url.port, path: url.pathname, method: "POST",
+            headers: {
+                "content-type": "application/json",
+                "transfer-encoding": "chunked",
+                "te": "trailers",
+                "proxy-connection": "keep-alive"
+            }
+        }, (response) => {
+            response.resume();
+            response.on("end", () => resolve(response.statusCode));
+        });
+        request.on("error", reject);
+        request.end(body);
+    });
+
+    it("re-frames a chunked request with one length and no transfer-encoding", async () => {
+        received = [];
+        await chunked(`/nodes/${nodeId}/speedtests/status`, JSON.stringify({a: 1}));
+
+        const {headers} = received.at(-1);
+        assert.equal(headers["transfer-encoding"], undefined, "the child was handed a chunked frame and a length");
+        assert.equal(headers["content-length"], String(Buffer.byteLength(JSON.stringify({a: 1}))));
+        assert.equal(headers.te, undefined);
+        assert.equal(headers["proxy-connection"], undefined);
+    });
+});

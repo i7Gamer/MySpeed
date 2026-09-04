@@ -143,8 +143,15 @@ export const checkStatus = async (url, password) => {
 // request by the time it is proxied, and the body below is re-serialised as
 // plain JSON - so the header rode along describing an encoding the body no
 // longer had, and the child's own parser answered 400 for it.
+//
+// And the hop-by-hop names: transfer-encoding above all, because the body is
+// re-framed below with a content-length of its own, so a chunked request
+// reached the child carrying both - which a real node refuses outright
+// (HPE_INVALID_CONTENT_LENGTH) and a gateway that resolves the ambiguity
+// instead turns into a request-smuggling primitive.
 const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization",
-    "accept-encoding", "content-encoding"]);
+    "accept-encoding", "content-encoding",
+    "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "proxy-connection"]);
 
 // Enough for the caller to interpret the body it is handed. Everything else the
 // child sends is the child's business and is dropped.
