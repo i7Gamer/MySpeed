@@ -107,6 +107,35 @@ describe("retention sweep", () => {
         await controller.removeOld();
         assert.equal(await server.tests.count(), 1, "an absurd retention pruned or threw");
     });
+
+    /**
+     * And says so once. The prune runs every minute, and the row cannot
+     * change without an operator editing it, so the refusal repeated 1440
+     * times a day into the service log. Latched per process the way the
+     * cookie-path warning is, and re-armed once the row is fixed so a second
+     * hand edit is reported again.
+     */
+    it("says so once per process, not once per sweep", async () => {
+        // Re-armed by a sweep under a sane value: the case above has already
+        // said it once for this process.
+        await server.config.updateValue("retentionDays", "30");
+        await controller.removeOld();
+        await server.config.updateValue("retentionDays", "100000000000");
+        const warnings = [];
+        const warn = console.warn;
+        console.warn = (line) => warnings.push(line);
+
+        try {
+            await controller.removeOld();
+            await controller.removeOld();
+            await controller.removeOld();
+        } finally {
+            console.warn = warn;
+        }
+
+        assert.equal(warnings.filter((line) => /retentionDays/.test(line)).length, 1,
+            "the same refusal is repeated on every sweep");
+    });
 });
 
 describe("GET /api/storage/tests/history/csv", () => {

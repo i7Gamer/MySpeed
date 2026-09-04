@@ -960,6 +960,11 @@ export const deleteOne = async (id) => {
     return true;
 }
 
+// Said once per process rather than per sweep: the prune runs every minute,
+// and the row cannot change without an operator editing it. Re-armed once the
+// row is fixed, so a second hand edit is reported again.
+let warnedAboutRetention = false;
+
 export const removeOld = async () => {
     const stored = await getValue("retentionDays");
     const days = parseInt(stored ?? DEFAULT_RETENTION_DAYS);
@@ -972,9 +977,12 @@ export const removeOld = async () => {
     // and toISOString threw a RangeError out of the prune; capping would
     // delete more than the row asks for, so nothing is pruned and it is said.
     if (days > MAX_RETENTION_DAYS) {
-        console.warn(`retentionDays is ${days}, beyond the ${MAX_RETENTION_DAYS}-day limit; nothing was pruned`);
+        if (!warnedAboutRetention)
+            console.warn(`retentionDays is ${days}, beyond the ${MAX_RETENTION_DAYS}-day limit; nothing was pruned`);
+        warnedAboutRetention = true;
         return true;
     }
+    warnedAboutRetention = false;
 
     const cutoff = new Date(Date.now() - days * MS_PER_DAY);
 
