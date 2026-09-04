@@ -93,6 +93,20 @@ describe("retention sweep", () => {
         await controller.removeOld();
         assert.equal(await server.tests.count(), 1);
     });
+
+    // The door caps retention at MAX_RETENTION_DAYS and importConfig runs every
+    // value through the door, so only a hand-edited row reaches this - and
+    // every other reader in the tree survives one. A value near 1e11 days made
+    // `new Date` invalid and toISOString threw a RangeError out of the prune.
+    // Refused rather than capped: capping would delete more than the row asks.
+    it("leaves a hand-edited retention beyond the cap alone rather than throwing", async () => {
+        await seedTests(server.tests, [{created: daysAgo(5000)}]);
+        // Past the door, the way a hand edit is: setConfig validates.
+        await server.config.updateValue("retentionDays", "100000000000");
+
+        await controller.removeOld();
+        assert.equal(await server.tests.count(), 1, "an absurd retention pruned or threw");
+    });
 });
 
 describe("GET /api/storage/tests/history/csv", () => {

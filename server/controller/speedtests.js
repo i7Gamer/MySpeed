@@ -4,7 +4,7 @@ import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
-import { getValue } from './config.js';
+import { getValue, MAX_RETENTION_DAYS } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
 
@@ -965,6 +965,16 @@ export const removeOld = async () => {
     const days = parseInt(stored ?? DEFAULT_RETENTION_DAYS);
 
     if (!Number.isFinite(days) || days <= 0) return true;
+
+    // Refused rather than capped, and only a hand-edited row reaches this: the
+    // door holds the value to MAX_RETENTION_DAYS and importConfig runs every
+    // value through the door. Past about 1e11 days the cutoff is not a date
+    // and toISOString threw a RangeError out of the prune; capping would
+    // delete more than the row asks for, so nothing is pruned and it is said.
+    if (days > MAX_RETENTION_DAYS) {
+        console.warn(`retentionDays is ${days}, beyond the ${MAX_RETENTION_DAYS}-day limit; nothing was pruned`);
+        return true;
+    }
 
     const cutoff = new Date(Date.now() - days * MS_PER_DAY);
 
