@@ -1,6 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 import { CSV_COLUMNS } from "../../server/util/csv.js";
 
 let server;
@@ -242,6 +242,25 @@ describe("POST /api/speedtests/run", () => {
         const {status, body} = await api(server.baseUrl, "/speedtests/run", {method: "POST"});
         assert.equal(status, 410);
         assert.match(body.message, /target/i);
+    });
+
+    // The digit check alone let a number past that Number() reads as Infinity,
+    // and Sequelize renders that bare into the WHERE clause - "no such column:
+    // Infinity", answered as a 500 for what is a malformed request.
+    it("refuses a target id too large to be one", async () => {
+        // A target has to exist for the request to reach the id check at all.
+        await seedTarget();
+        try {
+            const {status, body} = await api(server.baseUrl, "/speedtests/run", {
+                method: "POST", headers: {"content-type": "application/json"},
+                body: JSON.stringify({targetId: OVERFLOWING_TARGET})
+            });
+            assert.equal(status, 400);
+            assert.match(body.message, /numeric targetId/);
+        } finally {
+            const targets = await import("../../server/controller/targets.js");
+            await targets.removeAll();
+        }
     });
 
     /*

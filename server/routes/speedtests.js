@@ -405,10 +405,14 @@ app.post("/run", password(false), async (req, res) => {
         return res.status(410).json({message: "No target is scheduled - every target is set to run by "
             + "hand only. Run one from the targets dialog, or put a target back into the schedule"});
 
+    // Through parseTargetParam for the reason it gives: digits alone let four
+    // hundred nines through as Infinity, which the driver rendered bare into
+    // the WHERE clause and answered as a 500.
     if (targetId !== undefined) {
-        if (!/^\d+$/.test(String(targetId)))
+        const id = parseTargetParam(String(targetId));
+        if (id === null)
             return res.status(400).json({message: "You need to provide a numeric targetId"});
-        if (await targets.getOne(Number(targetId)) === null)
+        if (await targets.getOne(id) === null)
             return res.status(404).json({message: "The target does not exist"});
     }
 
