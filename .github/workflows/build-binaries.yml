@@ -42,7 +42,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned, not latest - the checksums job at the end says why.
+          bun-version: 1.3.14
 
       - name: Install client dependencies
         working-directory: client
@@ -189,7 +190,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned, not latest - the checksums job at the end says why.
+          bun-version: 1.3.14
 
       - name: Install client dependencies
         working-directory: client
@@ -290,7 +292,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned, not latest - the checksums job at the end says why.
+          bun-version: 1.3.14
 
       - name: Install client dependencies
         working-directory: client
@@ -358,7 +361,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          # Pinned, not latest - the checksums job at the end says why.
+          bun-version: 1.3.14
 
       - name: Install client dependencies
         working-directory: client
@@ -480,3 +484,16 @@ jobs:
               name: 'SHA256SUMS',
               data: lines.join('\n') + '\n'
             });
+
+            // Two assets with one digest are one build under two names. v1.5.2's
+            // x64 and x64-baseline pairs were exactly that: Bun 1.4.0 ships its
+            // baseline runtime as a byte-for-byte copy of the AVX2 one, so the
+            // fallback install.sh picks for a pre-AVX2 CPU was the crash it
+            // exists to avoid, and nothing in the pipeline could tell - the
+            // verify step runs on runners that have AVX2. Hence the pin on
+            // every Setup Bun above, and this, after the upload so the assets
+            // stay verifiable while somebody looks.
+            const digests = lines.map((line) => line.slice(0, 64));
+            const repeated = new Set(digests.filter((digest, index) => digests.indexOf(digest) !== index));
+            if (repeated.size > 0)
+              core.setFailed(`one build under two names: ${lines.filter((line) => repeated.has(line.slice(0, 64))).join(', ')}`);
