@@ -206,8 +206,12 @@ export const startTimer = () => {
         errorHandler(err, {fatal: false, context: "Could not send the keep-alive"})));
 };
 
+// Truthiness rather than a comparison against undefined, for the reason
+// tasks/timer.js gives: node-schedule's null is an absent schedule too. The
+// spec here is a literal that always compiles, so null cannot reach this
+// today - which is the kind of assumption a later edit to the spec breaks.
 export const stopTimer = () => {
-    if (job !== undefined) {
+    if (job) {
         job.cancel();
         job = undefined;
     }
