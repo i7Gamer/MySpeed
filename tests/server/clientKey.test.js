@@ -20,6 +20,33 @@ describe("normaliseAddress", () => {
     });
 
     /**
+     * And in every spelling of the mapped form, not only the one the socket
+     * writes. The mapped branch was a literal "::ffff:" test on the text, so
+     * the hexadecimal tail, the fully written form and the socket's own
+     * spelling answered four keys for one IPv4 caller - the defect the
+     * prefix canonicalisation fixed, one path over, and reachable the same
+     * way: a trusted proxy and a caller who can spell the address.
+     */
+    it("keys every spelling of one mapped IPv4 address the same", () => {
+        const spellings = ["::ffff:203.0.113.5", "::FFFF:203.0.113.5", "::ffff:cb00:7105",
+            "0:0:0:0:0:ffff:203.0.113.5", "0000:0000:0000:0000:0000:ffff:cb00:7105"];
+
+        assert.deepEqual([...new Set(spellings.map(normaliseAddress))], ["203.0.113.5"]);
+    });
+
+    /**
+     * Loopback and the mapped family are not one bucket. Cut to a /64, "::1"
+     * keyed "0:0:0:0" - the same key every fully written mapped address
+     * landed in, so the console shared a budget with strangers. There is no
+     * customer allocation inside ::/64, so an address there is keyed whole.
+     */
+    it("keeps ::1 out of the mapped family's bucket", () => {
+        assert.equal(normaliseAddress("::1"), "0:0:0:0:0:0:0:1");
+        assert.notEqual(normaliseAddress("::1"), normaliseAddress("0:0:0:0:0:ffff:203.0.113.5"));
+        assert.equal(normaliseAddress("::1"), normaliseAddress("0:0:0:0:0:0:0:1"));
+    });
+
+    /**
      * Regression: the key was the whole IPv6 address. A home allocation is a
      * /64 - eighteen quintillion addresses, one customer - so picking a fresh
      * address per request meant no counter ever reached two, and both limiters
@@ -56,7 +83,6 @@ describe("normaliseAddress", () => {
 
         assert.deepEqual([...keys], ["2001:db8:0:0"]);
         assert.equal(normaliseAddress("2001:0db8:1234:0099:aaaa:bbbb:cccc:dddd"), "2001:db8:1234:99");
-        assert.equal(normaliseAddress("::1"), "0:0:0:0");
     });
 
     it("handles a fully written address with zero groups", () => {
