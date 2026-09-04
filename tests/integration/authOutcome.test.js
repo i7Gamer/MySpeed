@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
+import http from "node:http";
 import { bootServer, api, setConfig } from "./helpers/boot.js";
 import {
     PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS
@@ -133,5 +134,40 @@ describe("what a refusal says it is", () => {
             assert.equal(status, 429);
             assert.equal(body.type, TOO_MANY_ATTEMPTS);
         });
+    });
+});
+
+/**
+ * A loopback socket alone is not "local". A forwarder that terminates on
+ * loopback and adds no header - ssh -L, kubectl port-forward, an nginx
+ * proxy_pass without proxy_params - hands every remote caller a loopback
+ * socket, and until this test a password-less instance behind one served the
+ * whole admin API to anyone, with the setup token never asked for. Those
+ * requests still name the public host, which is what the waiver reads now.
+ * node:http rather than fetch, which refuses to set Host.
+ */
+describe("a password-less instance behind a header-less forwarder", () => {
+    const withHost = (host, path) => new Promise((resolve, reject) => {
+        const url = new URL(`${server.baseUrl}/api${path}`);
+        http.get({hostname: url.hostname, port: url.port, path: url.pathname + url.search, headers: {host}},
+            (response) => {
+                let text = "";
+                response.setEncoding("utf8");
+                response.on("data", (chunk) => { text += chunk; });
+                response.on("end", () => resolve({status: response.statusCode, body: JSON.parse(text)}));
+            }).on("error", reject);
+    });
+
+    it("asks a caller who named the public host for the setup token", async () => {
+        const {status, body} = await withHost("myspeed.example.com", "/speedtests?limit=1");
+
+        assert.equal(status, 401, "a loopback socket with a public Host was served unchallenged");
+        assert.equal(body.type, SETUP_TOKEN_REQUIRED);
+    });
+
+    it("still serves the console, which names the machine", async () => {
+        const {status} = await withHost(`127.0.0.1:${new URL(server.baseUrl).port}`, "/speedtests?limit=1");
+
+        assert.equal(status, 200);
     });
 });

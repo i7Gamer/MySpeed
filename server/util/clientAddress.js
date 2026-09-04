@@ -50,3 +50,43 @@ export const isLoopbackRequest = (req) => {
 
     return normalised === "::1" || normalised.startsWith("127.");
 };
+
+const LOOPBACK_NAMES = new Set(["localhost", "::1"]);
+
+// A whole dotted quad: "127.0.0.1.example.com" is a public name.
+const LOOPBACK_IPV4 = /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+/** The name in a Host header, without its port or its IPv6 brackets. */
+const hostName = (host) => {
+    const bracketed = host.match(/^\[([^\]]*)\]/);
+    if (bracketed) return bracketed[1];
+
+    // One colon separates a name from its port; more than one is a bare IPv6
+    // address, which carries no port in this form.
+    const colons = host.split(":").length - 1;
+
+    return colons === 1 ? host.slice(0, host.indexOf(":")) : host;
+};
+
+/**
+ * Whether the caller addressed this machine by name.
+ *
+ * The socket says where the bytes came from; the Host header says where the
+ * caller thought it was sending them. A forwarder that terminates on loopback
+ * and adds no header - `ssh -L`, `kubectl port-forward`, an nginx proxy_pass
+ * without proxy_params - makes every remote caller arrive on loopback looking
+ * local, and isLoopbackRequest has no way to tell. Those requests still name
+ * the public host, so on a password-less instance the waiver asks for both.
+ *
+ * An absent header is allowed: HTTP/1.0 sends none, and the documented local
+ * callers - the healthcheck asking 127.0.0.1, a developer asking localhost -
+ * all name the machine.
+ */
+export const namesLoopbackHost = (req) => {
+    const host = req.headers?.host;
+    if (host === undefined) return true;
+
+    const name = hostName(String(host).toLowerCase());
+
+    return LOOPBACK_NAMES.has(name) || LOOPBACK_IPV4.test(normaliseAddress(name));
+};

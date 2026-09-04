@@ -2,7 +2,7 @@ import * as config from '../controller/config.js';
 import bcrypt from 'bcryptjs';
 import { readPasswords } from '../util/passwordHeader.js';
 import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
-import { isLoopbackRequest } from '../util/clientAddress.js';
+import { isLoopbackRequest, namesLoopbackHost } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, SESSION_COOKIE } from '../util/session.js';
 import { trustedProxyUser } from '../util/trustedProxyAuth.js';
@@ -296,9 +296,16 @@ export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req)
  *
  * Local callers keep working so development, the console and the container
  * healthcheck are unaffected; everyone else needs the setup token.
+ *
+ * Local means both a loopback socket and a Host that names this machine. A
+ * forwarder that terminates on loopback without adding a header hands every
+ * remote caller a loopback socket, and until now that alone opened the whole
+ * admin API with the setup token never asked for; such requests still name
+ * the public host. Here rather than in isLoopbackRequest, which the HTTPS
+ * redirect shares and which must keep treating a proxied request as local.
  */
 export const allowsPasswordlessAccess = (req) =>
-    process.env.ALLOW_NO_PASSWORD === "true" || isLoopbackRequest(req);
+    process.env.ALLOW_NO_PASSWORD === "true" || (isLoopbackRequest(req) && namesLoopbackHost(req));
 
 const tooManyAttempts = (res) =>
     res.status(429).json({

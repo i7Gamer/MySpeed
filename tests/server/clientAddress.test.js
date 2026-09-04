@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { isLoopbackRequest } from "../../server/util/clientAddress.js";
+import { isLoopbackRequest, namesLoopbackHost } from "../../server/util/clientAddress.js";
 
 /**
  * This is the gate that decides whether a password-less instance answers a
@@ -110,5 +110,31 @@ describe("isLoopbackRequest", () => {
                 assert.equal(isLoopbackRequest(request({remote: "127.0.0.1"})), true,
                     `TRUST_PROXY=${value} broke local access`);
             });
+    });
+});
+
+/**
+ * The other half of "local": where the caller thought it was sending the
+ * request. A forwarder that terminates on loopback without adding a header -
+ * ssh -L, kubectl port-forward, an nginx proxy_pass without proxy_params -
+ * hands every remote caller a loopback socket, and isLoopbackRequest cannot
+ * tell. Those requests still name the public host.
+ */
+describe("namesLoopbackHost", () => {
+    it("accepts the names the documented local callers use", () => {
+        for (const host of ["localhost", "localhost:5216", "127.0.0.1", "127.0.0.1:5216", "127.0.0.53:80",
+            "[::1]", "[::1]:5216", "::1", "LOCALHOST", "[::ffff:127.0.0.1]:5216"])
+            assert.equal(namesLoopbackHost(request({headers: {host}})), true, `${host} was refused`);
+    });
+
+    it("refuses a request addressed to a public name over a loopback socket", () => {
+        for (const host of ["myspeed.example.com", "myspeed.example.com:443", "192.168.1.20:5216",
+            "[2001:db8::1]:5216", "2001:db8::1", "localhost.example.com", "127.0.0.1.example.com"])
+            assert.equal(namesLoopbackHost(request({headers: {host}})), false, `${host} was accepted`);
+    });
+
+    // HTTP/1.0 sends none, and so do the requests the tests above build.
+    it("allows an absent Host header", () => {
+        assert.equal(namesLoopbackHost(request()), true);
     });
 });
