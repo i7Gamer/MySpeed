@@ -854,3 +854,47 @@ describe("firstWeekday", () => {
         assert.equal(firstWeekday(), firstWeekday(i18n.language));
     });
 });
+
+/**
+ * The 12-hour suffix in the reader's own language.
+ *
+ * formatTime, formatDateTime and the chart tooltips write a 12-hour clock
+ * through Intl, and the overview row and the hourly chart built "AM"/"PM" by
+ * hand - so under Japanese, Chinese, Korean or Turkish the same test read
+ * "午後01:05" in the detail pane and "1:05 PM" in the row that opened it. The
+ * narrow form is kept (hour numeric, no leading zero); the language is Intl's.
+ */
+describe("the 12-hour suffix follows the interface language", () => {
+    const AT_13_05 = new Date(2026, 0, 1, 13, 5);
+    const withLanguage = (language, run) => {
+        const previous = i18n.language;
+        i18n.changeLanguage(language);
+        try {
+            return run();
+        } finally {
+            i18n.changeLanguage(previous);
+        }
+    };
+
+    it("keeps the English row narrow", () => {
+        withLanguage("en", () => {
+            assert.equal(formatShortTime(AT_13_05, CLOCK_12H), "1:05 PM");
+            assert.equal(formatHour(13, CLOCK_12H), "1:00 PM");
+            assert.equal(formatHour(0, CLOCK_12H), "12:00 AM");
+        });
+    });
+
+    it("writes the suffix Japanese writes", () => {
+        withLanguage("ja", () => {
+            assert.equal(formatShortTime(AT_13_05, CLOCK_12H), "午後1:05");
+            assert.equal(formatHour(13, CLOCK_12H), "午後1:00");
+        });
+    });
+
+    it("leaves the 24-hour clock as it was", () => {
+        withLanguage("ja", () => {
+            assert.equal(formatShortTime(AT_13_05, CLOCK_24H), "13:05");
+            assert.equal(formatHour(13, CLOCK_24H), "13:00");
+        });
+    });
+});

@@ -169,15 +169,12 @@ export const formatShortTime = (value, preferences) => {
     const date = toDate(value);
     if (isNaN(date.getTime())) return "";
 
-    const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
-    if (use12h) {
-        let hours = date.getHours();
-        const minutes = String(date.getMinutes()).padStart(2, "0");
-        const suffix = hours >= 12 ? "PM" : "AM";
-        hours = hours % 12;
-        if (hours === 0) hours = 12;
-        return `${hours}:${minutes} ${suffix}`;
-    }
+    // The 12-hour form through Intl like formatTime and the chart tooltips,
+    // with the hour numeric so the row stays as narrow as the hand-built
+    // "2:05 PM" it replaces: that one wrote "AM"/"PM" in English under every
+    // language, beside a detail pane writing 午後 for the same test.
+    if (preferences?.timeFormat === TIME_FORMAT_12H)
+        return date.toLocaleTimeString(locale(), {hour: "numeric", minute: "2-digit", hour12: true});
     const hours = String(date.getHours()).padStart(2, "0");
     const minutes = String(date.getMinutes()).padStart(2, "0");
     return `${hours}:${minutes}`;
@@ -193,10 +190,9 @@ export const formatShortTime = (value, preferences) => {
 export const formatHour = (hour, preferences) => {
     if (preferences?.timeFormat !== TIME_FORMAT_12H) return `${String(hour).padStart(2, "0")}:00`;
 
-    const suffix = hour >= 12 ? "PM" : "AM";
-    const twelve = hour % 12;
-
-    return `${twelve === 0 ? 12 : twelve}:00 ${suffix}`;
+    // Through formatShortTime, so the two 12-hour forms on the overview cannot
+    // drift apart; the date is any date, only its hour is read.
+    return formatShortTime(new Date(2000, 0, 1, hour), preferences);
 };
 
 export const getSpeedUnit = (preferences) => {
