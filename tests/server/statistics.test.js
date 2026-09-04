@@ -1519,3 +1519,33 @@ describe("an entry on the edge of a downsampled range", () => {
         assert.doesNotThrow(() => spanning([at("not a date", {download: 999})]));
     });
 });
+
+/**
+ * Bytes read the way every other column is.
+ *
+ * A history imported from a CSV, or a row that travelled through a node's
+ * proxy, can carry its byte counts as text - "2500" rather than 2500. Every
+ * other figure in the summary goes through usableFigure, which reads either
+ * spelling; the transfer totals had a private `typeof value === "number"`
+ * reader, so a text-bearing row silently dropped out of the sum and the total
+ * said less traffic than was moved.
+ */
+describe("data used, read through the shared reader", () => {
+    it("sums a byte count stored as text", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: "2500", bytesUploaded: "600"}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 3500, upload: 1000, total: 4500});
+    });
+
+    it("still refuses a placeholder and text that is not a number", () => {
+        const stats = buildStatistics([
+            at("2026-08-07T01:00:00.000Z", {bytesDownloaded: "-1", bytesUploaded: "n/a"}),
+            at("2026-08-07T02:00:00.000Z", {bytesDownloaded: 1000, bytesUploaded: 400})
+        ], DAY);
+
+        assert.deepEqual(stats.dataUsed, {download: 1000, upload: 400, total: 1400});
+    });
+});

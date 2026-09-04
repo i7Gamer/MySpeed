@@ -496,15 +496,18 @@ const transferTotals = (entries) => {
     let download = null;
     let upload = null;
 
-    // Non-negative as well as numeric: a negative byte count is not traffic,
-    // and summed as bytes each one *subtracts* from the total. The live path
-    // cannot store one - byteCount refuses it - but a history imported before
-    // the import learned the same rule can hold -1 placeholders.
-    const moved = (value) => typeof value === "number" && Number.isFinite(value) && value >= 0;
+    // Through the shared reader, like every other column: it refuses the -1
+    // placeholders a history imported before byteCount existed can hold
+    // (summed as bytes each one *subtracts* from the total), and it reads a
+    // count that arrived as text - a CSV import, a row through a node's proxy
+    // - which a private `typeof === "number"` check silently dropped.
+    const moved = (value) => usableFigure(value);
 
     for (const entry of entries) {
-        if (moved(entry.bytesDownloaded)) download = (download ?? 0) + entry.bytesDownloaded;
-        if (moved(entry.bytesUploaded)) upload = (upload ?? 0) + entry.bytesUploaded;
+        const downloaded = moved(entry.bytesDownloaded);
+        const uploaded = moved(entry.bytesUploaded);
+        if (downloaded !== null) download = (download ?? 0) + downloaded;
+        if (uploaded !== null) upload = (upload ?? 0) + uploaded;
     }
 
     return {
