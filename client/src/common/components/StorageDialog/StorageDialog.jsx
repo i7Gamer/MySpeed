@@ -9,7 +9,9 @@ import Configuration from "./tabs/Configuration";
 import {jsonRequest} from "@/common/utils/RequestUtil";
 import {formatBytes} from "@/common/utils/FormatUtil";
 
-const EMPTY_STORAGE = {size: 0, testCount: 0};
+// Nulls, not zeros: a refused /storage is not an empty database, and
+// formatBytes prints null as N/A where a 0 read as a fact.
+const EMPTY_STORAGE = {size: null, testCount: null};
 
 // The two halves of the dialog, in the order the arrows walk them.
 const TABS = [

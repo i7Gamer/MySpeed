@@ -133,3 +133,19 @@ describe("the storage size figure", () => {
         assert.doesNotMatch(dialog, /\} KB</, "the unit is still an English literal in the JSX");
     });
 });
+
+/**
+ * A failed /storage used to be presented as a fact: "0 KB" and "0 tests" on
+ * a dialog whose request had been refused. The zeroed shape existed so the
+ * render could read .size unconditionally without a TypeError; with the size
+ * printed through formatBytes, which answers N/A for null, the shape can say
+ * "not known" instead of "nothing".
+ */
+describe("the storage dialog when /storage fails", () => {
+    const dialog = readSource("client/src/common/components/StorageDialog/StorageDialog.jsx");
+
+    it("does not report a figure it does not have", () => {
+        assert.match(dialog, /const EMPTY_STORAGE = \{size: null, testCount: null\}/,
+            "a refused /storage is still reported as an empty database");
+    });
+});
