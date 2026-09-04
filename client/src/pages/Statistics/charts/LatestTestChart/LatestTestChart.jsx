@@ -4,7 +4,7 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faArrowDown, faArrowUp, faGaugeHigh, faLinkSlash, faPingPongPaddleBall, faWaveSquare
 } from "@fortawesome/free-solid-svg-icons";
-import {bufferbloat, bufferbloatColour, getIconBySpeed, isMeasured, packetLossColour, readableFigure} from "@/common/utils/TestUtil";
+import {bufferbloat, bufferbloatColour, getIconBySpeed, isMeasured, measuredLatency, packetLossColour, readableFigure} from "@/common/utils/TestUtil";
 import "./styles.sass";
 import {useContext} from "react";
 import {ConfigContext} from "@/common/contexts/Config";
@@ -66,7 +66,10 @@ export const LatestTestChart = (props) => {
     // twice, in two precisions. The colour is graded from that same trimmed
     // figure: the pane grades what it prints, and a raw ping that rounds across
     // a bucket boundary would wear a different colour there.
-    const ping = formatLatency(props.test.ping);
+    // Through measuredLatency first: a run whose provider measured no latency
+    // stores the sentinel 0, which the row would otherwise print as a perfect
+    // "0 ms" in green.
+    const ping = formatLatency(measuredLatency(props.test.ping));
 
     /**
      * Whole, the way this card's three figures are stated.
@@ -126,7 +129,7 @@ export const LatestTestChart = (props) => {
                              a ping that rounds across a bucket boundary. The
                              formatter is the stop for everything unreadable,
                              placeholders in either spelling included. */
-                          value={formatWithUnit(formatWhole(props.test.ping), t("latest.ping_unit"))}
+                          value={formatWithUnit(formatWhole(measuredLatency(props.test.ping)), t("latest.ping_unit"))}
                           /* Under the latency rather than hung off it. It is the
                              other half of what the line does at rest, and beside
                              the figure it was a second number in the same unit

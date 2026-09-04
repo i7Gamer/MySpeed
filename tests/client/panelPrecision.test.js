@@ -200,7 +200,7 @@ describe("a statistics card rounds what the pane it opens states exactly", () =>
         // as a reading - the same strings for real figures, N/A for the rest.
         assert.match(latest, /const speedText = \(mbps\) => formatWithUnit\(wholeSpeed\(mbps, preferences\), speedUnit\);/,
             "the card glues a speed to its unit by hand, which prints null and junk as readings");
-        assert.match(latest, /formatWithUnit\(formatWhole\(props\.test\.ping\), t\("latest\.ping_unit"\)\)/,
+        assert.match(latest, /formatWithUnit\(formatWhole\(measuredLatency\(props\.test\.ping\)\), t\("latest\.ping_unit"\)\)/,
             "the card states the ping at the pane's precision, through the refusing formatter");
         assert.match(latest, /if \(props\.expanded\) return \(\s*<StatisticContainer[^>]*>\s*<TestDetails/,
             "opened, the card no longer hands over to the detail pane");

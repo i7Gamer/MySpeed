@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
     convertSpeed, formatLatency, formatLatencyWithUnit, formatWithUnit, roundsToZeroLatency
 } from "@/common/utils/FormatUtil.js";
-import { getIconBySpeed, isMeasured, jitterColour, packetLossColour, readableFigure } from "@/common/utils/TestUtil.js";
+import {
+    getIconBySpeed, isMeasured, jitterColour, measuredLatency, packetLossColour, readableFigure
+} from "@/common/utils/TestUtil.js";
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
@@ -86,7 +88,7 @@ const buildMetrics = ({test, limits = {}, earlier = {}}) => evaluate(
     `${derivations()}\n${metricsLiteral()}\nreturn metrics;`, {
         test, limits, earlier, t,
         formatLatency, formatWithUnit, roundsToZeroLatency, changeFrom, differenceFromTarget, percentOfTarget,
-        getIconBySpeed, convertSpeed,
+        getIconBySpeed, convertSpeed, measuredLatency,
         preferences: {}, speedUnit: "Mbit/s",
         quality: null, loadedLatency: () => null,
         faPingPongPaddleBall: null, faArrowDown: null, faArrowUp: null,
@@ -196,7 +198,7 @@ describe("the arithmetic: helpers fed the printed figure agree to the decimal", 
         // rule exists to forbid.
         assert.match(pane, /\{sentenceTarget: formatLatency\(limits\.ping\), sentenceFigure: ping\}/,
             "the sentence has no printed target to compare its printed ping against");
-        assert.match(pane, /\{sentenceTarget: limits\.ping, sentenceFigure: test\.ping\}/,
+        assert.match(pane, /\{sentenceTarget: limits\.ping, sentenceFigure: measuredLatency\(test\.ping\)\}/,
             "the sub-resolution branch lost its stored-against-stored pair - a sub-0.05 target prints "
             + "as 0, which asTarget refuses, and the sentence silently vanishes");
         assert.match(pane, /differenceFromTarget\(sentenceFigure, sentenceTarget\)/,
@@ -270,16 +272,28 @@ describe("the ping card computes every figure from the one it prints", () => {
         assert.equal(pingCard({test: {ping: 12.96}, limits: {ping: "10"}}).level, "orange");
     });
 
-    // The -1 a failed run stores reaches the guards untouched, so everything
-    // derived stays off the card and the icon keeps its failure state.
+    // A wholly failed run has no facts grid, so the ping card only ever shows
+    // a placeholder in a MIXED row - one real reading beside it. The reader
+    // refuses the -1, so the card holds nothing, prints as unmeasured, and
+    // wears the unmeasured blue rather than a failure red beside "N/A".
     it("hands the failure placeholder through to the guards", () => {
         const card = pingCard({...BUG_REPORT, test: {ping: -1}});
 
-        assert.equal(card.value, -1, "the interface recognises a failure by the placeholder");
+        assert.equal(card.value, null, "the placeholder reached the card as a figure");
         assert.equal(card.change, null);
         assert.equal(card.percent, null);
         assert.equal(card.targetLabel, null);
-        assert.equal(card.level, "error");
+        assert.equal(card.level, "blue");
+    });
+
+    // The sentinel a successful run stores when nobody measured the latency
+    // used to print as "0 ms", "100% of target" and green.
+    it("treats an unmeasured latency exactly like a placeholder", () => {
+        const card = pingCard({...BUG_REPORT, test: {ping: 0}});
+
+        assert.equal(card.value, null);
+        assert.equal(card.percent, null);
+        assert.equal(card.level, "blue");
     });
 
     it("shows no target figures when no target is configured", () => {
@@ -495,7 +509,7 @@ describe("what the extraction cannot run, read from the source", () => {
         ["latencyIncrease(value, test.ping)", 1],
         ["const pingTarget = limits.ping;", 1],
         ["roundsToZeroLatency(limits.ping)", 1],
-        ["{sentenceTarget: limits.ping, sentenceFigure: test.ping}", 1]
+        ["{sentenceTarget: limits.ping, sentenceFigure: measuredLatency(test.ping)}", 1]
     ];
 
     // The counts and the guard read the pane's CODE, comments stripped: the
@@ -532,8 +546,13 @@ describe("what the extraction cannot run, read from the source", () => {
      * previousConnection, the props earlier aliases and the guard only ever
      * watched through the alias.
      */
+    // measuredLatency is the other exempt reader: it refuses the unmeasured
+    // sentinel and the placeholders, and what it answers is what the pane
+    // then trims. The sub-resolution branch hands the sentence the stored
+    // figure through it, so a stored-against-stored pair is still no raw
+    // read.
     const RAW_LATENCY_READ =
-        /(?<!formatLatency(?:WithUnit)?\()\b(test|limits|earlier|previousConnection|previous)\??\.ping\b/;
+        /(?<!(?:formatLatency(?:WithUnit)?|measuredLatency)\()\b(test|limits|earlier|previousConnection|previous)\??\.ping\b/;
 
     it("reads a raw ping in either chaining spelling, and only a raw one", () => {
         for (const raw of ["const x = test.ping;", "const x = test?.ping;", "limits?.ping", "earlier?.ping;",
@@ -541,7 +560,8 @@ describe("what the extraction cannot run, read from the source", () => {
             assert.match(raw, RAW_LATENCY_READ, `"${raw}" no longer reads as a raw latency`);
 
         for (const guarded of ["formatLatency(test.ping)", "formatLatency(test?.ping)",
-            "formatLatencyWithUnit(test.ping, ms)", "other?.ping", "latest.ping_unit", "test.pinged"])
+            "formatLatencyWithUnit(test.ping, ms)", "measuredLatency(test.ping)",
+            "formatLatency(measuredLatency(earlier.ping))", "other?.ping", "latest.ping_unit", "test.pinged"])
             assert.doesNotMatch(guarded, RAW_LATENCY_READ, `"${guarded}" is formatted or no latency read at all`);
     });
 

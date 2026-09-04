@@ -16,7 +16,7 @@ import {
 import FigureWithUnit from "@/common/components/FigureWithUnit";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
-    jitterColour, latencyIncrease, packetLossColour, readableFigure
+    jitterColour, latencyIncrease, measuredLatency, packetLossColour, readableFigure
 } from "@/common/utils/TestUtil";
 import {changeFrom, differenceFromTarget, percentOfTarget, providerBeside, providerName} from "./utils/details";
 import {describeError} from "./utils/errors";
@@ -225,12 +225,14 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
     // The operands travel as a pair for exactly that reason: one destructure
     // picks both sides of the branch, so no later edit can hand the sentence
     // a printed ping beside a raw target.
-    const ping = formatLatency(test.ping);
+    // Through measuredLatency first: a run whose provider measured no latency
+    // stores the sentinel 0, and the sentence would otherwise state it.
+    const ping = formatLatency(measuredLatency(test.ping));
     const pingTarget = limits.ping;
     const {sentenceTarget, sentenceFigure} = roundsToZeroLatency(limits.ping)
-        ? {sentenceTarget: limits.ping, sentenceFigure: test.ping}
+        ? {sentenceTarget: limits.ping, sentenceFigure: measuredLatency(test.ping)}
         : {sentenceTarget: formatLatency(limits.ping), sentenceFigure: ping};
-    const earlierPing = formatLatency(earlier.ping);
+    const earlierPing = formatLatency(measuredLatency(earlier.ping));
 
     // A percentage says everything worth saying about throughput. For latency it
     // does not: the plain distance from the target is what the reader wants, and

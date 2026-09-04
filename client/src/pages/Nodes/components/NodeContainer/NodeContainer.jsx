@@ -22,7 +22,7 @@ import {assertOk, baseRequest} from "@/common/utils/RequestUtil";
 import {promptUntilAccepted} from "@/common/utils/PasswordPrompt";
 import {t} from "i18next";
 import {Trans} from "react-i18next";
-import {getIconBySpeed, isFailedTest} from "@/common/utils/TestUtil";
+import {getIconBySpeed, isFailedTest, measuredLatency} from "@/common/utils/TestUtil";
 import {resolveLimits} from "@/common/utils/TargetUtil";
 import {clickable} from "@/common/utils/Clickable";
 import {ConfigContext} from "@/common/contexts/Config";
@@ -244,7 +244,10 @@ export const NodeContainer = (node) => {
         // one colour here and another there. One measurement changing colour
         // between two views of it is the worse of the two faults - the same
         // trade the overview row makes for the same reason.
-        const ping = formatLatency(tests[0]?.ping);
+        // Through measuredLatency first: a run whose provider measured no
+        // latency stores the sentinel 0, which this card would otherwise
+        // print - and grade - as the best line in the house.
+        const ping = formatLatency(measuredLatency(tests[0]?.ping));
 
         /**
          * What this test is graded against: its own target's optimal values
@@ -268,7 +271,7 @@ export const NodeContainer = (node) => {
             // the card marks the failure the way the overview does instead.
             failed: isFailedTest(tests[0]),
             // Whole, like every other list row - see formatWhole.
-            ping: formatWhole(tests[0]?.ping),
+            ping: formatWhole(measuredLatency(tests[0]?.ping)),
             // The speeds are stored as they were measured and rounded by
             // speedText at render: the conversion to MB/s has to come first,
             // and the unit is a preference this function never reads.

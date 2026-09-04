@@ -307,6 +307,30 @@ export const readableFigure = (value) => {
     return figure === null || figure < 0 ? null : figure;
 };
 
+// The sentinel a successful run stores when nobody measured the latency: the
+// server's UNMEASURED_LATENCY, which this bundle cannot import.
+// tests/client/latencyMeasuredParity.test.js holds the two readers together.
+const UNMEASURED_LATENCY = 0;
+
+/**
+ * A stored ping that was measured, as the figure - or null.
+ *
+ * The client's mirror of the server's measuredPing. readableFigure refuses the
+ * placeholders; this also refuses the fabricated zero, which no connection
+ * produces - a real sub-millisecond line stores the decimals it measured. The
+ * comparison stays exact for that reason: widened to "under a millisecond" it
+ * would discard every fibre and LAN reading along with the fabrication.
+ *
+ * Every place a single row's ping is printed or graded reads through this, so
+ * the result card, the detail sentence and the node card cannot print "0 ms"
+ * in green for a run that measured nothing.
+ */
+export const measuredLatency = (value) => {
+    const figure = readableFigure(value);
+
+    return figure === UNMEASURED_LATENCY ? null : figure;
+};
+
 /**
  * How much latency one transfer added, which is what the grades are read
  * against.
@@ -328,16 +352,12 @@ export const readableFigure = (value) => {
  */
 export function latencyIncrease(loaded, ping) {
     const loadedFigure = readableFigure(loaded);
-    const pingFigure = readableFigure(ping);
+    // A fabricated idle ping is no baseline: subtracted as a real 0 ms the
+    // whole loaded latency reads as *added* latency - an F grade for a line
+    // that was fine. The server's loadedIncrease skips the same zero, and
+    // loadedLatencyAgreement.test.js holds the two together.
+    const pingFigure = measuredLatency(ping);
     if (loadedFigure === null || pingFigure === null) return null;
-
-    // A fabricated idle ping is no baseline. 0 is the sentinel a successful
-    // run stores when nobody measured the latency (the server's
-    // UNMEASURED_LATENCY, which this bundle cannot import), so subtracted as
-    // a real 0 ms the whole loaded latency reads as *added* latency - an F
-    // grade for a line that was fine. The server's loadedIncrease skips the
-    // same zero, and loadedLatencyAgreement.test.js holds the two together.
-    if (pingFigure === 0) return null;
 
     return Math.max(0, parseFloat((loadedFigure - pingFigure).toFixed(INCREASE_DECIMALS)));
 }

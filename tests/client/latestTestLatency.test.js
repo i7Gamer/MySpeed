@@ -33,7 +33,7 @@ describe("the latest-test card prints its latencies to one decimal", () => {
     });
 
     it("prints the ping the pane behind it prints", () => {
-        assert.match(card, /const ping = formatLatency\(props\.test\.ping\)/,
+        assert.match(card, /const ping = formatLatency\(measuredLatency\(props\.test\.ping\)\)/,
             "the ping still goes out at the two decimals it is stored with");
     });
 
@@ -52,7 +52,7 @@ describe("the latest-test card prints its latencies to one decimal", () => {
         const {formatWithUnit, formatWhole, wholeSpeed} =
             await import("../../client/src/common/utils/FormatUtil.js");
 
-        assert.match(card, /value=\{formatWithUnit\(formatWhole\(props\.test\.ping\), /,
+        assert.match(card, /value=\{formatWithUnit\(formatWhole\(measuredLatency\(props\.test\.ping\)\), /,
             "the ping's row no longer prints through the refusing formatter");
         // The speeds' wiring pin lives in panelPrecision, which owns the
         // card-vs-pane rounding contract - a verbatim copy here red three

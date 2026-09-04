@@ -7,7 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import {
     formatLatency, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
-import { getIconBySpeed, isFailedTest } from "@/common/utils/TestUtil.js";
+import { getIconBySpeed, isFailedTest, measuredLatency } from "@/common/utils/TestUtil.js";
 import { resolveLimits } from "@/common/utils/TargetUtil.js";
 import { act, cleanup, createElement, render, settle, window } from "../helpers/renderHarness.js";
 import { AlertProvider } from "@/common/contexts/Alert";
@@ -56,10 +56,10 @@ const dataFor = (test, config = {}, targetsById = {}) => {
     let captured = null;
 
     new Function("tests", "config", "targetsById", "setNodeData",
-        "formatLatency", "formatWhole", "isFailedTest", "getIconBySpeed", "resolveLimits",
+        "formatLatency", "formatWhole", "isFailedTest", "getIconBySpeed", "resolveLimits", "measuredLatency",
         slice("const ping = formatLatency", CARD_END))(
         [test], config, targetsById, (data) => { captured = data; },
-        formatLatency, formatWhole, isFailedTest, getIconBySpeed, resolveLimits);
+        formatLatency, formatWhole, isFailedTest, getIconBySpeed, resolveLimits, measuredLatency);
 
     assert.notEqual(captured, null, "the card never stored anything");
     return captured;
@@ -134,21 +134,35 @@ describe("the figures a node card prints", () => {
 
     // Math.round(null) is 0 and Math.round(undefined) is NaN. A node answers
     // with whatever its own API returns, so neither may become a reading.
+    // The ping goes through measuredLatency, which answers null for anything
+    // that is not a reading - so an absent figure is held as null and prints
+    // as unmeasured, never as a reading of zero.
     it("does not turn an absent figure into a reading of zero", () => {
         for (const absent of [null, undefined]) {
-            assert.equal(dataFor({ping: absent}).ping, absent, `ping ${String(absent)}`);
+            assert.equal(dataFor({ping: absent}).ping, null, `ping ${String(absent)}`);
             assert.equal(speedText(absent), NOT_MEASURED, `speed ${String(absent)}`);
         }
     });
 
     // The card marks a failure rather than printing the -1 placeholders as
-    // readings, so the value it holds only has to stay recognisable.
+    // readings; the reader refuses the placeholder, so the ping it holds is
+    // null and the failure lives in `failed` alone - the card renders the
+    // failure line in place of the three glyphs, so no icon is graded for it.
     it("keeps a failed test recognisable", () => {
         const data = dataFor({ping: -1, download: -1, upload: -1});
 
         assert.equal(data.failed, true);
-        assert.equal(data.ping, -1);
-        assert.equal(data.pingIcon, "error");
+        assert.equal(data.ping, null);
+    });
+
+    // The sentinel a successful run stores when nobody measured the latency:
+    // formerly printed - and graded - as a perfect "0 ms".
+    it("prints an unmeasured latency as unmeasured, not as 0 ms in green", () => {
+        const data = dataFor({ping: 0, download: 480.2, upload: 40}, {ping: "10"});
+
+        assert.equal(data.failed, false);
+        assert.equal(formatWithUnit(data.ping, "ms"), NOT_MEASURED);
+        assert.equal(data.pingIcon, "blue");
     });
 
     /**

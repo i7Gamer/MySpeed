@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {
     formatLatency, formatShortTime, formatWhole, formatWithUnit, NOT_MEASURED, SPEED_UNIT_MBYTES, wholeSpeed
 } from "@/common/utils/FormatUtil.js";
-import { getIconBySpeed } from "@/common/utils/TestUtil.js";
+import { getIconBySpeed, measuredLatency } from "@/common/utils/TestUtil.js";
 import { clickable } from "@/common/utils/Clickable.js";
 import { compile, mediaBlocks, read } from "../helpers/sass.mjs";
 
@@ -741,12 +741,18 @@ describe("the figures a row prints", () => {
  * the two, and it is the same trade the jitter already makes in the panel.
  */
 describe("the colour a row's ping wears", () => {
-    const level = (ping, target) => new Function("test", "limits", "getIconBySpeed", "formatLatency",
+    const level = (ping, target) => new Function("test", "limits", "getIconBySpeed", "formatLatency", "measuredLatency",
         `return (${propValue(area, "pingLevel")});`)(
-        {ping}, {ping: target}, getIconBySpeed, formatLatency);
+        {ping}, {ping: target}, getIconBySpeed, formatLatency, measuredLatency);
 
     it("is read off the figure the panel it opens grades, not the one it prints", () => {
         assert.equal(level(12.5, "10"), "green");
+    });
+
+    // The sentinel a successful run stores when nobody measured the latency
+    // used to grade as the best line in the house.
+    it("is blue, not green, for a latency nobody measured", () => {
+        assert.equal(level(0, "10"), "blue");
     });
 
     it("would read differently off the printed figure", () => {

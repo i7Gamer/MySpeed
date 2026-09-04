@@ -4,7 +4,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {TargetsContext} from "@/common/contexts/Targets";
 import Speedtest from "../Speedtest";
-import {bufferbloat, getIconBySpeed, previousConnection} from "@/common/utils/TestUtil";
+import {bufferbloat, getIconBySpeed, measuredLatency, previousConnection} from "@/common/utils/TestUtil";
 import {
     previousOfTarget, resolveLimits, roundIndexById, targetColour
 } from "@/common/utils/TargetUtil";
@@ -272,7 +272,7 @@ const TestArea = () => {
                             key={test.id}
                             ref={isLast ? lastElementRef : null}
                             time={date}
-                            ping={test.ping}
+                            ping={measuredLatency(test.ping)}
                             // Graded at one decimal: not at the two the column
                             // stores, and not at the whole number the row now
                             // prints. The pane this row expands into both prints
@@ -284,7 +284,7 @@ const TestArea = () => {
                             // two views of it is the worse fault; a row that
                             // shows a rounder figure than it grades is the same
                             // trade the jitter already makes in that pane.
-                            pingLevel={getIconBySpeed(formatLatency(test.ping), limits.ping, false)}
+                            pingLevel={getIconBySpeed(formatLatency(measuredLatency(test.ping)), limits.ping, false)}
                             jitter={test.jitter}
                             // Beside the jitter, the way the opened panel pairs
                             // them: they are the two things the line does under

@@ -80,7 +80,7 @@ describe("every view grades the ping from the figure it prints", () => {
     it("the overview row", () => {
         assert.match(row, /import \{[^}]*formatLatency[^}]*} from "@\/common\/utils\/FormatUtil"/,
             "the row cannot trim anything - it never imports the formatter");
-        assert.match(row, /pingLevel=\{getIconBySpeed\(formatLatency\(test\.ping\), limits\.ping, false\)}/,
+        assert.match(row, /pingLevel=\{getIconBySpeed\(formatLatency\(measuredLatency\(test\.ping\)\), limits\.ping, false\)}/,
             "the row's colour is still graded from the raw two-decimal column");
         assert.doesNotMatch(row, /getIconBySpeed\(test\.ping/,
             "a raw ping still reaches the grader somewhere in the row");
@@ -97,7 +97,7 @@ describe("every view grades the ping from the figure it prints", () => {
      * row to putting it on both.
      */
     it("the latest-test card, which grades the ping it prints", () => {
-        assert.match(card, /const ping = formatLatency\(props\.test\.ping\)/,
+        assert.match(card, /const ping = formatLatency\(measuredLatency\(props\.test\.ping\)\)/,
             "the ping is not trimmed where the card's figures are built");
         assert.match(card, /level=\{getIconBySpeed\(ping, limits\.ping, false\)}/,
             "the row's colour is not graded from that trimmed figure");
@@ -114,7 +114,7 @@ describe("every view grades the ping from the figure it prints", () => {
     it("the node card, which prints the same figure it grades", () => {
         assert.match(node, /import \{[^}]*formatLatency[^}]*} from "@\/common\/utils\/FormatUtil"/,
             "the card cannot trim anything - it never imports the formatter");
-        assert.match(node, /const ping = formatLatency\(tests\[0\]\?\.ping\)/,
+        assert.match(node, /const ping = formatLatency\(measuredLatency\(tests\[0\]\?\.ping\)\)/,
             "the ping is not trimmed where the card's data is built");
         assert.match(node, /pingIcon: getIconBySpeed\(ping, limits\.ping, false\)/,
             "the colour is not graded from that trimmed figure");
