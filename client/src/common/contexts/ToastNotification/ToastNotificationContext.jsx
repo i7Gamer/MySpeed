@@ -72,7 +72,13 @@ export const ToastNotificationProvider = (props) => {
 
     return (
         <ToastNotificationContext.Provider value={updateToast}>
-            <div className={toastClassName(toastNotification, visible)}
+            {/* A live region from mount, before any toast: this is the app's one
+                channel for the outcome of a mutation, and a bare div announced
+                nothing to a screen reader. Polite rather than alert - these are
+                confirmations and refusals, not emergencies - and atomic so the
+                whole line is read when the text lands. */}
+            <div className={toastClassName(toastNotification, visible)} role="status"
+                 aria-live="polite" aria-atomic="true"
                  onAnimationEnd={onAnimationEnd} onClick={close}>
                 {toastNotification && <div className="toast-content">
                     <FontAwesomeIcon icon={toastNotification.icon} />
