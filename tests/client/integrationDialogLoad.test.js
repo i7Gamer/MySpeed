@@ -27,4 +27,16 @@ describe("the integration dialog when its load fails", () => {
     it("clears the failure when it retries", () => {
         assert.match(dialog, /setLoadError\(null\)/, "a retry keeps the old error on screen");
     });
+
+    // The branch was modelled on the statistics page's empty state, whose
+    // class is styled; its own class matched no rule, so the sentence and the
+    // retry button landed unspaced in the dialog body.
+    it("is styled, not just named", () => {
+        assert.match(dialog, /className="integrations-load-error"/, "re-anchor: the branch's class changed");
+
+        const styles = readSource("client/src/common/components/IntegrationDialog/styles.sass");
+        const rule = styles.indexOf("\n.integrations-load-error\n");
+        assert.notEqual(rule, -1, "the error branch's class matches no rule in the dialog's stylesheet");
+        assert.match(styles.slice(rule, rule + 300), /\n {2}gap:/, "nothing spaces the sentence from the button");
+    });
 });
