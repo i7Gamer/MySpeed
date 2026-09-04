@@ -403,7 +403,13 @@ export const tryReserve = () => {
     return true;
 };
 
-/** Gives a reservation back without running anything - the caller's error paths. */
+/**
+ * Gives a reservation back without running anything.
+ *
+ * No production caller: the one route that reserves hands the reservation to
+ * create() on the very next statement, with nothing between the two that can
+ * throw. Kept as the suite's reset, which is what actually calls it.
+ */
 export const cancelReservation = () => {
     _isRunning = false;
 };
