@@ -265,9 +265,11 @@ describe("the MSI a release publishes", () => {
  * the fallback install.sh picks for them was the crash it exists to avoid.
  *
  * Two guards: the release compiles with a pinned Bun whose baseline is a
- * separate build, and the checksums job refuses to leave a release whose
- * asset list carries one digest twice, after publishing SHA256SUMS so the
- * assets stay verifiable while somebody looks.
+ * separate build, and the checksums job reports any digest its asset list
+ * carries twice, after publishing SHA256SUMS so the assets stay verifiable
+ * while somebody looks. The refusal itself lives in the release workflow -
+ * releasePublishOrder.test.js says why - so it holds the publish back
+ * without the cleanup deleting the assets it was meant to leave.
  */
 describe("the two x64 builds are two builds", () => {
     it("compiles with a pinned Bun rather than whatever is latest", () => {
@@ -276,12 +278,12 @@ describe("the two x64 builds are two builds", () => {
         assert.match(binaries, /bun-version:\s*"?1\.3\.14"?/, "the pin is not the last Bun with a distinct baseline");
     });
 
-    it("refuses a release whose assets share a digest", () => {
+    it("reports a release whose assets share a digest", () => {
         const publish = binaries.slice(binaries.indexOf("name: Publish SHA256SUMS"));
         assert.notEqual(publish.indexOf("uploadReleaseAsset"), -1, "re-anchor: the checksums upload moved");
 
         const afterUpload = publish.slice(publish.indexOf("uploadReleaseAsset"));
-        assert.match(afterUpload, /core\.setFailed\(/, "a repeated digest is published with nothing said");
+        assert.match(afterUpload, /core\.setOutput\('duplicate-digests'/, "a repeated digest is published with nothing said");
         assert.match(afterUpload, /new Set\(/, "nothing compares the digests to each other");
     });
 });

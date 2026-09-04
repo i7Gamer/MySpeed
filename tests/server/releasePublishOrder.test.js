@@ -284,3 +284,45 @@ describe("the checksum list and the installers", () => {
             "the table skips the one job that can keep a complete release in draft");
     });
 });
+
+/**
+ * Two assets with one digest are one build under two names, and the release
+ * has to stop - but not by failing the checksums job inside build-binaries.
+ * That reads as "the binaries failed" to cleanup-on-failure, which deletes
+ * the release and the tag: the very assets the check was placed after the
+ * upload to leave verifiable. So the checksums job reports the duplicates as
+ * an output, and a job of the release workflow refuses them - one
+ * finalize-release waits for, the report names, and the cleanup ignores.
+ */
+describe("a repeated digest holds the publish back without deleting the release", () => {
+    const binaries = read("build-binaries.yml");
+    const refuse = withoutComments(releaseJobs["refuse-duplicate-digests"] ?? "");
+
+    it("is reported by the checksums job as an output rather than as a failure", () => {
+        const publish = binaries.slice(binaries.indexOf("name: Publish SHA256SUMS"));
+        assert.doesNotMatch(publish, /core\.setFailed\(/,
+            "the failure lands inside build-binaries, whose failure deletes the release");
+        assert.match(publish, /core\.setOutput\('duplicate-digests'/, "the duplicates are found and not passed on");
+        assert.match(binaries, /workflow_call:[\s\S]*?outputs:\s*\n\s*duplicate-digests:/,
+            "the reusable workflow does not hand the output to its caller");
+    });
+
+    it("is refused by a job of the release workflow that the publish waits for", () => {
+        assert.notEqual(refuse, "", "there is no refuse-duplicate-digests job");
+        assert.match(refuse, /needs\.build-binaries\.outputs\.duplicate-digests/, "the job does not read the output");
+        assert.match(refuse, /exit 1/, "the job reports the duplicates and lets the publish go on");
+        assert.ok(needsOf(releaseJobs["finalize-release"]).includes("refuse-duplicate-digests"),
+            "the release is un-drafted whether or not its assets are distinct");
+    });
+
+    it("routes to the partial-release report rather than to the cleanup", () => {
+        assert.doesNotMatch(withoutComments(releaseJobs["cleanup-on-failure"]), /refuse-duplicate-digests/,
+            "a repeated digest still deletes the release");
+
+        const report = withoutComments(releaseJobs["report-partial-release"] ?? "");
+        assert.ok(needsOf(report).includes("refuse-duplicate-digests"));
+        assert.match(report, /needs\.refuse-duplicate-digests\.result/);
+        assert.match(report, /echo "\| [^|]*\| \$DUPLICATE_DIGESTS_RESULT \|"/,
+            "the table skips the job that held the publish back");
+    });
+});
