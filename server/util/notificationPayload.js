@@ -114,19 +114,6 @@ const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetNa
 const pick = (keys, record) =>
     Object.fromEntries(keys.map((key) => [key, record?.[key] ?? null]));
 
-/**
- * A stored row as something a spread can read.
- *
- * tests.create answers a Sequelize instance, not the plain object the global
- * `query: {raw: true}` hands back from a read: its columns sit behind prototype
- * getters, and a spread copies own enumerable properties only. `{...row}` of
- * an instance carried dataValues and bookkeeping and not one column, so every
- * integration was told `id: null, created: null` about a test the log line
- * beside it had just numbered. Read through toJSON when there is one, and
- * left alone when the row is already plain - the tests hand in either.
- */
-export const rowValues = (row) => (typeof row?.toJSON === "function" ? row.toJSON() : row ?? {});
-
 export const finishedPayload = (record) => pick(FINISHED_KEYS, record);
 
 export const failedPayload = (record) => pick(FAILED_KEYS, record);

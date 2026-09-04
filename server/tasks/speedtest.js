@@ -7,7 +7,7 @@ import { setState, sendRunning, sendError, sendFinished, sendRoundFinished, watc
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
-import { failedPayload, finishedPayload, rowValues } from '../util/notificationPayload.js';
+import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
@@ -1221,7 +1221,9 @@ const executeTarget = async (target, type, retried = false) => {
         // The payload carries the flag instead, and suppressesEvent quiets
         // the notifiers on it - the diagnostic box's data still lands, and
         // still pages nobody.
-        sendFinished(finishedPayload({...rowValues(testResult), provider, ping, jitter, download, upload, time,
+        // testResult is the plain {id, created} the controller's create
+        // answers, built by hand so the timestamp travels back with the id.
+        sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,
@@ -1292,7 +1294,7 @@ const executeTarget = async (target, type, retried = false) => {
         // For every member like the success path, and for its reason: the
         // payload's alerts flag is what keeps an unwatched failure from
         // paging anybody, while the sinks still record it.
-        sendError(failedPayload({...rowValues(testResult), provider: mode, error: message,
+        sendError(failedPayload({...testResult, provider: mode, error: message,
             targetId: target.id, targetName: target.name,
             alerts: Boolean(target.alerts),
             primary: await wasPrimaryMember(target)})).catch(err =>

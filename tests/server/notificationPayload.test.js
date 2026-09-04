@@ -1,9 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
-    FAILED_VARIABLES, FINISHED_VARIABLES, failedPayload, finishedPayload, rowValues
+    FAILED_VARIABLES, FINISHED_VARIABLES, failedPayload, finishedPayload
 } from "../../server/util/notificationPayload.js";
-import { readSource } from "../helpers/source.js";
 import { DATE_VARIABLES, replaceVariables } from "../../server/util/helpers.js";
 import { BASELINE_ARMED, BASELINE_BREACHED } from "../../server/util/alertThreshold.js";
 import {
@@ -435,49 +434,5 @@ describe("the clock a message is written on", () => {
     // lets a template name a column called `day` without the clock eating it.
     it("lets a given value override the clock name it shares", () => {
         assert.equal(replaceVariables("%hour%", {hour: "given"}, zoneFromName("Asia/Tokyo")), "given");
-    });
-});
-
-/**
- * The row as a spreadable object.
- *
- * tests.create answers a Sequelize instance, not the plain row the global
- * `query: {raw: true}` hands back from a read. An instance keeps its columns
- * behind prototype getters, and a spread copies own enumerable properties
- * only - so `{...testResult}` carried dataValues and bookkeeping and not one
- * column, and every integration was told `id: null, created: null` about a
- * test the log line beside it had just numbered.
- */
-describe("rowValues", () => {
-    it("reads an instance's columns, not its bookkeeping", async () => {
-        const { Sequelize, DataTypes } = await import("sequelize");
-        const db = new Sequelize({dialect: "sqlite", dialectModule: {}, logging: false, query: {raw: true}});
-        const model = db.define("rows", {created: DataTypes.DATE}, {timestamps: false});
-        const instance = model.build({id: 4711, created: new Date("2026-08-13T09:15:00.000Z")});
-
-        assert.deepEqual({...instance}.id, undefined, "the spread this replaces already carried the id");
-        const values = rowValues(instance);
-        assert.equal(values.id, 4711);
-        assert.equal(values.created.toISOString(), "2026-08-13T09:15:00.000Z");
-        assert.equal("dataValues" in values, false);
-    });
-
-    it("hands a plain row back as it is", () => {
-        assert.equal(rowValues(RECORD), RECORD);
-    });
-
-    it("tolerates a missing row", () => {
-        assert.deepEqual(rowValues(undefined), {});
-        assert.deepEqual(rowValues(null), {});
-    });
-
-    // Both sites, and a spread through the helper rather than of the row: a
-    // third notification added beside these would otherwise start out with the
-    // very bug this fixed.
-    it("is what the speedtest task spreads into both notifications", () => {
-        const source = readSource("server/tasks/speedtest.js");
-        assert.match(source, /sendFinished\(finishedPayload\(\{\.\.\.rowValues\(testResult\)/);
-        assert.match(source, /sendError\(failedPayload\(\{\.\.\.rowValues\(testResult\)/);
-        assert.doesNotMatch(source, /\{\.\.\.testResult\b/, "a bare spread of the instance");
     });
 });
