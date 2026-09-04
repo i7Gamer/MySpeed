@@ -51,12 +51,16 @@ export default ({close}) => {
         if (res?.ok) {
             updateToast(t("storage.settings_imported"), "green", faFileImport);
             updateConfig();
-        } else {
-            updateToast(body?.key
-                ? t("storage.import_config_error_key", {key: body.key})
-                : t("storage.import_config_error"), "red");
+            close();
+            return;
         }
-        close();
+
+        // Left open on a refusal, the way the tests tab beside it is: closing
+        // dropped the operator back to the dashboard with a red toast and no
+        // dialog to pick another file in.
+        updateToast(body?.key
+            ? t("storage.import_config_error_key", {key: body.key})
+            : t("storage.import_config_error"), "red");
     }
 
     const factoryReset = () => {

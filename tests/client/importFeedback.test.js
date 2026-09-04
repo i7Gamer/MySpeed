@@ -92,6 +92,18 @@ describe("what the storage dialog reads back", () => {
             "the configuration tab has no message that names the key");
     });
 
+    // Left open on a refusal, the way the tests tab beside it is: closing
+    // dropped the operator back to the dashboard with a red toast and no
+    // dialog to pick another file in.
+    it("keeps the dialog open when the config restore is refused", () => {
+        const importer = configTab.slice(configTab.indexOf("const importConfig"), configTab.indexOf("const factoryReset"));
+        const closes = importer.match(/close\(\);/g) ?? [];
+
+        assert.equal(closes.length, 1, "the config import closes the dialog from more than one place");
+        assert.match(importer, /if \(res\?\.ok\) \{[^}]*close\(\);[^}]*\}/,
+            "the config import closes the dialog outside its success branch");
+    });
+
     /**
      * The generic message stays for the refusals that name nothing - a truncated
      * file, a network failure, a 500 with no body at all.
