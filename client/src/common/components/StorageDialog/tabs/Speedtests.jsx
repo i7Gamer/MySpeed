@@ -8,6 +8,7 @@ import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faFileExport, faFileImport, faTrashCan, faChartLine, faClockRotateLeft, faCheck, faArrowLeft} from "@fortawesome/free-solid-svg-icons";
 import {EXPORT_FORMATS, RETENTION_DAYS_PLACEHOLDER} from "@/common/utils/InvariantText";
+import {formatWithUnit} from "@/common/utils/FormatUtil";
 
 /**
  * The longest history the server will keep. The same number controller/
@@ -163,7 +164,9 @@ export default ({tests, close}) => {
                     <FontAwesomeIcon icon={faChartLine}/>
                     <h3>{t("storage.stored_tests")}</h3>
                 </div>
-                <p className="storage-row-value">{tests} {t("storage.tests")}</p>
+                {/* Through formatWithUnit: a refused /storage hands in null,
+                    which is "not known", not "0 tests". */}
+                <p className="storage-row-value">{formatWithUnit(tests, t("storage.tests"))}</p>
             </div>
 
             <div className="storage-row">

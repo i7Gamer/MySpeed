@@ -105,7 +105,7 @@ export const StorageDialog = ({open, onClose}) => {
                             </div>
                             <div className="storage-manager" role="tabpanel"
                                  id={`${tablistId}-panel`} aria-labelledby={tabId(currentTab)}>
-                                {currentTab === TABS[0].id && <Speedtests tests={storageSize?.testCount ?? 0} close={close}/>}
+                                {currentTab === TABS[0].id && <Speedtests tests={storageSize?.testCount} close={close}/>}
                                 {currentTab === TABS[1].id && <Configuration close={close}/>}
                             </div>
                         </div>

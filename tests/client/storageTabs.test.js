@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, tagHolding } from "../helpers/source.js";
+import { formatWithUnit, NOT_MEASURED } from "@/common/utils/FormatUtil.js";
 
 /**
  * The storage dialog's two tabs were divs carrying an onClick.
@@ -147,5 +148,23 @@ describe("the storage dialog when /storage fails", () => {
     it("does not report a figure it does not have", () => {
         assert.match(dialog, /const EMPTY_STORAGE = \{size: null, testCount: null\}/,
             "a refused /storage is still reported as an empty database");
+    });
+
+    /**
+     * The other half. The size went through formatBytes and printed N/A; the
+     * count was handed to the tab as `testCount ?? 0` one line below the
+     * nulled constant, so a refused /storage still said "0 tests". The tab
+     * prints it through formatWithUnit, the one refusal every unit-print goes
+     * through, which answers N/A for null and "12 tests" for a count.
+     */
+    it("says the count is not known rather than nought", () => {
+        assert.doesNotMatch(dialog, /testCount \?\? 0/, "the tab is still handed a zero for a count nobody has");
+        assert.match(dialog, /tests=\{storageSize\?\.testCount\}/);
+
+        const tab = readSource("client/src/common/components/StorageDialog/tabs/Speedtests.jsx");
+        assert.match(tab, /\{formatWithUnit\(tests, t\("storage\.tests"\)\)\}/,
+            "the count is glued to its unit by hand, which prints null as a reading");
+        assert.equal(formatWithUnit(null, "tests"), NOT_MEASURED);
+        assert.equal(formatWithUnit(12, "tests"), "12 tests");
     });
 });
