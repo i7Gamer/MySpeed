@@ -273,14 +273,22 @@ const AVERAGE_DECIMALS_FACTOR = 100;
 /**
  * The dashed average line's value: measured points only, two decimals.
  *
- * Null when nothing was measured, so the caller can leave the line off. Zero is
- * a reading - "this line delivered nothing" - and both charts drew it for a
- * range in which every test failed: a dashed line along the axis labelled
- * "Average" with a tooltip reading "Average: 0 Mbps", while the average card
- * beside it correctly said N/A for the same range.
+ * Null when nothing was measured, so the caller can leave the line off. The
+ * server maps a failed row to null before the series arrives, so a zero left
+ * in a speed series is a run that connected and delivered nothing - a reading,
+ * and the one the operator most wants averaged in. The old `> 0` filter dated
+ * from when failures still arrived as zeros; once they stopped, it quietly
+ * inflated the average of any range with a dead run in it while the average
+ * card beside the chart counted the same zero.
+ *
+ * `measured` is the reader for the series: latency is the one series in which
+ * a zero is not a reading (the unmeasured sentinel), so the ping chart hands
+ * in the client's mirror of the server's measuredPing.
  */
-export const seriesAverage = (values) => {
-    const valid = values.filter((value) => value !== null && value !== undefined && value > 0);
+const isReading = (value) => typeof value === "number" && Number.isFinite(value);
+
+export const seriesAverage = (values, measured = isReading) => {
+    const valid = values.filter(measured);
     if (valid.length === 0) return null;
 
     return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * AVERAGE_DECIMALS_FACTOR)

@@ -3,6 +3,7 @@ import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
+import { measuredLatency } from "@/common/utils/TestUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
 import { lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor } from "@/pages/Statistics/charts/pointDensity";
 import { clickable } from "@/common/utils/Clickable";
@@ -52,7 +53,10 @@ const PingChart = memo(({ compact = false, ...props }) => {
             // is already > 0 - but a nullable NUMBER is worth being exact about
             // rather than relying on that.
             failedCounts: props.labels.map((_, index) => props.failedCounts?.[index] ?? null),
-            average: seriesAverage(values),
+            // Through the latency reader: a run whose provider measured no
+            // latency stores the sentinel 0, and a range of them would
+            // otherwise draw a perfect "Average: 0 ms".
+            average: seriesAverage(values, (value) => measuredLatency(value) !== null),
             isSingleDay: isSingleDaySeries(props.labels)
         };
     }, [props.labels, props.data, props.failed, props.errors, props.failedCounts]);

@@ -10,6 +10,7 @@ import {
     isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisBounds, timeAxisStep, timePoints,
     tooltipTheme, verticalGradientFill
 } from "../../client/src/pages/Statistics/charts/lineChartConfig.js";
+import { measuredLatency } from "../../client/src/common/utils/TestUtil.js";
 
 /**
  * The shared configuration behind the three statistics charts. Ping and speed
@@ -82,22 +83,40 @@ describe("seriesAverage", () => {
         assert.equal(seriesAverage([10, 20, 25.555]), 18.52);
     });
 
-    it("skips gaps and zeroes rather than dragging the line down", () => {
-        assert.equal(seriesAverage([null, undefined, 0, 30]), 30);
+    /**
+     * A gap is skipped; a measured zero is a reading and counts.
+     *
+     * The server already maps a failed row to null before the series reaches
+     * the client, so a zero left in a speed series is a run that connected and
+     * moved nothing - the line the operator most wants averaged in. The old
+     * `value > 0` filter was written when failed rows still arrived as zeros;
+     * once they stopped, it kept quietly inflating the average of any range
+     * with a dead run in it, while the average card beside the chart counted
+     * the same zero.
+     */
+    it("skips gaps but keeps a measured zero", () => {
+        assert.equal(seriesAverage([null, undefined, 0, 30]), 15);
+        assert.equal(seriesAverage([0, 0]), 0, "a range of runs that delivered nothing averages nothing, not N/A");
     });
 
-    /**
-     * Null, not zero. Zero is a reading - "this line delivered nothing" - and
-     * both line charts added the average dataset unconditionally, so a range in
-     * which every test failed drew a dashed line along the axis labelled
-     * "Average" with a tooltip reading "Average: 0 Mbps". The AverageChart card
-     * beside it correctly said N/A for the same range, and `tests.total` counts
-     * failures so the page never reached its empty state.
-     */
     it("answers null when nothing was measured", () => {
         assert.equal(seriesAverage([]), null);
         assert.equal(seriesAverage([null, null]), null);
-        assert.equal(seriesAverage([0, 0]), null, "a range in which every test failed measured nothing");
+    });
+
+    /**
+     * Latency is the one series in which a zero is *not* a reading: a
+     * successful run whose provider measured no latency stores the
+     * UNMEASURED_LATENCY sentinel, and the server's own average skips it. The
+     * ping chart hands seriesAverage the client's mirror of that reader, so a
+     * range of unmeasured runs draws no average line rather than a perfect
+     * "Average: 0 ms".
+     */
+    it("takes a reader, so the ping chart can skip the unmeasured sentinel", () => {
+        const measured = (value) => measuredLatency(value) !== null;
+
+        assert.equal(seriesAverage([0, 30], measured), 30);
+        assert.equal(seriesAverage([0, 0], measured), null);
     });
 });
 
@@ -113,6 +132,17 @@ describe("the charts that draw the average", () => {
         it(`${name} leaves the line off when there is no average`, () => {
             assert.match(source, /average !== null \? \[averageLineDataset\(/,
                 `${name} still draws an average line for a range that measured nothing`);
+        });
+
+        // Only the ping series carries the unmeasured sentinel; the speed
+        // charts average every reading, zeros included.
+        it(`${name} averages through the reader its series needs`, () => {
+            if (name === "PingChart") {
+                assert.match(source, /seriesAverage\(values, \(value\) => measuredLatency\(value\) !== null\)/,
+                    "the ping chart averages the unmeasured sentinel as a perfect 0 ms");
+            } else {
+                assert.match(source, /seriesAverage\(values\)/);
+            }
         });
 
         it(`${name} does not fall back to zero`, () => {
