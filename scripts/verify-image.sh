@@ -83,9 +83,14 @@ echo "Checking the container healthcheck ..."
 # first probe succeeds, and the first probe runs one --interval after start -
 # so a single read only ever saw "healthy" because a first boot downloads two
 # CLIs before the server listens, which happens to take longer than that.
+#
+# `|| true` because the script runs under set -e and a bare assignment carries
+# its substitution's exit status: an inspect that fails - an image with no
+# HEALTHCHECK errors the template on the missing field - would otherwise kill
+# the script here, before fail() below can print the reason and the log.
 status="starting"
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-    status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null)"
+    status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || true)"
     [ "$status" != "starting" ] && break
     sleep "$SLEEP_SECONDS"
 done

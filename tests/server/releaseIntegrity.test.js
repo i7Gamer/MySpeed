@@ -373,4 +373,18 @@ describe("verify-image.sh waits for the container's own healthcheck", () => {
         assert.match(verify, /"\$status" != "starting"/, "a container still in its start period is judged");
         assert.match(verify, /"\$status" = "healthy"/, "the final status is not asserted");
     });
+
+    /**
+     * The script runs under `set -e`, and a bare assignment carries the exit
+     * status of its command substitution - so a docker inspect that fails
+     * (an image with no HEALTHCHECK, whose template errors on the missing
+     * field) killed the script before the `|| fail` two lines down could
+     * print the reason and the container log. The old one-liner kept the
+     * substitution inside `[ ]`, where errexit does not look; the poll has to
+     * keep the same protection.
+     */
+    it("reports a failing inspect rather than dying silently under set -e", () => {
+        assert.match(verify, /status="\$\(docker inspect --format '\{\{\.State\.Health\.Status\}\}' "\$CONTAINER" 2>\/dev\/null \|\| true\)"/,
+            "a failing docker inspect exits the script before fail() can say why");
+    });
 });
