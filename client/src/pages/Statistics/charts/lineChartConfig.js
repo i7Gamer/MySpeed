@@ -455,6 +455,10 @@ export const lineChartOptions = ({
     responsive: true,
     maintainAspectRatio: false,
     resizeDelay: 100,
+    // chart.js formats a numeric tick with Intl through this, and left unset
+    // it means "whatever the browser says" - so a German browser on an
+    // English MySpeed read "1.000" on the axis beside "1,000" in the tooltip.
+    locale: appLocale(),
     ...chartMotion,
     plugins: {
         tooltip: {

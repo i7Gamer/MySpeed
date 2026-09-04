@@ -2,7 +2,7 @@ import ChartWrapper from "@/common/components/ChartWrapper";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
-import { convertSpeed, formatHour, getSpeedUnit } from "@/common/utils/FormatUtil";
+import { appLocale, convertSpeed, formatHour, getSpeedUnit } from "@/common/utils/FormatUtil";
 import { chartMotion, tooltipTheme, withAlpha } from "@/pages/Statistics/charts/lineChartConfig";
 import { useChartTheme } from "@/pages/Statistics/charts/useChartTheme";
 import { clickable } from "@/common/utils/Clickable";
@@ -52,6 +52,8 @@ const HourlyChart = memo((props) => {
         responsive: true,
         maintainAspectRatio: false,
         resizeDelay: 100,
+        // The app's locale for the tick formatting, as lineChartOptions says.
+        locale: appLocale(),
         ...chartMotion,
         plugins: {
             tooltip: {
