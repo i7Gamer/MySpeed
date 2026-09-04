@@ -62,7 +62,13 @@ describe("the metric card reads in pairs", () => {
         assert.match(metric, /className="detail-metric-value-row"/);
 
         const valueRow = metric.slice(metric.indexOf('className="detail-metric-value-row"'));
-        const closed = valueRow.slice(0, valueRow.indexOf("</div>\n\n"));
+        // A blank line, on either line ending: readSource reads the working
+        // tree raw, which is CRLF on a Windows checkout, and "</div>\n\n" then
+        // answered -1 - slice(0, -1) kept the whole file, and both includes
+        // below were satisfied by text far outside the row.
+        const end = valueRow.search(/<\/div>\r?\n\r?\n/);
+        assert.notEqual(end, -1, "re-anchor this lift: the value row no longer ends on a blank line");
+        const closed = valueRow.slice(0, end);
 
         assert.ok(closed.includes("detail-metric-value"), "the value is not in the row");
         assert.ok(closed.includes("{sub}"), "the secondary figures are still outside the value's row");

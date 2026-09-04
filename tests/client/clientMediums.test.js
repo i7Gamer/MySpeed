@@ -79,8 +79,14 @@ describe("loading the statistics page", () => {
      */
     it("still catches a throw from its own handler", () => {
         const chain = page.slice(page.indexOf("Promise.allSettled("));
+        // The cut is checked to exist: indexOf answers -1 for an anchor the
+        // dependency list has outgrown, slice(0, -1) then keeps the whole rest
+        // of the page, and two other .catch calls further down satisfied this
+        // with the handler's own catch deleted.
+        const end = chain.indexOf("}, [dateRange, currentNode");
+        assert.notEqual(end, -1, "re-anchor this lift: the updateStats dependency list moved");
 
-        assert.match(chain.slice(0, chain.indexOf("}, [dateRange]);")), /\.catch\(/,
+        assert.match(chain.slice(0, end), /\.catch\(/,
             "anything the handler throws is now an unhandled rejection and the page spins for ever");
     });
 
