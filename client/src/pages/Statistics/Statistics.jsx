@@ -506,6 +506,11 @@ export const Statistics = () => {
         if (targetFilter != null) query.set("target", String(targetFilter));
 
         let cancelled = false;
+        // Cleared where the request leaves, not only where the chart closes:
+        // a new range's request otherwise left the previous range's series
+        // in state until its answer arrived - and for good if it never did,
+        // drawn under the new range's heading with the toolbar saying nothing.
+        setDetailStatistics(null);
         setDetailLoading(true);
 
         jsonRequest(`/speedtests/statistics/?${query}`)

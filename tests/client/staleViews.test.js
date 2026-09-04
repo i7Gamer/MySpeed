@@ -281,3 +281,24 @@ describe("the config provider drops an answer for a config it has left", () => {
             "a stale failure still raises the error dialog over a working node");
     });
 });
+
+/**
+ * And the series has to follow the range, not only the node. The effect
+ * cleared detailStatistics on the way out of the detail branch and nowhere
+ * else, so a new range's request left the previous range's thousand-point
+ * payload in state until the answer arrived - and for good if it never did.
+ * The modal then drew the old range under the new range's heading, with the
+ * toolbar saying nothing, because detailLoading was false again. compareStats
+ * beside it is keyed and gated; this one is cleared where the request leaves.
+ */
+describe("the high-resolution series and the range", () => {
+    const statistics = code("pages/Statistics/Statistics.jsx");
+    const effect = statistics.slice(statistics.indexOf('query.set("points", String(FULL_DETAIL_POINTS));'),
+        statistics.indexOf("}, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);"));
+
+    it("is cleared when a new request is issued, not only when the chart closes", () => {
+        assert.notEqual(effect.length, 0, "re-anchor this lift: the detail effect moved");
+        assert.match(effect, /setDetailStatistics\(null\)/,
+            "a failed detail request leaves the previous range's series drawn under the new range's heading");
+    });
+});
