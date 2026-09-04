@@ -72,10 +72,15 @@ describe("a prefixed instance whose build has no page", () => {
 
     // Not an empty 200: a page that is not there reads as a page that is blank,
     // and a blank page is what a broken client build looks like from the front.
+    // Asserted whatever the status: this used to check the body only behind
+    // `if (status === 200)`, and in the state this suite builds the route
+    // answers 404, so the test executed no assertion at all and passed a 500
+    // or an empty page alike. A page that is not there is a 404 with a body
+    // that says so; a 200 is fine only if it carries one.
     it("does not answer a page request with an empty body", async () => {
         const response = await fetch(`${baseUrl}/internet_speed/`);
 
-        if (response.status === 200)
-            assert.notEqual((await response.text()).trim(), "", "the SPA route served an empty page");
+        assert.ok([200, 404].includes(response.status), `the SPA route answered ${response.status}`);
+        assert.notEqual((await response.text()).trim(), "", "the SPA route served an empty page");
     });
 });

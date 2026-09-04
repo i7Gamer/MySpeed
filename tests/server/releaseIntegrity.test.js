@@ -153,9 +153,46 @@ describe("install.sh verifies what it downloaded", () => {
     });
 
     // Verified before it is stated executable and moved into place, not after.
+    // Anchored on the call, not the name: the first "sha256_of" in the file is
+    // the function's own definition, which sits above the install by
+    // construction, so the block that verifies could move below the move and
+    // this still held.
     it("checks before it installs", () => {
-        assert.ok(at(source, "sha256_of") < at(source, 'mv -f "$DOWNLOAD_TMP" myspeed'),
+        assert.ok(at(source, 'ACTUAL=$(sha256_of "$DOWNLOAD_TMP")') < at(source, 'mv -f "$DOWNLOAD_TMP" myspeed'),
             "the binary is installed and then checked");
+    });
+});
+
+/**
+ * chooser.sh fetches an installer from the latest release and runs it. Piped
+ * straight into bash from a curl with no --fail, an HTTP error body - a
+ * release with no such asset, GitHub answering 5xx - was handed to bash as a
+ * program, as root, and reported as a page of syntax errors rather than as
+ * the download it was.
+ */
+describe("chooser.sh checks the download before it runs it", () => {
+    const chooser = withoutComments(read("scripts/chooser.sh"));
+
+    it("does not pipe an unchecked response into bash", () => {
+        assert.doesNotMatch(chooser, /bash <\(curl/, "an HTTP error body is executed as a script");
+    });
+
+    it("refuses an HTTP error and says so", () => {
+        assert.match(chooser, /curl -fsSL|curl -sSfL|curl --fail/, "curl does not fail on an HTTP error");
+        assert.match(chooser, /could not download|download failed/i, "a failed download is not reported");
+    });
+});
+
+/**
+ * The baseline build the README tells pre-AVX2 users to run writes
+ * MySpeed-linux-x64-baseline beside MySpeed, and only the latter was ignored:
+ * a hundred megabytes offered to `git add .`.
+ */
+describe("the build outputs are ignored", () => {
+    const ignored = read(".gitignore").split(/\r?\n/);
+
+    it("covers every binary the matrix can produce", () => {
+        assert.ok(ignored.includes("/MySpeed-*"), "the baseline binary and the source zip are not ignored");
     });
 });
 

@@ -45,7 +45,11 @@ describe("what the linter is configured to see", () => {
     // Everything the linter is pointed at, one file from each block, because
     // no-undef is the rule the whole config was adopted for.
     const EVERY_BLOCK = [...WITH_HOOKS, "server/index.js", "scripts/move-client-build.js",
-        "eslint.config.mjs", "client/public/themeBoot.js"];
+        "eslint.config.mjs", "client/public/themeBoot.js",
+        // The one file the last glob was widened for: it is matched by
+        // "client/*.mjs" alone, so sampling eslint.config.mjs (matched by
+        // "*.mjs") let that entry be dropped with everything green.
+        "client/vite.config.mjs"];
 
     it("checks the hook rules in the suite as well as in the client", async () => {
         for (const file of WITH_HOOKS) {

@@ -30,8 +30,10 @@ const declared = (file) => {
     return new Set([...Object.keys(json.dependencies ?? {}), ...Object.keys(json.devDependencies ?? {})]);
 };
 
+// Every javascript file, not only *.test.js: tests/helpers is where the shared
+// scaffolding lives now, and it imports packages of its own.
 const testFiles = (directory) => fs.readdirSync(path.join(root, directory))
-    .filter((name) => name.endsWith(".test.js"))
+    .filter((name) => /\.(m?js|jsx)$/.test(name))
     .map((name) => path.join(root, directory, name));
 
 /*
@@ -66,7 +68,7 @@ const packageOf = (specifier) => {
 describe("what the tests import", () => {
     const available = new Set([...declared("package.json"), ...declared("client/package.json")]);
 
-    for (const directory of ["tests/client", "tests/server", "tests/integration"]) {
+    for (const directory of ["tests/client", "tests/server", "tests/integration", "tests/helpers"]) {
         it(`${directory} imports only packages a manifest asks for`, () => {
             const undeclared = new Map();
 
