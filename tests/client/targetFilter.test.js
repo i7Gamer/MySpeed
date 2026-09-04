@@ -87,7 +87,9 @@ describe("the chip selection reaches every request it narrows", () => {
 
         assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter, compare\]\);/,
             "the statistics keep the previous target's figures under the new chip");
-        assert.match(statistics, /\}, \[wantsDetail, isDownsampled, dateRange, targetFilter, currentNode\]\);/,
+        // Through the memoised query the effect is keyed on, which carries
+        // the chip: staleViews.test.js holds the effect to that key.
+        assert.match(statistics, /const detailQuery = useMemo\(\(\) => \{[\s\S]*?\}, \[dateRange, targetFilter\]\);/,
             "the high-resolution series is still the previous target's");
     });
 

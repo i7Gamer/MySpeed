@@ -491,6 +491,18 @@ export const Statistics = () => {
      * points each, and re-rendering all of them to serve one open chart is the
      * expensive part.
      */
+    // By value, not by object: dateRange is a fresh object on every unrelated
+    // URL change (compareKey below says so), and keyed on it the effect
+    // cleared an open chart back to the downsampled series - and re-asked for
+    // the same thousand points - whenever the comparison toggled.
+    const detailQuery = useMemo(() => {
+        const query = rangeQuery(dateRange);
+        query.set("points", String(FULL_DETAIL_POINTS));
+        if (targetFilter != null) query.set("target", String(targetFilter));
+
+        return String(query);
+    }, [dateRange, targetFilter]);
+
     useEffect(() => {
         if (!wantsDetail || !isDownsampled) {
             setDetailStatistics(null);
@@ -501,10 +513,6 @@ export const Statistics = () => {
             return;
         }
 
-        const query = rangeQuery(dateRange);
-        query.set("points", String(FULL_DETAIL_POINTS));
-        if (targetFilter != null) query.set("target", String(targetFilter));
-
         let cancelled = false;
         // Cleared where the request leaves, not only where the chart closes:
         // a new range's request otherwise left the previous range's series
@@ -513,7 +521,7 @@ export const Statistics = () => {
         setDetailStatistics(null);
         setDetailLoading(true);
 
-        jsonRequest(`/speedtests/statistics/?${query}`)
+        jsonRequest(`/speedtests/statistics/?${detailQuery}`)
             .then(stats => { if (!cancelled) setDetailStatistics(stats); })
             .catch(error => console.error("Failed to load the detailed statistics:", error))
             .finally(() => { if (!cancelled) setDetailLoading(false); });
@@ -524,7 +532,7 @@ export const Statistics = () => {
         // node's thousand-point series renders under the new node's heading.
         // Today the layout happens to make that unreachable - switching nodes
         // unmounts this page - but the dependency is what guards it on purpose.
-    }, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);
+    }, [wantsDetail, isDownsampled, detailQuery, currentNode]);
 
     /*
      * What the comparison card's figures answer for, by value rather than by

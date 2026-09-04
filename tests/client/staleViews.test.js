@@ -211,7 +211,7 @@ describe("the statistics page does not show the previous range's numbers", () =>
      */
     it("re-keys the detail fetch on the node like the page fetch", () => {
         assert.match(statistics,
-            /}, \[wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]\);/,
+            /}, \[wantsDetail, isDownsampled, detailQuery, currentNode]\);/,
             "a node switch would leave the previous node's series under the new node's heading");
     });
 });
@@ -293,12 +293,26 @@ describe("the config provider drops an answer for a config it has left", () => {
  */
 describe("the high-resolution series and the range", () => {
     const statistics = code("pages/Statistics/Statistics.jsx");
-    const effect = statistics.slice(statistics.indexOf('query.set("points", String(FULL_DETAIL_POINTS));'),
-        statistics.indexOf("}, [wantsDetail, isDownsampled, dateRange, targetFilter, currentNode]);"));
+    const DEPS = "}, [wantsDetail, isDownsampled, detailQuery, currentNode]);";
+    const effect = statistics.slice(statistics.indexOf("if (!wantsDetail || !isDownsampled) {"),
+        statistics.indexOf(DEPS));
 
     it("is cleared when a new request is issued, not only when the chart closes", () => {
         assert.notEqual(effect.length, 0, "re-anchor this lift: the detail effect moved");
         assert.match(effect, /setDetailStatistics\(null\)/,
             "a failed detail request leaves the previous range's series drawn under the new range's heading");
+    });
+
+    /**
+     * Keyed on the query the request carries, not on the object it is built
+     * from. `dateRange` is a fresh object on every unrelated URL change - the
+     * comment on compareKey says so - so keyed on it, the clear above blanked
+     * an open chart back to the downsampled series whenever the comparison
+     * toggled, and re-asked for the same thousand points.
+     */
+    it("re-asks and clears on a changed query, not on a changed object", () => {
+        assert.match(statistics, /const detailQuery = useMemo\(\(\) => \{[\s\S]*?\}, \[dateRange, targetFilter\]\);/,
+            "the query is not memoised by value");
+        assert.notEqual(statistics.indexOf(DEPS), -1, "the effect is still keyed on the dateRange object");
     });
 });
