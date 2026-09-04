@@ -83,8 +83,10 @@ jobs:
             <logpath>%ProgramData%\MySpeed\logs</logpath>
             <stoptimeout>30 sec</stoptimeout>
             <startmode>Automatic</startmode>
-            <onfailure action="restart" delay="10 sec"/>
-            <resetfailure>1 hour</resetfailure>
+            <!-- No onfailure or resetfailure here: WinSW applies those during its
+                 own install verb, which the MSI never runs. The recovery lives on
+                 the ServiceInstall in the WiX source below, where the service is
+                 actually registered. -->
           </service>
           "@
           $serviceConfig | Out-File -FilePath "installer\MySpeedService.xml" -Encoding UTF8
@@ -139,7 +141,7 @@ jobs:
         run: |
           $wxsContent = @"
           <?xml version="1.0" encoding="UTF-8"?>
-          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
             <Product Id="*" Name="$($env:PRODUCT_NAME)" Language="1033" Version="$($env:VERSION).0" Manufacturer="i7Gamer" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
           
@@ -209,10 +211,20 @@ jobs:
                 <Component Id="ServiceWrapper" Guid="DD2D201B-6AA1-4604-9CF7-4EC6B9C65432">
                   <File Id="ServiceWrapperExe" Source="MySpeedService.exe" KeyPath="yes" />
                   <File Id="ServiceConfig" Source="MySpeedService.xml" />
-                  <ServiceInstall Id="MySpeedService" Name="MySpeed" DisplayName="MySpeed Speedtest Tracker" 
-                                 Type="ownProcess" Start="auto" ErrorControl="normal" 
+                  <ServiceInstall Id="MySpeedService" Name="MySpeed" DisplayName="MySpeed Speedtest Tracker"
+                                 Type="ownProcess" Start="auto" ErrorControl="normal"
                                  Description="MySpeed Speedtest Tracker Service"
-                                 Account="LocalSystem" Interactive="no" />
+                                 Account="LocalSystem" Interactive="no">
+                    <!-- Restart after a crash, the way the Linux unit's Restart=always
+                         does. Stated here because this element is what registers the
+                         service: the WinSW config's onfailure only takes effect through
+                         WinSW's own install verb, which the MSI never runs, so an
+                         installed MySpeed carried no failure actions at all and a crash
+                         left it stopped until a reboot. -->
+                    <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
+                                        ThirdFailureActionType="restart" RestartServiceDelayInSeconds="10"
+                                        ResetPeriodInDays="1" />
+                  </ServiceInstall>
                   <ServiceControl Id="MySpeedServiceControl" Name="MySpeed" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
                 </Component>
               </ComponentGroup>
@@ -250,8 +262,8 @@ jobs:
       - name: Build MSI
         working-directory: installer
         run: |
-          candle -arch x64 myspeed.wxs
-          light myspeed.wixobj -sice:ICE61 -o MySpeed-installer.msi
+          candle -arch x64 -ext WixUtilExtension myspeed.wxs
+          light myspeed.wixobj -ext WixUtilExtension -sice:ICE61 -o MySpeed-installer.msi
 
       - name: Upload to Release
         uses: actions/github-script@v9

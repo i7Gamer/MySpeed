@@ -85,3 +85,37 @@ describe("where the installed entry points back to", () => {
                 `${property} points at ${value}, which is not this project`);
     });
 });
+
+/**
+ * The recovery the service is documented to have.
+ *
+ * WinSW applies <onfailure> and <resetfailure> during its own `install` verb,
+ * which the MSI never runs: <ServiceInstall> registers the service itself, so
+ * those two elements were inert and `sc qfailure MySpeed` on an installed
+ * machine listed no failure actions at all. A crashed MySpeed stayed down
+ * until a reboot, on the install path sold as "registers a Windows service",
+ * while the Linux unit beside it carries Restart=always. Stated in WiX, where
+ * the service is actually created, and the dead WinSW elements are gone
+ * rather than left saying one thing while the service does another.
+ */
+describe("the service the installer registers restarts after a crash", () => {
+    it("states the recovery in WiX, beside the ServiceInstall that creates the service", () => {
+        assert.match(workflow, /xmlns:util="http:\/\/schemas\.microsoft\.com\/wix\/UtilExtension"/,
+            "the util extension namespace is not declared");
+        const config = workflow.match(/<util:ServiceConfig[^>]*\/>/);
+        assert.ok(config, "no util:ServiceConfig, so the SCM is told nothing about failures");
+        for (const attribute of ["FirstFailureActionType=\"restart\"", "SecondFailureActionType=\"restart\"",
+            "ThirdFailureActionType=\"restart\"", "RestartServiceDelayInSeconds=", "ResetPeriodInDays="])
+            assert.ok(config[0].includes(attribute), `the service config lacks ${attribute}`);
+    });
+
+    it("links the util extension into both WiX passes", () => {
+        assert.match(workflow, /candle [^\n]*-ext WixUtilExtension/, "candle does not load the util extension");
+        assert.match(workflow, /light [^\n]*-ext WixUtilExtension/, "light does not load the util extension");
+    });
+
+    it("no longer carries the WinSW recovery elements the MSI never applies", () => {
+        assert.doesNotMatch(workflow, /<onfailure/, "a WinSW onfailure the MSI path never applies");
+        assert.doesNotMatch(workflow, /<resetfailure>/, "a WinSW resetfailure the MSI path never applies");
+    });
+});
