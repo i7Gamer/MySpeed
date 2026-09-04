@@ -579,6 +579,19 @@ describe("formatShortTime", () => {
     it("defaults to the 24-hour clock", () => {
         assert.equal(formatShortTime(AFTERNOON, undefined), "14:05");
     });
+
+    // The row builds its date from Date.parse of what a node sent, and an
+    // unparseable `created` read "NaN:NaN" where formatDateTime beside it
+    // already answers a blank.
+    it("returns an empty string for an unusable value", () => {
+        assert.equal(formatShortTime(new Date(NaN), CLOCK_24H), "");
+        assert.equal(formatShortTime("nonsense", CLOCK_12H), "");
+        assert.equal(formatShortTime(null, CLOCK_24H), "");
+    });
+
+    it("accepts the timestamp string a row carries", () => {
+        assert.equal(formatShortTime(AFTERNOON.toISOString(), CLOCK_24H), "14:05");
+    });
 });
 
 describe("locale handling", () => {

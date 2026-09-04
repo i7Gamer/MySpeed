@@ -162,7 +162,13 @@ export const formatDateTime = (value, preferences, dateOptions = {}) => {
     return `${datePart} ${timePart}`;
 };
 
-export const formatShortTime = (date, preferences) => {
+// Normalised like formatDateTime above: the row builds its date from
+// Date.parse of what a node sent, and an unparseable `created` read "NaN:NaN"
+// where every other formatter here answers a blank.
+export const formatShortTime = (value, preferences) => {
+    const date = toDate(value);
+    if (isNaN(date.getTime())) return "";
+
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
     if (use12h) {
         let hours = date.getHours();
