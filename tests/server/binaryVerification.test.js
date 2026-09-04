@@ -256,8 +256,17 @@ describe("CI compiles the client", () => {
 
     // After the suite: the tests are the cheaper signal and the one that says
     // more about a failure, so they should be what fails first.
+    // Both positions are checked to exist before they are compared: indexOf
+    // answers -1 for a step that is not there, and -1 is less than anything,
+    // so the comparison alone passed for as long as the suite step was named
+    // something other than what it looked for - which it was, once the step
+    // moved from test:all to test:coverage.
     it("does so after the tests have run", () => {
-        assert.ok(tests.indexOf("npm run test:all") < tests.indexOf("run: bun run build"),
+        const suite = tests.indexOf("run: npm run test:coverage");
+        const build = tests.indexOf("run: bun run build");
+        assert.notEqual(suite, -1, "no step runs the suite under coverage");
+        assert.notEqual(build, -1, "no step builds the client");
+        assert.ok(suite < build,
             "the build runs before the suite, so a broken test is reported as a broken build");
     });
 
