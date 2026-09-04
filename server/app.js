@@ -73,6 +73,13 @@ const STATISTICS_REQUESTS_PER_MINUTE = 60;
 // A scrape every fifteen seconds is four a minute.
 const METRICS_REQUESTS_PER_MINUTE = 60;
 
+// The probe must answer regardless of how the instance is locked down, and a
+// container healthcheck must never be throttled out of existence - but it is
+// the one unauthenticated door that reaches the database on every request,
+// and it sat outside every limit. Ten a second is two hundred times a
+// thirty-second healthcheck and still a ceiling for a stranger.
+const HEALTH_REQUESTS_PER_MINUTE = 600;
+
 const devModeHtmlPath = path.join(process.cwd(), 'server', 'templates', 'env.html');
 const devModeHtml = fs.existsSync(devModeHtmlPath) ? fs.readFileSync(devModeHtmlPath, 'utf-8') : '';
 
@@ -113,11 +120,6 @@ const smallJsonBody = express.json({ limit: JSON_BODY_LIMIT });
 
 app.use((req, res, next) => isLargeBodyPath(req.path) ? next() : smallJsonBody(req, res, next));
 
-// Mounted before the authenticated routes and before the rate limiter: the
-// probe must answer regardless of how the instance is locked down, and a
-// container healthcheck must never be throttled out of existence.
-app.use("/api/health", healthRoutes);
-
 /**
  * Every limiter this module builds, so a test can put them back as they were.
  *
@@ -136,6 +138,11 @@ const limited = (options) => {
 };
 
 export const resetRateLimits = () => rateLimiters.forEach((limiter) => limiter.reset());
+
+// Mounted before the authenticated routes and behind its own, far looser
+// limiter rather than the API's: the probe answers however the instance is
+// locked down, and a healthcheck is never counted against the dashboard.
+app.use("/api/health", limited({limit: HEALTH_REQUESTS_PER_MINUTE}), healthRoutes);
 
 app.use("/api", limited({limit: API_REQUESTS_PER_MINUTE}));
 

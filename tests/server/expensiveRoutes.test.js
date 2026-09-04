@@ -93,8 +93,11 @@ describe("the expensive read limiter", () => {
             // The general backstop, which is the thing these are narrower than.
             .filter((path) => path !== "/api");
 
+        // The two with a limit of their own that is not the expensive one:
+        // the scrape, and the probe - which is looser than the backstop, not
+        // narrower, so a healthcheck is never counted against the dashboard.
         assert.deepEqual(mounted.filter((path) => !EXPENSIVE_PATHS.includes(path)),
-            ["/api/prometheus"],
+            ["/api/health", "/api/prometheus"],
             "a path was given its own limit without being written down here");
     });
 

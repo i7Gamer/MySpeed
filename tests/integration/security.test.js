@@ -249,3 +249,24 @@ describe("rate limiting", () => {
         assert.match(refused.message, /too many requests/i);
     });
 });
+
+/**
+ * The probe is the one unauthenticated route that reaches the database on
+ * every request, and it sat outside every limiter - the only unmetered door.
+ * Its own limit, far above any prober, so a healthcheck is never throttled
+ * and a stranger cannot drive the database handle for free.
+ */
+describe("the health probe", () => {
+    it("is metered, generously", async () => {
+        const attempts = 700;
+        let refused = null;
+
+        for (let attempt = 0; attempt < attempts && refused === null; attempt++) {
+            const {status} = await api(server.baseUrl, "/health");
+            if (status === 429) refused = attempt;
+        }
+
+        assert.notEqual(refused, null, "the probe answered seven hundred requests in a row");
+        assert.ok(refused >= 600, `refused after ${refused} requests, which a busy healthcheck could reach`);
+    });
+});
