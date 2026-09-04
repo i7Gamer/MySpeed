@@ -110,9 +110,26 @@ describe("the storage tabs say what they are", () => {
      * element so the rule cannot orphan part of it again.
      */
     it("style the size readout with the element the stylesheet names", () => {
-        assert.match(dialog, /<span>\{Math\.round/,
+        assert.match(dialog, /<span>\{formatBytes\(/,
             "the size readout is not a span, so the tab-label rule does not reach it");
         assert.doesNotMatch(dialog, /<p>/,
             "a paragraph in this dialog is styled by nothing and carries browser default margins");
+    });
+});
+
+/**
+ * The one byte count in the app that did not go through formatBytes. The
+ * route answers in bytes; the dialog divided by 1024, labelled the result
+ * "KB" in the JSX, and never climbed a ladder - so a year of five-minute
+ * tests read as a six-digit number of a unit nobody involved used, where the
+ * traffic row beside it says "1.2 GB".
+ */
+describe("the storage size figure", () => {
+    const dialog = readSource("client/src/common/components/StorageDialog/StorageDialog.jsx");
+
+    it("is printed through formatBytes like every other byte count", () => {
+        assert.match(dialog, /formatBytes\(storageSize\?\.size\)/, "the size is not printed through formatBytes");
+        assert.doesNotMatch(dialog, /\/ 1024/, "the size is still divided by hand");
+        assert.doesNotMatch(dialog, /\} KB</, "the unit is still an English literal in the JSX");
     });
 });

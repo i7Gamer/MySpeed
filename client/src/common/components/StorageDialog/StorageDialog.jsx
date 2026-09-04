@@ -7,6 +7,7 @@ import {faDatabase, faGauge, faScrewdriverWrench} from "@fortawesome/free-solid-
 import Speedtests from "./tabs/Speedtests";
 import Configuration from "./tabs/Configuration";
 import {jsonRequest} from "@/common/utils/RequestUtil";
+import {formatBytes} from "@/common/utils/FormatUtil";
 
 const EMPTY_STORAGE = {size: 0, testCount: 0};
 
@@ -91,8 +92,12 @@ export const StorageDialog = ({open, onClose}) => {
                                         {/* A span like the tab labels above: the stylesheet
                                             styles one label element for the whole dialog, and
                                             a paragraph here silently fell out of that rule
-                                            when the labels moved. */}
-                                        <span>{Math.round((storageSize?.size ?? 0) / 1024)} KB</span>
+                                            when the labels moved. Through formatBytes like every
+                                            other byte count: the route answers in bytes, and a
+                                            hand division by 1024 labelled KB never climbed a
+                                            ladder, so a year of tests read as six digits of a
+                                            unit nobody involved used. */}
+                                        <span>{formatBytes(storageSize?.size)}</span>
                                     </div>
                                 </div>
                             </div>
