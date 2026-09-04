@@ -173,8 +173,13 @@ export const stripTrailingSlashes = (value) => {
  *
  * Here rather than in ntfy, where it was written, because the credentials go
  * through it too now and two integrations need the same rule.
+ *
+ * DEL (0x7F) is refused as well: it sits inside Latin-1 and node refuses to
+ * write it - res.setHeader throws ERR_INVALID_CHAR and the outbound client
+ * refuses the value - so one such byte in a title or a token failed the
+ * whole request rather than losing the byte.
  */
-const HEADER_SAFE = /[^\x20-\xFF]/g;
+const HEADER_SAFE = /[^\x20-\x7E\x80-\xFF]/g;
 
 export const headerSafe = (value) => String(value)
     .replace(/[\r\n]+/g, " ")
