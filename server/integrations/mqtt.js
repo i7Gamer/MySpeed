@@ -2,6 +2,7 @@ import { publishAll } from "../util/mqtt.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
 import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { DEFAULT_DISCOVERY_PREFIX, discoveryMessages } from "../util/homeAssistant.js";
+import { measuredPing, usableFigure } from "../util/metricValue.js";
 // The import attribute is required by the ESM spec for JSON modules; bun is
 // lenient about it, node is not.
 import packageJson from "../../package.json" with { type: 'json' };
@@ -106,6 +107,30 @@ export const forgetAnnouncements = () => announced.clear();
 const body = (payload) => Buffer.from(JSON.stringify(payload), "utf8");
 
 /**
+ * A result with its measurements read the way the other two metric sinks
+ * read them.
+ *
+ * A successful run whose latency block carried no average stores exactly 0,
+ * and a placeholder -1 can sit in one column beside real figures in the
+ * others. Prometheus leaves that gauge unset and InfluxDB omits the field;
+ * this published the row as it stood, and the discovery beside it declares
+ * the entity a measurement with a duration class - so the fabricated zero
+ * went into Home Assistant's long-term statistics as a perfect 0 ms line.
+ * Null is what a Home Assistant sensor reads as "unknown". Everything else in
+ * the payload is the row's identity and travels untouched.
+ */
+const measurements = (data) => ({
+    ...data,
+    ping: measuredPing(data.ping),
+    jitter: usableFigure(data.jitter),
+    download: usableFigure(data.download),
+    upload: usableFigure(data.upload),
+    packetLoss: usableFigure(data.packetLoss),
+    downloadLatency: usableFigure(data.downloadLatency),
+    uploadLatency: usableFigure(data.uploadLatency)
+});
+
+/**
  * `announced` is written here, once the broker has taken the messages, rather
  * than where they are built.
  *
@@ -166,7 +191,7 @@ export default (registerEvent) => {
         // is a noticeable thing to do to a broker on every restart.
         await send(c, [
             ...(announcement?.messages ?? []),
-            {topic: topicFor(c.topic, target), payload: body(data), retain: c.retain === true}
+            {topic: topicFor(c.topic, target), payload: body(measurements(data)), retain: c.retain === true}
         ], activity, announcement);
     });
 

@@ -594,3 +594,35 @@ describe("the declared fields", () => {
             assert.ok(!regex.test(bad), `${JSON.stringify(bad)} was accepted as a topic`);
     });
 });
+
+/**
+ * The third metric sink, read like the other two.
+ *
+ * A successful run whose latency block carried no average stores exactly 0,
+ * and every reader that was moved onto measuredPing treats that as "not
+ * measured" - the statistics draw a gap, Prometheus leaves the gauge unset,
+ * InfluxDB omits the field. MQTT published the payload as it stood, and the
+ * Home Assistant discovery beside it declares the entity a measurement with a
+ * duration class - so the fabricated zero went into Home Assistant's
+ * long-term statistics as a perfect 0 ms line. The seven measurement keys are
+ * read through the shared readers; everything else in the payload is the
+ * row's identity and travels untouched.
+ */
+describe("a finished test's measurements", () => {
+    it("publish a latency nobody measured as null, not as 0 ms", async () => {
+        await fire("testFinished", config(), {...RESULT, ping: 0});
+
+        const {payload} = await published();
+        assert.equal(payload.ping, null, "the fabricated zero was published as a reading");
+        assert.equal(payload.download, 100.5, "a real figure beside it was lost");
+    });
+
+    it("publish a placeholder as null rather than as -1", async () => {
+        await fire("testFinished", config(), {...RESULT, jitter: -1, packetLoss: "-1"});
+
+        const {payload} = await published();
+        assert.equal(payload.jitter, null);
+        assert.equal(payload.packetLoss, null);
+        assert.equal(payload.id, 12, "the row's identity was rewritten");
+    });
+});
