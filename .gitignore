@@ -18,6 +18,9 @@
 /bin
 /MySpeed
 /MySpeed.exe
+# Every name the binary matrix can write beside them, and the source zip.
+/MySpeed-*
+/MySpeed.zip
 
 # local environment
 .env
