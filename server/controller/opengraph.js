@@ -29,7 +29,7 @@ import moment from 'moment-timezone';
 import * as tests from './speedtests.js';
 import * as targetsController from './targets.js';
 import { parseDateRange } from '../util/dateRange.js';
-import { isFailedTest } from '../util/testOutcome.js';
+import { isFailedTest, measuredPing, usableFigure } from '../util/testOutcome.js';
 import htm from 'htm';
 import satori from 'satori';
 
@@ -141,7 +141,15 @@ export const readStatistics = async () => {
   if (isFailedTest(latest)) return null;
   if (!latest) return null;
 
-  return {ping: {avg: latest.ping}, download: {avg: latest.download}, upload: {avg: latest.upload}};
+  // Through the readers the window's averages go through: a run can carry a
+  // placeholder in one column beside real figures, and a successful run whose
+  // provider measured no latency stores the sentinel 0. Copied raw, the card
+  // published "-1 Mbps" and "0 ms".
+  return {
+    ping: {avg: measuredPing(latest.ping)},
+    download: {avg: usableFigure(latest.download)},
+    upload: {avg: usableFigure(latest.upload)}
+  };
 };
 
 // The compiled binary ships the client inside the executable rather than on

@@ -320,3 +320,38 @@ describe("the window statistics with no latency measured", () => {
         assert.equal(stats?.ping?.avg ?? null, null, "a latency nobody measured was invented");
     });
 });
+
+/**
+ * The single-reading fallback reads the row the way the window does.
+ *
+ * A run can succeed with a placeholder in one column - a provider that timed
+ * out uploading stores -1 there and a real download beside it - and a
+ * successful run whose provider measured no latency stores the sentinel 0.
+ * The window's averages go through the shared readers and skip both; the
+ * fallback copied the row's columns straight into the card, so a fresh
+ * instance whose one run looked like that published "-1 Mbps" and "0 ms".
+ */
+describe("the single-reading fallback", () => {
+    let readStatistics;
+    let targets;
+
+    before(async () => {
+        ({readStatistics} = await import("../../server/controller/opengraph.js"));
+        targets = await import("../../server/controller/targets.js");
+    });
+
+    const daysAgo = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const BEYOND_THE_WINDOW_DAYS = 10;
+    const UNMEASURED_LATENCY = 0;
+    const PLACEHOLDER = -1;
+
+    it("reads a placeholder and the unmeasured sentinel as nothing", async () => {
+        await targets.removeAll();
+        await seedTests(server.tests, [
+            {created: daysAgo(BEYOND_THE_WINDOW_DAYS), ping: UNMEASURED_LATENCY, download: 480.2, upload: PLACEHOLDER}
+        ]);
+
+        assert.deepEqual(await readStatistics(),
+            {ping: {avg: null}, download: {avg: 480.2}, upload: {avg: null}});
+    });
+});
