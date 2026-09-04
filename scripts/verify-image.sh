@@ -79,8 +79,19 @@ echo "Checking the bundled client ..."
     || fail "The bundled client was not served."
 
 echo "Checking the container healthcheck ..."
-[ "$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER")" = "healthy" ] \
-    || fail "The container's own healthcheck did not report healthy."
+# Waited for, not read once. Docker keeps the status at "starting" until the
+# first probe succeeds, and the first probe runs one --interval after start -
+# so a single read only ever saw "healthy" because a first boot downloads two
+# CLIs before the server listens, which happens to take longer than that.
+status="starting"
+for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+    status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null)"
+    [ "$status" != "starting" ] && break
+    sleep "$SLEEP_SECONDS"
+done
+
+[ "$status" = "healthy" ] \
+    || fail "The container's own healthcheck did not report healthy (last status: ${status:-none})."
 
 # The baked Cloudflare CLI has to *execute*, not merely exist: the bug it
 # replaces was a glibc binary the musl kernel loader refused with ENOENT, which

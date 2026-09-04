@@ -355,3 +355,22 @@ describe("two releases cannot run over each other", () => {
             "the recovery command the other report prints is missing from this one");
     });
 });
+
+/**
+ * verify-image.sh read the container's health status once. Docker keeps it
+ * at "starting" until the first probe succeeds, and the first probe runs one
+ * --interval (30 s) after start - so the read only ever saw "healthy" because
+ * a first boot downloads two CLIs before the server listens, which takes
+ * longer than that. Bake or lazy-load those and the step fails releases on
+ * "starting". Waited for rather than read.
+ */
+describe("verify-image.sh waits for the container's own healthcheck", () => {
+    const verify = withoutComments(read("scripts/verify-image.sh"));
+
+    it("polls the status until it leaves starting", () => {
+        assert.match(verify, /status="?\$\(docker inspect --format '\{\{\.State\.Health\.Status\}\}'/,
+            "the health status is read once rather than polled");
+        assert.match(verify, /"\$status" != "starting"/, "a container still in its start period is judged");
+        assert.match(verify, /"\$status" = "healthy"/, "the final status is not asserted");
+    });
+});
