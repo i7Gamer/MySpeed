@@ -37,19 +37,25 @@ export const normaliseAddress = (address) => {
     return ipv6Prefix(bare);
 };
 
+const IPV6_GROUPS = 8;
+
+/**
+ * The first four groups of an IPv6 address in one canonical spelling.
+ *
+ * Cut from the text as written, one /64 answered three keys - "2001:db8::",
+ * "2001:0db8:0000:0000" and "2001:db8:0:0" - so a caller who reaches req.ip
+ * through a trusted proxy and can spell the address held three throttle
+ * budgets. Expanded to eight groups first, then each of the first four is
+ * stripped of its leading zeros, so every spelling of a prefix is one key.
+ */
 const ipv6Prefix = (address) => {
-    const [head] = address.split("::");
+    const [head, tail = ""] = address.split("::");
     const headGroups = head === "" ? [] : head.split(":");
+    const tailGroups = tail === "" ? [] : tail.split(":");
+    const elided = address.includes("::") ? Math.max(0, IPV6_GROUPS - headGroups.length - tailGroups.length) : 0;
+    const groups = [...headGroups, ...Array(elided).fill("0"), ...tailGroups];
 
-    // Already at or under the prefix length, and not elided - nothing to cut.
-    if (address.includes("::")) {
-        if (headGroups.length >= IPV6_PREFIX_GROUPS) return headGroups.slice(0, IPV6_PREFIX_GROUPS).join(":");
-
-        // The elision stands for zero groups, so everything after it is beyond
-        // the prefix and the address is its own /64.
-        return `${headGroups.join(":")}::`;
-    }
-
-    const groups = address.split(":");
-    return groups.slice(0, IPV6_PREFIX_GROUPS).join(":");
+    return groups.slice(0, IPV6_PREFIX_GROUPS)
+        .map((group) => group.replace(/^0+(?=.)/, ""))
+        .join(":");
 };

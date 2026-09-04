@@ -41,8 +41,22 @@ describe("normaliseAddress", () => {
     });
 
     it("handles an elided address", () => {
-        assert.equal(normaliseAddress("2001:db8::1"), "2001:db8::");
+        assert.equal(normaliseAddress("2001:db8::1"), "2001:db8:0:0");
         assert.equal(normaliseAddress("2001:db8::1"), normaliseAddress("2001:db8::2"));
+    });
+
+    // One /64, four spellings, one key. The prefix used to be cut from the
+    // text as written, so the elided, the zero-padded and the bare spellings of
+    // one network answered three keys - three throttle budgets for one caller
+    // who reaches req.ip through a trusted proxy and can spell the address.
+    it("keys every spelling of one prefix the same", () => {
+        const spellings = ["2001:db8::1", "2001:0db8:0000:0000:0000:0000:0000:0001",
+            "2001:db8:0:0:0:0:0:1", "2001:DB8:0:0::1", "2001:db8:0:0::"];
+        const keys = new Set(spellings.map(normaliseAddress));
+
+        assert.deepEqual([...keys], ["2001:db8:0:0"]);
+        assert.equal(normaliseAddress("2001:0db8:1234:0099:aaaa:bbbb:cccc:dddd"), "2001:db8:1234:99");
+        assert.equal(normaliseAddress("::1"), "0:0:0:0");
     });
 
     it("handles a fully written address with zero groups", () => {
