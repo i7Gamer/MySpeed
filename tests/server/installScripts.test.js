@@ -1567,3 +1567,29 @@ describe("docker-install.sh checks for the compose plugin", () => {
         assert.match(source.slice(check, check + 400), /exit 1/, "a missing plugin is reported but not refused");
     });
 });
+
+/**
+ * The Docker engine installer is fetched to a file and checked before it is
+ * run, the way chooser.sh fetches its own installers. `curl -o get-docker.sh`
+ * followed by `sh get-docker.sh`, unchecked and in whatever directory the
+ * operator ran from, executed as root whatever already sat at that path when
+ * the download failed - and even on success wrote through an existing file
+ * or symlink. This script is reached through chooser.sh, whose fix comment
+ * explains the class.
+ */
+describe("docker-install.sh fetches the engine installer safely", () => {
+    const source = read("docker-install.sh");
+
+    it("runs the installer from a fresh temporary file, never a relative path", () => {
+        assert.doesNotMatch(source, /sh get-docker\.sh/, "the installer is run from the working directory");
+        assert.doesNotMatch(source, /-o get-docker\.sh/, "the download is written into the working directory");
+        assert.match(source, /installer="\$\(mktemp\)"/, "the installer is not written to a fresh file");
+    });
+
+    it("refuses to run anything when the download failed", () => {
+        assert.match(source, /if ! curl -fsSL -o "\$installer" https:\/\/get\.docker\.com; then[\s\S]{0,300}exit 1/,
+            "a failed download is not checked before the file is run");
+        assert.match(source, /sh "\$installer"/, "the fetched file is not what is run");
+        assert.match(source, /rm -f "\$installer"/, "the temporary file is left behind");
+    });
+});

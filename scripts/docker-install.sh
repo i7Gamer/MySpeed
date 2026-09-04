@@ -16,9 +16,18 @@ fi
 
 if ! command -v docker &> /dev/null; then
     echo -e "${YELLOW}Docker is not installed. Installing Docker...${NORMAL}"
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sh get-docker.sh
-    rm get-docker.sh
+    # Fetched to a fresh file and checked before it is run, the way chooser.sh
+    # fetches its installers. Written into the working directory and run
+    # unchecked, a failed download ran whatever already sat at that path - as
+    # root - and even a good one wrote through an existing file or symlink.
+    installer="$(mktemp)" || exit 1
+    if ! curl -fsSL -o "$installer" https://get.docker.com; then
+        echo -e "${RED}✗ Could not download the Docker installer from https://get.docker.com.${NORMAL}"
+        rm -f "$installer"
+        exit 1
+    fi
+    sh "$installer"
+    rm -f "$installer"
 fi
 
 # The plugin as well as the engine: `docker compose` is a plugin, and an engine
