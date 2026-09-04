@@ -553,3 +553,26 @@ describe("GET /api/nodes", () => {
             assert.equal(internal in body[0], false, `the list exposes Sequelize's ${internal}`);
     });
 });
+
+/**
+ * The parent has already inflated the body by the time it proxies it: the
+ * body parser reads a gzipped request, and the proxy re-serialises req.body
+ * as plain JSON. The content-encoding header rode along untouched, so the
+ * child's own parser tried to inflate plain JSON and answered 400 for a
+ * request the parent had understood perfectly well.
+ */
+describe("proxying a compressed request body", () => {
+    it("does not tell the child the re-serialised body is still compressed", async () => {
+        const {gzipSync} = await import("node:zlib");
+        received = [];
+
+        await api(server.baseUrl, `/nodes/${nodeId}/speedtests/run`, {
+            method: "POST",
+            headers: {"content-type": "application/json", "content-encoding": "gzip"},
+            body: gzipSync(JSON.stringify({}))
+        });
+
+        assert.equal(received.at(-1)?.headers["content-encoding"], undefined,
+            "the child was told a plain JSON body was gzipped");
+    });
+});

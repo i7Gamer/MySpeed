@@ -139,8 +139,12 @@ export const checkStatus = async (url, password) => {
  * on, came back as compressed bytes that the parent then handed on labelled
  * application/json with nothing to say they were encoded.
  */
+// content-encoding as well: the body parser has already inflated a gzipped
+// request by the time it is proxied, and the body below is re-serialised as
+// plain JSON - so the header rode along describing an encoding the body no
+// longer had, and the child's own parser answered 400 for it.
 const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization",
-    "accept-encoding"]);
+    "accept-encoding", "content-encoding"]);
 
 // Enough for the caller to interpret the body it is handed. Everything else the
 // child sends is the child's business and is dropped.
