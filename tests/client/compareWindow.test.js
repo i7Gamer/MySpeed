@@ -340,6 +340,57 @@ describe("the statistics page and its comparison choice", () => {
     });
 });
 
+/*
+ * The page mounted, and the scaffolding the two describes below need to do it:
+ * every context it reads, the URL it reads its range out of, and the two staged
+ * timers it reveals itself through.
+ *
+ * Shared rather than copied into each, and `targets` is the parameter because
+ * that is exactly what the two questions differ on - whether the instance has
+ * enough targets for the chip row to draw anything at all.
+ */
+const noop = () => undefined;
+
+const json = (body) => new Response(JSON.stringify(body),
+    {status: 200, headers: {"content-type": "application/json"}});
+
+// The page reveals itself in two staged timers before it asks the server
+// anything. Waited for one at a time and with a margin: a single wait
+// flushes React once at the end, and the second timer is armed by the
+// effect that the first one's render runs.
+const FIRST_STAGE_MS = 80;
+const SECOND_STAGE_MS = 200;
+
+// The page reads its range out of the URL, so changing the range means
+// changing the URL - through the same hook the toolbar's own controls use.
+const controls = {};
+const Driver = () => {
+    [, controls.setParams] = useSearchParams();
+    return null;
+};
+
+const nest = (child, ...layers) =>
+    layers.reduceRight((inner, [Provider, value]) => createElement(Provider, {value}, inner), child);
+
+const mount = (entry, targets = []) => render(createElement(MemoryRouter, {initialEntries: [entry]},
+    nest(createElement(AlertProvider, null,
+        createElement("div", null, createElement(Driver), createElement(Statistics))),
+    [ConfigContext.Provider, [{viewMode: false, previewMode: false}, noop, noop]],
+    [NodeContext.Provider, [[], noop, 0, noop, () => undefined]],
+    [PreferencesContext.Provider, [{}, noop]],
+    [StatusContext.Provider, [{paused: false, running: false}, noop, noop]],
+    [ToastNotificationContext.Provider, noop],
+    [SpeedtestContext.Provider, {speedtests: [], updateTests: noop}],
+    [ThemeContext.Provider, {theme: "dark", palette: "slate", setTheme: noop, setPalette: noop}],
+    [TargetsContext.Provider, {targets, reloadTargets: noop, pageTargetFor: () => null,
+        selectedTarget: null, selectionFor: () => ({})}])));
+
+const reachTheFirstRequest = async () => {
+    await settle(FIRST_STAGE_MS);
+    await settle(SECOND_STAGE_MS);
+    await settle();
+};
+
 /**
  * And the same sentence, driven rather than read.
  *
@@ -370,15 +421,6 @@ describe("the unsupported-comparison sentence, on a page that is loading", () =>
     const realFetch = globalThis.fetch;
     afterEach(() => { globalThis.fetch = realFetch; });
 
-    const noop = () => undefined;
-
-    // The page reveals itself in two staged timers before it asks the server
-    // anything. Waited for one at a time and with a margin: a single wait
-    // flushes React once at the end, and the second timer is armed by the
-    // effect that the first one's render runs.
-    const FIRST_STAGE_MS = 80;
-    const SECOND_STAGE_MS = 200;
-
     const STATISTICS_PATH = "/speedtests/statistics/";
     const UNSUPPORTED = "This node runs an older MySpeed and answered without the comparison";
 
@@ -387,9 +429,6 @@ describe("the unsupported-comparison sentence, on a page that is loading", () =>
     // which asks for no comparison. Telling those two apart is the whole point.
     // No tests either, so the page draws its empty state and no chart.
     const WITHOUT_COMPARISON = {tests: {total: 0}};
-
-    const json = (body) => new Response(JSON.stringify(body),
-        {status: 200, headers: {"content-type": "application/json"}});
 
     /**
      * Every statistics request is held open until the test answers it, which is
@@ -408,36 +447,6 @@ describe("the unsupported-comparison sentence, on a page that is loading", () =>
         };
 
         return asked;
-    };
-
-    // The page reads its range out of the URL, so changing the range means
-    // changing the URL - through the same hook the toolbar's own controls use.
-    const controls = {};
-    const Driver = () => {
-        [, controls.setParams] = useSearchParams();
-        return null;
-    };
-
-    const nest = (child, ...layers) =>
-        layers.reduceRight((inner, [Provider, value]) => createElement(Provider, {value}, inner), child);
-
-    const mount = (entry) => render(createElement(MemoryRouter, {initialEntries: [entry]},
-        nest(createElement(AlertProvider, null,
-            createElement("div", null, createElement(Driver), createElement(Statistics))),
-        [ConfigContext.Provider, [{viewMode: false, previewMode: false}, noop, noop]],
-        [NodeContext.Provider, [[], noop, 0, noop, () => undefined]],
-        [PreferencesContext.Provider, [{}, noop]],
-        [StatusContext.Provider, [{paused: false, running: false}, noop, noop]],
-        [ToastNotificationContext.Provider, noop],
-        [SpeedtestContext.Provider, {speedtests: [], updateTests: noop}],
-        [ThemeContext.Provider, {theme: "dark", palette: "slate", setTheme: noop, setPalette: noop}],
-        [TargetsContext.Provider,
-            {targets: [], reloadTargets: noop, pageTargetFor: () => null, selectedTarget: null}])));
-
-    const reachTheFirstRequest = async () => {
-        await settle(FIRST_STAGE_MS);
-        await settle(SECOND_STAGE_MS);
-        await settle();
     };
 
     const answer = async (request, body) => {
@@ -496,6 +505,11 @@ describe("the unsupported-comparison sentence, on a page that is loading", () =>
  * fit - which is what flex-wrap means and why nothing here is measured.
  */
 describe("the comparison row beside the target chips", () => {
+    afterEach(cleanup);
+
+    const realFetch = globalThis.fetch;
+    afterEach(() => { globalThis.fetch = realFetch; });
+
     const toolbar = compile("common/components/PageToolbar/styles.sass");
     const page = compile("pages/Statistics/styles.sass");
     const chips = compile("common/components/TargetChips/styles.sass");
@@ -636,5 +650,77 @@ describe("the comparison row beside the target chips", () => {
             "the label is inside the box the menu takes its width from");
         assert.ok(at("-anchor") < at("-trigger") && at("-anchor") < at("-menu"),
             "the button and its menu are not both inside the anchor");
+    });
+
+    /**
+     * And with no chips beside it, the pair takes the two ends of the line
+     * rather than bunching at its left.
+     *
+     * An instance with one target draws no chip row - TargetChips renders
+     * nothing below two - so the comparison row is the whole of the toolbar's
+     * second line there, and the sentence and the picker sat squeezed against
+     * the left margin with the rest of the width empty. Every other control
+     * row on the page has something on its right edge, and with two targets
+     * the chips already push this one there; one target was the odd case out.
+     *
+     * space-between rather than an auto margin on the picker, and that is the
+     * "as long as they share a row" half of it: the row wraps, and an auto
+     * margin would push the picker to the right on whatever line it lands on,
+     * including a line of its own under the sentence. A flex line holding one
+     * item puts it at the start, so the ends are taken only while the two are
+     * on one line - and a row that has no sentence to sit opposite (a server
+     * with nothing before the range answers a null, which is silent on
+     * purpose) keeps the picker where it has always been.
+     */
+    it("takes the ends of the line where nothing else shares it", () => {
+        const alone = ruleFor(page, ".statistics-compare-row:only-child");
+        const beside = ruleFor(page, ".statistics-compare-row");
+
+        assert.notEqual(alone, null, ".statistics-compare-row:only-child is not declared");
+        assert.equal(value(alone, "flex"), "1 1 auto",
+            "the row is content-sized with no chips beside it, so there is no line to take the ends of");
+        assert.equal(value(alone, "justify-content"), "space-between",
+            "the pair is packed at the start of a line it has all of");
+
+        assert.equal(value(beside, "flex"), "0 1 auto",
+            "the row grows beside the chips, so it no longer sits against them");
+        assert.equal(value(beside, "justify-content"), null,
+            "the pair is spread apart beside the chips too, which pulls the sentence off the picker");
+    });
+
+    /**
+     * Which rests on the chip row drawing no element whatever below two
+     * targets.
+     *
+     * `:only-child` counts elements, so a chip row that rendered an empty
+     * wrapper - or a toolbar that wrapped the slot in one - would leave the
+     * selector matching nothing, with the picker quietly back at the left
+     * margin and no stylesheet test able to see it. Both counts are asserted,
+     * because a selector that matched in both cases would be the second half
+     * of the ask broken instead: with more than one target this row is not
+     * alone and nothing about it changes.
+     */
+    it("leaves the row alone in the second toolbar line only below two targets", async () => {
+        globalThis.fetch = (url) => Promise.resolve(json(
+            String(url).includes("/speedtests/statistics/") ? {tests: {total: 0}} : []));
+
+        const children = async (targets) => {
+            const {container} = mount("/?range=7d", targets);
+            await reachTheFirstRequest();
+
+            const row = container.querySelector(".toolbar-second-row");
+            assert.notEqual(row, null, "the comparison row is no longer drawn as the toolbar's aside");
+
+            return [...row.children].map((child) => child.className);
+        };
+
+        assert.deepEqual(await children([{id: 1, name: "Fibre"}]), ["statistics-compare-row"],
+            "something else shares the second line on a single-target instance");
+
+        cleanup();
+
+        assert.deepEqual(await children([{id: 1, name: "Fibre"}, {id: 2, name: "LTE"}]),
+            ["target-chips", "statistics-compare-row"],
+            "the chips no longer sit beside the comparison row, so it is alone on every instance");
     });
 });

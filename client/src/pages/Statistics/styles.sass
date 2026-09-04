@@ -267,6 +267,29 @@
   align-items: center
   gap: 0.75rem
 
+  // An instance with one target draws no chips, so this is the whole of the
+  // toolbar's second line there - and the pair sat squeezed against the left
+  // margin with the rest of the width empty beside them. With two or more
+  // targets the chips already push the picker to the right edge; one target
+  // was the case that read differently for no reason a reader could see.
+  //
+  // Given the line, the sentence and the picker take its two ends.
+  // space-between rather than an auto margin on the picker, because this row
+  // wraps: an auto margin pushes it right on whatever line it lands on,
+  // including a line of its own under the sentence, where a flex line holding
+  // one item leaves it at the start. So the ends are taken only while the two
+  // share a row - and a row with no sentence in it, which is what a server
+  // with nothing before the range answers, keeps the picker where it was.
+  //
+  // :only-child, so nothing here has to know how many targets there are: the
+  // chip row renders no element below two, which is the same fact spelled as
+  // the DOM rather than as a count. With the chips beside it the selector
+  // does not match and the row stays content-sized against them, exactly as
+  // before.
+  &:only-child
+    flex: 1 1 auto
+    justify-content: space-between
+
 // The offset control draws itself - see components/CompareSelect.
 
 .statistics-compare-note
