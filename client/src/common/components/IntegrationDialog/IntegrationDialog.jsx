@@ -252,14 +252,24 @@ export const IntegrationDialog = ({open, onClose}) => {
     const [config] = useContext(ConfigContext);
     const [integrations, setIntegrations] = useState(null);
     const [active, setActive] = useState(null);
+    // Kept, not only logged: the two lists were set on success alone and
+    // `loading` read from their absence, so a 500 or a timeout left the
+    // ellipsis animating for as long as the dialog stayed open, with the
+    // reason in the console and the retry - closing and reopening - unsaid.
+    const [loadError, setLoadError] = useState(null);
+    const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         if (!open) return;
+        setLoadError(null);
         Promise.all([jsonRequest("/integrations"), jsonRequest("/integrations/active")]).then(([intData, activeData]) => {
             setIntegrations(intData);
             setActive(activeData.map(item => ({...item, uuid: uuid()})));
-        }).catch((error) => console.error("Failed to load the integrations:", error));
-    }, [open]);
+        }).catch((error) => {
+            console.error("Failed to load the integrations:", error);
+            setLoadError(error);
+        });
+    }, [open, attempt]);
 
     // The rows this dialog can actually draw. A stored row whose integration
     // has since been removed has no definition, and IntegrationCard reads
@@ -326,7 +336,7 @@ export const IntegrationDialog = ({open, onClose}) => {
         key: name, label: integrationTitle(name, t), icon: def.icon
     })) : [];
 
-    const loading = !integrations || !active;
+    const loading = !loadError && (!integrations || !active);
 
     return (
         <Dialog open={open} onClose={onClose} className="integration-dialog">
@@ -334,7 +344,15 @@ export const IntegrationDialog = ({open, onClose}) => {
                 <>
                     <DialogHeader onClose={close}>{t("dropdown.integrations")}</DialogHeader>
                     <DialogBody>
-                        {loading ? (
+                        {loadError ? (
+                            <div className="integrations-load-error">
+                                <p className="icon-red">{loadError.message}</p>
+                                <button type="button" className="dialog-btn"
+                                        onClick={() => setAttempt((count) => count + 1)}>
+                                    {t("dialog.retry")}
+                                </button>
+                            </div>
+                        ) : loading ? (
                             <div className="lds-ellipsis"><div/><div/><div/><div/></div>
                         ) : (
                             <div className="integrations-wrapper" ref={wrapperRef}>
