@@ -286,3 +286,37 @@ describe("GET /api/opengraph/image", () => {
         }
     });
 });
+
+/**
+ * A window whose latency was never measured still has throughput to show.
+ *
+ * The gate asked for all three averages to be truthy, so a line whose
+ * provider reported no latency across the window - a Cloudflare run whose
+ * latency block was empty stores 0, which every reader treats as unmeasured
+ * since the third round - fell through to the single-reading fallback and, since that
+ * reading carries the same null, to no image at all. Download and upload are
+ * the figures the card exists for; a missing ping is printed as unmeasured.
+ */
+describe("the window statistics with no latency measured", () => {
+    let readStatistics;
+    const hoursAgo = (hours) => new Date(Date.now() - hours * 3600000).toISOString();
+
+    before(async () => {
+        ({readStatistics} = await import("../../server/controller/opengraph.js"));
+    });
+
+    it("still answer the window's throughput, not the latest reading", async () => {
+        const targets = await import("../../server/controller/targets.js");
+        await targets.removeAll();
+        const wan = await targets.create({name: "WAN", provider: "cloudflare", sortOrder: 0});
+
+        await seedTests(server.tests, [
+            {created: hoursAgo(2), targetId: wan.id, ping: 0, download: 100, upload: 50},
+            {created: hoursAgo(1), targetId: wan.id, ping: 0, download: 200, upload: 70}
+        ]);
+
+        const stats = await readStatistics();
+        assert.equal(stats?.download?.avg, 150, "the window was passed over for the latest reading");
+        assert.equal(stats?.ping?.avg ?? null, null, "a latency nobody measured was invented");
+    });
+});

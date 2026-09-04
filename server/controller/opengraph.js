@@ -35,7 +35,15 @@ import satori from 'satori';
 
 const html = htm.bind((type, props, ...children) => ({type, props: {...props, children: children.flat()}}));
 
-const hasValues = (test) => Boolean(test?.download.avg && test?.upload.avg && test?.ping.avg);
+// Throughput is what the card exists for; a latency nobody measured is
+// printed as unmeasured rather than costing the whole image. It used to ask
+// for all three to be truthy, so a window whose provider reported no latency -
+// stored as the 0 every reader treats as unmeasured - fell through to the
+// single-reading fallback and, carrying the same 0, to no image at all.
+const measured = (figure) => Number.isFinite(figure);
+const hasValues = (test) => Boolean(test && measured(test.download?.avg) && measured(test.upload?.avg));
+const NOT_MEASURED = "N/A";
+const pingText = (test) => (measured(test.ping?.avg) && test.ping.avg > 0 ? String(test.ping.avg) : NOT_MEASURED);
 
 /**
  * The two calendar days the image averages over, named on the server's own
@@ -301,7 +309,7 @@ async function renderOpenGraphImage() {
             <p tw="text-4xl leading-9 text-slate-500 p-0 m-0">ms</p>
           </div>
           <div tw="flex pl-4">
-            <p tw="text-5xl p-0 m-0">${String(test.ping.avg)}</p>
+            <p tw="text-5xl p-0 m-0">${pingText(test)}</p>
           </div>
         </div>
       </div>
