@@ -26,3 +26,18 @@ describe("the password dialog surfaces a refused password", () => {
             "a refusal falls back to the generic 'changes unsaved' toast");
     });
 });
+
+/**
+ * The removal too. It threw a bare Error on a refused DELETE, which the catch
+ * reads as "not a RequestError" and reports with the generic line - so the
+ * one refusal that route gives, the preview instance's read-only message,
+ * never reached the toast.
+ */
+describe("the password dialog surfaces a refused removal", () => {
+    it("checks the DELETE with assertOk like the PATCH beside it", () => {
+        assert.match(source, /assertOk\(await deleteRequest\("\/config\/password"\)/,
+            "the password DELETE is not checked with assertOk");
+        assert.doesNotMatch(source, /Removing the password failed with status/,
+            "the removal still throws a bare Error that the catch cannot name");
+    });
+});

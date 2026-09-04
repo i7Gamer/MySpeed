@@ -120,8 +120,10 @@ export const PasswordDialog = ({open, onClose}) => {
             // Its own endpoint rather than a PATCH carrying "none": that
             // sentinel is indistinguishable from someone choosing "none" as
             // their password.
-            const response = await deleteRequest("/config/password");
-            if (!response.ok) throw new Error(`Removing the password failed with status ${response.status}`);
+            // Checked with assertOk like the PATCH above, so the one refusal
+            // this route gives - the preview instance's read-only message -
+            // reaches the toast rather than the generic line.
+            await assertOk(await deleteRequest("/config/password"), "password");
 
             if (currentNode !== 0) {
                 // Checked, like the save path above. The answer was thrown away,
