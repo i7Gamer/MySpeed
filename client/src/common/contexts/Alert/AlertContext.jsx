@@ -45,8 +45,7 @@ export const AlertProvider = ({children}) => {
         showAlert({
             type: "alert",
             title,
-            description,
-            buttonText: options.buttonText || "OK", ...options
+            description, ...options
         }), [showAlert]);
 
     const openInput = useCallback((title, options = {}) =>
@@ -64,8 +63,7 @@ export const AlertProvider = ({children}) => {
         showAlert({
             type: "confirm",
             title,
-            description,
-            buttonText: options.buttonText || "OK", ...options
+            description, ...options
         }), [showAlert]);
 
     const contextValue = useMemo(() => ({
@@ -266,12 +264,12 @@ const AlertRenderer = ({alert, isTop, onClose}) => {
                     )}
                     {alert.type === "confirm" && (
                         <button type="button" className="dialog-btn dialog-secondary" onClick={() => close(false)}>
-                            {alert.cancelText || "Cancel"}
+                            {alert.cancelText || t("dialog.close")}
                         </button>
                     )}
                     <button type="button" ref={submitRef} className={`dialog-btn${alert.danger ? " dialog-danger" : ""}`}
                             onClick={handleSubmit}>
-                        {alert.buttonText || "OK"}
+                        {alert.buttonText || t("dialog.okay")}
                     </button>
                 </div>
             </div>
