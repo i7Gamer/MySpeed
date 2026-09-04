@@ -4,8 +4,17 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
-/** A source file under the repository root, as text. */
-export const readSource = (file) => fs.readFileSync(path.join(root, file), "utf8");
+/**
+ * CRLF to LF, once, for every scan. The index is LF and a Windows working
+ * tree is CRLF for most of the client, and reading the tree raw meant an
+ * anchor written "</div>\n\n" never matched locally - and where the cut had
+ * no -1 floor the assertion widened to the rest of the file. Green on CI,
+ * green on the maintainer's machine, and proving less on one of them.
+ */
+export const normaliseLineEndings = (text) => text.replace(/\r\n/g, "\n");
+
+/** A source file under the repository root, as text, with LF line endings. */
+export const readSource = (file) => normaliseLineEndings(fs.readFileSync(path.join(root, file), "utf8"));
 
 /**
  * The javascript files in a directory under the repository root.

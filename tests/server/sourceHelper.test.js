@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
 import {
-    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, readSource, runBodies,
+    blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, normaliseLineEndings, readSource, runBodies,
     unreadableMountCount, withoutJsComments
 } from "../helpers/source.js";
 
@@ -1390,4 +1390,27 @@ describe("withoutJsComments and the files it stopped mangling", () => {
             assert.ok(!code.includes(strips),
                 `the comment ${JSON.stringify(strips)} in ${file} is no longer stripped`);
         });
+});
+
+/**
+ * Line endings, normalised once here rather than in every anchor.
+ *
+ * The index is LF and a Windows working tree is CRLF for most of the client,
+ * and readSource read the tree raw - so an anchor written "</div>\n\n" never
+ * matched locally, and where the cut had no -1 floor the assertion widened to
+ * the rest of the file. Green on CI, green on the maintainer's machine, and
+ * proving less on one of them. Every source scan reads through this.
+ */
+describe("normaliseLineEndings", () => {
+    it("turns CRLF into LF and leaves LF alone", () => {
+        assert.equal(normaliseLineEndings("a\r\nb\r\n"), "a\nb\n");
+        assert.equal(normaliseLineEndings("a\nb\n"), "a\nb\n");
+        assert.equal(normaliseLineEndings(""), "");
+    });
+
+    it("is what readSource reads through", () => {
+        assert.doesNotMatch(readSource("tests/helpers/source.js"), /\r/,
+            "a CRLF checkout still reaches the anchors raw");
+        assert.match(readSource("tests/helpers/source.js"), /normaliseLineEndings\(fs\.readFileSync/);
+    });
 });
