@@ -170,7 +170,7 @@ if [ -d "$INSTALLATION_PATH" ]; then
     sleep 5
 fi
 
-if command -v systemctl &> /dev/null && systemctl --all --type service | grep -q "myspeed.service"; then
+if command -v systemctl &> /dev/null && systemctl --all --type service | grep -qE '(^|[[:space:]])myspeed\.service([[:space:]]|$)'; then
   clear
   echo -e "$YELLOWℹ MySpeed Service is being stopped..."
   systemctl stop myspeed

@@ -417,7 +417,7 @@ if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FO
   # data having been kept, and it is the second one that decides whether the
   # owner of that directory has to stay behind with it. Declared above this
   # block, which does not run on every path that reaches the account.
-  if [ "$KEEP_DATA" == "--keep-data" ] \
+  if [ "$KEEP_DATA" = "--keep-data" ] \
       && [ ! -e "$INSTALLATION_PATH/data" ] && [ ! -L "$INSTALLATION_PATH/data" ]; then
     echo -e "$YELLOW There is nothing at$NORMAL $INSTALLATION_PATH/data$YELLOW to keep."
     echo -e "$YELLOW Removing the installation."
@@ -434,7 +434,7 @@ if [ "$INSTALLATION_FOUND" -eq 1 ] || { [ "$REMOVED_CONTAINER" -eq 0 ] && [ "$FO
   # separate disk that happens to be unmounted is an ordinary state for a backup
   # volume, and the link naming where that data lives is the last thing to remove
   # on the strength of it.
-  if [ "$KEEP_DATA" == "--keep-data" ] \
+  if [ "$KEEP_DATA" = "--keep-data" ] \
       && { [ -e "$INSTALLATION_PATH/data" ] || [ -L "$INSTALLATION_PATH/data" ]; }; then
     # A fresh staging directory every run, rather than a fixed /tmp path.
     #

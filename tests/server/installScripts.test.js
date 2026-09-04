@@ -1524,3 +1524,46 @@ describe("uninstall.sh removes the account install.sh creates", () => {
      * directory, where an account left behind owns nothing at all.
      */
 });
+
+/**
+ * Bashisms the scripts must not rely on, and the checks they must share.
+ *
+ * Every script opens with a bash shebang and the README runs them under bash,
+ * so `==` inside `[` worked - but the same line run under dash is "unexpected
+ * operator", and in uninstall.sh the test it broke was the one that decides
+ * whether --keep-data stages the data directory before the installation is
+ * removed. A condition that errors is a condition that is false, and false
+ * there is the branch that deletes. `=` says the same thing in every shell.
+ */
+describe("the scripts speak POSIX where it costs nothing", () => {
+    for (const name of ROOT_GUARDED) {
+        it(`${name} compares with = inside [ ]`, () => {
+            assert.doesNotMatch(read(name), /\[ [^\]]*[^=!]==[^=]/,
+                "a [ ] test uses ==, which dash reports as an unexpected operator");
+        });
+    }
+});
+
+describe("install.sh finds the service the way uninstall.sh does", () => {
+    // Anchored on both sides: a bare "myspeed.service" also matches a unit
+    // named notmyspeed.service, and the dot matched any character.
+    it("matches the unit name whole", () => {
+        const pattern = /grep -qE '\(\^\|\[\[:space:\]\]\)myspeed\\.service\(\[\[:space:\]\]\|\$\)'/;
+        assert.match(read("uninstall.sh"), pattern, "uninstall.sh lost the anchored pattern this mirrors");
+        assert.match(read("install.sh"), pattern, "install.sh still greps for a bare myspeed.service");
+    });
+});
+
+describe("docker-install.sh checks for the compose plugin", () => {
+    // `docker compose` is a plugin, and an engine installed some other way
+    // may not carry it: without this, `docker compose pull` failed into the
+    // "starting what is already here" fallback and `up -d` failed after it,
+    // with nothing said about what was missing.
+    it("refuses before pulling when docker compose is not there", () => {
+        const source = read("docker-install.sh");
+        const check = source.indexOf("docker compose version");
+        assert.notEqual(check, -1, "the script never asks whether the compose plugin exists");
+        assert.ok(check < source.indexOf("docker compose pull"), "the check comes after the pull it guards");
+        assert.match(source.slice(check, check + 400), /exit 1/, "a missing plugin is reported but not refused");
+    });
+});

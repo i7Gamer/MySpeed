@@ -21,6 +21,16 @@ if ! command -v docker &> /dev/null; then
     rm get-docker.sh
 fi
 
+# The plugin as well as the engine: `docker compose` is a plugin, and an engine
+# installed some other way may not carry it. Without this the pull failed into
+# the "starting what is already here" fallback below and `up -d` failed after
+# it, with nothing said about what was missing.
+if ! docker compose version > /dev/null 2>&1; then
+  echo -e "${RED}✗ ABORTED"
+  echo -e "${NORMAL} Docker is installed, but the Docker Compose plugin is not. Install docker-compose-plugin and run this script again."
+  exit 1
+fi
+
 INSTALLATION_PATH="/opt/myspeed-dockerized"
 mkdir -p "$INSTALLATION_PATH"
 
