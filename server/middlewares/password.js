@@ -6,7 +6,7 @@ import { isLoopbackRequest } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, SESSION_COOKIE } from '../util/session.js';
 import { trustedProxyUser } from '../util/trustedProxyAuth.js';
-import { readCookie } from '../util/cookies.js';
+import { readCookies } from '../util/cookies.js';
 import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
 
 /**
@@ -404,7 +404,10 @@ export default (allowViewAccess) => async (req, res, next) => {
     // A session costs no bcrypt comparison and cannot be read by script on the
     // page, which is the whole reason the client no longer keeps the password.
     // Checked before anything else so the common request does no work at all.
-    if (isValidSession(readCookie(req, SESSION_COOKIE))) {
+    // Every value the browser sent, not the first: under BASE_PATH it can hold
+    // a cookie at two paths, and the longest-path one being stale must not
+    // hide a live session one entry along.
+    if (readCookies(req, SESSION_COOKIE).some(isValidSession)) {
         req.viewMode = false;
         return next();
     }

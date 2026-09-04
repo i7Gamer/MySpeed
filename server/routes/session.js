@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
-import { expiredCookies, readCookie, readCookies, serialiseCookie } from '../util/cookies.js';
+import { expiredCookies, readCookies, serialiseCookie } from '../util/cookies.js';
 import {
     ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt
 } from '../middlewares/password.js';
@@ -88,7 +88,7 @@ app.post("/", async (req, res) => {
 });
 
 /** Whether this browser already holds a usable session. */
-app.get("/", (req, res) => res.json({active: isValidSession(readCookie(req, SESSION_COOKIE))}));
+app.get("/", (req, res) => res.json({active: readCookies(req, SESSION_COOKIE).some(isValidSession)}));
 
 app.delete("/", (req, res) => {
     // Every id the browser sent, not the first. Under BASE_PATH this instance

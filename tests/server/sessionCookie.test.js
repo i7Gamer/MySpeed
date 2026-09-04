@@ -249,8 +249,9 @@ describe("signing out of every scope", () => {
             "a browser holding two scopes has one of them left live by the sign-out");
     });
 
-    // The single reader is unchanged for the callers that want one - the
-    // active-session check answers about whichever the browser sent first.
+    // The single reader is unchanged for a caller that wants one. Neither
+    // session reader is one any more - both ask whether any value the browser
+    // sent is live - but the helper stays for the next caller that does.
     it("still answers one for the readers that ask for one", () => {
         assert.equal(readCookie(carrying("prefixed", "rooted"), "myspeed_session"), "prefixed");
         assert.equal(readCookie(carrying(), "myspeed_session"), null);

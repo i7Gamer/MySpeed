@@ -104,6 +104,20 @@ describe("authenticating with the session", () => {
         assert.equal((await api(server.baseUrl, GUARDED, withCookie("myspeed_session=deadbeef"))).status, 401);
     });
 
+    // Under BASE_PATH this server answers on two routes and can have written
+    // a cookie at each, and the browser sends both, longest path first. A
+    // restart or an eviction can leave the first of them stale while the
+    // second is live - and the readers took the first alone, so a browser
+    // carrying a live session was shown the password prompt. The sign-out
+    // already reads every value; the two readers have to as well.
+    it("admits a browser whose first cookie is stale and whose second is live", async () => {
+        const live = cookieFrom(await signIn(PASSWORD));
+        const both = withCookie(`myspeed_session=stale-prefixed-token; ${live}`);
+
+        assert.equal((await api(server.baseUrl, GUARDED, both)).status, 200);
+        assert.deepEqual((await api(server.baseUrl, "/session", both)).body, {active: true});
+    });
+
     // Scripts and integrations authenticate this way, so it has to keep working.
     it("leaves the password header working", async () => {
         assert.equal((await api(server.baseUrl, GUARDED, {headers: {"x-password": PASSWORD}})).status, 200);
