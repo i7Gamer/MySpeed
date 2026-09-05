@@ -116,6 +116,14 @@ describe("localeGaps", () => {
         assert.deepEqual(gaps.extra, []);
     });
 
+    // The writer drops an inflection whose base is gone (below), so the
+    // report has to say so first - or the drop is the first anyone hears.
+    it("reports an inflection whose base English no longer has", () => {
+        const gaps = localeGaps({time: {hour: "1 hour"}}, {time: {hour: "1 godzina", week_ago: "1 tygodniem"}});
+
+        assert.deepEqual(gaps.extra, ["time.week_ago"]);
+    });
+
     it("still reports a stale key that merely ends in ago", () => {
         assert.deepEqual(localeGaps({a: "One"}, {a: "Eins", "status.long_ago": "Lange her"}).extra, ["status.long_ago"]);
     });

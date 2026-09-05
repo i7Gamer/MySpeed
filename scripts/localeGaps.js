@@ -361,7 +361,8 @@ export const localeGaps = (english, locale, shared = new Set()) => {
         missing: Object.keys(source).filter((key) => !has(key) && !isInflection(key)),
         untranslated: Object.keys(source)
             .filter((key) => has(key) && target[key] === source[key] && !shared.has(key)),
-        extra: Object.keys(target).filter((key) => !(key in source) && !isInflection(key))
+        extra: Object.keys(target)
+            .filter((key) => !(key in source) && !(isInflection(key) && inflectionBase(key) in source))
     };
 };
 
