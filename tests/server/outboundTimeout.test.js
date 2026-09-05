@@ -28,6 +28,7 @@ const CASE_TIMEOUT = 10000;
 const PAYLOAD = {tag_name: "v1.2.0"};
 const JSON_HEADERS = {"content-type": "application/json"};
 const TEAPOT = 418;
+const NO_CONTENT = 204;
 
 // A ceiling small enough that the oversized routes below can stay a few
 // hundred bytes rather than actually allocating megabytes per test.
@@ -61,6 +62,9 @@ before(async () => {
         }
 
         if (req.url === "/teapot") return void res.writeHead(TEAPOT).end("no");
+
+        // No body at all: fetch answers res.body === null for this one.
+        if (req.url === "/empty") return void res.writeHead(NO_CONTENT).end();
 
         if (req.url === "/redirect") {
             return void res.writeHead(302, {location: `${baseUrl}/json`}).end();
@@ -166,6 +170,13 @@ describe("getJson safety", () => {
 
     it("still parses a small JSON answer under the ceiling", async () => {
         assert.deepEqual(await getJson(`${baseUrl}/json`, {maxBytes: TEST_MAX_BYTES}), PAYLOAD);
+    });
+
+    // A 204 has no body for the streamed read to open, and both callers
+    // discard the error's text - so this is about the error being the one a
+    // reader expects of an empty answer, not a property read off null.
+    it("fails a reply with no body as JSON, the way it always did", async () => {
+        await assert.rejects(getJson(`${baseUrl}/empty`), SyntaxError);
     });
 
     it("exports a default ceiling generous enough for a real answer, tight enough to be a ceiling", () => {

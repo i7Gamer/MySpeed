@@ -232,21 +232,27 @@ export const getJson = async (url, {
     // body is capped again as it actually arrives. The whole answer is
     // decoded to text and only then parsed, so a read cut short by the
     // ceiling is never handed to JSON.parse as if it were a complete body.
-    const reader = res.body.getReader();
     const chunks = [];
     let received = 0;
 
-    for (;;) {
-        const {done, value} = await reader.read();
-        if (done) break;
+    // A reply with no body at all - a 204 - has res.body null rather than an
+    // empty stream, and is read as the empty text it is, so it fails as JSON
+    // the way it always did rather than as a property of null.
+    if (res.body !== null) {
+        const reader = res.body.getReader();
 
-        received += value.byteLength;
-        if (received > maxBytes) {
-            cancelStream(reader);
-            throw tooLarge(maxBytes);
+        for (;;) {
+            const {done, value} = await reader.read();
+            if (done) break;
+
+            received += value.byteLength;
+            if (received > maxBytes) {
+                cancelStream(reader);
+                throw tooLarge(maxBytes);
+            }
+
+            chunks.push(value);
         }
-
-        chunks.push(value);
     }
 
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
