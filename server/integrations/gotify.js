@@ -1,6 +1,6 @@
 import { plainDefaults } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
-import { replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
+import { headerSafe, replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 
 // Both templates name the target: on a multi-target instance every message
@@ -49,9 +49,14 @@ const priorityOf = (priority, fallback) => {
 // url field's regex is unanchored and its value is stored as pasted, so a base
 // url copied out of the address bar arrives with a trailing slash and made
 // `//message` - an empty path segment, which Gotify answers with a 404.
+//
+// The key through headerSafe for the reason ntfy's token is: it is stored as
+// pasted too, and a trailing newline or a character above U+00FF made fetch
+// refuse the header before the request left - every message lost to an
+// activity line while the card went on showing the integration configured.
 const send = ({url, key}, message, priority, activity) =>
     postJson(`${stripTrailingSlashes(url)}/message`, {message, priority},
-        {headers: {"Authorization": "Bearer " + key}, activity});
+        {headers: {"Authorization": "Bearer " + headerSafe(key)}, activity});
 
 
 export default (registerEvent) => {

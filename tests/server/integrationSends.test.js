@@ -316,6 +316,22 @@ describe("gotify", () => {
             "a base url pasted with its trailing slash posts to an empty path segment");
     });
 
+    /**
+     * The key is stored as pasted, and a paste out of Gotify's clipboard
+     * carries the line ending about as often as not. Unsanitised, fetch threw
+     * on the header before the request left the process - the one integration
+     * still doing so after ntfy and InfluxDB were made to pass their tokens
+     * through headerSafe.
+     */
+    it("sends despite a key pasted with its line ending", async () => {
+        const {events} = load(setupGotify);
+        await fire(events, "testFinished", {...config, key: "123456789012345\r\n"}, RESULT);
+
+        assert.equal(sent.length, 1, "the whole message was lost to an unsendable header");
+        assert.doesNotMatch(sent[0].headers.Authorization, /[\r\n]/);
+        assert.match(sent[0].headers.Authorization, /^Bearer 123456789012345/);
+    });
+
     it("sends the configured priority as a number", async () => {
         const {events} = load(setupGotify);
         await fire(events, "testFinished", config, RESULT);
