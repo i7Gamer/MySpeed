@@ -166,6 +166,13 @@ app.use("/api/speedtests/run", expensiveLimit());
  * far under this ceiling.
  */
 app.use("/api/storage", expensiveLimit());
+// A node's own storage lives behind the proxy at /api/nodes/<id>/storage/...,
+// which never starts with /api/storage - so the heaviest family in the API sat
+// unmetered on the general 300/min backstop for every request routed through a
+// node, where the same request made directly sat behind 20. Mounted before
+// nodesRoutes below, or the router would answer the request first and this
+// limiter would never run.
+app.use("/api/nodes/:nodeId/storage", expensiveLimit());
 app.use("/api/speedtests/statistics", limited({limit: STATISTICS_REQUESTS_PER_MINUTE}));
 app.use("/api/prometheus", limited({limit: METRICS_REQUESTS_PER_MINUTE}));
 

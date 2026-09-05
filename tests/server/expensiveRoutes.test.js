@@ -55,6 +55,11 @@ const withoutComments = (source) => source
  *                           narrower cap on /tests/history, which this prefix
  *                           subsumes: nested limiters would take two tickets
  *                           per history request.
+ *   /api/nodes/:nodeId/storage
+ *                           the same family again, proxied through a node. That
+ *                           path never starts with /api/storage, so it fell
+ *                           through to the 300/min backstop while the direct
+ *                           route above sat behind 20.
  *
  * The page loads statistics on demand rather than on a poll, so the expensive
  * limit is not something ordinary use can reach - and the storage dialog asks
@@ -65,7 +70,8 @@ const EXPENSIVE_PATHS = [
     "/api/speedtests/export",
     "/api/speedtests/run",
     "/api/speedtests/statistics",
-    "/api/storage"
+    "/api/storage",
+    "/api/nodes/:nodeId/storage"
 ];
 
 // Any limiter of its own, whatever the number: what matters is that the path is
