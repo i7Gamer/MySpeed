@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import { readSource } from "../helpers/source.js";
 import { digestRanges, digestText } from "../../server/util/digestReport.js";
-import { serverZone, zoneFromName } from "../../server/util/timezone.js";
+import { zoneFromName } from "../../server/util/timezone.js";
 
 const BERLIN = zoneFromName("Europe/Berlin");
 
@@ -141,14 +142,13 @@ describe("digestText", () => {
     });
 
     // The fifth parameter defaults to serverZone rather than requiring every
-    // caller to pass one - proven here by asking for the same output twice,
-    // once by omission and once by naming serverZone outright, so the pin
-    // holds regardless of what this machine's own clock is set to.
+    // caller to pass one. Pinned on the signature rather than on the output:
+    // on a machine whose clock is UTC, a default of UTC and a default of
+    // serverZone print the same streak, so comparing the two calls proved
+    // nothing on the box most likely to run it - CI.
     it("defaults the streak's zone to serverZone", () => {
-        const withDefault = digestText(summary(), null, "weekly", RANGE_LABEL);
-        const withServerZone = digestText(summary(), null, "weekly", RANGE_LABEL, serverZone);
-
-        assert.equal(withDefault, withServerZone);
+        assert.ok(readSource("server/util/digestReport.js")
+            .includes("export const digestText = (summary, compare, kind, rangeLabel, zone = serverZone) =>"));
     });
 
     it("skips the compare line without a comparable window", () => {
