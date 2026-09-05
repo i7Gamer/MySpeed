@@ -53,6 +53,9 @@ const NODE_ID = "1";
 let server;
 let nodeUrl;
 
+/** What the last bodyless verb delivered to the child. */
+let received;
+
 const flood = (res, total) => {
     res.writeHead(200, {"content-type": "application/json"});
     for (let sent = 0; sent < total; sent += WRITE_CHUNK) res.write("x".repeat(WRITE_CHUNK));
@@ -64,6 +67,17 @@ before(async () => {
         // The oversized answers are destroyed mid-write by the ceiling under
         // test, which surfaces here as a socket error nobody needs to hear.
         res.on("error", () => {});
+
+        if (req.method === "DELETE") {
+            let body = "";
+            req.on("data", (chunk) => { body += chunk; });
+            req.on("end", () => {
+                received = {headers: req.headers, body};
+                res.writeHead(200, {"content-type": "application/json"});
+                res.end("{}");
+            });
+            return;
+        }
 
         if (req.url === "/api/storage/tests/history/json") return flood(res, RELAY_BYTES);
         if (req.url === "/api/storage/config") return flood(res, OVER_BYTES);
@@ -115,6 +129,36 @@ const proxied = async (childRoute) => {
     await proxyRequest(`${nodeUrl}${childRoute}`, {method: "GET", headers: {}, body: undefined, originalUrl}, res);
     return answered;
 };
+
+/**
+ * Express 5 leaves `req.body` undefined on a request that carried none, and
+ * the relay serialised that as `{}`: every bodyless DELETE reached the child
+ * with a two-byte body and a content-length of 2 the caller never sent.
+ */
+describe("a request that carries no body", () => {
+    it("is relayed without one", async () => {
+        const {res} = capturingResponse();
+        received = undefined;
+
+        await proxyRequest(`${nodeUrl}/api/storage/config`,
+            {method: "DELETE", headers: {}, body: undefined, originalUrl: `/api/nodes/${NODE_ID}/storage/config`}, res);
+
+        assert.ok(received, "the request never reached the child");
+        assert.equal(received.body, "", "a body was fabricated for a bodyless request");
+        assert.equal("content-length" in received.headers, false, "a content-length was invented for it");
+    });
+
+    it("still relays the body a request did carry", async () => {
+        const {res} = capturingResponse();
+        received = undefined;
+
+        await proxyRequest(`${nodeUrl}/api/storage/config`,
+            {method: "DELETE", headers: {}, body: {ids: [1]}, originalUrl: `/api/nodes/${NODE_ID}/storage/config`}, res);
+
+        assert.equal(received.body, '{"ids":[1]}');
+        assert.equal(received.headers["content-length"], "11");
+    });
+});
 
 describe("the paths the backup allowance is for", () => {
     for (const route of ["/api/storage/tests/history/json", "/api/storage/tests/history/csv", "/api/storage/config"]) {

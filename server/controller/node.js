@@ -208,7 +208,12 @@ export const proxyRequest = async (url, req, res) => {
         Object.entries(req.headers).filter(([k]) => !SKIP_HEADERS.has(k.toLowerCase()))
     );
 
-    const body = req.method === "GET" || req.method === "HEAD" ? undefined : JSON.stringify(req.body ?? {});
+    // Undefined is what Express 5 leaves on a request that carried no body,
+    // and it is relayed as none: serialised as `{}` it went out with a
+    // fabricated two-byte body and a content-length to match on every
+    // bodyless DELETE, which is not what the caller sent.
+    const bodyless = req.method === "GET" || req.method === "HEAD" || req.body === undefined;
+    const body = bodyless ? undefined : JSON.stringify(req.body);
     if (body !== undefined) headers["content-length"] = String(Buffer.byteLength(body));
 
     // A caller that has gone away must not keep the upstream request open
