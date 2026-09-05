@@ -388,6 +388,29 @@ describe("the startup speedtest", () => {
             "the offset sleep is not conditional on how the run was asked for");
     });
 
+    /**
+     * The reschedule and pause guards used to sit inside the offset branch,
+     * so a run with the offset disabled went from its config reads straight
+     * into the round: a schedule replaced, or a pause pressed, while those
+     * reads were in flight was seen by nothing.
+     */
+    it("re-checks the schedule and the pause after its last await, offset or not", () => {
+        const guards = runTask.slice(runTask.lastIndexOf("scheduleChangedSince(startedIn)"));
+
+        assert.doesNotMatch(runTask.slice(0, runTask.lastIndexOf("scheduleChangedSince(startedIn)")),
+            /scheduleChangedSince\(startedIn\)/, "the guard is inside a branch as well as after it");
+        assert.match(guards, /pauseController\.currentState/, "the pause is not re-checked with the schedule");
+        const round = guards.indexOf('await createSpeedtest("auto")');
+        assert.notEqual(round, -1, "the guards no longer lead into the round");
+        assert.doesNotMatch(guards.slice(0, round), /await/,
+            "something is awaited between the last guard and the round");
+
+        const offsetBranch = runTask.slice(runTask.indexOf('if (scheduleOffset === "true" && currentCron)'),
+            runTask.lastIndexOf("scheduleChangedSince(startedIn)"));
+        assert.doesNotMatch(offsetBranch, /scheduleChangedSince|pauseController/,
+            "the guards live in the offset branch, where a run with the offset disabled never reaches them");
+    });
+
     // The quiet hours bind the round itself, member by member, for an "auto"
     // run - so an exemption here would only move the refusal one call down.
     it("is still held to the quiet hours", () => {

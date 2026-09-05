@@ -453,28 +453,27 @@ export const runTask = async (options = undefined) => {
         // Checked again on the far side for the same reason the pause is: the
         // offset sleeps for up to five minutes, which is long enough for a run
         // that started just before the quiet hours to wake up inside them.
-        //
-        // Read before the two guards rather than after them, because reading it
-        // is two config reads: asking afterwards left an await between the last
-        // guard and the speedtest, so a reschedule or a pause landing while
-        // those reads were in flight was seen by no guard at all and one test
-        // still fired from the schedule that had just been replaced.
-        const quietHoursBegan = await withinQuietHours();
-
-        if (scheduleChangedSince(startedIn)) {
-            console.warn("The schedule changed during the delay. Skipping this test...");
-            return;
-        }
-
-        if (pauseController.currentState) {
-            console.warn("Speedtests paused during delay. Skipping this test...");
-            return;
-        }
-
-        if (quietHoursBegan) {
+        if (await withinQuietHours()) {
             console.warn("Quiet hours began during delay. Skipping this test...");
             return;
         }
+    }
+
+    // The two guards sit after the last await of this function, whichever
+    // branch was taken above. They used to live inside the offset branch,
+    // which left a run with the offset disabled unguarded: the quiet-hours and
+    // offset reads are four config reads, and a reschedule or a pause landing
+    // while those were in flight was seen by nothing - one test still fired
+    // from a schedule that had just been replaced, or into a pause that had
+    // just been pressed. Nothing may be awaited between here and the round.
+    if (scheduleChangedSince(startedIn)) {
+        console.warn("The schedule changed while this run was starting. Skipping this test...");
+        return;
+    }
+
+    if (pauseController.currentState) {
+        console.warn("Speedtests paused while this run was starting. Skipping this test...");
+        return;
     }
 
     await createSpeedtest("auto");
