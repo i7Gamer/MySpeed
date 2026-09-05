@@ -313,6 +313,8 @@ describe("a repeated digest holds the publish back without deleting the release"
         assert.match(refuse, /exit 1/, "the job reports the duplicates and lets the publish go on");
         assert.ok(needsOf(releaseJobs["finalize-release"]).includes("refuse-duplicate-digests"),
             "the release is un-drafted whether or not its assets are distinct");
+        assert.ok(needsOf(releaseJobs["publish-docker"]).includes("refuse-duplicate-digests"),
+            ":latest reaches Docker Hub on a build whose GitHub release was refused");
     });
 
     it("routes to the partial-release report rather than to the cleanup", () => {

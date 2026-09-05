@@ -202,8 +202,8 @@ jobs:
   # binaries failed" to cleanup-on-failure, which deletes the release and the
   # tag, the very assets the check was placed after the upload to leave
   # verifiable. Failing here keeps build-binaries green, holds the publish
-  # back through finalize-release's needs, and lands in the partial-release
-  # report with the draft intact.
+  # back through publish-docker's and finalize-release's needs, and lands in
+  # the partial-release report with the draft intact.
   refuse-duplicate-digests:
     name: "Refuse Duplicate Digests"
     runs-on: ubuntu-latest
@@ -241,9 +241,14 @@ jobs:
   # Also behind build-msi: the MSI is the other artifact the release must ship,
   # so :latest must not be published before it has built - otherwise a failed
   # MSI leaves Docker on a version whose GitHub release stays a draft.
+  #
+  # And behind refuse-duplicate-digests: that job is what stops a release whose
+  # x64 and x64-baseline assets are one build, and finalize-release waiting on
+  # it was not enough - this job did not, so :latest was published on a build
+  # the GitHub release then refused.
   publish-docker:
     name: "Publish Docker"
-    needs: [create-release, build-binaries, build-docker, build-msi]
+    needs: [create-release, build-binaries, build-docker, build-msi, refuse-duplicate-digests]
     uses: ./.github/workflows/publish-docker.yml
     with:
       tags: |
