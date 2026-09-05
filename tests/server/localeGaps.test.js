@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-    flatten, LANGUAGE_SHARED, localeGaps, mergeLocale, nest, serialise, sharedKeys
+    AGO_INFLECTION, flatten, LANGUAGE_SHARED, localeGaps, mergeLocale, nest, serialise, sharedKeys
 } from "../../scripts/localeGaps.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -104,6 +104,21 @@ describe("localeGaps", () => {
     it("counts an empty value as missing rather than as translated", () => {
         assert.deepEqual(localeGaps(english, {a: "", b: "Zwei", c: "Mbps"}).missing, ["a"]);
     });
+
+    // The ago-inflection is a fact about the language: see AGO_INFLECTION.
+    it("holds the ago-inflection out of both directions", () => {
+        const source = {time: {day: "1 day", days: "{{days}} days", days_ago: "{{days}} days"}};
+        const german = {time: {day: "1 Tag", day_ago: "1 Tag", days: "{{days}} Tage"}};
+
+        const gaps = localeGaps(source, german);
+
+        assert.deepEqual(gaps.missing, []);
+        assert.deepEqual(gaps.extra, []);
+    });
+
+    it("still reports a stale key that merely ends in ago", () => {
+        assert.deepEqual(localeGaps({a: "One"}, {a: "Eins", "status.long_ago": "Lange her"}).extra, ["status.long_ago"]);
+    });
 });
 
 describe("mergeLocale", () => {
@@ -143,6 +158,40 @@ describe("mergeLocale", () => {
     it("drops a key English no longer has", () => {
         assert.deepEqual(mergeLocale(english, {retired: "Alt", unit: "ms"}, {}), {unit: "ms"});
     });
+
+    /**
+     * Polish and Czech carry `time.<unit>_ago`, the i18next context
+     * spanInWords wears behind "ago" (FormatUtil.js), and English carries none
+     * of them because English does not inflect there. They are not leftovers:
+     * a writer that dropped them - which this one did once, silently, on a
+     * pass that touched a different section - hands a Polish reader
+     * "5 godziny" for "przed 5 godzinami", and nothing about the file notices,
+     * because the parity check exempts the family in both directions.
+     */
+    it("keeps an ago-inflection of a key English has, behind its base", () => {
+        const source = {time: {hour: "1 hour", hours: "{{hours}} hours"}, unit: "ms"};
+        const polish = {time: {hour: "1 godzina", hour_ago: "1 godziną", hours: "{{hours}} godziny",
+            hours_ago: "{{hours}} godzinami"}};
+
+        const merged = mergeLocale(source, polish, {unit: "ms"});
+
+        assert.deepEqual(merged, {time: {hour: "1 godzina", hour_ago: "1 godziną", hours: "{{hours}} godziny",
+            hours_ago: "{{hours}} godzinami"}, unit: "ms"});
+        assert.deepEqual(Object.keys(merged.time), ["hour", "hour_ago", "hours", "hours_ago"]);
+    });
+
+    it("still drops an inflection whose base English no longer has", () => {
+        const merged = mergeLocale({time: {hour: "1 hour"}}, {time: {hour: "1 godzina", week_ago: "1 tygodniem"}}, {});
+
+        assert.deepEqual(merged, {time: {hour: "1 godzina"}});
+    });
+
+    it("does not read a key with an underscore of its own as an inflection", () => {
+        const merged = mergeLocale({status: {last_test: "Last test"}},
+            {status: {last_test: "Ostatni test", last_test_unknown: "Nieznany"}}, {});
+
+        assert.deepEqual(merged, {status: {last_test: "Ostatni test"}});
+    });
 });
 
 /**
@@ -159,6 +208,15 @@ describe("mergeLocale", () => {
  * anything: French really does write "ms" and "Mbps", and Russian really does
  * not.
  */
+describe("the ago-inflection", () => {
+    it("names the time units and nothing else", () => {
+        assert.ok(AGO_INFLECTION.test("time.hours_ago"));
+        assert.ok(!AGO_INFLECTION.test("time.hours"));
+        assert.ok(!AGO_INFLECTION.test("status.long_ago"));
+        assert.ok(!AGO_INFLECTION.test("time.hours_ago.more"));
+    });
+});
+
 describe("the shared-value registry", () => {
     const english = flatten(read("en"));
     const every = Object.entries(LANGUAGE_SHARED);

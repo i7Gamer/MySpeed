@@ -322,6 +322,30 @@ export const LANGUAGE_SHARED = {
 export const sharedKeys = (code) => new Set(LANGUAGE_SHARED[code] ?? []);
 
 /**
+ * The one family a locale is allowed to disagree with English about.
+ *
+ * `time.<unit>_ago` is the i18next context spanInWords wears behind the word
+ * "ago" (FormatUtil.js), and which units need one is a fact about the language
+ * rather than about the interface: German inflects the day and nothing else,
+ * Polish and Czech inflect every unit after "przed"/"před", and the languages
+ * that inflect nothing need none at all. What a reader gets when the key is
+ * absent is the base form, which is the right answer for those.
+ *
+ * So the family is held out of both directions of the gap report - counting a
+ * missing one as a gap would have every locale carry a copy of its own base
+ * key to say "this language does not inflect here", and counting an extra one
+ * as a leftover would forbid Polish the six keys its grammar needs - and the
+ * writer keeps a locale's own behind its base instead of dropping it with the
+ * leftovers, which it once did, silently, on a pass that touched another
+ * section entirely.
+ */
+export const AGO_INFLECTION = /^time[.][a-z]+_ago$/;
+const AGO_SUFFIX = "_ago";
+
+const isInflection = (key) => AGO_INFLECTION.test(key);
+const inflectionBase = (key) => key.slice(0, -AGO_SUFFIX.length);
+
+/**
  * What stands between a locale and its source.
  *
  * `missing` is what has to be written, `untranslated` is what has to be looked
@@ -334,10 +358,10 @@ export const localeGaps = (english, locale, shared = new Set()) => {
     const has = (key) => key in target && String(target[key]).trim() !== "";
 
     return {
-        missing: Object.keys(source).filter((key) => !has(key)),
+        missing: Object.keys(source).filter((key) => !has(key) && !isInflection(key)),
         untranslated: Object.keys(source)
             .filter((key) => has(key) && target[key] === source[key] && !shared.has(key)),
-        extra: Object.keys(target).filter((key) => !(key in source))
+        extra: Object.keys(target).filter((key) => !(key in source) && !isInflection(key))
     };
 };
 
@@ -362,10 +386,14 @@ export const mergeLocale = (english, locale, patch) => {
         throw new Error(`patch names ${unknown.length} key(s) that en.json does not have: ${unknown.join(", ")}`);
 
     const merged = {};
+    const inflections = Object.keys(target).filter((key) => isInflection(key) && !(key in source));
 
     for (const key of Object.keys(source)) {
         const value = patch[key] ?? target[key];
         if (value !== undefined) merged[key] = value;
+
+        for (const inflected of inflections)
+            if (inflectionBase(inflected) === key) merged[inflected] = target[inflected];
     }
 
     return nest(merged);

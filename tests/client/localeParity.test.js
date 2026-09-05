@@ -108,25 +108,8 @@ describe("the locale files", () => {
             "these land between a template's own markdown delimiters, and an unbalanced message is not delivered");
     });
 
-    /**
-     * The one family a locale is allowed to disagree with English about.
-     *
-     * `time.<unit>_ago` is the i18next context spanInWords wears behind the
-     * word "ago" (FormatUtil.js), and which units need one is a fact about the
-     * language rather than about the interface: German inflects the day and
-     * nothing else, Polish and Czech inflect every unit after "przed"/"před",
-     * and the seventeen languages that inflect nothing need none at all.
-     *
-     * Held out of both directions on purpose. Counting a missing one as a gap
-     * would have every locale carry a copy of its own base key to say "this
-     * language does not inflect here" - and counting an extra one as a leftover
-     * would forbid Polish the six keys its grammar actually needs. What the
-     * reader gets when a key is absent is the base form, which is the right
-     * answer for the languages that do not inflect.
-     */
-    const AGO_INFLECTION = /^time\.[a-z]+_ago$/;
-
-    const withoutAgoInflection = (keys) => keys.filter((key) => !AGO_INFLECTION.test(key));
+    // The one family a locale may disagree with English about, `time.<unit>_ago`,
+    // is held out of both directions by localeGaps itself: see AGO_INFLECTION.
 
     for (const code of codes) {
         describe(`${code}.json`, () => {
@@ -134,14 +117,14 @@ describe("the locale files", () => {
             const gaps = localeGaps(english, locale, sharedKeys(code));
 
             it("translates every English key", () => {
-                const missing = withoutAgoInflection(gaps.missing);
+                const missing = gaps.missing;
 
                 assert.deepEqual(missing, [],
                     `${missing.length} key(s) absent or empty; a ${code} instance renders these in English`);
             });
 
             it("carries no key English does not have", () => {
-                assert.deepEqual(withoutAgoInflection(gaps.extra), [],
+                assert.deepEqual(gaps.extra, [],
                     "these outlived the English they were translated from");
             });
 
