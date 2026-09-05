@@ -677,7 +677,7 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
 
         if (endpoint) {
             onProgress?.({phase: "ping", progress: 0, speed: null});
-            latency = await measureLatency({...endpoint, localAddress: interfaceIp});
+            latency = await measureLatency({...endpoint, localAddress: interfaceIp, stopped: isShuttingDown});
         }
 
         // Sequentially, and that is load-bearing rather than incidental: the

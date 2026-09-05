@@ -826,6 +826,48 @@ describe("the latency the runner measures for it", () => {
         assert.equal(typeof latency.ping, "number");
         assert.equal(typeof latency.jitter, "number");
     });
+
+    /**
+     * The probe runs before the CLI is spawned, so a shutdown during it has
+     * no child to signal: against a host that never answered, the exit waited
+     * out every remaining sample - the whole ten-second budget - and the
+     * round then wrote its refusal into a closed database.
+     */
+    describe("under a shutdown", () => {
+        it("takes no further sample once told to stop", async () => {
+            let dialled = 0;
+            const connect = () => {
+                dialled++;
+                return socketThat((socket) => socket.emit("connect"))();
+            };
+
+            const latency = await measureLatency({host: "h", port: 1, samples: 5, connect,
+                stopped: () => dialled >= 2});
+
+            assert.equal(dialled, 2, "the probe went on dialling after the stop");
+            assert.equal(typeof latency.ping, "number", "the samples already taken were thrown away");
+        });
+
+        it("answers nothing when stopped before the first sample", async () => {
+            let dialled = 0;
+            const connect = () => {
+                dialled++;
+                return socketThat((socket) => socket.emit("connect"))();
+            };
+
+            const latency = await measureLatency({host: "h", port: 1, connect, stopped: () => true});
+
+            assert.equal(dialled, 0);
+            assert.deepEqual(latency, {ping: null, jitter: null});
+        });
+
+        it("is handed the shutdown latch by the runner", () => {
+            const runner = readSource("server/util/speedtest.js");
+
+            assert.match(runner, /measureLatency\(\{[^}]*stopped: isShuttingDown\}\)/,
+                "the probe is not told about the shutdown, and waits out its budget against a silent host");
+        });
+    });
 });
 
 /**

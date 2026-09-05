@@ -145,13 +145,23 @@ export const sampleHandshake = ({host, port, localAddress, timeoutMs = LATENCY_T
  * zero, and the caller decides what to do about it. A run whose transfer
  * succeeded is still a result: the throughput was measured, and only the
  * latency was not.
+ *
+ * `stopped` is asked before every sample, and a true answer ends the probe
+ * where it stands. The caller passes the shutdown latch: this runs before the
+ * CLI is spawned, so terminateActiveProcess finds nothing to end, and against
+ * a host that never answers the probe held the round for the whole budget -
+ * ten seconds, at the end of which the transfer refused and the failure was
+ * written into a database the exit had closed in the meantime. Injected
+ * rather than imported: speedtest.js owns the latch and imports this file.
  */
 export const measureLatency = async ({host, port, localAddress, samples = LATENCY_SAMPLES,
-    timeoutMs = LATENCY_TIMEOUT_MS, connect = net.connect} = {}) => {
+    timeoutMs = LATENCY_TIMEOUT_MS, connect = net.connect, stopped = () => false} = {}) => {
 
     const readings = [];
 
     for (let attempt = 0; attempt < samples; attempt++) {
+        if (stopped()) break;
+
         const reading = await sampleHandshake({host, port, localAddress, timeoutMs, connect});
         if (reading !== null) readings.push(reading);
     }
