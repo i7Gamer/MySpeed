@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { scopedStorageKey } from "../../client/src/common/utils/Storage.js";
+import { backedBy, readStored, scopedStorageKey, writeStored } from "../../client/src/common/utils/Storage.js";
 
 /**
  * The seventh-pass finding: two MySpeeds behind different BASE_PATH prefixes on
@@ -8,37 +8,39 @@ import { scopedStorageKey } from "../../client/src/common/utils/Storage.js";
  * `welcomeShown`, because Storage.js read and wrote the same bare key whatever
  * prefix the instance was serving from.
  *
- * `scopedStorageKey` is exported as a pure function of the prefix - not read
- * off Storage.js's own `basePath` constant, which is fixed to "" for the life
- * of this process the moment the module is first imported (BasePath.js works
- * it out from its own `import.meta.url`, and nothing under this harness ever
- * serves the client from a subdirectory). Driving the derivation directly is
- * what lets this file exercise a second and third prefix without reloading the
- * module - reloading would not even help, since the module being reloaded is
- * not the one whose URL decides the prefix.
- *
- * The isolation, fallback and dual-clear checks below build a tiny read/write/
- * remove wrapper out of nothing but that one exported function and a plain Map
- * standing in for the one real localStorage a browser gives every origin -
- * which is exactly the shape of the bug: one store, many prefixes, sharing
- * whatever they do not each get their own key for.
+ * Storage.js's own `basePath` is fixed to "" for the life of this process the
+ * moment the module is first imported (BasePath.js works it out from its own
+ * `import.meta.url`, and nothing under this harness serves the client from a
+ * subdirectory), so the bound `readStored` and its siblings can only ever
+ * speak for the default prefix. `backedBy` takes the prefix as a parameter for
+ * exactly this file: every read, write and remove below is the real one, run
+ * over a Map standing in for the one localStorage a browser gives an origin -
+ * which is the shape of the bug: one store, many prefixes, sharing whatever
+ * they do not each get their own key for.
  */
 
-const read = (map, prefix, key) => {
-    const scoped = scopedStorageKey(prefix, key);
-    if (map.has(scoped)) return map.get(scoped);
-    // The bare-key fallback: an instance already running behind BASE_PATH kept
-    // its choices under the bare key before this existed, and has to go on
-    // reading them until it next writes.
-    return scoped === key ? null : (map.has(key) ? map.get(key) : null);
-};
+const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+let origin;
 
-const write = (map, prefix, key, value) => map.set(scopedStorageKey(prefix, key), value);
+// The three methods Storage.js calls, over the Map the assertions read.
+const fakeStore = (map) => ({
+    getItem: (key) => map.has(key) ? map.get(key) : null,
+    setItem: (key, value) => map.set(key, String(value)),
+    removeItem: (key) => map.delete(key)
+});
 
-const remove = (map, prefix, key) => {
-    map.delete(scopedStorageKey(prefix, key));
-    map.delete(key);
-};
+beforeEach(() => {
+    origin = new Map();
+    Object.defineProperty(globalThis, "localStorage", {value: fakeStore(origin), configurable: true, writable: true});
+});
+
+afterEach(() => {
+    if (realLocalStorage) Object.defineProperty(globalThis, "localStorage", realLocalStorage);
+    else delete globalThis.localStorage;
+});
+
+// A MySpeed served behind `prefix`, as far as its stored choices go.
+const instance = (prefix) => backedBy("localStorage", prefix);
 
 describe("scopedStorageKey", () => {
     // The literal names every install has used until now. Pinned so the "" case
@@ -66,43 +68,42 @@ describe("scopedStorageKey", () => {
 
 describe("a store shared by two prefixes on one origin", () => {
     it("keeps a value written under one prefix invisible to another", () => {
-        const origin = new Map();
+        instance("/a").write("currentNode", "3");
 
-        write(origin, "/a", "currentNode", "3");
-
-        assert.equal(read(origin, "/a", "currentNode"), "3");
-        assert.equal(read(origin, "/b", "currentNode"), null,
+        assert.equal(instance("/a").read("currentNode"), "3");
+        assert.equal(instance("/b").read("currentNode"), null,
             "a node chosen on one instance sent the other to its Nodes page - the finding this fixes");
     });
 
-    it("reads the bare key when the scoped one has never been written", () => {
-        const origin = new Map();
+    it("writes under the scoped name, not the bare one", () => {
+        instance("/a").write("theme", "light");
 
+        assert.equal(origin.get("/a:theme"), "light");
+        assert.equal(origin.has("theme"), false);
+    });
+
+    it("reads the bare key when the scoped one has never been written", () => {
         // What an install already running behind BASE_PATH has: the bare key,
         // written before this scoping existed, and nothing under the scoped
         // name yet.
         origin.set("theme", "dark");
 
-        assert.equal(read(origin, "/a", "theme"), "dark",
+        assert.equal(instance("/a").read("theme"), "dark",
             "an upgrading instance lost the theme it already had, rather than reading it until its next write");
     });
 
     it("prefers the scoped value once one has been written", () => {
-        const origin = new Map();
-
         origin.set("theme", "dark");
-        write(origin, "/a", "theme", "light");
+        instance("/a").write("theme", "light");
 
-        assert.equal(read(origin, "/a", "theme"), "light");
+        assert.equal(instance("/a").read("theme"), "light");
     });
 
     it("clears both the scoped and the bare key on remove", () => {
-        const origin = new Map();
-
         origin.set("welcomeShown", "true");
-        write(origin, "/a", "welcomeShown", "true");
+        instance("/a").write("welcomeShown", "true");
 
-        remove(origin, "/a", "welcomeShown");
+        instance("/a").remove("welcomeShown");
 
         assert.equal(origin.has(scopedStorageKey("/a", "welcomeShown")), false);
         assert.equal(origin.has("welcomeShown"), false,
@@ -110,13 +111,29 @@ describe("a store shared by two prefixes on one origin", () => {
     });
 
     it("does not disturb a different prefix's value when removing this one's", () => {
-        const origin = new Map();
+        instance("/a").write("currentNode", "3");
+        instance("/b").write("currentNode", "7");
 
-        write(origin, "/a", "currentNode", "3");
-        write(origin, "/b", "currentNode", "7");
+        instance("/a").remove("currentNode");
 
-        remove(origin, "/a", "currentNode");
+        assert.equal(instance("/b").read("currentNode"), "7");
+    });
+});
 
-        assert.equal(read(origin, "/b", "currentNode"), "7");
+describe("the default prefix", () => {
+    it("reads and writes the bare key, as every install did before", () => {
+        instance("").write("theme", "light");
+
+        assert.equal(origin.get("theme"), "light");
+        assert.equal(instance("").read("theme"), "light");
+    });
+
+    // The bound exports are what the application calls; under this harness
+    // their prefix is "", so they must land on the bare key too.
+    it("is what the exported readers and writers are bound to here", () => {
+        writeStored("language", "de");
+
+        assert.equal(origin.get("language"), "de");
+        assert.equal(readStored("language"), "de");
     });
 });

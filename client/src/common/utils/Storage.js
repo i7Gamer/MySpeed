@@ -64,8 +64,14 @@ export const scopedStorageKey = (prefix, key) =>
  * keep right.
  *
  * The fallback Map is per store, so the two cannot answer each other's keys.
+ *
+ * `prefix` is the BASE_PATH prefix the keys are scoped under, and defaults to
+ * this instance's own. Exported, and a parameter rather than a read of the
+ * constant, for storageBasePathIsolation.test.js: `basePath` is fixed for the
+ * life of the process at first import, so the only way a test can drive two
+ * prefixes over one store is to be handed the prefix.
  */
-const backedBy = (name) => {
+export const backedBy = (name, prefix = basePath) => {
     const memory = new Map();
 
     /**
@@ -104,7 +110,7 @@ const backedBy = (name) => {
     return {
         read: (key) => {
             const resolved = store();
-            const scoped = scopedStorageKey(basePath, key);
+            const scoped = scopedStorageKey(prefix, key);
             const scopedValue = rawRead(resolved, scoped);
 
             if (scopedValue !== null) return scopedValue;
@@ -119,7 +125,7 @@ const backedBy = (name) => {
         },
 
         write: (key, value) => {
-            const scoped = scopedStorageKey(basePath, key);
+            const scoped = scopedStorageKey(prefix, key);
             memory.set(scoped, String(value));
 
             try {
@@ -139,7 +145,7 @@ const backedBy = (name) => {
             // above would otherwise keep surfacing - cannot reappear once the
             // scoped key is gone. Where there is no prefix the two names are
             // the same key, so this clears it once.
-            for (const target of new Set([scopedStorageKey(basePath, key), key])) {
+            for (const target of new Set([scopedStorageKey(prefix, key), key])) {
                 memory.delete(target);
 
                 try {
