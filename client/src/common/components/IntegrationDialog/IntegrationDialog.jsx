@@ -195,15 +195,24 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     return (
         <ExpandableCard icon={integrationDef.icon} title={displayName} subtitle={getStatusText()} statusDot={getStatusClass()}
             actions={<>
+                {/* A bare FontAwesome glyph renders aria-hidden, so without a
+                    label of its own a screen reader announced this as an
+                    unnamed button. */}
                 {!config.previewMode && unsavedChanges && !saveConfirmed && (
                     <button type="button" className="card-action-btn save-btn" disabled={saving}
+                            aria-label={t("dialog.save")}
                             onClick={(e) => {e.stopPropagation(); handleSave();}}>
                         <FontAwesomeIcon icon={faFloppyDisk}/>
                     </button>
                 )}
                 {saveConfirmed && <span className="card-action-btn success-indicator"><FontAwesomeIcon icon={faCheck}/></span>}
+                {/* Named for the state it is in, not only for what it does:
+                    the second press is what actually deletes, and a reader who
+                    only hears "Delete" both times never hears that the first
+                    press changed anything. */}
                 {!config.previewMode && (
                     <button type="button" className={`card-action-btn delete-btn ${deleteConfirmed ? "confirm" : ""}`}
+                            aria-label={t(deleteConfirmed ? "storage.confirm_delete" : "storage.delete")}
                             onClick={(e) => {e.stopPropagation(); handleDelete();}}>
                         <FontAwesomeIcon icon={deleteConfirmed ? faTrashArrowUp : faTrash}/>
                     </button>

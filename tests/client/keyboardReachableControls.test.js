@@ -1,4 +1,4 @@
-import { describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
@@ -8,6 +8,9 @@ import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
 import { blockEnd, escapeRegExp, tagHolding } from "../helpers/source.js";
 import { compile, rules } from "../helpers/sass.mjs";
+import { cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import { ConfigContext } from "@/common/contexts/Config";
+import { IntegrationDialog } from "@/common/components/IntegrationDialog/IntegrationDialog";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -1402,5 +1405,79 @@ describe("the node card's context menu", () => {
             "focus is pulled back to the card even when the menu never held it");
         assert.match(cleanup, /if\s*\(/,
             "focus is handed back unconditionally");
+    });
+});
+
+/**
+ * The integration card's Save and Delete buttons, named.
+ *
+ * Both held nothing but a FontAwesome glyph, which renders `aria-hidden` - so
+ * a screen reader announced each as a button with no name at all. The delete
+ * button is the sharper case: its second press is what actually deletes, and
+ * a reader who hears "Delete" both times is never told the first press
+ * changed anything.
+ */
+describe("the integration card's action buttons are named", () => {
+    it("gives the save button an accessible name", () => {
+        assert.match(integrationDialog,
+            /className="card-action-btn save-btn"[^]*?aria-label=\{t\("dialog\.save"\)\}[^]*?onClick=\{\(e\) => \{e\.stopPropagation\(\); handleSave\(\);\}\}/,
+            "the save button announces as nothing but an icon");
+    });
+
+    it("gives the delete button an accessible name that says which press this is", () => {
+        assert.match(integrationDialog,
+            /card-action-btn delete-btn[^]*?aria-label=\{t\(deleteConfirmed \? "storage\.confirm_delete" : "storage\.delete"\)\}[^]*?onClick=\{\(e\) => \{e\.stopPropagation\(\); handleDelete\(\);\}\}/,
+            "the delete button does not say whether it is armed");
+    });
+
+    /**
+     * Driven rather than read, for the half a source scan cannot answer: does
+     * the name actually change once the button is armed? A screen reader
+     * hears whatever the accessible name currently is, whether or not the
+     * icon or the class changed with it - this is the one place that is
+     * checked at all.
+     */
+    describe("once the dialog is driven", () => {
+        const CONFIG = {viewMode: false, previewMode: false};
+        const INTEGRATION_ID = 11;
+        const DEFINITIONS = {webhook: {fields: []}};
+        const ACTIVE = [{id: INTEGRATION_ID, name: "webhook", data: {}, lastActivity: null}];
+        const noop = () => undefined;
+
+        const answer = (body) =>
+            new Response(JSON.stringify(body), {status: 200, headers: {"content-type": "application/json"}});
+
+        const realFetch = globalThis.fetch;
+
+        beforeEach(() => {
+            globalThis.fetch = async (url) => {
+                const requested = String(url);
+                if (requested.endsWith("/integrations/active")) return answer(ACTIVE);
+                if (requested.endsWith("/integrations")) return answer(DEFINITIONS);
+                return answer({id: INTEGRATION_ID});
+            };
+        });
+
+        afterEach(() => {
+            globalThis.fetch = realFetch;
+            cleanup();
+        });
+
+        it("changes the delete button's accessible name once it is armed", async () => {
+            render(createElement(ConfigContext.Provider, {value: [CONFIG, noop, noop]},
+                createElement(IntegrationDialog, {open: true, onClose: noop})));
+
+            await settle();
+
+            const deleteButton = window.document.querySelector(".delete-btn");
+            assert.ok(deleteButton, "the dialog drew no delete button");
+            assert.equal(deleteButton.getAttribute("aria-label"), "Delete",
+                "the delete button's resting name is no longer 'Delete'");
+
+            click(deleteButton);
+
+            assert.equal(deleteButton.getAttribute("aria-label"), "Yes, delete",
+                "the delete button's name did not change once the first press armed it");
+        });
     });
 });
