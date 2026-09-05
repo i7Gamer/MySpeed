@@ -3,7 +3,7 @@ import db from '../config/database.js';
 import { REGISTRY, IPERF_MAX_BITRATE_MBPS, IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS,
     IPERF_MIN_BITRATE_MBPS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS, IPERF_UDP_STREAMS }
     from '../util/providers/registry.js';
-import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
+import { ALLOWED_PROTOCOLS, checkOutboundHost } from '../util/safeUrl.js';
 import { baselinePercentProblem } from '../util/baselineAlert.js';
 
 /**
@@ -358,6 +358,17 @@ export const targetProblem = (target) => {
             }
 
             if (!ALLOWED_PROTOCOLS.has(url.protocol)) return "The endpoint's protocol is not allowed";
+
+            // The scheme is only half of what makes a URL fetchable safely: this
+            // is the one stored outbound address in the codebase that reached
+            // librespeed-cli without ever being checked against the metadata
+            // service or the link-local range, so a target could be pointed at
+            // either and would be handed to the CLI on every scheduled run.
+            // checkOutboundHost rather than checkOutboundTarget: the URL and
+            // protocol refusals above already have their own wording, which the
+            // combined check would answer instead.
+            const outbound = checkOutboundHost(url.hostname);
+            if (!outbound.safe) return outbound.reason;
         }
     } else if (requiresEndpoint(target.provider)) {
         // Refused at the door rather than at the first run: a target that can

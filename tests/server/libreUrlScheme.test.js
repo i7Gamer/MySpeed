@@ -58,6 +58,33 @@ describe("the librespeed backend URL", () => {
     });
 
     /**
+     * The scheme check ran alone: `new URL()` parses an address as readily as
+     * a hostname, and nothing after it asked whether that address was one this
+     * server should ever fetch. So a libre target's endpoint was the one
+     * stored outbound URL in the codebase that reached librespeed-cli without
+     * passing through checkOutboundHost - every run handed the metadata
+     * service's address to the CLI on schedule.
+     */
+    it("refuses the cloud metadata service", () => {
+        assert.match(refuses("http://169.254.169.254/latest/meta-data/"), /link-local/);
+    });
+
+    // The same service in the other family, which is Unique-Local rather than
+    // link-local - bareHost strips the brackets a v6 literal carries in a URL,
+    // so it is judged the same as the bare address above.
+    it("refuses the cloud metadata service over IPv6", () => {
+        assert.match(refuses("http://[fd00:ec2::254]/latest/meta-data/"), /metadata/);
+    });
+
+    // Loopback and the private ranges stay allowed, the same as for a node: an
+    // endpoint on the operator's own LAN is the ordinary case this provider
+    // exists for, not something to refuse.
+    it("still accepts an ordinary LAN endpoint", () => {
+        accepts("http://speed.lan:8080");
+        accepts("http://192.168.1.10/");
+    });
+
+    /**
      * And it is the same set the node and webhook guards read. A copy here would
      * be a second answer to a question the codebase has already settled once.
      */
