@@ -1,7 +1,7 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import { getJson } from "../../server/util/http.js";
+import { getJson, MAX_GET_JSON_BYTES } from "../../server/util/http.js";
 
 /**
  * Every case here talks to a loopback server rather than to the real GitHub and
@@ -29,6 +29,18 @@ const PAYLOAD = {tag_name: "v1.2.0"};
 const JSON_HEADERS = {"content-type": "application/json"};
 const TEAPOT = 418;
 
+// A ceiling small enough that the oversized routes below can stay a few
+// hundred bytes rather than actually allocating megabytes per test.
+const TEST_MAX_BYTES = 1024;
+// Never actually written to the socket - the declared-length check has to
+// refuse the reply before a single byte of the body is read, so the route
+// closes the connection right after the header.
+const OVERSIZED_CONTENT_LENGTH = TEST_MAX_BYTES + 1000;
+const CHUNK_BYTES = 200;
+// More chunks than fit under TEST_MAX_BYTES, so the ceiling is crossed while
+// streaming rather than on the first chunk.
+const CHUNK_COUNT = 10;
+
 before(async () => {
     server = http.createServer((req, res) => {
         // A client that walked away mid-reply tears the socket down under us,
@@ -49,6 +61,25 @@ before(async () => {
         }
 
         if (req.url === "/teapot") return void res.writeHead(TEAPOT).end("no");
+
+        if (req.url === "/redirect") {
+            return void res.writeHead(302, {location: `${baseUrl}/json`}).end();
+        }
+
+        // The declared length alone is over the cap; nothing after the header
+        // is ever sent, which only matters if the fix reads the body anyway.
+        if (req.url === "/big-cl") {
+            return void res.writeHead(200, {...JSON_HEADERS, "content-length": String(OVERSIZED_CONTENT_LENGTH)})
+                .end();
+        }
+
+        // No content-length set before the first write, so node answers this
+        // one chunked - the shape a declared length can never catch.
+        if (req.url === "/big-chunked") {
+            res.writeHead(200, JSON_HEADERS);
+            for (let i = 0; i < CHUNK_COUNT; i++) res.write("x".repeat(CHUNK_BYTES));
+            return void res.end();
+        }
 
         res.writeHead(200, JSON_HEADERS).end(JSON.stringify(PAYLOAD));
     });
@@ -109,5 +140,38 @@ describe("getJson deadlines", () => {
 
     it("throws the status when the response is not ok", async () => {
         await assert.rejects(getJson(`${baseUrl}/teapot`), /HTTP 418/);
+    });
+});
+
+/**
+ * getJson's two callers - loadServers.js and routes/system.js - hand it
+ * project-owned URLs rather than an operator's, but "project-owned" is not
+ * "trustworthy at every instant": GitHub's release API and the provider
+ * server lists could be redirected or answer something unbounded without
+ * either caller noticing, since both already catch a throw from here.
+ */
+describe("getJson safety", () => {
+    it("refuses a redirect rather than following it", async () => {
+        await assert.rejects(getJson(`${baseUrl}/redirect`),
+            (e) => e.name === "TypeError" && /redirect/i.test(e.cause?.message ?? e.message));
+    });
+
+    it("refuses a body over the ceiling before reading it, by content-length alone", async () => {
+        await assert.rejects(getJson(`${baseUrl}/big-cl`, {maxBytes: TEST_MAX_BYTES}), /exceeds/);
+    });
+
+    it("refuses a chunked body over the ceiling with no content-length to warn it", async () => {
+        await assert.rejects(getJson(`${baseUrl}/big-chunked`, {maxBytes: TEST_MAX_BYTES}), /exceeds/);
+    });
+
+    it("still parses a small JSON answer under the ceiling", async () => {
+        assert.deepEqual(await getJson(`${baseUrl}/json`, {maxBytes: TEST_MAX_BYTES}), PAYLOAD);
+    });
+
+    it("exports a default ceiling generous enough for a real answer, tight enough to be a ceiling", () => {
+        assert.ok(Number.isFinite(MAX_GET_JSON_BYTES) && MAX_GET_JSON_BYTES > 0);
+        // speedtest.net's server list, the largest of getJson's real answers,
+        // is well under 1 MB - the ceiling has to clear that with room.
+        assert.ok(MAX_GET_JSON_BYTES >= 1024 * 1024, "the default ceiling would refuse an ordinary answer");
     });
 });

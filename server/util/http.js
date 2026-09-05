@@ -163,14 +163,50 @@ export const postText = async (url, body, {headers, activity} = {}) => {
 };
 
 /**
+ * The most getJson will hold in memory before refusing to read further.
+ *
+ * Its two callers - loadServers.js and routes/system.js - only ever ask for
+ * project-owned lists: GitHub's release JSON and the speedtest.net/librespeed
+ * server lists. The largest of those, speedtest.net's, is well under 1 MB, so
+ * a few megabytes is generous headroom for a legitimate answer and short of
+ * what an endpoint that starts answering something else entirely could use to
+ * grow this process's memory by 600 MB for a single request, as a 200 MB
+ * reply once did here.
+ */
+export const MAX_GET_JSON_BYTES = 5 * 1024 * 1024;
+
+const tooLarge = (maxBytes) => new Error(`Response exceeds ${maxBytes} bytes`);
+
+// Shared by the content-length check and the mid-stream one below: neither
+// wants to finish reading a body only to throw it away, so both close the
+// stream instead of draining it. Un-awaited, the way drain() above is, so a
+// hostile endpoint that stalls its own cancellation cannot hang the caller.
+const cancelStream = (cancellable) => {
+    try {
+        Promise.resolve(cancellable?.cancel?.()).catch(() => undefined);
+    } catch {
+        // Nothing to cancel.
+    }
+};
+
+/**
  * The deadline is composed with the caller's signal, never replaced by it.
  * `signal` used to default to the timeout, which meant a caller that passed a
  * signal of its own to gain cancellation silently lost the deadline - and got
  * back exactly the hang the deadline was there to prevent.
  */
-export const getJson = async (url, {headers, signal, timeout = OUTBOUND_TIMEOUT} = {}) => {
+export const getJson = async (url, {
+    headers, signal, timeout = OUTBOUND_TIMEOUT, maxBytes = MAX_GET_JSON_BYTES
+} = {}) => {
     const deadline = AbortSignal.timeout(timeout);
-    const res = await fetch(url, {headers, signal: signal ? AbortSignal.any([signal, deadline]) : deadline});
+    const res = await fetch(url, {
+        headers,
+        // Its siblings never follow a redirect either: the outbound guard, where
+        // one applies, runs on the URL the caller stored, and a redirect is the
+        // far end picking a fresh destination after that check has passed.
+        redirect: REFUSE_REDIRECTS,
+        signal: signal ? AbortSignal.any([signal, deadline]) : deadline
+    });
 
     if (!res.ok) {
         // The refusal's body still has to be finished with. This threw with it
@@ -181,5 +217,37 @@ export const getJson = async (url, {headers, signal, timeout = OUTBOUND_TIMEOUT}
         throw new Error(`HTTP ${res.status}`);
     }
 
-    return res.json();
+    // A declared size over the ceiling is refused before a byte of the body is
+    // read - there is no reason to stream an answer this large just to find
+    // out it should be thrown away. Missing or non-numeric content-length
+    // (chunked transfer) falls through to the streamed check below instead.
+    const declaredLength = Number(res.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+        cancelStream(res.body);
+        throw tooLarge(maxBytes);
+    }
+
+    // content-length is only ever a hint the far end chose to send - absent
+    // for a chunked reply, and nothing stops a dishonest one either - so the
+    // body is capped again as it actually arrives. The whole answer is
+    // decoded to text and only then parsed, so a read cut short by the
+    // ceiling is never handed to JSON.parse as if it were a complete body.
+    const reader = res.body.getReader();
+    const chunks = [];
+    let received = 0;
+
+    for (;;) {
+        const {done, value} = await reader.read();
+        if (done) break;
+
+        received += value.byteLength;
+        if (received > maxBytes) {
+            cancelStream(reader);
+            throw tooLarge(maxBytes);
+        }
+
+        chunks.push(value);
+    }
+
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 };
