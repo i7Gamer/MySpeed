@@ -114,7 +114,7 @@ export const ExportButton = ({ dateRange, allTime = false, target = null }) => {
             // fetch silently 401'd under a password and always hit the local
             // instance even while a remote node was being viewed.
             await downloadRequest(`/speedtests/export?${query}`, {}, {},
-                exportFilename({allTime, from: fromParam, to: toParam, format}));
+                exportFilename({allTime, from: fromParam, to: toParam, format, target}));
         } catch (error) {
             console.error('Export failed:', error);
             alert.openAlert(t("failed"), error.message, { buttonText: t("dialog.okay") });

@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import { exportFilename } from "../../client/src/common/components/ExportButton/filename.js";
 
 /**
@@ -26,11 +27,33 @@ describe("exportFilename", () => {
             "myspeed-export-2026-07-01-to-2026-07-15.json");
     });
 
+    // The rows are one target's, and the name said nothing of it: the same
+    // name for every target's rows and for one's.
+    it("names the target the export is narrowed to", () => {
+        assert.equal(exportFilename({allTime: true, format: "csv", target: 3}),
+            "myspeed-export-target-3-all-time.csv");
+        assert.equal(exportFilename({from: "2026-07-01", to: "2026-07-15", format: "json", target: 3}),
+            "myspeed-export-target-3-2026-07-01-to-2026-07-15.json");
+    });
+
+    it("names no target when the export is of all of them", () => {
+        assert.equal(exportFilename({allTime: true, format: "csv", target: null}), "myspeed-export-all-time.csv");
+        assert.equal(exportFilename({allTime: true, format: "csv", target: undefined}), "myspeed-export-all-time.csv");
+    });
+
+    it("is handed the target the button narrows the request to", () => {
+        const button = fs.readFileSync(new URL("../../client/src/common/components/ExportButton/ExportButton.jsx", import.meta.url), "utf8");
+
+        assert.match(button, /exportFilename\(\{[^}]*\btarget\b[^}]*\}\)/,
+            "the request is narrowed to a target the filename does not name");
+    });
+
     // The name reaches a filesystem, so nothing in it may steer a path.
     it("never contains a path separator", () => {
         for (const name of [
             exportFilename({allTime: true, format: "csv"}),
-            exportFilename({from: "2026-07-01", to: "2026-07-15", format: "csv"})
+            exportFilename({from: "2026-07-01", to: "2026-07-15", format: "csv"}),
+            exportFilename({allTime: true, format: "csv", target: 3})
         ]) assert.doesNotMatch(name, /[/\\]/);
     });
 });
