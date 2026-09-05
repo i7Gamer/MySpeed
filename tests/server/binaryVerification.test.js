@@ -254,20 +254,32 @@ describe("CI compiles the client", () => {
             "no job compiles the client, so a build-only failure is first seen by whoever installs it");
     });
 
-    // After the suite: the tests are the cheaper signal and the one that says
-    // more about a failure, so they should be what fails first.
-    // Both positions are checked to exist before they are compared: indexOf
-    // answers -1 for a step that is not there, and -1 is less than anything,
-    // so the comparison alone passed for as long as the suite step was named
-    // something other than what it looked for - which it was, once the step
-    // moved from test:all to test:coverage.
-    it("does so after the tests have run", () => {
-        const suite = tests.indexOf("run: npm run test:coverage");
+    /**
+     * The suite runs under coverage, dealt across four runners: 444 files in
+     * their own processes on four cores ran three minutes on one. The shard
+     * goes in through NODE_OPTIONS, because node reads --test-shard only ahead
+     * of the file globs and `npm run` can only append - appended, the flag is
+     * taken for a file name and every shard runs everything, silently.
+     */
+    it("runs the whole suite under coverage, in shards", () => {
+        assert.notEqual(tests.indexOf("run: npm run test:coverage"), -1, "no step runs the suite under coverage");
+        assert.match(tests, /fail-fast: false\r?\n\s*matrix:\r?\n\s*shard: \[1, 2, 3, 4\]/,
+            "the suite is not sharded, or a failing shard cancels the others");
+        assert.match(tests, /NODE_OPTIONS: --test-shard=\$\{\{ matrix\.shard \}\}\/\$\{\{ strategy\.job-total \}\}/,
+            "the shard is not handed to node through NODE_OPTIONS");
+    });
+
+    // Beside the shards rather than after them, in a job of its own: the two
+    // were one job once, with the build after the suite so a broken test was
+    // reported as a broken test - which a job per signal now says on its own.
+    // Within that job lint goes first, for the same reason.
+    it("lints before it builds", () => {
+        const lint = tests.indexOf("run: npm run lint");
         const build = tests.indexOf("run: bun run build");
-        assert.notEqual(suite, -1, "no step runs the suite under coverage");
+        assert.notEqual(lint, -1, "no step lints");
         assert.notEqual(build, -1, "no step builds the client");
-        assert.ok(suite < build,
-            "the build runs before the suite, so a broken test is reported as a broken build");
+        assert.ok(lint < build,
+            "the build runs before lint, so a re-exported name that binds nothing is reported as a broken build");
     });
 
     /**

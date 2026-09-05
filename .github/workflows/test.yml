@@ -13,8 +13,20 @@ permissions:
 
 jobs:
   test:
-    name: "Unit & integration tests"
+    name: "Unit & integration tests (${{ matrix.shard }} of ${{ strategy.job-total }})"
     runs-on: ubuntu-latest
+
+    # Four runners rather than one. The suite is 444 files, each in its own
+    # node process, and a runner has four cores, so one job ran three files at
+    # a time for three minutes - and the integration files, which each boot
+    # the server, were nine tenths of that. node's --test-shard deals the
+    # sorted file list round-robin, so every shard gets its quarter of the
+    # integration files as well as of the unit ones. A failing shard reports
+    # on its own: fail-fast would cancel the others and hide a second failure.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Checkout project
@@ -52,12 +64,60 @@ jobs:
           bun run generate-migrations
           bun run generate-integrations
 
-      # Before the tests, because it is the cheap tier and it sees what most of
-      # them cannot: the bulk of the suite reads the client's modules as text
-      # rather than evaluating them, so a name that is re-exported and then
-      # used - which binds nothing, and throws at render - passes thousands of
-      # tests and a build. The behavioural tests (tests/helpers/renderHarness.js)
-      # do evaluate what they render, but they cover hooks and menus, not every
+      # test:coverage is test:all - every suite, where `npm test` is the fast
+      # tier for the edit-run loop and running only that here would publish
+      # without the integration suite ever having executed - plus node's own
+      # coverage table in the log. Printed for visibility, not enforced: the
+      # number worth watching is how much of client/src the behavioural tests
+      # reach as they grow, and a threshold would only be gamed. Under shards
+      # each table covers the quarter its runner executed.
+      #
+      # The shard goes in through NODE_OPTIONS rather than the command line:
+      # node reads --test-shard only ahead of the file globs, and `npm run`
+      # can only append, where the flag is silently taken for a file name and
+      # every shard runs everything. The per-file child processes, and the
+      # node a test spawns itself, inherit the variable and ignore it.
+      - name: Run tests
+        env:
+          NODE_OPTIONS: --test-shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: npm run test:coverage
+
+  checks:
+    name: "Lint, build and embed"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v7
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Set up node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install client dependencies
+        working-directory: client
+        run: bun install --frozen-lockfile
+
+      - name: Generate sources
+        run: |
+          bun run generate-migrations
+          bun run generate-integrations
+
+      # First, because it is the cheap tier and it sees what most of the suite
+      # cannot: the bulk of the suite reads the client's modules as text rather
+      # than evaluating them, so a name that is re-exported and then used -
+      # which binds nothing, and throws at render - passes thousands of tests
+      # and a build. The behavioural tests (tests/helpers/renderHarness.js) do
+      # evaluate what they render, but they cover hooks and menus, not every
       # module.
       #
       # Errors fail the job; warnings do not - though the count stands at zero
@@ -65,22 +125,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      # test:coverage is test:all - every suite, where `npm test` is the fast
-      # tier for the edit-run loop and running only that here would publish
-      # without the integration suite ever having executed - plus node's own
-      # coverage table in the log. Printed for visibility, not enforced: the
-      # number worth watching is how much of client/src the behavioural tests
-      # reach as they grow, and a threshold would only be gamed.
-      - name: Run tests
-        run: npm run test:coverage
-
-      # Nothing above compiles the client. Most of the suite reads its modules
+      # Nothing in the suite compiles the client. Most of it reads the modules
       # as text, the behavioural tests resolve imports through a loader of their
       # own, and lint parses each file alone - so none of them sees the build
-      # resolving its imports: a component importing a sibling whose
-      # filename differs only in case builds on a case-insensitive filesystem and
-      # fails here, and the error it fails with names the service worker rather
-      # than the import.
+      # resolving its imports: a component importing a sibling whose filename
+      # differs only in case builds on a case-insensitive filesystem and fails
+      # here, and the error it fails with names the service worker rather than
+      # the import.
       #
       # Until now the only workflow that built the client was build-binaries, on
       # `release` - so the first run of the thing every user installs happened
