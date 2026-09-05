@@ -1,6 +1,8 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, setConfig } from "./helpers/boot.js";
+import * as pauseController from "../../server/controller/pause.js";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 let server;
 
@@ -428,5 +430,61 @@ describe("the validateInput contract the PATCH route reads", () => {
 
         assert.equal(status, 200);
         assert.equal(await stored("download"), "250");
+    });
+});
+
+/**
+ * pauseController's state is a module variable the reset's transaction never
+ * touches, so a paused instance used to come out of "factory fresh" still
+ * paused - every scheduled run silently skipped behind a page that claimed a
+ * clean slate.
+ *
+ * factoryReset itself is read as source below rather than run, the way its
+ * own transaction is in tests/server/factoryResetAtomicity.test.js: firing a
+ * real reset fires a real network probe (interfaces.requestInterfaces, out to
+ * speed.cloudflare.com for every adapter) and restarts the real cron
+ * schedule, either of which makes a test's pass or fail depend on a live
+ * side effect this suite has no business waiting on.
+ */
+describe("factory reset", () => {
+    const body = bodyOf(readSource("server/controller/config.js"), "export const factoryReset");
+    const transactionBlock = bodyOf(body, "db.transaction");
+    const committed = body.indexOf(transactionBlock) + transactionBlock.length;
+
+    it("clears an active pause after the reset is known to have happened", () => {
+        const cleared = body.indexOf("pauseController.updateState(false)");
+
+        assert.notEqual(cleared, -1, "a factory reset no longer clears an active pause");
+        assert.ok(cleared > committed,
+            "the pause is cleared before the reset is known to have committed");
+    });
+
+    const MS_PER_HOUR = 3600000;
+    // Long enough to observe the state change reliably, short enough that a
+    // timer left armed by mistake fires well inside this test's own run.
+    const SHORT_PAUSE_MS = 50;
+
+    afterEach(() => pauseController.updateState(false));
+
+    // The other half of the claim above, proven for real without going near
+    // factoryReset's own live side effects: updateState(false) - the one call
+    // the source above shows the reset makes - does not merely flip the flag,
+    // it drops whatever timer an earlier resumeIn armed. Every state change
+    // going through clearTimer() first is what makes calling it after the
+    // reset enough on its own.
+    it("updateState(false) clears a pending resume timer, not just the flag", async () => {
+        pauseController.resumeIn(SHORT_PAUSE_MS / MS_PER_HOUR);
+        assert.equal(pauseController.currentState, true, "resumeIn did not pause");
+
+        pauseController.updateState(false);
+
+        // Paused again immediately, indefinitely this time. If the earlier
+        // resumeIn's timer had survived the call above, it would still be
+        // live and would flip this fresh pause back off once its original
+        // delay elapsed.
+        pauseController.updateState(true);
+        await new Promise((resolve) => setTimeout(resolve, SHORT_PAUSE_MS * 3));
+
+        assert.equal(pauseController.currentState, true, "a timer from before updateState(false) fired anyway");
     });
 });

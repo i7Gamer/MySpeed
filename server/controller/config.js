@@ -16,6 +16,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as interfaces from '../util/loadInterfaces.js';
 import { destroyAllSessions } from '../util/session.js';
+import * as pauseController from './pause.js';
 import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
 import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
@@ -1043,6 +1044,13 @@ export const factoryReset = async () => {
     // password still stands, and logging everyone out of an instance that did
     // not reset revokes access it still guards.
     destroyAllSessions();
+
+    // pauseController's state is a module variable the transaction above never
+    // touches, so a paused instance came out of "factory fresh" still paused -
+    // every scheduled run silently skipped behind a page that claimed a clean
+    // slate. updateState(false) also clears any timer a timed pause left
+    // pending, the way a manual resume already does.
+    pauseController.updateState(false);
 
     timer.stopTimer();
     timer.startTimer(configDefaults.cron, configDefaults.timezone);
