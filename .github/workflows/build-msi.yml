@@ -143,7 +143,12 @@ jobs:
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi" xmlns:util="http://schemas.microsoft.com/wix/UtilExtension">
             <Product Id="*" Name="$($env:PRODUCT_NAME)" Language="1033" Version="$($env:VERSION).0" Manufacturer="i7Gamer" UpgradeCode="A1B2C3D4-5E6F-7890-ABCD-EF1234567890">
-              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+              <!-- 500, not 200: the MsiLockPermissionsEx table the ProgramData
+                   folders below are secured through is read by Windows Installer
+                   5.0 and ignored by anything older, which would leave the
+                   inherited ACL standing with nothing said. 5.0 shipped with
+                   Windows 7, and the binary needs Windows 10 anyway. -->
+              <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
           
               <!-- The two installers share this product's UpgradeCode on purpose:
                    they are one product carrying a different binary, and separate
@@ -173,6 +178,7 @@ jobs:
           
               <Feature Id="ProductFeature" Title="MySpeed" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
+                <ComponentRef Id="DataRootFolder" />
                 <ComponentRef Id="DataFolder" />
                 <ComponentRef Id="LogsFolderComponent" />
               </Feature>
@@ -235,8 +241,39 @@ jobs:
                 <CreateFolder />
               </Component>
 
+              <!-- Who may read the data directory. ProgramData grants BUILTIN\Users
+                   read access and every folder created beneath it inherits that,
+                   so the database holding the password hash and every integration
+                   secret, the TLS key under certs, and the .env beside them were
+                   readable by any account that could log on. The server cannot
+                   repair this itself: createFolders.js sets POSIX modes, which
+                   node ignores on win32, and the directory exists before the
+                   service ever starts.
+
+                   The SDDL is a protected DACL - the P is what stops the
+                   inheritance - granting full control to the service's own
+                   account (SY, LocalSystem, which the ServiceInstall above names)
+                   and to administrators (BA), both inherited by everything created
+                   underneath, and to nobody else. SIDs rather than names, so a
+                   localised Windows whose group is called Administratoren resolves
+                   it the same. The core PermissionEx, not the util extension's:
+                   that one only adds entries to the DACL the folder already has,
+                   so the inherited grant would have survived it untouched.
+
+                   The root gets it as well as data, and logs inherits from the
+                   root: .env lives in the root, and the migration's xcopy below
+                   lets copied files inherit the destination, so a database
+                   carried over from an old install comes out tightened too. -->
+              <Component Id="DataRootFolder" Directory="DATAROOTFOLDER" Guid="FE250AC5-C29B-42AE-B373-F8B28BBA2E5B">
+                <CreateFolder>
+                  <PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" />
+                </CreateFolder>
+              </Component>
+
               <Component Id="DataFolder" Directory="DATAFOLDER" Guid="6A568446-09EC-49A8-873F-220743161D47">
-                <CreateFolder />
+                <CreateFolder>
+                  <PermissionEx Sddl="D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" />
+                </CreateFolder>
               </Component>
 
               <!-- Releases up to 1.1.0 kept the database inside the install directory,
