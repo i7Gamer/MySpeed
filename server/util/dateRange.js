@@ -30,7 +30,11 @@ const invalid = (message) => ({valid: false, message});
 // Rejects values that look like a date but are not one (2026-13-01, 2026-02-29,
 // 2026-04-31). A bare regex lets these through and `new Date` silently rolls
 // them over into a different month, quietly returning the wrong window.
-const toCalendarParts = (value) => {
+//
+// Exported for importTests, which has exactly the same problem on the same
+// shape of value: its own regex only proves `created` looks like an ISO
+// instant, never that the date it names exists.
+export const toCalendarParts = (value) => {
     const [year, month, day] = value.split("-").map(Number);
     const probe = new Date(year, month - 1, day);
 

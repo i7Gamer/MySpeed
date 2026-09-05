@@ -1,7 +1,7 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
-import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
+import { previousRange, shiftedRange, toCalendarParts, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue, MAX_RETENTION_DAYS } from './config.js';
@@ -16,6 +16,14 @@ const DEFAULT_TEST_LIMIT = 10;
 // perfectly valid way to pull the whole table into memory and serialise it.
 // Callers that want everything have the export endpoints.
 const MAX_TEST_LIMIT = 1000;
+
+// How far past "now" an imported row's own created instant may sit. This is
+// clock skew between the exporting and the importing instance, not a real
+// bound on when a test may have run - two days covers any drift worth
+// tolerating without letting a hand-edited backup claim a date nobody has
+// lived yet (9999-12-31, say) and have every reader that treats `created` as
+// "the latest there is" quote it forever.
+const IMPORT_FUTURE_SKEW_DAYS = 2;
 
 // Columns an import has to supply as numbers. `jitter` and the three quality
 // figures are absent on providers that do not measure them, and a failed row
@@ -452,6 +460,23 @@ export const importTests = async (data) => {
 
         if (!["custom", "auto"].includes(entry.type)) { skipped++; continue; }
         if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
+
+        // The regex above only proves the string looks like an ISO instant,
+        // never that the date it names exists: 2026-02-30 passes it, and
+        // `new Date` silently rolls that over into March, so the row was
+        // stored as written and then drawn on March 2 by every reader that
+        // parses the column - and absent from any range that asked for
+        // February.
+        if (toCalendarParts(entry.created.slice(0, 10)) === null) { skipped++; continue; }
+
+        // A day or two of drift between the exporting and the importing clock
+        // is normal; a row from next century is not a test anyone ran, it is
+        // a hand-edited file, and it would become getLatest()'s answer for
+        // good.
+        if (new Date(entry.created).getTime() - Date.now() > IMPORT_FUTURE_SKEW_DAYS * MS_PER_DAY) {
+            skipped++;
+            continue;
+        }
 
         // sqlite stores whatever it is handed, so an imported "fast" in the
         // download column survives the write and then poisons every average

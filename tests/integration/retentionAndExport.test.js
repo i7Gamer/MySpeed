@@ -606,6 +606,51 @@ describe("import validation", () => {
         assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
     });
 
+    /**
+     * `created`'s own regex only proves the string looks like an ISO instant,
+     * never that the date it names exists: `new Date` silently rolls
+     * 2026-02-30 over into March, so the row was stored as written and then
+     * drawn on March 2 by every reader that parses the column - and absent
+     * from any range that asked for February.
+     */
+    it("skips a row whose date does not exist on the calendar", async () => {
+        await seedTests(server.tests, []);
+        const usable = daysAgo(1);
+
+        const {status} = await importTests([row({created: usable}), row({created: "2026-02-30T12:00:00.000Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
+    });
+
+    // Reachable only by a hand-edited backup, since every real export's
+    // `created` came from toISOString() at write time - but nothing else
+    // stopped a file from claiming a date nobody has lived yet, and it would
+    // become getLatest()'s answer for good.
+    it("skips a row whose instant is further ahead than clock skew explains", async () => {
+        await seedTests(server.tests, []);
+        const usable = daysAgo(1);
+
+        const {status} = await importTests([row({created: usable}), row({created: "9999-12-31T23:59:59.999Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
+    });
+
+    // The allowance exists for clock skew between the exporting and the
+    // importing instance, not to refuse a backup taken minutes ago on a
+    // machine whose clock runs a little ahead - a day of drift is ordinary
+    // and the row is imported rather than skipped.
+    it("imports a row that sits only a day ahead of now", async () => {
+        await seedTests(server.tests, []);
+        const oneDayAhead = daysAgo(-1);
+
+        const {status} = await importTests([row({created: oneDayAhead})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [oneDayAhead]);
+    });
+
     it("keeps the good rows and drops only the bad ones", async () => {
         await seedTests(server.tests, []);
 
