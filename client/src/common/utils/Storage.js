@@ -18,6 +18,41 @@
  * reader their preferences surviving a reload and nothing else. Choosing a
  * language, a theme or a node all keep working for the life of the page.
  */
+import {basePath} from "@/common/utils/BasePath";
+
+/**
+ * The separator between a BASE_PATH prefix and the logical key it scopes.
+ *
+ * A colon, because normaliseBasePath in server/middlewares/basePath.js only
+ * ever produces a leading-slash path segment for the prefix - one that cannot
+ * itself contain a colon - so a scoped key can never collide with a bare key
+ * that happens to start with the same characters.
+ */
+const BASE_PATH_KEY_SEPARATOR = ":";
+
+/**
+ * The storage key a logical key maps to under `prefix` - the seventh-pass
+ * finding that two MySpeeds behind different BASE_PATH prefixes on one origin
+ * shared `currentNode`, the preferences, the theme, the language and
+ * `welcomeShown`, because every prefix read and wrote the same bare key.
+ *
+ * "" answers the bare key, byte for byte, rather than the composed form. That
+ * is not a special case trimmed for tidiness: BASE_PATH defaults to "", so
+ * every install before two of these ever shared an origin is on this branch,
+ * and an upgrade must not reset the node, the theme, the language and the
+ * welcome-dialog state such an install already chose. Only a non-empty prefix
+ * - which cannot have existed before BASE_PATH did - ever sees a different key
+ * than it always has.
+ *
+ * Exported as a pure function of `prefix` - not read off this module's own
+ * `basePath` constant below - so storageBasePathIsolation.test.js can drive
+ * every prefix directly. `basePath` is fixed for the life of the process at
+ * this module's first import, so a test could not otherwise reach a second
+ * prefix without reloading the module.
+ */
+export const scopedStorageKey = (prefix, key) =>
+    prefix === "" ? key : `${prefix}${BASE_PATH_KEY_SEPARATOR}${key}`;
+
 /**
  * One implementation for both stores, named rather than copied.
  *
@@ -55,38 +90,64 @@ const backedBy = (name) => {
 
     const remembered = (key) => memory.has(key) ? memory.get(key) : null;
 
+    /** One key, out of whichever of the store or its memory fallback `read` below decided to ask. */
+    const rawRead = (resolved, key) => {
+        if (resolved === null) return remembered(key);
+
+        try {
+            return resolved.getItem(key);
+        } catch {
+            return remembered(key);
+        }
+    };
+
     return {
         read: (key) => {
             const resolved = store();
-            if (resolved === null) return remembered(key);
+            const scoped = scopedStorageKey(basePath, key);
+            const scopedValue = rawRead(resolved, scoped);
 
-            try {
-                return resolved.getItem(key);
-            } catch {
-                return remembered(key);
-            }
+            if (scopedValue !== null) return scopedValue;
+
+            // A prefixed instance that has never written the scoped key yet -
+            // every one of them, the first time this runs after the upgrade -
+            // goes on reading the bare key it has always used, so the choice
+            // survives until the next write lands under the scoped name. Where
+            // there is no prefix, `scoped` already is `key`, and reading it a
+            // second time would just repeat the lookup above.
+            return scoped === key ? null : rawRead(resolved, key);
         },
 
         write: (key, value) => {
-            memory.set(key, String(value));
+            const scoped = scopedStorageKey(basePath, key);
+            memory.set(scoped, String(value));
 
             try {
                 // Also thrown when the quota is exhausted, which a reader can
                 // reach without having blocked anything.
-                store()?.setItem(key, String(value));
+                store()?.setItem(scoped, String(value));
             } catch {
                 // The memory copy above is what keeps the session working.
             }
         },
 
         remove: (key) => {
-            memory.delete(key);
+            const resolved = store();
 
-            try {
-                store()?.removeItem(key);
-            } catch {
-                // Nothing to undo - the value is gone from the copy that is read
-                // first.
+            // Both the scoped and the bare key are cleared, so a bare value
+            // left over from before this existed - the one the read fallback
+            // above would otherwise keep surfacing - cannot reappear once the
+            // scoped key is gone. Where there is no prefix the two names are
+            // the same key, so this clears it once.
+            for (const target of new Set([scopedStorageKey(basePath, key), key])) {
+                memory.delete(target);
+
+                try {
+                    resolved?.removeItem(target);
+                } catch {
+                    // Nothing to undo - the value is gone from the copy that is
+                    // read first.
+                }
             }
         }
     };

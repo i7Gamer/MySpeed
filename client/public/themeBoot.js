@@ -30,6 +30,73 @@
     var THEME_KEY = "theme";
     var PALETTE_KEY = "palette";
 
+    /*
+     * The BASE_PATH prefix this script itself was served from - the client side
+     * of the same finding Storage.js's scopedStorageKey exists for: two
+     * MySpeeds behind different prefixes on one origin must not read or write
+     * each other's theme and palette. Storage.js works this out from
+     * BasePath.js, which reads import.meta.url - a signal this file has none
+     * of, being plain ES5 loaded by a classic <script> tag rather than a
+     * module.
+     *
+     * document.currentScript.src is the browser's own answer to "where was
+     * this file fetched from", already resolved against whatever relative or
+     * absolute form the built HTML shipped - the same kind of signal
+     * BasePath.js reads off the entry module's import.meta.url, and for the
+     * same reason. location.pathname or document.baseURI were the other
+     * candidates and both were rejected: either one answers the SPA's current
+     * client-side route, which a reader can reload three levels deep under the
+     * prefix or navigate to after boot, not the directory this script was
+     * itself served from - the one fact a router cannot move.
+     *
+     * The path is pulled out with a regexp rather than `new URL(src).pathname`:
+     * this file runs before anything can be relied on, and a global that some
+     * very old embedded webview - or a bare script sandbox - does not provide
+     * would leave the document unstamped exactly as a thrown localStorage
+     * access does above.
+     */
+    function scriptPrefix() {
+        try {
+            var src = document.currentScript && document.currentScript.src;
+            if (!src) return "";
+
+            // Strips "scheme://host[:port]" and any query or hash off the
+            // front. `.src` is always the browser-resolved absolute URL, never
+            // the raw attribute, so this always has an origin to strip.
+            var pathname = src.replace(/^[a-z][a-z0-9+.-]*:\/\/[^/]*/i, "").split(/[?#]/)[0];
+
+            var segments = pathname.split("/").filter(function (segment) {
+                return segment.length > 0;
+            });
+
+            // The file itself is the last segment; whatever remains is the
+            // directory it was served from. Unlike the bundled entry module -
+            // which BasePath.js finds one level under "assets" or "src" - this
+            // file sits at the served root, so nothing needs recognising here,
+            // only popping.
+            segments.pop();
+
+            return segments.length === 0 ? "" : "/" + segments.join("/");
+        } catch (_error) {
+            // The safe way to be wrong, same as BasePath.js: no prefix, so a
+            // layout this cannot work out costs a shared key rather than a
+            // thrown error before anything can paint.
+            return "";
+        }
+    }
+
+    var PREFIX = scriptPrefix();
+
+    // Mirrors Storage.js's BASE_PATH_KEY_SEPARATOR byte for byte: this script
+    // reads whatever ThemeContext, through Storage.js, most recently wrote, and
+    // a separator that disagreed would make every load flash the stale colours
+    // this file exists to remove.
+    var KEY_SEPARATOR = ":";
+
+    function scopedKey(key) {
+        return PREFIX === "" ? key : PREFIX + KEY_SEPARATOR + key;
+    }
+
     var THEMES = ["system", "dark", "light"];
     var DEFAULT_THEME = "system";
 
@@ -54,7 +121,16 @@
      */
     function stored(key) {
         try {
-            return window.localStorage.getItem(key);
+            var scoped = scopedKey(key);
+            var value = window.localStorage.getItem(scoped);
+            if (value !== null) return value;
+
+            // Falls back to the bare key so an instance already running behind
+            // BASE_PATH keeps the theme and palette it chose before this
+            // scoping existed, until ThemeContext's own read through
+            // Storage.js next writes the scoped name - the same rule
+            // Storage.js's read applies for every other stored choice.
+            return scoped === key ? null : window.localStorage.getItem(key);
         } catch (_error) {
             return null;
         }

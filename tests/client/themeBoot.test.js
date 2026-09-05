@@ -6,6 +6,7 @@ import { compile, declarationsIn } from "../helpers/sass.mjs";
 import { DEFAULT_THEME, normaliseTheme, resolveTheme, THEMES } from "../../client/src/common/contexts/Theme/themeChoice.js";
 import { DEFAULT_PALETTE, normalisePalette, PALETTES } from "../../client/src/common/contexts/Theme/paletteChoice.js";
 import { mediaQueryAnswer } from "../../client/src/common/contexts/Theme/mediaQuery.js";
+import { scopedStorageKey } from "../../client/src/common/utils/Storage.js";
 
 /**
  * The one copy of the theme rules that is not the modules.
@@ -40,8 +41,20 @@ const css = compile("common/styles/default.sass");
  * are not "dark or light" but the malformed ones - a list with no media, a list
  * whose matches was never filled in - and neither is reachable through the
  * prefersDark flag.
+ *
+ * `scriptSrc` stands in for `document.currentScript.src`, which is how the
+ * script works out the BASE_PATH prefix it was served under - see
+ * "the BASE_PATH prefix this script reads and writes under" below. Left
+ * undefined, `document.currentScript` is absent altogether, the same as every
+ * other test here - and the same as a browser that does not populate it during
+ * a classic script's own execution, which stays on the bare keys.
+ *
+ * `keysRead` collects every key the script asked `localStorage.getItem` for, in
+ * order, so a test can pin which key - scoped, then bare - it tried and in
+ * which sequence, rather than only the value it settled on.
  */
-const run = ({stored = {}, prefersDark, query, matchMedia = true, unsupported = false, throws = false} = {}) => {
+const run = ({stored = {}, prefersDark, query, matchMedia = true, unsupported = false, throws = false,
+    scriptSrc, keysRead = []} = {}) => {
     const attributes = {};
     const meta = {content: "#000000", setAttribute: (name, value) => { meta[name] = value; }};
 
@@ -49,6 +62,7 @@ const run = ({stored = {}, prefersDark, query, matchMedia = true, unsupported = 
         window: {
             localStorage: {
                 getItem: (key) => {
+                    keysRead.push(key);
                     if (throws) throw new Error("SecurityError");
                     return stored[key] ?? null;
                 }
@@ -61,6 +75,7 @@ const run = ({stored = {}, prefersDark, query, matchMedia = true, unsupported = 
                 : {matches: prefersDark === true, media: "(prefers-color-scheme: dark)"})} : {})
         },
         document: {
+            currentScript: scriptSrc === undefined ? undefined : {src: scriptSrc},
             documentElement: {setAttribute: (name, value) => { attributes[name] = value; }},
             querySelector: () => meta
         }
@@ -122,6 +137,110 @@ describe("the pre-paint script", () => {
         for (const external of ['<script src="/a.js"></script>', '<script SRC="/a.js"></script>',
             '<script/src="/a.js"></script>', '<script defer src="/a.js"></script>'])
             assert.deepEqual(inlineScriptsIn(html.replace("</head>", `${external}</head>`)), [], external);
+    });
+});
+
+/**
+ * The seventh-pass finding: two MySpeeds behind different BASE_PATH prefixes
+ * on one origin shared the theme and the palette, because this file read and
+ * wrote the same bare key whatever prefix it was served from. Storage.js fixes
+ * the same gap for every other stored choice with scopedStorageKey; this file
+ * cannot import that, so it has to agree with it by execution rather than by
+ * sharing code - the same reason the rest of this suite runs the script
+ * instead of reading its source.
+ *
+ * `document.currentScript.src` is the signal, standing in for wherever the
+ * built HTML actually served this file from - a proxy behind BASE_PATH, or the
+ * bare root every install before this had. Comparing the exact key each run
+ * asked `localStorage` for is what proves the two copies of the rule agree,
+ * not just that both eventually produce a colour.
+ */
+describe("the BASE_PATH prefix this script reads and writes under", () => {
+    it("asks for the bare keys when served from the root", () => {
+        const keysRead = [];
+        run({scriptSrc: "https://host/themeBoot.js", keysRead});
+
+        assert.deepEqual(keysRead, ["theme", "palette"],
+            "a root deployment must keep asking for exactly the keys every install has always used");
+    });
+
+    it("asks for the bare keys when currentScript is unavailable", () => {
+        // What every browser gave this file before BASE_PATH's client side
+        // existed, and what a vm sandbox with no `document.currentScript` at
+        // all gives it now - both have to fall back to no prefix, not throw.
+        const keysRead = [];
+        run({keysRead});
+
+        assert.deepEqual(keysRead, ["theme", "palette"]);
+    });
+
+    it("asks for the scoped key first when served behind a prefix", () => {
+        const keysRead = [];
+        run({scriptSrc: "https://host/internet_speed/themeBoot.js", keysRead});
+
+        assert.deepEqual(keysRead, [
+            scopedStorageKey("/internet_speed", "theme"), "theme",
+            scopedStorageKey("/internet_speed", "palette"), "palette"
+        ], "the scoped key has to be tried, and tried before the bare fallback");
+    });
+
+    it("agrees with Storage.js's scopedStorageKey for every prefix and key", () => {
+        const disagreements = [];
+
+        for (const prefix of ["", "/internet_speed", "/a/b"]) {
+            for (const key of ["theme", "palette"]) {
+                const keysRead = [];
+                run({scriptSrc: `https://host${prefix}/themeBoot.js`, keysRead});
+
+                const firstKeyTried = keysRead.find((asked) => asked.endsWith(key));
+                const expected = scopedStorageKey(prefix, key);
+
+                if (firstKeyTried !== expected)
+                    disagreements.push(`${prefix}/${key}: boot asked ${firstKeyTried} vs Storage.js's ${expected}`);
+            }
+        }
+
+        assert.deepEqual(disagreements, []);
+    });
+
+    it("stamps the value stored under the scoped key", () => {
+        const scopedTheme = scopedStorageKey("/internet_speed", "theme");
+        const stamped = run({
+            scriptSrc: "https://host/internet_speed/themeBoot.js",
+            stored: {[scopedTheme]: "light"},
+            prefersDark: true
+        });
+
+        assert.equal(stamped["data-theme"], "light",
+            "the scoped value was ignored in favour of the default or the bare key");
+    });
+
+    /**
+     * What an instance already running behind BASE_PATH has on the upgrade
+     * that ships this fix: the bare key, written before scoping existed, and
+     * nothing yet under the scoped name. Losing this would mean every such
+     * install's theme silently reverts to the default the moment this file
+     * changes underneath it.
+     */
+    it("falls back to the bare key when the scoped one has never been written", () => {
+        const stamped = run({
+            scriptSrc: "https://host/internet_speed/themeBoot.js",
+            stored: {theme: "light", palette: "nord"},
+            prefersDark: true
+        });
+
+        assert.equal(stamped["data-theme"], "light");
+        assert.equal(stamped["data-palette"], "nord");
+    });
+
+    it("prefers the scoped value once one exists over the bare fallback", () => {
+        const stamped = run({
+            scriptSrc: "https://host/internet_speed/themeBoot.js",
+            stored: {theme: "light", [scopedStorageKey("/internet_speed", "theme")]: "dark"},
+            prefersDark: false
+        });
+
+        assert.equal(stamped["data-theme"], "dark");
     });
 });
 
