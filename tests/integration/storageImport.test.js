@@ -152,6 +152,53 @@ describe("PUT /api/storage/config", () => {
         assert.equal((await counts()).recommendations, 10_000);
     });
 
+    /**
+     * Settles TECH_DEBT #8's other half. A target row goes through
+     * targetProblem before anything is touched; a node row went through
+     * nothing at all, so a password holding CR or LF - restored from a
+     * backup, since nothing on this path checked a row this way - reached
+     * http.request's own header check unguarded and threw synchronously on
+     * every proxied request under that node. writePasswordHeaders' own guard
+     * now keeps such a value off a live header, but the row itself would
+     * still be stored and re-exported unless the import refuses it outright.
+     */
+    it("refuses a node whose password holds a control character, and touches nothing", async () => {
+        const {status, body} = await importConfig({
+            config: {},
+            nodes: [{name: "hostile", url: "http://10.0.0.4:5216", password: "abc\r\nX: 1"}],
+            integrations: [],
+            recommendations: [],
+            targets: []
+        });
+
+        assert.equal(status, 500);
+        assert.match(body.message, /nodes/, "the refusal does not say which table was unusable");
+        assert.deepEqual(await counts(), {nodes: 1, integrations: 1, recommendations: 1},
+            "the tables were emptied before the bad row was found");
+
+        const [survivor] = await nodeModel.findAll();
+        assert.equal(survivor.name, EXISTING_NODE.name);
+    });
+
+    // A real backup's node rows carry their own id, the way every other
+    // table's rows do, and a null password just as often as a set one -
+    // neither should cost a row its restore.
+    it("restores a node carrying a null password and its own id", async () => {
+        const {status} = await importConfig({
+            config: {},
+            nodes: [{id: 42, name: "office", url: "http://10.0.0.5:5216", password: null}],
+            integrations: [],
+            recommendations: [],
+            targets: []
+        });
+
+        assert.equal(status, 200);
+
+        const [replacement] = await nodeModel.findAll();
+        assert.equal(replacement.name, "office");
+        assert.equal(replacement.password, null);
+    });
+
     it("replaces the tables when the payload is sound", async () => {
         const {status} = await importConfig({
             config: {retentionDays: "30"},

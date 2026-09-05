@@ -19,6 +19,7 @@ import { destroyAllSessions } from '../util/session.js';
 import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
 import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
+import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 
 // Exported for the scheduler's fallback: an invalid stored cron at boot is
 // replaced by this default rather than by a silence with no schedule in it.
@@ -209,6 +210,52 @@ const IMPORTED_TABLES = [
     {key: "integrations", model: integration},
     {key: "recommendations", model: recommendations}
 ];
+
+/**
+ * The problem with a node row a restore is about to write, or null.
+ *
+ * A target row goes through targetProblem before anything is touched; a node
+ * row went through nothing at all - bulk-inserted as the file wrote it. A
+ * password holding CR or LF reached http.request's own header check with
+ * nothing between, and threw synchronously on every proxied request under
+ * that node. writePasswordHeaders now keeps such a value out of a live
+ * header, but the row itself would still be stored and re-exported unless
+ * the import refuses it outright - the same way a bad target already is.
+ */
+const nodeProblem = (row) => {
+    if (row === null || typeof row !== "object" || Array.isArray(row)) return "A node row must be an object";
+
+    if (typeof row.url !== "string") return "A node's url must be a string";
+
+    let parsed;
+    try {
+        parsed = new URL(row.url);
+    } catch {
+        return "A node's url must be a URL";
+    }
+
+    if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) return "A node's url must be http or https";
+
+    // Absent is legitimate - the model defaults it - but present and the
+    // wrong shape is a hand-edited or corrupted file.
+    if (row.name !== undefined && typeof row.name !== "string") return "A node's name must be a string";
+
+    // null is legitimate too: the column is nullable and an unprotected node
+    // exports it that way. Present and not null is where the shape matters.
+    if (row.password !== undefined && row.password !== null) {
+        if (typeof row.password !== "string") return "A node's password must be a string";
+
+        // Exactly the characters that reach http.request unguarded through the
+        // raw `password` header: CR and LF included, which is what made every
+        // proxied request under the node answer 500 rather than carry the
+        // password at all.
+        // eslint-disable-next-line no-control-regex
+        if (/[\x00-\x1F\x7F]/.test(row.password))
+            return "A node's password must not contain a control character";
+    }
+
+    return null;
+};
 
 // `transaction` is optional so factoryReset can clear the table and re-seed it
 // as one unit. Without it, a failure between the two left the instance with no
@@ -575,6 +622,11 @@ export const importConfig = async (obj) => {
 
         rows[key] = value;
     }
+
+    // Judged before anything is touched, the way the targets below are: a bad
+    // node row is refused whole rather than let through to be bulk-inserted
+    // as written.
+    if (rows.nodes.some((row) => nodeProblem(row) !== null)) return {ok: false, key: "nodes"};
 
     try {
         rows.integrations = rows.integrations.map((entry) => ({
