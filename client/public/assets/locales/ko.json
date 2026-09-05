@@ -738,6 +738,7 @@
     "running_button": "실행 중",
     "paused": "속도 테스트가 일시 중지되었습니다",
     "never_run": "아직 실행된 테스트가 없습니다",
+    "last_test_unknown": "마지막 테스트 미확인",
     "last_test": "마지막 테스트 {{time}} 전",
     "next_test": "다음 테스트: {{time}}",
     "recent_failures": "지난 하루 동안 {{failures}}회 실패",

@@ -738,6 +738,7 @@
     "running_button": "Çalışıyor",
     "paused": "Hız testleri duraklatıldı",
     "never_run": "Henüz hiç test çalıştırılmadı",
+    "last_test_unknown": "Son test bilinmiyor",
     "last_test": "Son test {{time}} önce",
     "next_test": "Sonraki {{time}}",
     "recent_failures": "Son bir günde {{failures}} tanesi başarısız oldu",

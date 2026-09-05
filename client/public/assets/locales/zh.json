@@ -738,6 +738,7 @@
     "running_button": "进行中",
     "paused": "测速已暂停",
     "never_run": "尚未执行过测速",
+    "last_test_unknown": "上次测速未知",
     "last_test": "上次测速在 {{time}} 前",
     "next_test": "下一次在 {{time}}",
     "recent_failures": "最近一天有 {{failures}} 次失败",

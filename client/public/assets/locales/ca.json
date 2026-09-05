@@ -738,6 +738,7 @@
     "running_button": "En curs",
     "paused": "Les proves de velocitat estan en pausa",
     "never_run": "Encara no s'ha executat cap prova",
+    "last_test_unknown": "Darrera prova desconeguda",
     "last_test": "Darrera prova fa {{time}}",
     "next_test": "La següent a les {{time}}",
     "recent_failures": "{{failures}} amb error durant el darrer dia",

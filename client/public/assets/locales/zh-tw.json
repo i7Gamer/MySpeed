@@ -738,6 +738,7 @@
     "running_button": "測試中",
     "paused": "速度測試已暫停",
     "never_run": "尚未執行過任何測試",
+    "last_test_unknown": "最後一次測試未知",
     "last_test": "上次測試於 {{time}} 前",
     "next_test": "下次於 {{time}}",
     "recent_failures": "過去一天有 {{failures}} 次失敗",

@@ -738,6 +738,7 @@
     "running_button": "実行中",
     "paused": "スピードテストは一時停止中です",
     "never_run": "まだテストは実行されていません",
+    "last_test_unknown": "最後のテストが不明",
     "last_test": "前回のテストは {{time}}前",
     "next_test": "次回は {{time}}",
     "recent_failures": "過去 1 日で {{failures}} 件失敗",

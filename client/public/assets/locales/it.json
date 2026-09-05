@@ -738,6 +738,7 @@
     "running_button": "In corso",
     "paused": "Gli speedtest sono in pausa",
     "never_run": "Non è ancora stato eseguito alcun test",
+    "last_test_unknown": "Ultimo test sconosciuto",
     "last_test": "Ultimo test {{time}} fa",
     "next_test": "Il prossimo alle {{time}}",
     "recent_failures": "{{failures}} falliti nell'ultimo giorno",

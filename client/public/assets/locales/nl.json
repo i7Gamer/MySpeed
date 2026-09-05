@@ -738,6 +738,7 @@
     "running_button": "Bezig",
     "paused": "De snelheidstests staan op pauze",
     "never_run": "Er is nog geen test uitgevoerd",
+    "last_test_unknown": "Laatste test onbekend",
     "last_test": "Laatste test {{time}} geleden",
     "next_test": "Volgende om {{time}}",
     "recent_failures": "{{failures}} mislukt in de afgelopen dag",

@@ -738,6 +738,7 @@
     "running_button": "Kører",
     "paused": "Hastighedstestene er sat på pause",
     "never_run": "Der er endnu ikke kørt nogen test",
+    "last_test_unknown": "Sidste test ukendt",
     "last_test": "Sidste test for {{time}} siden",
     "next_test": "Næste kl. {{time}}",
     "recent_failures": "{{failures}} mislykkedes det seneste døgn",

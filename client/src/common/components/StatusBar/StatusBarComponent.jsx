@@ -31,7 +31,7 @@ const StatusBarComponent = () => {
     const [status] = useContext(StatusContext);
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
-    const {speedtests} = useContext(SpeedtestContext);
+    const {speedtests, loadError} = useContext(SpeedtestContext);
     const navigate = useNavigate();
 
     const [lastTestText, setLastTestText] = useState(null);
@@ -47,6 +47,18 @@ const StatusBarComponent = () => {
         ?? (speedtests.length > 0
             ? {created: speedtests[0].created, failed: isFailedTest(speedtests[0])}
             : null);
+
+    /**
+     * A failed list load with nothing to fall back on, told apart from an
+     * instance that has genuinely never tested.
+     *
+     * SpeedtestContext empties the list and sets loadError together on a
+     * failed fetch, so this bar's own fallback above answers `null` for both -
+     * "no test has run yet" was being printed over an instance the bar simply
+     * could not ask, with the retry button already on screen a few lines
+     * below it saying otherwise.
+     */
+    const lastTestUnknown = Boolean(loadError) && !status.lastTest;
 
     useEffect(() => {
         const refresh = () => setLastTestText(formatLastTest(lastTest?.created));
@@ -126,6 +138,7 @@ const StatusBarComponent = () => {
         if (status.paused) return t("status.paused");
         if (status.running)
             return roundTarget?.name ? `${roundTarget.name} · ${phaseLabel()}` : phaseLabel();
+        if (lastTestUnknown) return t("status.last_test_unknown");
 
         return lastTestText;
     };
@@ -143,6 +156,11 @@ const StatusBarComponent = () => {
     const stateIcon = () => {
         if (status.paused) return faPause;
         if (status.running) return faGaugeHigh;
+        // Unknown before failed: a list that could not be asked says nothing
+        // about whether the last test actually failed, so the neutral clock is
+        // what is honest here - not the triangle a stale cached row could
+        // otherwise still trigger below.
+        if (lastTestUnknown) return faClockRotateLeft;
         if (lastTest?.failed) return faTriangleExclamation;
 
         return faClockRotateLeft;
@@ -151,6 +169,7 @@ const StatusBarComponent = () => {
     const stateColour = () => {
         if (status.paused) return "orange";
         if (status.running) return "blue";
+        if (lastTestUnknown) return "green";
         if (lastTest?.failed) return "error";
 
         return "green";

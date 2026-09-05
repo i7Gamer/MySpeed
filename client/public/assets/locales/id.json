@@ -738,6 +738,7 @@
     "running_button": "Berjalan",
     "paused": "Speedtest sedang dijeda",
     "never_run": "Belum ada pengujian yang dijalankan",
+    "last_test_unknown": "Tes terakhir tidak diketahui",
     "last_test": "Pengujian terakhir {{time}} lalu",
     "next_test": "Berikutnya pukul {{time}}",
     "recent_failures": "{{failures}} gagal dalam sehari terakhir",

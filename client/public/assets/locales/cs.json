@@ -744,6 +744,7 @@
     "running_button": "Probíhá",
     "paused": "Testy rychlosti jsou pozastaveny",
     "never_run": "Zatím neproběhl žádný test",
+    "last_test_unknown": "Poslední test neznámý",
     "last_test": "Poslední test před {{time}}",
     "next_test": "Další v {{time}}",
     "recent_failures": "Selhání za poslední den: {{failures}}",

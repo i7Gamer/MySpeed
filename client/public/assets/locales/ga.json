@@ -738,6 +738,7 @@
     "running_button": "Ag rith",
     "paused": "Tá tástálacha luais ar sos",
     "never_run": "Níor rith aon tástáil fós",
+    "last_test_unknown": "Tástáil dheireanach anaithnid",
     "last_test": "An tástáil dheireanach {{time}} ó shin",
     "next_test": "An chéad cheann eile ag {{time}}",
     "recent_failures": "Theip ar {{failures}} le lá anuas",

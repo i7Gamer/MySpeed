@@ -738,6 +738,7 @@
     "running_button": "En curso",
     "paused": "Los tests de velocidad están en pausa",
     "never_run": "Todavía no se ha ejecutado ningún test",
+    "last_test_unknown": "Última prueba desconocida",
     "last_test": "Último test hace {{time}}",
     "next_test": "El siguiente a las {{time}}",
     "recent_failures": "{{failures}} fallidos en el último día",

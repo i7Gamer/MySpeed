@@ -738,6 +738,7 @@
     "running_button": "Pågår",
     "paused": "Hastighetstesterna är pausade",
     "never_run": "Inget test har körts än",
+    "last_test_unknown": "Senaste testet okänt",
     "last_test": "Senaste testet för {{time}} sedan",
     "next_test": "Nästa kl. {{time}}",
     "recent_failures": "{{failures}} misslyckades det senaste dygnet",
