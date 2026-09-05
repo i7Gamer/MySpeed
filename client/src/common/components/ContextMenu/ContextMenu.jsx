@@ -1,6 +1,7 @@
 import React, {useEffect, useRef, useState, useCallback} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
+import {hasOpenOverlay} from "@/common/contexts/Dialog";
 import "./styles.sass";
 
 /**
@@ -31,6 +32,16 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
         const handleKeyDown = (event) => {
             switch (event.key) {
                 case "Escape":
+                    // Already answered by the overlay that heard it first, or
+                    // being answered right now by one raised over this menu -
+                    // the same two-part guard Dialog and Alert make of each
+                    // other before either claims the key. This menu is never
+                    // registered in their `.dialog-area` stack, so it cannot
+                    // ask isTopmostOverlay's question; it asks the weaker one
+                    // documented for a caller in that position instead - it is
+                    // raised from the page, so anything else open is above it.
+                    if (event.defaultPrevented || hasOpenOverlay()) break;
+
                     event.preventDefault();
                     onClose();
                     break;
