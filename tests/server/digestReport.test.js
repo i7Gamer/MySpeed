@@ -1,9 +1,14 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { digestRanges, digestText } from "../../server/util/digestReport.js";
-import { zoneFromName } from "../../server/util/timezone.js";
+import { serverZone, zoneFromName } from "../../server/util/timezone.js";
 
 const BERLIN = zoneFromName("Europe/Berlin");
+
+// A zone object rather than the host machine's own clock, so a test that
+// wants "what a UTC caller sees" reads the same on every machine this suite
+// runs on, wherever its own TZ happens to be.
+const UTC = zoneFromName("Etc/UTC");
 
 const iso = (date) => date.toISOString();
 
@@ -107,14 +112,43 @@ describe("digestText", () => {
 
     it("says the whole story when everything measured", () => {
         const text = digestText(summary(), summary({tests: {total: 500, failed: 8},
-            download: {avg: 233.4}, upload: {avg: 42.1}, ping: {avg: 8.02}}), "weekly", RANGE_LABEL);
+            download: {avg: 233.4}, upload: {avg: 42.1}, ping: {avg: 8.02}}), "weekly", RANGE_LABEL, UTC);
 
         assert.match(text, /^MySpeed weekly digest \(2026-08-24 – 2026-08-30\)/);
         assert.match(text, /512 tests, 3 failed \(0\.6%\)/);
         assert.match(text, /230\.14 down \/ 42\.31 up Mbit\/s, ping 8\.43 ms/);
         assert.match(text, /Data used: 235\.7 GB/);
         assert.match(text, /vs previous week: tests \+2\.4%, download -1\.4%, upload \+0\.5%, ping \+5\.1%/);
-        assert.match(text, /Longest failure streak: 3 \(2026-08-26 14:02 – 15:40 UTC\)/);
+        assert.match(text, /Longest failure streak: 3 \(2026-08-26 14:02 – 15:40\)/);
+    });
+
+    // Settles TECH_DEBT #8: streakSpan used to slice the raw ISO strings and
+    // always append " UTC", regardless of the window it sat under - a streak
+    // could print a calendar date the label above it never claimed. Berlin is
+    // two hours ahead of the stored UTC instants, so a failure at 22:05-22:20Z
+    // on the 23rd reads as the small hours of the 24th on the zone's own
+    // calendar, the same calendar digestRanges already built the label from.
+    it("dates a failure streak on the zone's own calendar, not UTC's", () => {
+        const text = digestText(summary({reliability: {
+            longestFailureStreak: {
+                count: 2, from: "2026-08-23T22:05:00.000Z", to: "2026-08-23T22:20:00.000Z"
+            },
+            lastFailureAt: "2026-08-23T22:20:00.000Z",
+            largestGap: null
+        }}), null, "weekly", RANGE_LABEL, BERLIN);
+
+        assert.match(text, /Longest failure streak: 2 \(2026-08-24 00:05 – 00:20\)/);
+    });
+
+    // The fifth parameter defaults to serverZone rather than requiring every
+    // caller to pass one - proven here by asking for the same output twice,
+    // once by omission and once by naming serverZone outright, so the pin
+    // holds regardless of what this machine's own clock is set to.
+    it("defaults the streak's zone to serverZone", () => {
+        const withDefault = digestText(summary(), null, "weekly", RANGE_LABEL);
+        const withServerZone = digestText(summary(), null, "weekly", RANGE_LABEL, serverZone);
+
+        assert.equal(withDefault, withServerZone);
     });
 
     it("skips the compare line without a comparable window", () => {

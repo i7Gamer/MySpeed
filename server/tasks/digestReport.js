@@ -47,7 +47,7 @@ export const runDigest = async (kind, {
 
     const payload = {
         kind,
-        text: digestText(summary, compareSummary, kind, label),
+        text: digestText(summary, compareSummary, kind, label, zone),
         from: range.from.toISOString(),
         to: range.to.toISOString(),
         tests: summary.tests

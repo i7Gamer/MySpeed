@@ -16,7 +16,7 @@
  * cadence, not a hole.
  */
 import { parseDateRange } from "./dateRange.js";
-import { localWallClock } from "./timezone.js";
+import { localWallClock, serverZone } from "./timezone.js";
 
 const DAYS_PER_WEEK = 7;
 const PERCENT = 100;
@@ -88,17 +88,29 @@ const signedPercent = (current, previous) => {
     return `${change >= 0 ? "+" : ""}${change.toFixed(DELTA_DECIMALS)}%`;
 };
 
-// "2026-08-26T14:02:00.000Z" -> the date, the minutes, and the second end
-// date-less when it shares the first's day.
-const streakSpan = ({from, to}) => {
-    const fromDate = String(from).slice(0, 10);
-    const fromTime = String(from).slice(11, 16);
-    const toDate = String(to).slice(0, 10);
-    const toTime = String(to).slice(11, 16);
+// The zone's own calendar and clock parts of an instant, printed
+// "YYYY-MM-DD HH:MM" - localWallClock shifts the instant so its getUTC*
+// reads ARE the wall clock, the same trick localParts uses above.
+const localDateTime = (zone, value) => {
+    const wall = localWallClock(zone, new Date(value));
+    const date = `${wall.getUTCFullYear()}-${String(wall.getUTCMonth() + 1).padStart(2, "0")}-`
+        + String(wall.getUTCDate()).padStart(2, "0");
+    const time = `${String(wall.getUTCHours()).padStart(2, "0")}:${String(wall.getUTCMinutes()).padStart(2, "0")}`;
 
-    return fromDate === toDate
-        ? `${fromDate} ${fromTime} – ${toTime} UTC`
-        : `${fromDate} ${fromTime} – ${toDate} ${toTime} UTC`;
+    return {date, time};
+};
+
+// "2026-08-26T14:02:00.000Z" -> the zone's own date, the zone's own minutes,
+// and the second end date-less when it shares the first's local day. The
+// window label above this line is already worded on the same zone's
+// calendar (digestRanges), so the two agree without a zone suffix here.
+const streakSpan = (zone, {from, to}) => {
+    const start = localDateTime(zone, from);
+    const end = localDateTime(zone, to);
+
+    return start.date === end.date
+        ? `${start.date} ${start.time} – ${end.time}`
+        : `${start.date} ${start.time} – ${end.date} ${end.time}`;
 };
 
 /**
@@ -108,8 +120,14 @@ const streakSpan = ({from, to}) => {
  *                   month's own aggregation; null or empty says nothing
  * @param kind       "weekly" | "monthly"
  * @param rangeLabel the window's dates, already worded
+ * @param zone       the config timezone's zone object, for the failure
+ *                   streak line - defaults to serverZone, the host's own
+ *                   clock, so a caller that passes none prints the streak
+ *                   in the zone the rest of the server's own output uses
+ *                   rather than in UTC, which is what the line used to be
+ *                   pinned to whatever the window's label said
  */
-export const digestText = (summary, compare, kind, rangeLabel) => {
+export const digestText = (summary, compare, kind, rangeLabel, zone = serverZone) => {
     const lines = [`MySpeed ${kind} digest (${rangeLabel})`];
     const total = figure(summary?.tests?.total) ?? 0;
 
@@ -154,7 +172,7 @@ export const digestText = (summary, compare, kind, rangeLabel) => {
 
     const streak = summary.reliability?.longestFailureStreak;
     if (figure(streak?.count) !== null && streak.count > 0)
-        lines.push(`Longest failure streak: ${streak.count} (${streakSpan(streak)})`);
+        lines.push(`Longest failure streak: ${streak.count} (${streakSpan(zone, streak)})`);
 
     return lines.join("\n");
 };
