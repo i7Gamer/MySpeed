@@ -57,7 +57,6 @@ else
   # The body and its terminator stay at column 0: this is << rather than <<-,
   # so an indented EOF would not end the document.
   cat << EOF > "$INSTALLATION_PATH/docker-compose.yml"
-version: '3'
 services:
   myspeed:
     image: i7gamer/myspeed

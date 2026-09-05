@@ -1554,6 +1554,25 @@ describe("install.sh finds the service the way uninstall.sh does", () => {
     });
 });
 
+/**
+ * The top-level `version` key is obsolete under Compose V2, which says so on
+ * every `docker compose` invocation against a file that carries one - a
+ * warning the operator saw at every pull and restart, about a line the
+ * installer wrote for them.
+ */
+describe("the compose file docker-install.sh writes", () => {
+    it("carries no version key", () => {
+        const source = read("docker-install.sh");
+        const opened = source.indexOf('cat << EOF > "$INSTALLATION_PATH/docker-compose.yml"');
+        assert.notEqual(opened, -1, "the installer no longer writes a compose file this way");
+
+        const compose = source.slice(opened);
+        const body = compose.slice(0, compose.indexOf("\nEOF"));
+        assert.doesNotMatch(body, /^version:/m, "Compose V2 warns about the version key on every run");
+        assert.match(body, /^services:/m);
+    });
+});
+
 describe("docker-install.sh checks for the compose plugin", () => {
     // `docker compose` is a plugin, and an engine installed some other way
     // may not carry it: without this, `docker compose pull` failed into the
