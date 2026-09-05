@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readSource } from "../helpers/source.js";
 
 const WORKFLOWS = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", ".github", "workflows");
 
@@ -285,5 +286,44 @@ describe("the two x64 builds are two builds", () => {
         const afterUpload = publish.slice(publish.indexOf("uploadReleaseAsset"));
         assert.match(afterUpload, /core\.setOutput\('duplicate-digests'/, "a repeated digest is published with nothing said");
         assert.match(afterUpload, /new Set\(/, "nothing compares the digests to each other");
+    });
+});
+
+/**
+ * The container carries the same conflation, one layer down.
+ *
+ * The image runs `bun run server/index.js` on the runtime the base image
+ * ships rather than on a compiled binary, and the official Alpine image
+ * installs Bun's x64-musl-baseline asset for x86_64 - which in 1.4.0, 1.4.1
+ * and 1.4.2 is byte-identical to the AVX2 build (downloaded and hashed, and
+ * the `bun` inside the pulled image matches). So a container on a pre-AVX2
+ * host crashed at start with no fallback at all, where the native install
+ * at least ships a real baseline binary, and verify-image.sh could not tell,
+ * because the runners it boots the image on have AVX2. The tag is held to the
+ * same Bun the binaries are compiled with, for the same reason and with the
+ * same revisit rule: compare the two x64 zips on each Bun release, and move
+ * both pins together when they differ again.
+ */
+describe("the container runs on the pinned Bun", () => {
+    const dockerfile = readSource("Dockerfile");
+    const pinned = binaries.match(/bun-version:\s*"?(\d+\.\d+\.\d+)"?/)?.[1];
+    const stages = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map((match) => match[1]);
+
+    // The client build, the server install and the runtime - three stages that
+    // run Bun, so an image tag that drifts in one of them is still caught.
+    const BUN_STAGES = 3;
+
+    it("has a pin to follow", () => {
+        assert.notEqual(pinned, undefined, "the binaries no longer pin a Bun version to hold the image to");
+    });
+
+    it("names the Bun image in every stage that runs it", () => {
+        assert.equal(stages.length, BUN_STAGES, "a stage stopped using the Bun image, or one was added");
+    });
+
+    it("pins every stage to the binaries' Bun", () => {
+        for (const tag of stages)
+            assert.equal(tag, `${pinned}-alpine`,
+                `oven/bun:${tag} ships the AVX2 runtime under the baseline name; the binaries pin ${pinned}`);
     });
 });

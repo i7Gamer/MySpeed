@@ -1,4 +1,11 @@
-FROM oven/bun:1.4.0-alpine AS client-build
+# 1.3.14, the same Bun the release binaries are compiled with, and for the same
+# reason: the official Alpine image installs Bun's x64-musl-baseline asset for
+# x86_64, and from 1.4.0 that asset is byte-identical to the AVX2 build - so
+# the container crashed at start on a pre-AVX2 host with no fallback at all,
+# and verify-image.sh could not tell, because the runners it boots the image on
+# have AVX2. tests/server/windowsBaseline.test.js holds all three stages to the
+# binaries' pin; move both together, once the two x64 zips differ again.
+FROM oven/bun:1.3.14-alpine AS client-build
 
 WORKDIR /client
 # The lockfile is copied with the manifest so the install is reproducible and
@@ -27,7 +34,7 @@ ARG CFSPEEDTEST_VERSION=2.2.2
 RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
-FROM oven/bun:1.4.0-alpine AS server-build
+FROM oven/bun:1.3.14-alpine AS server-build
 
 WORKDIR /myspeed
 
@@ -39,7 +46,7 @@ COPY ./scripts /myspeed/scripts
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1.4.0-alpine
+FROM oven/bun:1.3.14-alpine
 
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
