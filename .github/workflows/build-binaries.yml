@@ -111,10 +111,24 @@ jobs:
           & $exe --version
           "TARGET_BUN=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      # --windows-version stamps the exe's version resource with MySpeed's own
+      # version, four parts so the run number makes every build strictly newer
+      # than the one before it. Without it the resource is Bun's: v1.5.2's exe
+      # carried 1.4.0.0 and v1.5.3's 1.3.14.0, from the Bun each was compiled
+      # with, and Windows Installer keeps a file whose version on disk is higher
+      # - then the major upgrade removed the old product and that file with it,
+      # so the service was started into a missing MySpeed.exe, the installer
+      # waited out its restart loop and rolled back. The same rule refuses an
+      # equal version, which is what a rebuild of one release used to publish.
       - name: Compile binary
         shell: pwsh
+        env:
+          # Through env, never spliced into the script: the version is a
+          # dispatch input, the classic injection carrier.
+          RELEASE_VERSION: ${{ inputs.version }}
+          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          & "$env:TARGET_BUN" build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} server/index.js --outfile MySpeed.exe
+          & "$env:TARGET_BUN" build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} --windows-version="${env:RELEASE_VERSION}.${env:RUN_NUMBER}" server/index.js --outfile MySpeed.exe
           if ($LASTEXITCODE -ne 0) { throw "the binary did not compile (exit $LASTEXITCODE)" }
 
       # A green compile says nothing about whether the binary runs, which is the

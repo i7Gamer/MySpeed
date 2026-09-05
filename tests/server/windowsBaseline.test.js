@@ -134,6 +134,24 @@ describe("compiling the Windows binaries", () => {
     });
 
     /**
+     * The exe's version resource is what Windows Installer compares an upgrade
+     * against, and Bun stamps its own version there unless told otherwise:
+     * v1.5.2 shipped as 1.4.0.0 and v1.5.3 as 1.3.14.0, so the upgrade kept
+     * the "newer" file on disk, the major upgrade then removed it with the old
+     * product, and the service was started into a missing MySpeed.exe. Four
+     * parts, the run number last, so a rebuild of one version is newer too -
+     * an equal version is refused the same way a higher one is.
+     */
+    it("stamps the exe with MySpeed's version, the run number after it", () => {
+        assert.match(compileStep(), /--windows-version="\$\{env:RELEASE_VERSION\}\.\$\{env:RUN_NUMBER\}"/,
+            "the exe carries Bun's version resource, which an upgrade compares against and may find newer");
+        assert.match(compileStep(), /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/,
+            "the stamp is not the release's version");
+        assert.match(compileStep(), /RUN_NUMBER: \$\{\{ github\.run_number \}\}/,
+            "the stamp has no run number, so a rebuild of one version is refused as an equal");
+    });
+
+    /**
      * Bun publishes its releases under the same names these targets carry, so
      * the archive is the matrix value with .zip after it. Spelled from the
      * matrix rather than restated, or the two legs fetch one runtime and the
