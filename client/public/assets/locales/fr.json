@@ -397,7 +397,11 @@
       "streak_title": "Plus longue série d'échecs",
       "streak_description": "Entre {{from}} et {{to}}",
       "gap_title": "Plus grand écart entre les tests",
-      "gap_description": "Rien n'a tourné entre {{from}} et {{to}}"
+      "gap_description": "Rien n'a tourné entre {{from}} et {{to}}",
+      "target_met_title": "Objectif atteint",
+      "target_met_description": "Tests jugés bons en ping, téléchargement et téléversement : {{met}} sur {{measured}}",
+      "last_failure_title": "Dernier échec",
+      "last_failure_description": "Le test le plus récent de cette plage qui ne s'est pas terminé"
     },
     "targets": {
       "title": "Comparaison des cibles",

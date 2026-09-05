@@ -397,7 +397,11 @@
       "streak_title": "Ratxa més llarga d'errors",
       "streak_description": "Entre {{from}} i {{to}}",
       "gap_title": "Interval més llarg entre proves",
-      "gap_description": "No es va executar res entre {{from}} i {{to}}"
+      "gap_description": "No es va executar res entre {{from}} i {{to}}",
+      "target_met_title": "Objectiu assolit",
+      "target_met_description": "Proves amb ping, baixada i pujada valorats com a bons: {{met}} de {{measured}}",
+      "last_failure_title": "Darrera fallada",
+      "last_failure_description": "La prova més recent d'aquest interval que no s'ha acabat"
     },
     "targets": {
       "title": "Comparació d'objectius",

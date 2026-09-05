@@ -345,6 +345,83 @@ describe("GET /api/speedtests/statistics", () => {
      * the rows are unfiltered and the charts bucket over the extent of the tests
      * themselves.
      */
+    /**
+     * How often the line delivered: the successes whose three figures all earn
+     * the good grade against the optimal values - the target's own where set,
+     * the instance-wide settings otherwise - out of the successes that could
+     * be judged at all. The seed row (ping 10, download 100, upload 50) meets
+     * the default settings (25, 100, 50) on every figure.
+     */
+    describe("how often the target was met", () => {
+        const RANGE = "from=2025-08-01&to=2025-08-07&tz=Etc/UTC";
+
+        it("counts the successes whose figures all earn the good grade", async () => {
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z"),
+                // 70% of the download optimum: below the good grade's 75%.
+                at("2025-08-05T11:00:00.000Z", {download: 70}),
+                // 160% of the latency optimum: past the good grade's 130%.
+                at("2025-08-05T12:00:00.000Z", {ping: 40}),
+                // A failure carries no readings, so it is neither met nor judged.
+                at("2025-08-05T13:00:00.000Z", {ping: -1, download: -1, upload: -1, error: "boom"})
+            ]);
+
+            const {status, body} = await statistics(RANGE);
+            assert.equal(status, 200);
+            assert.deepEqual(body.targetMet, {met: 1, measured: 3});
+        });
+
+        it("judges a target's rows by its own optimal values", async () => {
+            const strict = await seedTarget({provider: "ookla", name: "Strict", optimalDownload: 1000});
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z", {targetId: strict.id}),
+                at("2025-08-05T11:00:00.000Z")
+            ]);
+
+            const {body} = await statistics(RANGE);
+            assert.deepEqual(body.targetMet, {met: 1, measured: 2},
+                "the target's own optimum must judge its rows, and the settings the untargeted one");
+        });
+
+        it("does not judge a latency nobody measured", async () => {
+            await seedTests(server.tests, [at("2025-08-05T10:00:00.000Z", {ping: 0})]);
+
+            const {body} = await statistics(RANGE);
+            assert.deepEqual(body.targetMet, {met: 1, measured: 1});
+        });
+
+        it("answers zero counts, not a missing block, for an empty window", async () => {
+            const {body} = await statistics(RANGE);
+            assert.deepEqual(body.targetMet, {met: 0, measured: 0});
+        });
+
+        it("counts the previous window by the same optima", async () => {
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z"),
+                at("2025-07-28T10:00:00.000Z", {download: 10})
+            ]);
+
+            const {body} = await statistics(`${RANGE}&compare=previous`);
+            assert.deepEqual(body.targetMet, {met: 1, measured: 1});
+            assert.deepEqual(body.previous.targetMet, {met: 0, measured: 1});
+        });
+
+        it("counts each entry of a batch on its own rows", async () => {
+            const strict = await seedTarget({provider: "ookla", name: "Strict", optimalDownload: 1000});
+            const OTHER = strict.id + 1;
+            await seedTests(server.tests, [
+                at("2025-08-05T10:00:00.000Z", {targetId: strict.id}),
+                at("2025-08-05T11:00:00.000Z", {targetId: OTHER}),
+                at("2025-08-05T12:00:00.000Z", {targetId: OTHER, upload: 10})
+            ]);
+
+            const {body} = await statistics(`${RANGE}&targets=${strict.id},${OTHER}`);
+            assert.deepEqual(body.byTarget[strict.id].targetMet, {met: 0, measured: 1});
+            assert.deepEqual(body.byTarget[OTHER].targetMet, {met: 1, measured: 2},
+                "a target that no longer exists is judged by the settings");
+        });
+    });
+
     describe("all time", () => {
         const allTime = (query = "") => statistics(`range=all${query}`);
 

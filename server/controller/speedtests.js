@@ -1,6 +1,7 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
+import { resolveLimits } from '../util/targetLimits.js';
 import { previousRange, shiftedRange, toCalendarParts, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
@@ -655,7 +656,8 @@ export const targetsPresent = (entries) => [...new Set(entries.map((entry) => en
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
 // carried - nothing draws a ghost chart, and they are most of the payload.
-const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency", "dataUsed"];
+const SUMMARY_KEYS = ["tests", "packetLoss", "ping", "jitter", "download", "upload", "time", "consistency", "dataUsed",
+    "targetMet"];
 
 /**
  * The window a comparison is taken over, or null when there is none to take.
@@ -861,11 +863,36 @@ const summarise = (entries, range, options, previous) => {
  * what the client names its headings after. Nothing precedes everything, so
  * there is no previous window to compare it against.
  */
+// The three instance-wide optimal values, by their config keys.
+const OPTIMUM_KEYS = ["ping", "download", "upload"];
+
+/**
+ * What each target's rows are graded against, read once per request.
+ *
+ * The target-met count judges every row in the range, so the resolver reads
+ * the target list and the three settings up front and answers from memory -
+ * one lookup per request rather than one per row. A row whose target is gone,
+ * or that predates targets, resolves to the settings wholesale, exactly as the
+ * client's resolveLimits does for the colours the count mirrors.
+ */
+const limitsResolver = async () => {
+    const [targetRows, optima] = await Promise.all([
+        targetsController.listAll(),
+        Promise.all(OPTIMUM_KEYS.map((key) => getValue(key)))
+    ]);
+    const config = Object.fromEntries(OPTIMUM_KEYS.map((key, index) => [key, optima[index]]));
+    const byId = new Map(targetRows.map((row) => [row.id, row]));
+
+    return (targetId) => resolveLimits(byId.get(targetId), config);
+};
+
 export const listStatistics = async (range, options = {}) => {
     // One reading of the clock for the whole answer, carried in the options the
     // comparison and the summary are both built from: the previous window's cut
-    // and the elapsed-day figure must not disagree about when now was.
-    const shared = {...options, now: options.now ?? new Date()};
+    // and the elapsed-day figure must not disagree about when now was. The
+    // limits ride along the same way, so the previous window's target-met count
+    // is judged by the same optima as this one's.
+    const shared = {...options, now: options.now ?? new Date(), limitsFor: await limitsResolver()};
     const targetWhere = options.target !== undefined ? {where: targetFilter(options.target)} : {};
     const entries = range
         ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
@@ -928,8 +955,9 @@ const groupByTarget = (entries, ids) => {
 export const listStatisticsByTarget = async (range, ids, options = {}) => {
     // One reading of the clock for every entry, for the reason listStatistics
     // takes one for its single answer - and here it also keeps the entries
-    // agreeing with each other rather than only with themselves.
-    const shared = {...options, now: options.now ?? new Date()};
+    // agreeing with each other rather than only with themselves. The limits
+    // likewise: one read, every target's entry judged by the same optima.
+    const shared = {...options, now: options.now ?? new Date(), limitsFor: await limitsResolver()};
 
     /*
      * Collapsed here as well as at the route that parses the parameter, so the

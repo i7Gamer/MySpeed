@@ -397,7 +397,11 @@
       "streak_title": "Rentetan kegagalan terpanjang",
       "streak_description": "Antara {{from}} dan {{to}}",
       "gap_title": "Jeda terbesar antar pengujian",
-      "gap_description": "Tidak ada yang berjalan antara {{from}} dan {{to}}"
+      "gap_description": "Tidak ada yang berjalan antara {{from}} dan {{to}}",
+      "target_met_title": "Target tercapai",
+      "target_met_description": "Tes dengan ping, unduh, dan unggah yang dinilai baik: {{met}} dari {{measured}}",
+      "last_failure_title": "Gagal terakhir",
+      "last_failure_description": "Tes terbaru dalam rentang ini yang tidak selesai"
     },
     "targets": {
       "title": "Perbandingan target",

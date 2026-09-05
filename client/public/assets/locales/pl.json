@@ -403,7 +403,11 @@
       "streak_title": "Najdłuższa seria niepowodzeń",
       "streak_description": "Między {{from}} a {{to}}",
       "gap_title": "Największa przerwa między testami",
-      "gap_description": "Nic nie działało między {{from}} a {{to}}"
+      "gap_description": "Nic nie działało między {{from}} a {{to}}",
+      "target_met_title": "Cel osiągnięty",
+      "target_met_description": "Testy z dobrym pingiem, pobieraniem i wysyłaniem: {{met}} z {{measured}}",
+      "last_failure_title": "Ostatnie niepowodzenie",
+      "last_failure_description": "Najnowszy test w tym zakresie, który nie został zakończony"
     },
     "targets": {
       "title": "Porównanie celów",

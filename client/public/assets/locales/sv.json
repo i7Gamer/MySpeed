@@ -397,7 +397,11 @@
       "streak_title": "Längsta raden av fel",
       "streak_description": "Mellan {{from}} och {{to}}",
       "gap_title": "Största luckan mellan tester",
-      "gap_description": "Inget kördes mellan {{from}} och {{to}}"
+      "gap_description": "Inget kördes mellan {{from}} och {{to}}",
+      "target_met_title": "Mål uppnått",
+      "target_met_description": "Tester med bra ping, nedladdning och uppladdning: {{met}} av {{measured}}",
+      "last_failure_title": "Senaste misslyckandet",
+      "last_failure_description": "Det senaste testet i den här perioden som inte slutfördes"
     },
     "targets": {
       "title": "Jämförelse av mål",

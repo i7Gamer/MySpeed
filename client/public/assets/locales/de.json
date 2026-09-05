@@ -397,7 +397,11 @@
       "streak_title": "Längste Fehlerserie",
       "streak_description": "Zwischen {{from}} und {{to}}",
       "gap_title": "Größte Lücke zwischen Tests",
-      "gap_description": "Zwischen {{from}} und {{to}} lief nichts"
+      "gap_description": "Zwischen {{from}} und {{to}} lief nichts",
+      "target_met_title": "Ziel erreicht",
+      "target_met_description": "Tests mit gutem Ping, Download und Upload: {{met}} von {{measured}}",
+      "last_failure_title": "Letzter Fehler",
+      "last_failure_description": "Der neueste Test in diesem Zeitraum, der nicht abgeschlossen wurde"
     },
     "targets": {
       "title": "Ziele im Vergleich",

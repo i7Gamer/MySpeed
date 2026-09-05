@@ -397,7 +397,11 @@
       "streak_title": "En uzun art arda hata serisi",
       "streak_description": "{{from}} ile {{to}} arasında",
       "gap_title": "Testler arasındaki en büyük boşluk",
-      "gap_description": "{{from}} ile {{to}} arasında hiçbir şey çalışmadı"
+      "gap_description": "{{from}} ile {{to}} arasında hiçbir şey çalışmadı",
+      "target_met_title": "Hedefiniz karşılandı",
+      "target_met_description": "Ping, indirme ve yükleme değerleri iyi olan testler: {{met}} / {{measured}}",
+      "last_failure_title": "Son hata",
+      "last_failure_description": "Bu aralıktaki tamamlanmayan en yeni test"
     },
     "targets": {
       "title": "Hedef karşılaştırması",

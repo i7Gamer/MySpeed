@@ -397,7 +397,11 @@
       "streak_title": "Longest failure streak",
       "streak_description": "Between {{from}} and {{to}}",
       "gap_title": "Largest gap between tests",
-      "gap_description": "Nothing ran between {{from}} and {{to}}"
+      "gap_description": "Nothing ran between {{from}} and {{to}}",
+      "target_met_title": "Target met",
+      "target_met_description": "Tests rated good on ping, download and upload: {{met}} of {{measured}}",
+      "last_failure_title": "Last failure",
+      "last_failure_description": "The newest test in this range that did not finish"
     },
     "targets": {
       "title": "Target comparison",

@@ -397,7 +397,11 @@
       "streak_title": "Самая длинная серия сбоев",
       "streak_description": "Между {{from}} и {{to}}",
       "gap_title": "Наибольший перерыв между тестами",
-      "gap_description": "Между {{from}} и {{to}} ничего не выполнялось"
+      "gap_description": "Между {{from}} и {{to}} ничего не выполнялось",
+      "target_met_title": "Цель достигнута",
+      "target_met_description": "Тесты с хорошим пингом, скачиванием и загрузкой: {{met}} из {{measured}}",
+      "last_failure_title": "Последняя ошибка",
+      "last_failure_description": "Самый новый тест в этом диапазоне, который не завершился"
     },
     "targets": {
       "title": "Сравнение целей",

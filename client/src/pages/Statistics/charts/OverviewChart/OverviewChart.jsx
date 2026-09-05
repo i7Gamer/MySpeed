@@ -3,14 +3,15 @@ import PanelRow from "@/pages/Statistics/components/PanelRow";
 import {t} from "i18next";
 import {useContext} from "react";
 import {
-    faArrowTrendUp, faCalendarDay, faCalendarXmark, faCircleExclamation, faClockRotateLeft, faDatabase,
-    faGaugeHigh, faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch, faTriangleExclamation
+    faArrowTrendUp, faBullseye, faCalendarDay, faCalendarXmark, faCircleExclamation, faCircleXmark,
+    faClockRotateLeft, faDatabase, faGaugeHigh, faHourglassHalf, faLinkSlash, faPingPongPaddleBall, faStopwatch,
+    faTriangleExclamation
 } from "@fortawesome/free-solid-svg-icons";
 import {
     formatBytes, formatDateTime, formatDay, formatDuration, formatHour, formatLatencyWithUnit,
     formatPercent, spanInWords
 } from "@/common/utils/FormatUtil";
-import {failureRate, readableFigure} from "@/common/utils/TestUtil";
+import {failureRate, readableFigure, shareOf} from "@/common/utils/TestUtil";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {peakLatencyRise, peakSlowdown} from "@/pages/Statistics/charts/peakHours";
 import Delta from "@/common/components/Delta";
@@ -75,6 +76,40 @@ const testsPerDay = (total, dateRange) => {
 const expandedItems = (props, preferences) => {
     const items = [];
     const ms = t("latest.ping_unit");
+
+    /*
+     * How often the line delivered. Every row wears the verdict - three glyphs
+     * graded against the target's optimal values - and the average card says
+     * what share of the target the average reached, but nothing counted the
+     * verdicts: a line that meets its target nine tests in ten and one that
+     * meets it in one read the same "96% of your target". The server counts a
+     * test as met when each figure it measured earns the good grade, the same
+     * rule the glyphs follow (targetLimits.js, held to the client's colours by
+     * a parity test).
+     *
+     * Both counts through the shared reader: the block is server-fed, an
+     * older node does not carry it at all, and a proxied placeholder must not
+     * become a percentage. Absent when nothing in the range could be judged,
+     * which is a row that does not render rather than "0%". The delta is in
+     * points of the percentage, like the failed row's: ninety to ninety-five
+     * is five points, not a 5.6% improvement.
+     */
+    const met = readableFigure(props.targetMet?.met);
+    const measured = readableFigure(props.targetMet?.measured);
+    const metShare = shareOf(met, measured);
+
+    if (metShare !== null) items.push({
+        icon: faBullseye,
+        title: t("statistics.overview.target_met_title"),
+        description: t("statistics.overview.target_met_description", {met, measured}),
+        value: formatPercent(metShare),
+        delta: {
+            current: metShare,
+            previous: shareOf(readableFigure(props.previous?.targetMet?.met),
+                readableFigure(props.previous?.targetMet?.measured)),
+            higherIsBetter: true, mode: "absolute", unit: "%"
+        }
+    });
 
     // The average as the shared reader takes it, which decides whether the
     // row exists at all: the null-only gate rendered a proxied node's -1 as
@@ -199,6 +234,29 @@ const expandedItems = (props, preferences) => {
             to: formatDateTime(streak.to, preferences)
         }),
         value: streakCount,
+        delta: null
+    });
+
+    /*
+     * And when it last happened, beside how long the worst run of it was. An
+     * absolute time, not "3 hours ago": a relative one measured from a payload
+     * ages the moment it is drawn, which is why lastFailureAt stayed off this
+     * panel until now, and the streak's own caption already dates itself the
+     * same way.
+     *
+     * Gated on the streak, not on its own field: the server writes both on
+     * the same walk, so the two rows come and go together - and the enlarged
+     * view lays its rows out in two columns, where a row that appears on its
+     * own leaves the corner beside it empty on exactly the ranges that had a
+     * failure to report.
+     */
+    const lastFailure = props.reliability?.lastFailureAt;
+
+    if (streakCount !== null && lastFailure) items.push({
+        icon: faCircleXmark,
+        title: t("statistics.overview.last_failure_title"),
+        description: t("statistics.overview.last_failure_description"),
+        value: formatDateTime(lastFailure, preferences),
         delta: null
     });
 

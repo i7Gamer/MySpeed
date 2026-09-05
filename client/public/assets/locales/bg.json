@@ -397,7 +397,11 @@
       "streak_title": "Най-дълга поредица от неуспехи",
       "streak_description": "Между {{from}} и {{to}}",
       "gap_title": "Най-голяма пауза между тестовете",
-      "gap_description": "Нищо не е измервано между {{from}} и {{to}}"
+      "gap_description": "Нищо не е измервано между {{from}} и {{to}}",
+      "target_met_title": "Целта е постигната",
+      "target_met_description": "Тестове с добър ping, изтегляне и качване: {{met}} от {{measured}}",
+      "last_failure_title": "Последен неуспех",
+      "last_failure_description": "Най-новият тест в този период, който не е завършен"
     },
     "targets": {
       "title": "Сравнение на целите",

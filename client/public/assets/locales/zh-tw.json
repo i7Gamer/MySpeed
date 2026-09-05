@@ -397,7 +397,11 @@
       "streak_title": "最長連續失敗",
       "streak_description": "{{from}} 至 {{to}}",
       "gap_title": "測試之間的最大空檔",
-      "gap_description": "{{from}} 至 {{to}} 期間未執行任何測試"
+      "gap_description": "{{from}} 至 {{to}} 期間未執行任何測試",
+      "target_met_title": "達標",
+      "target_met_description": "Ping、下載與上傳皆為良好的測試：{{met}} 項共 {{measured}} 項",
+      "last_failure_title": "最近一次失敗",
+      "last_failure_description": "此範圍內未完成的最新測試"
     },
     "targets": {
       "title": "目標比較",

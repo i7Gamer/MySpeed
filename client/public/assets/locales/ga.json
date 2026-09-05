@@ -397,7 +397,11 @@
       "streak_title": "An tsraith teipeanna is faide",
       "streak_description": "Idir {{from}} agus {{to}}",
       "gap_title": "An bhearna is mó idir tástálacha",
-      "gap_description": "Níor rith aon rud idir {{from}} agus {{to}}"
+      "gap_description": "Níor rith aon rud idir {{from}} agus {{to}}",
+      "target_met_title": "Sprioc bainte amach",
+      "target_met_description": "Tástálacha a fuair ping, íoslódáil agus uaslódáil maith: {{met}} as {{measured}}",
+      "last_failure_title": "An teip is déanaí",
+      "last_failure_description": "An tástáil is nuaí sa raon seo nár chríochnaigh"
     },
     "targets": {
       "title": "Comparáid spriocanna",

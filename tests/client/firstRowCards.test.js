@@ -7,7 +7,7 @@ import {
     formatBytes, formatDateTime, formatDuration, formatHour, formatLatencyWithUnit, formatPercent,
     NOT_MEASURED, spanInWords
 } from "@/common/utils/FormatUtil.js";
-import { failureRate, readableFigure } from "@/common/utils/TestUtil.js";
+import { failureRate, readableFigure, shareOf } from "@/common/utils/TestUtil.js";
 import { peakLatencyRise } from "@/pages/Statistics/charts/peakHours.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
@@ -209,14 +209,16 @@ describe("the enlarged overview's rows refuse what no reader can read", () => {
         // caption, the way the loss row's execute failureRate.
         return new Function(
             "t", "formatLatencyWithUnit", "formatDuration", "formatBytes", "formatHour",
-            "formatDateTime", "spanInWords", "readableFigure", "testsPerDay", "peakLatencyRise",
+            "formatDateTime", "spanInWords", "formatPercent", "readableFigure", "shareOf", "testsPerDay",
+            "peakLatencyRise",
             "faPingPongPaddleBall", "faHourglassHalf", "faCalendarDay", "faDatabase", "faArrowTrendUp",
-            "faTriangleExclamation", "faCalendarXmark",
+            "faTriangleExclamation", "faCalendarXmark", "faBullseye", "faCircleXmark",
             `${overview.slice(start, end + 3)}\nreturn expandedItems;`)(
             stub, formatLatencyWithUnit, formatDuration, formatBytes, formatHour,
-            formatDateTime, spanInWords, readableFigure, () => null, peakLatencyRise,
+            formatDateTime, spanInWords, formatPercent, readableFigure, shareOf, () => null,
+            peakLatencyRise,
             null, null, null, null, null,
-            null, null)(props, preferences);
+            null, null, null, null)(props, preferences);
     };
 
     // Every fixture carries tests: testsPerDay's argument is dereferenced

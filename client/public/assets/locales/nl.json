@@ -397,7 +397,11 @@
       "streak_title": "Langste reeks mislukkingen",
       "streak_description": "Tussen {{from}} en {{to}}",
       "gap_title": "Grootste gat tussen tests",
-      "gap_description": "Er draaide niets tussen {{from}} en {{to}}"
+      "gap_description": "Er draaide niets tussen {{from}} en {{to}}",
+      "target_met_title": "Doel bereikt",
+      "target_met_description": "Tests met een goede ping, download en upload: {{met}} van {{measured}}",
+      "last_failure_title": "Laatste mislukking",
+      "last_failure_description": "De nieuwste test in dit bereik die niet is afgerond"
     },
     "targets": {
       "title": "Vergelijking van doelen",

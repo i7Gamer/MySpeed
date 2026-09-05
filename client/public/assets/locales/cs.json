@@ -403,7 +403,11 @@
       "streak_title": "Nejdelší série selhání",
       "streak_description": "Mezi {{from}} a {{to}}",
       "gap_title": "Největší mezera mezi testy",
-      "gap_description": "Mezi {{from}} a {{to}} nic neběželo"
+      "gap_description": "Mezi {{from}} a {{to}} nic neběželo",
+      "target_met_title": "Cíl splněn",
+      "target_met_description": "Testy s dobrým pingem, stahováním i nahráváním: {{met}} z {{measured}}",
+      "last_failure_title": "Poslední selhání",
+      "last_failure_description": "Nejnovější test v tomto rozsahu, který nebyl dokončen"
     },
     "targets": {
       "title": "Porovnání cílů",

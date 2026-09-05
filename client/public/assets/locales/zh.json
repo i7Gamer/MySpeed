@@ -397,7 +397,11 @@
       "streak_title": "最长连续失败",
       "streak_description": "{{from}} 至 {{to}}",
       "gap_title": "测试之间的最大空档",
-      "gap_description": "{{from}} 至 {{to}} 期间未运行任何测试"
+      "gap_description": "{{from}} 至 {{to}} 期间未运行任何测试",
+      "target_met_title": "目标达成",
+      "target_met_description": "ping 延迟、下载和上传均为良好的测试：{{met}}/{{measured}}",
+      "last_failure_title": "上次失败",
+      "last_failure_description": "此区间内未完成的最新测试"
     },
     "targets": {
       "title": "目标对比",

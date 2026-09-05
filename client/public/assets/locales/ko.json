@@ -397,7 +397,11 @@
       "streak_title": "가장 긴 연속 실패",
       "streak_description": "{{from}}부터 {{to}}까지",
       "gap_title": "테스트 간 가장 긴 공백",
-      "gap_description": "{{from}}부터 {{to}}까지 아무것도 실행되지 않았습니다"
+      "gap_description": "{{from}}부터 {{to}}까지 아무것도 실행되지 않았습니다",
+      "target_met_title": "목표 달성",
+      "target_met_description": "핑, 다운로드, 업로드가 모두 양호한 테스트: {{met}}개 / {{measured}}개",
+      "last_failure_title": "마지막 실패",
+      "last_failure_description": "이 범위에서 완료되지 않은 최신 테스트"
     },
     "targets": {
       "title": "대상 비교",

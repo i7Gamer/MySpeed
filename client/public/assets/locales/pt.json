@@ -397,7 +397,11 @@
       "streak_title": "Maior sequência de falhas",
       "streak_description": "Entre {{from}} e {{to}}",
       "gap_title": "Maior intervalo entre testes",
-      "gap_description": "Nada foi executado entre {{from}} e {{to}}"
+      "gap_description": "Nada foi executado entre {{from}} e {{to}}",
+      "target_met_title": "Meta atingida",
+      "target_met_description": "Testes com ping, download e upload avaliados como bons: {{met}} de {{measured}}",
+      "last_failure_title": "Última falha",
+      "last_failure_description": "O teste mais recente deste período que não terminou"
     },
     "targets": {
       "title": "Comparação de alvos",

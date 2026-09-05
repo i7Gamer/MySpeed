@@ -402,10 +402,20 @@ export function bufferbloat(test) {
  * hold that contract, the text spelling included.
  */
 export function failureRate(total, failed) {
-    if (!Number.isFinite(total) || !Number.isFinite(failed)) return null;
-    if (total <= 0 || failed < 0) return null;
+    return shareOf(failed, total);
+}
 
-    return parseFloat(((failed / total) * PERCENT).toFixed(RATE_DECIMALS));
+/**
+ * A part of a whole as a percentage at the precision every rate on the page is
+ * stated at - the failure rate above, and the share of tests that met their
+ * target on the enlarged overview. Null for a whole of nothing and for anything
+ * that is not a count, for failureRate's reasons.
+ */
+export function shareOf(part, whole) {
+    if (!Number.isFinite(whole) || !Number.isFinite(part)) return null;
+    if (whole <= 0 || part < 0) return null;
+
+    return parseFloat(((part / whole) * PERCENT).toFixed(RATE_DECIMALS));
 }
 
 /**

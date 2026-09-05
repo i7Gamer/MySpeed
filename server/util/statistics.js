@@ -2,6 +2,7 @@ import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
 import { isFailedTest, isSuccessfulTest, measuredPing, usableFigure } from './testOutcome.js';
 import { metricValue } from './metricValue.js';
+import { targetMetOver } from './targetLimits.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -597,9 +598,12 @@ const reliabilityOver = (sorted) => {
  * @param options {zone} the clock hour-of-day bucketing is done on, or
  *                {offsetMinutes} a bare UTC offset to build one from,
  *                {maxPoints} requested chart resolution, clamped to the range
- *                the constants above allow
+ *                the constants above allow,
+ *                {limitsFor} (targetId) => the optimal values a row of that
+ *                target is graded against, for the target-met count
  */
-export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPoints} = {}) => {
+export const buildStatistics = (entries, {from, to}, options = {}) => {
+    const {offsetMinutes, zone, maxPoints} = options;
     // An offset outside any real zone is answered on the server's own clock
     // rather than thrown on: this is pure aggregation, and the route it came
     // through is where a nonsense parameter earns its 400.
@@ -648,6 +652,13 @@ export const buildStatistics = (entries, {from, to}, {offsetMinutes, zone, maxPo
         time: mapRounded(succeeded, "time", usableFigure),
         dataUsed: transferTotals(entries),
         reliability: reliabilityOver(sorted),
+        // How often the line delivered, by the verdict every row already wears:
+        // a test counts as met when each figure it measured earns the good
+        // grade against its target's optimal values. Over the successes only -
+        // a failure's placeholders are not readings - and null when the caller
+        // handed in no way to resolve a row's limits, which the client reads as
+        // a row that does not render. See targetLimits.js for the rule.
+        targetMet: targetMetOver(succeeded, options.limitsFor),
         data: series.data,
         labels: series.labels,
         failed: series.failed,

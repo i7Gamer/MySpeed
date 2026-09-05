@@ -397,7 +397,11 @@
       "streak_title": "Serie di errori più lunga",
       "streak_description": "Tra {{from}} e {{to}}",
       "gap_title": "Intervallo più lungo tra i test",
-      "gap_description": "Non è stato eseguito nulla tra {{from}} e {{to}}"
+      "gap_description": "Non è stato eseguito nulla tra {{from}} e {{to}}",
+      "target_met_title": "Obiettivo raggiunto",
+      "target_met_description": "Test con ping, download e upload valutati buoni: {{met}} su {{measured}}",
+      "last_failure_title": "Ultimo fallimento",
+      "last_failure_description": "L'ultimo test in questo intervallo non completato"
     },
     "targets": {
       "title": "Confronto degli obiettivi",

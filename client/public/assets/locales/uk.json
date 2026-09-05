@@ -397,7 +397,11 @@
       "streak_title": "Найдовша серія збоїв",
       "streak_description": "Між {{from}} і {{to}}",
       "gap_title": "Найбільша перерва між тестами",
-      "gap_description": "Між {{from}} і {{to}} нічого не виконувалося"
+      "gap_description": "Між {{from}} і {{to}} нічого не виконувалося",
+      "target_met_title": "Ціль досягнута",
+      "target_met_description": "Тести з добрим пінгом, завантаженням і вивантаженням: {{met}} з {{measured}}",
+      "last_failure_title": "Остання помилка",
+      "last_failure_description": "Найновіший тест у цьому діапазоні, який не завершився"
     },
     "targets": {
       "title": "Порівняння цілей",
