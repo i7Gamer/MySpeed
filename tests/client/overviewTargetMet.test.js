@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { cleanup, createElement, render } from "../helpers/renderHarness.js";
-import { readLocale } from "../helpers/source.js";
+import { readLocale, readSource } from "../helpers/source.js";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { OverviewChart } from "@/pages/Statistics/charts/OverviewChart/OverviewChart.jsx";
 
@@ -116,6 +116,29 @@ describe("the last-failure row", () => {
 
         assert.notEqual(row(container, overview.streak_title), undefined);
         assert.equal(row(container, overview.last_failure_title), undefined);
+    });
+});
+
+/**
+ * The page names the card's props one by one rather than spreading the
+ * payload, so a block the server started answering reaches the card only if
+ * someone adds it to that list - and nobody did: v1.5.4 shipped the server
+ * counting and the row never rendering, found by Timo on the first look. Both
+ * usages, the enlarged one and the small card that opens it, because the
+ * small card is what the next prop will be added to first.
+ */
+describe("the page hands the card the count", () => {
+    const page = readSource("client/src/pages/Statistics/Statistics.jsx");
+    const usages = page.split("<OverviewChart").slice(1);
+
+    it("on every OverviewChart it renders", () => {
+        assert.equal(usages.length, 2, "the page renders a different number of overview cards than this pins");
+
+        for (const usage of usages) {
+            const props = usage.slice(0, usage.indexOf("/>"));
+            assert.ok(props.includes("targetMet={deferredStatistics.targetMet}"),
+                "the card is rendered without the target-met block, so the row never has a count to show");
+        }
     });
 });
 
