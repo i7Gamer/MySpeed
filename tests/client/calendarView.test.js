@@ -4,12 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { monthToShow } from "../../client/src/common/components/DateRangePicker/calendarNav.js";
+import { readSource } from "../helpers/source.js";
 
 const PICKER_DIR = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "components", "DateRangePicker");
 
 const source = fs.readFileSync(path.join(PICKER_DIR, "DateRangePicker.jsx"), "utf8");
-const styles = fs.readFileSync(path.join(PICKER_DIR, "styles.sass"), "utf8");
+// readSource rather than a raw read: its "\n\n" anchor below never matches a
+// CRLF checkout of this file, and a -1 from indexOf is read as one character
+// from the end - not "no bound found" - so the slice it feeds ran to the end
+// of the stylesheet instead of stopping at the popover's own rule.
+const styles = readSource("client/src/common/components/DateRangePicker/styles.sass");
 
 /**
  * Which month the calendar opens on.
@@ -77,5 +82,11 @@ describe("the mobile sheet fits the screen", () => {
         assert.match(rule, /width: calc\(100vw - 2rem\)/, "the sheet is no longer sized against the viewport");
         assert.match(rule, /box-sizing: border-box/,
             "the sheet's padding and border still push it past its own width");
+
+        // The bound this rule is cut at: a `"\n\n"` anchor that a CRLF
+        // checkout never matches, running the slice on to the end of the
+        // stylesheet instead of stopping at the popover's own rule.
+        assert.doesNotMatch(rule, /\.calendar-grid/,
+            "the popover's rule ran into the selector that follows it");
     });
 });
