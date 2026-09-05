@@ -188,6 +188,13 @@ const libreFigures = (test) => ({...test, ...NO_QUALITY_FIGURES, provider: LIBRE
     // round() also normalises the string jitter this CLI reports, and keeps a
     // measured zero rather than nulling it as falsy.
     jitter: round(test.jitter),
+    // `elapsed` is the runner's wall clock from spawn to close, spread over the
+    // CLI's own object by speedtest.js - the CLI reports no duration of its
+    // own. So this `time` and Cloudflare's below are the whole run, process
+    // start and latency sampling included, where Ookla's is the CLI's two
+    // transfer phases and iperf3's the transfer seconds alone. Comparable
+    // within one target, which is one provider; across providers the
+    // statistics' "average duration" puts phase time beside wall time.
     time: durationSeconds(test.elapsed), resultId: null,
     serverName: text(test.server?.name), serverHost: text(test.server?.url),
     // Its result names the backend and its URL, and nothing about where it is.
