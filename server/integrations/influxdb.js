@@ -45,6 +45,8 @@ const escapeMeasurement = (value) => oneLine(value).replace(/[\\ ,]/g, "\\$&");
  * no line to send" lets the caller skip the request rather than make one that
  * cannot succeed.
  */
+const MS_PER_SECOND = 1000;
+
 export const buildLine = (measurement, tags, fields, timestampSeconds) => {
     const tagPart = Object.entries(tags)
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
@@ -163,7 +165,13 @@ export default (registerEvent) => {
             uploadLatency: usableFigure(data.uploadLatency)
         };
 
-        const timestamp = Math.floor(Date.now() / 1000);
+        // The row's own moment rather than the send's: the payload carries
+        // `created`, and a point stamped when the write went out sat later
+        // than its row by however long the round and the queue ahead of it
+        // took. The Date.now() fallback is for a payload without one, which no
+        // live run sends - testResult always carries the controller's stamp.
+        const createdMs = Date.parse(data?.created);
+        const timestamp = Math.floor((Number.isFinite(createdMs) ? createdMs : Date.now()) / MS_PER_SECOND);
         const line = buildLine(c.measurement || "speedtests", tags, fields, timestamp);
 
         // Nothing measurable in the payload, so there is nothing to write and a

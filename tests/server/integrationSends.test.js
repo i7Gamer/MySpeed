@@ -79,6 +79,30 @@ describe("influxdb", () => {
      * operator graphing bufferbloat in Grafana had the columns in sqlite and
      * nothing in Influx.
      */
+    /**
+     * The point is stamped with the row's own `created`, not with the moment
+     * the write went out: the send sits behind the round and the queue ahead
+     * of it, so a point stamped on the way out sat later than the row it
+     * describes. The unit fixtures carry no `created`, which is what the
+     * fallback is for.
+     */
+    it("stamps the point with the row's own moment", async () => {
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, {...RESULT, created: "2026-09-01T10:00:00.000Z"});
+
+        assert.match(sent[0].body, / 1788256800$/, "the point is stamped with the send, not the row");
+    });
+
+    it("stamps a payload without a moment with the send", async () => {
+        const before = Math.floor(Date.now() / 1000);
+        const {events} = load(setupInflux);
+        await fire(events, "testFinished", config, RESULT);
+
+        const stamped = Number(/ (\d{10})$/.exec(sent[0].body)?.[1]);
+        assert.ok(stamped >= before && stamped <= Math.floor(Date.now() / 1000) + 1,
+            `the point was stamped ${stamped}, not now`);
+    });
+
     it("writes the quality figures beside the throughput", async () => {
         const {events} = load(setupInflux);
         await fire(events, "testFinished", config,
