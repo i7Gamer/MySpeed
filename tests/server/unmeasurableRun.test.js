@@ -61,5 +61,34 @@ describe("a run whose provider reported no measurement", () => {
             assert.match(source, /import\s*\{[^}]*isFailedTest[^}]*\}\s*from\s*['"][^'"]*testOutcome\.js['"]/,
                 "the writer judges failure by a rule of its own again");
         });
+
+        /**
+         * The four nullable figures reach the row through usableFigure, which
+         * turns a negative into null. The payload read the raw variables, so a
+         * webhook was told "packetLoss: -1" about a row that stored NULL, and
+         * a notifier template rendered "-1%" where the row says unmeasured.
+         * Settled once, before the write, for both.
+         */
+        describe("the nullable figures", () => {
+            const NULLABLE = ["jitter", "packetLoss", "downloadLatency", "uploadLatency"];
+            const write = source.indexOf("await tests.create(");
+            const send = source.indexOf("sendFinished(finishedPayload(");
+
+            it("are settled through usableFigure before the row is written", () => {
+                for (const figure of NULLABLE)
+                    assert.match(betweenParseAndWrite, new RegExp(`^\\s*${figure} = usableFigure\\(${figure}\\);`, "m"),
+                        `${figure} reaches the payload as the provider reported it`);
+            });
+
+            it("are not re-read raw by the write or the payload", () => {
+                const createCall = source.slice(write, source.indexOf("console.log(`Test #", write));
+                assert.doesNotMatch(createCall, /usableFigure\(/,
+                    "the write sanitises inline, so the payload beside it reads something else");
+
+                const betweenWriteAndSend = source.slice(write, send);
+                assert.doesNotMatch(betweenWriteAndSend, new RegExp(`\\b(${NULLABLE.join("|")}) =[^=]`),
+                    "a figure is rebound between the row and the payload, so the two disagree again");
+            });
+        });
     });
 });

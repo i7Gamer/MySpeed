@@ -1167,6 +1167,16 @@ const executeTarget = async (target, type, retried = false) => {
 
         const serverId = test.serverId;
 
+        // The nullable figures, settled once for everything downstream. The row
+        // took them through usableFigure and the payload took them raw, so a
+        // provider answering -1 for a loss it did not measure stored NULL and
+        // told every webhook and notifier "-1%" - which replaceVariables
+        // renders as a figure, since only null reads as unmeasured there.
+        jitter = usableFigure(jitter);
+        packetLoss = usableFigure(packetLoss);
+        downloadLatency = usableFigure(downloadLatency);
+        uploadLatency = usableFigure(uploadLatency);
+
         // The provider is answering again, so whatever hold a previous refusal
         // earned is over - including the escalation, which a completed test is
         // the only thing that disproves.
@@ -1200,9 +1210,8 @@ const executeTarget = async (target, type, retried = false) => {
          */
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
             targetId: target.id,
-            resultId, jitter: usableFigure(jitter), serverName, serverHost, serverLocation,
-            packetLoss: usableFigure(packetLoss),
-            downloadLatency: usableFigure(downloadLatency), uploadLatency: usableFigure(uploadLatency),
+            resultId, jitter, serverName, serverHost, serverLocation,
+            packetLoss, downloadLatency, uploadLatency,
             isp, externalIp, provider, bytesDownloaded, bytesUploaded});
         console.log(`Test #${testResult.id}${target.name ? ` (${target.name})` : ""} was executed successfully in ${time}s. 🏓 ${ping} (±${jitter ?? 'N/A'}) ⬇ ${download}️ ⬆ ${upload}️`);
         // Awaited, so the write is inside the round the shutdown waits for; still

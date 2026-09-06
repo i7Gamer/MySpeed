@@ -139,16 +139,19 @@ describe("the writer", () => {
     });
 
     /**
-     * Read at the write rather than in the window above, because that is where
-     * it belongs: these figures are not a reason to refuse the run, so they are
-     * cleaned as the row is assembled rather than judged before it.
+     * Cleaned after the guard rather than judged by it: these figures are not
+     * a reason to refuse the run. Settled once, above the write, because the
+     * payload reads the same variables - cleaned at the write alone, the row
+     * stored NULL while every webhook was told "-1".
      */
     it("keeps the optional figures rather than failing over one", () => {
-        const write = source.slice(source.indexOf("await tests.create("));
-        const call = write.slice(0, write.indexOf("});") + 1);
+        const guard = source.indexOf("impossibleMeasurement({ping, download, upload})");
+        const write = source.indexOf("await tests.create(");
+        assert.ok(guard !== -1 && guard < write, "the impossible-reading guard no longer sits above the write");
 
+        const afterTheGuard = source.slice(guard, write);
         for (const figure of ["jitter", "packetLoss", "downloadLatency", "uploadLatency"])
-            assert.match(call, new RegExp(`${figure}:\\s*usableFigure\\(`),
-                `a negative ${figure} is stored as a figure`);
+            assert.match(afterTheGuard, new RegExp(`^\\s*${figure} = usableFigure\\(${figure}\\);`, "m"),
+                `a negative ${figure} fails the run, or is stored as a figure`);
     });
 });
