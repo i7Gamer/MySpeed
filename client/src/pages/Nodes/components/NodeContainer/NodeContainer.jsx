@@ -422,17 +422,20 @@ export const NodeContainer = (node) => {
      * Anchored under the button rather than at a pointer that has no position
      * when the key was Enter. The menu takes the button's ref so that opening
      * it does not count as a click outside itself.
+     *
+     * The box is read before the state update is queued, not inside its
+     * updater: React runs a queued updater at the next render, by which time
+     * the synthetic event has been handed back and `currentTarget` is null.
+     * Read there, a click that landed while another update was pending -
+     * the status poll answering, mostly - threw on the null and the router's
+     * error boundary replaced the whole page with "Oops!".
      */
     const toggleContextMenu = (event) => {
         event.preventDefault();
         event.stopPropagation();
 
-        setContextMenu((open) => {
-            if (open) return null;
-
-            const box = event.currentTarget.getBoundingClientRect();
-            return {x: box.left, y: box.bottom};
-        });
+        const box = event.currentTarget.getBoundingClientRect();
+        setContextMenu((open) => open ? null : {x: box.left, y: box.bottom});
     };
 
     const closeContextMenu = () => setContextMenu(null);
