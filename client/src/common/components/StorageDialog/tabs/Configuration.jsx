@@ -109,11 +109,15 @@ export default ({close}) => {
                         with Import and Reset on any language long enough to
                         wrap the row - and its own text ended up stranded in
                         the middle of it. */}
-                    <label className="storage-row-toggle">
+                    {/* A div, as every other row that holds a ToggleSwitch: the
+                        switch draws a label element of its own, and a label wrapping
+                        a label is not a thing HTML allows - two labels claimed
+                        one click, and a reader announced the control twice. */}
+                    <div className="storage-row-toggle">
                         <span>{t("storage.include_secrets")}</span>
                         <ToggleSwitch checked={includeSecrets} onChange={setIncludeSecrets}
                                       label={t("storage.include_secrets")}/>
-                    </label>
+                    </div>
                 </div>
                 <div className="storage-row-actions">
                     <button className="dialog-btn" onClick={exportConfig}>{t("storage.export")}</button>
