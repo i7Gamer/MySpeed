@@ -429,7 +429,7 @@ export function generateRelativeTime(created) {
     }
 
     // Every caller puts this behind "ago" - the status bar's "Last test … ago",
-    // the integration card's "Last run before …" - so the span wears that
+    // the integration card's "Last run: …" - so the span wears that
     // context, and a language that inflects the unit there gets its case.
     return spanInWords(diff, {context: AGO_CONTEXT});
 }

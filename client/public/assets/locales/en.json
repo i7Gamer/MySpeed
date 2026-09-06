@@ -511,7 +511,7 @@
     "create": "Create",
     "activity": {
       "never_executed": "Never executed",
-      "last_run": "Last run before "
+      "last_run": "Last run: "
     },
     "discord": {
       "fields": {
