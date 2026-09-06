@@ -125,6 +125,31 @@ describe("the admin password in a config backup", () => {
 
     // The export is machine-independent apart from this: an adapter name from
     // another host would be rejected and fail the whole import.
+    /**
+     * The integration rows as a full export carries them. withoutSecrets
+     * parses `data` on the redacted branch; the full branch handed the rows
+     * on as read, and under the raw mapping sqlite reads the JSON column back
+     * as the string it stored - so a full sqlite backup embedded every
+     * integration's data as a JSON string inside the JSON.
+     */
+    it("carries an integration's data as an object in a full export", async () => {
+        const created = await api(server.baseUrl, "/integrations/webhook", {
+            method: "PUT",
+            headers: {"content-type": "application/json", "x-password": OWNER_PASSWORD},
+            body: JSON.stringify({url: "http://hooks.example.invalid/myspeed", send_finished: true})
+        });
+        assert.equal(created.status, 200, "the webhook could not be created");
+
+        for (const query of ["?includeSecrets=true", ""]) {
+            const {body} = await exportConfig(query);
+            const row = body.integrations.find((entry) => entry.name === "webhook");
+
+            assert.ok(row, `the export ${query || "(redacted)"} carries no webhook row`);
+            assert.equal(typeof row.data, "object", `data is a ${typeof row.data} in the export ${query || "(redacted)"}`);
+            assert.equal(row.data.send_finished, true);
+        }
+    });
+
     it("never carries the network interface", async () => {
         const {body} = await exportConfig("?includeSecrets=true");
         assert.equal(body.config.interface, undefined);

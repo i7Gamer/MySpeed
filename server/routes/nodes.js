@@ -9,6 +9,7 @@ import { isUntrustedReader } from '../util/untrustedReader.js';
 import { importBody } from './storage.js';
 import { appPath } from '../middlewares/basePath.js';
 import { childPath } from '../util/nodePath.js';
+import { nodeNameProblem } from '../util/nodeName.js';
 
 const app = express.Router();
 
@@ -48,6 +49,12 @@ app.put("/", password(false),
     // request it did not parse - 1.x defaulted it to {} - so the guard itself
     // threw and Express answered its generic 500 where this 400 was owed.
     if (!req.body?.name || !req.body?.url) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
+
+    // Judged before the reachability check, which is the expensive half: a
+    // name the column cannot hold used to pass here and fail inside the
+    // insert, as a 500 on MySQL and silently on sqlite.
+    const nameProblem = nodeNameProblem(req.body.name);
+    if (nameProblem !== null) return res.status(400).json({message: nameProblem, type: "INVALID_NAME"});
 
     const url = stripTrailingSlashes(req.body.url);
 
@@ -91,6 +98,9 @@ app.patch("/:nodeId/name", password(false),
     previewReadOnly.saying("For security reasons, you can't update nodes in preview mode"),
     async (req, res) => {
     if (!req.body?.name) return res.status(400).json({message: "Missing parameters", type: "MISSING_PARAMETERS"});
+
+    const nameProblem = nodeNameProblem(req.body.name);
+    if (nameProblem !== null) return res.status(400).json({message: nameProblem, type: "INVALID_NAME"});
 
     const node = await nodes.getOne(req.params.nodeId);
     if (node === null) return res.status(404).json({message: "Node not found"});

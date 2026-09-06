@@ -6,7 +6,8 @@ import { legacyTarget } from '../migrations/0013-add-targets.js';
 import test from '../models/Speedtests.js';
 import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
-import { triggerEvent, withoutSecrets } from './integrations.js';
+import { asDataObject, triggerEvent, withoutSecrets } from './integrations.js';
+import { nodeNameProblem } from '../util/nodeName.js';
 import bcrypt from 'bcryptjs';
 import * as timer from '../tasks/timer.js';
 import cron from 'cron-validator';
@@ -238,8 +239,12 @@ const nodeProblem = (row) => {
     if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) return "A node's url must be http or https";
 
     // Absent is legitimate - the model defaults it - but present and the
-    // wrong shape is a hand-edited or corrupted file.
-    if (row.name !== undefined && typeof row.name !== "string") return "A node's name must be a string";
+    // wrong shape, or longer than the column, is a hand-edited or corrupted
+    // file. The same judge the routes use, so the limit has one home.
+    if (row.name !== undefined) {
+        const nameProblem = nodeNameProblem(row.name);
+        if (nameProblem !== null) return nameProblem;
+    }
 
     // null is legitimate too: the column is nullable and an unprotected node
     // exports it that way. Present and not null is where the shape matters.
@@ -253,6 +258,29 @@ const nodeProblem = (row) => {
         // eslint-disable-next-line no-control-regex
         if (/[\x00-\x1F\x7F]/.test(row.password))
             return "A node's password must not contain a control character";
+    }
+
+    return null;
+};
+
+/**
+ * The problem with a recommendation row a restore is about to write, or null.
+ *
+ * The three figures are DOUBLE NOT NULL and nothing more: sqlite stores
+ * whatever a hand-edited file put there and the grading reads it back as a
+ * number it is not, while MySQL refuses the row and the whole restore with
+ * it, unnamed. The other two tables were judged before the transaction; this
+ * one was bulk-inserted as written.
+ */
+const RECOMMENDATION_FIGURES = ["ping", "download", "upload"];
+
+export const recommendationProblem = (row) => {
+    if (row === null || typeof row !== "object" || Array.isArray(row)) return "A recommendation row must be an object";
+
+    for (const figure of RECOMMENDATION_FIGURES) {
+        const value = row[figure];
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+            return `A recommendation's ${figure} must be a non-negative number`;
     }
 
     return null;
@@ -546,7 +574,13 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
         : targetRows.map((row) => ({...row,
             endpoint: row.endpoint === null ? null : withoutUrlCredentials(row.endpoint)}));
 
-    const integrationRows = await integration.findAll();
+    // `data` as an object on both branches. withoutSecrets parses it on its
+    // way through, but a full export handed the rows on as read - and under
+    // the raw mapping sqlite reads a JSON column back as the string it stored,
+    // so a full sqlite backup carried every integration's data double-encoded
+    // while a redacted one, or one from MySQL, carried an object. The import
+    // reads either, so nothing was lost; the file just did not match itself.
+    const integrationRows = (await integration.findAll()).map((row) => ({...row, data: asDataObject(row.data)}));
     obj.integrations = includeSecrets ? integrationRows : withoutSecrets(integrationRows);
 
     // Stated in the file itself, so nobody restores a redacted backup and is
@@ -628,6 +662,8 @@ export const importConfig = async (obj) => {
     // node row is refused whole rather than let through to be bulk-inserted
     // as written.
     if (rows.nodes.some((row) => nodeProblem(row) !== null)) return {ok: false, key: "nodes"};
+    if (rows.recommendations.some((row) => recommendationProblem(row) !== null))
+        return {ok: false, key: "recommendations"};
 
     try {
         rows.integrations = rows.integrations.map((entry) => ({
