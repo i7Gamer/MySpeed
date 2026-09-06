@@ -12,6 +12,15 @@ import "./styles.sass";
  * that control is not "outside": without this the menu closed on the way down
  * and reopened on the click, so the button that opened it could never close it.
  */
+/**
+ * How far a menu pushed back inside the viewport stays from its edges.
+ *
+ * Also the least either coordinate may be: a menu wider than the viewport -
+ * a narrow phone, or a desktop zoomed far in - used to be pushed back by its
+ * whole width and land with its left edge off the screen on the other side.
+ */
+export const VIEWPORT_MARGIN = 10;
+
 export const ContextMenu = ({items, position, onClose, label, trigger}) => {
     const menuRef = useRef(null);
     const [focusedIndex, setFocusedIndex] = useState(-1);
@@ -90,11 +99,11 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
             let adjustedY = position.y;
 
             if (position.x + rect.width > viewportWidth) {
-                adjustedX = viewportWidth - rect.width - 10;
+                adjustedX = Math.max(VIEWPORT_MARGIN, viewportWidth - rect.width - VIEWPORT_MARGIN);
             }
 
             if (position.y + rect.height > viewportHeight) {
-                adjustedY = viewportHeight - rect.height - 10;
+                adjustedY = Math.max(VIEWPORT_MARGIN, viewportHeight - rect.height - VIEWPORT_MARGIN);
             }
 
             setAdjustedPosition({x: adjustedX, y: adjustedY});
