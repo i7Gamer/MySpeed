@@ -25,6 +25,7 @@ import nodesRoutes from './routes/nodes.js';
 import integrationsRoutes from './routes/integrations.js';
 import prometheusRoutes from './routes/prometheus.js';
 import opengraphRoutes from './routes/opengraph.js';
+import badgeRoutes from './routes/badge.js';
 import healthRoutes from './routes/health.js';
 import tokensRoutes from './routes/tokens.js';
 
@@ -189,6 +190,7 @@ app.use("/api/integrations", integrationsRoutes);
 app.use("/api/prometheus", prometheusRoutes);
 app.use("/api/tokens", tokensRoutes);
 app.use('/api/opengraph', opengraphRoutes);
+app.use('/api/badge', badgeRoutes);
 /*
  * A plain prefix, and it has to stay one. `"/api*all"` needed the parameter to
  * capture something, so it did not match the bare `/api`: GET /api fell past it

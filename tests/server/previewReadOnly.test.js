@@ -348,6 +348,7 @@ describe("every read route decides what a demo may have", () => {
         "integrations.js /active": "the configured rows, with their credentials blanked",
         "nodes.js /": "answers empty on a demo",
         "opengraph.js /image": "the measurements as a picture, which is the demo's point",
+        "badge.js /": "the newest measurement as a badge, behind the same door as the picture",
         "prometheus.js /metrics": "the measurements again, and the same server labels a viewer sees",
         "recommendations.js /": "the target values the dashboard grades against",
         "session.js /": "whether this caller holds a session, which is about them",

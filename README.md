@@ -247,6 +247,14 @@ Every Ookla, LibreSpeed and Cloudflare test records the external address the pro
 
 A single failed test already reaches every notifier that asked for failures, and on a flaky provider that is a message about nothing. Every notifier also offers a switch to be told once when a target has failed a number of tests in a row - two unless you type another number beside the switch - and once more when the first test after that succeeds. Both are edges: the outage is announced on the one failure that makes the streak exactly that long, and the recovery on the first success after a streak at least that long, so a notifier set to three hears nothing about a two-failure blip at either end. The streak is read from the stored rows, so a restart in the middle of an outage does not announce it twice. The webhook posts the two as `OUTAGE_STARTED` and `CONNECTION_RESTORED`; the templates may use `%failuresInRow%`, `%downSince%`, `%downtimeMinutes%` and `%outageSummary%`, which says how many tests failed and since when, on the instance's own clock. A target that opted out of alerting stays quiet about this too.
 
+#### A status badge
+
+`GET /api/badge` answers a small SVG in the shields.io style, for a README or a status page: the label on the left, and on the right what the headline line last measured - `↓ 250 ↑ 40 Mbps · 12 ms` - or `down` in red when its newest test failed. `?metric=download`, `upload` or `ping` prints one reading; `?label=Home%20line` replaces the label. It is served behind the same door as the social preview image: open when the instance has no password or lets strangers read, and a grey `private` badge otherwise, so an `<img>` never gets a JSON refusal. The reply may be cached for five minutes.
+
+```markdown
+![MySpeed](https://myspeed.example.org/api/badge?label=Home%20line)
+```
+
 #### Put a reverse proxy in front
 
 This is the supported way to expose MySpeed. The proxy terminates TLS and, ideally,
