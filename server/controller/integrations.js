@@ -160,8 +160,13 @@ export const triggerEvent = async (name, data) => {
             // run just now" on a notifier that has never delivered a single
             // message - on an instance whose only member has alerts off,
             // permanently.
+            //
+            // Nor for an outage event withheld by the streak length: that is
+            // withheld on every failure but one, for every notifier, whether
+            // or not it asked for outages at all - so stamping it painted the
+            // same "last run just now" on a notifier that has never sent.
             if (suppressesEvent(name, module.module, integration, data)) {
-                if (data?.alerts !== false)
+                if (data?.alerts !== false && !OUTAGE_EVENTS.has(name))
                     tasks.push(triggerActivity(integration.id).catch(() => undefined));
                 continue;
             }
@@ -480,9 +485,13 @@ export const suppressesEvent = (eventName, moduleName, integration, payload) => 
      * is judged here, per recipient, the way the fixed limits are. The outage
      * leaves on the one failure that makes the streak exactly that long, and
      * the recovery on the first success after a streak at least that long -
-     * so a recipient is never told a line is back that it was not told had
-     * gone. The thresholds do not apply: they judge a measurement, and an
-     * outage has none.
+     * so a recipient hears nothing, at either end, about a blip shorter than
+     * its own number. Not quite "never told it is back without being told it
+     * had gone": a switch turned on, or a number lowered, in the middle of an
+     * outage gets the recovery alone, and that is the right answer for
+     * somebody who just started watching a line they know is down. The
+     * thresholds do not apply: they judge a measurement, and an outage has
+     * none.
      */
     if (eventName === OUTAGE_EVENT) return !announcesOutage(payload, integration?.data);
     if (eventName === RECOVERED_EVENT) return !announcesRecovery(payload, integration?.data);

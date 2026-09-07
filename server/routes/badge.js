@@ -2,6 +2,7 @@ import express from 'express';
 import passwordWrapper from '../middlewares/passwordWrapper.js';
 import { readBadge } from '../controller/badge.js';
 import { BADGE_STATUS, badgeLabel, badgeMetric, badgeText, renderBadge } from '../util/badge.js';
+import { passwordHeaderNames } from '../util/passwordHeader.js';
 
 const app = express.Router();
 
@@ -17,6 +18,17 @@ const SVG_TYPE = "image/svg+xml; charset=utf-8";
 const BADGE_CACHE_SECONDS = 300;
 
 /**
+ * What the answer depends on besides the URL.
+ *
+ * The door reads a session cookie and the two password headers, so on a
+ * locked instance the same URL answers the operator the figures and a
+ * stranger the grey badge. Marked public without this, a shared cache in
+ * front of the instance - a reverse proxy, a CDN - would hand the operator's
+ * figures to the next stranger for five minutes.
+ */
+const VARIES_ON = ["Cookie", ...passwordHeaderNames].join(", ");
+
+/**
  * Sends one badge, whatever the reading. The status decides the colour and
  * the words; the request decides the label and which readings to print.
  */
@@ -30,6 +42,7 @@ const send = (req, res, reading) => {
 
     res.setHeader("Content-Type", SVG_TYPE)
         .setHeader("Cache-Control", `public, max-age=${BADGE_CACHE_SECONDS}`)
+        .setHeader("Vary", VARIES_ON)
         .status(200)
         .send(svg);
 };

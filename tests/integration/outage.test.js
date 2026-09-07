@@ -98,6 +98,23 @@ describe("failureStreak", () => {
         assert.ok(new Date(streak.since) < new Date(hoursAgo(2)), iso(streak.since));
     });
 
+    /**
+     * A restored history can carry two rows with one stamp - getLatest says
+     * the retried restore does exactly that - and LIST_ORDER breaks the tie on
+     * id. A streak that compared `created` alone dropped the failure that
+     * shares the newest success's stamp: one short, and "since" an hour late.
+     */
+    it("counts a failure that shares the newest success's stamp and follows it", async () => {
+        const target = await seedTarget({name: "WAN"});
+        const stamp = hoursAgo(2);
+        await seedTests(server.tests, [succeeded(target.id, 2), {...failed(target.id, 2), created: stamp}, failed(target.id, 1)]);
+
+        const streak = await failureStreak(target.id);
+
+        assert.equal(streak.count, 2);
+        assert.equal(iso(streak.since), iso(stamp));
+    });
+
     it("counts from the first failure for a target that has never succeeded", async () => {
         const target = await seedTarget({name: "WAN"});
         await seedTests(server.tests, [failed(target.id, 2), failed(target.id, 1)]);

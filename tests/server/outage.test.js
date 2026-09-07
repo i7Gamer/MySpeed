@@ -20,6 +20,45 @@ import setupPushover from "../../server/integrations/pushover.js";
 import setupNtfy from "../../server/integrations/ntfy.js";
 import setupWebhook from "../../server/integrations/webhook.js";
 import setupEmail from "../../server/integrations/email.js";
+import { bodyOf, readSource, withoutJsComments } from "../helpers/source.js";
+
+/**
+ * Where the streak is read relative to the row that ends or extends it.
+ *
+ * The one thing the two suites cannot drive: executeTarget spawns a CLI. Read
+ * off the source instead, the way baselineColumn.test.js reads the baseline's
+ * placement - because moving the success path's read three lines down, past
+ * tests.create, would make every recovery read a streak of zero and quietly
+ * end the whole recovery half with every other test still green.
+ */
+describe("where the task reads the streak", () => {
+    const task = withoutJsComments(readSource("server/tasks/speedtest.js"));
+    const body = bodyOf(task, "const executeTarget");
+
+    // The success path writes its row with the measured figures, the failure
+    // path with the placeholders; each read has to sit on the right side.
+    const successRow = body.indexOf("let testResult = await tests.create({ping, download, upload");
+    const failureRow = body.indexOf("tests.create({ping: FAILED, download: FAILED");
+    const reads = [...body.matchAll(/await streakKeys\(target\)/g)].map((match) => match.index);
+
+    it("reads it twice: once for the recovery, once for the outage", () => {
+        assert.equal(reads.length, 2);
+        assert.notEqual(successRow, -1);
+        assert.notEqual(failureRow, -1);
+    });
+
+    it("reads the streak a success ends before the success is written", () => {
+        assert.ok(reads[0] < successRow, "the recovery would always read a streak of zero");
+    });
+
+    it("reads the streak a failure extends after the failure is written", () => {
+        assert.ok(reads[1] > failureRow, "the outage would be announced one failure late");
+    });
+
+    it("degrades either read to nothing rather than failing the test", () => {
+        assert.equal((body.match(/streakKeys\(target\)\.catch\(/g) ?? []).length, 2);
+    });
+});
 
 /*
  * An outage and its end.
@@ -41,7 +80,7 @@ describe("outageAfter", () => {
     });
 
     it("falls back to the default when nothing usable was stored", () => {
-        for (const value of [undefined, null, "", "three", 0, -1, 1.5, NaN, Infinity, {}])
+        for (const value of [undefined, null, "", "three", 0, -1, 1.5, NaN, Infinity, {}, [1], true])
             assert.equal(outageAfter({[OUTAGE_AFTER_FIELD]: value}), DEFAULT_OUTAGE_AFTER, JSON.stringify(value));
 
         assert.equal(outageAfter(undefined), DEFAULT_OUTAGE_AFTER);
@@ -440,7 +479,7 @@ describe("the notifiers on an outage", () => {
             assert.equal(outage.subject, "MySpeed: connection down");
             assert.match(outage.text, /3 tests in a row/);
             assert.equal(recovered.subject, "MySpeed: connection restored");
-            assert.match(recovered.text, /Back online|3 tests in a row/);
+            assert.match(recovered.text, /^The connection is back\./);
         });
 
         it("stays quiet when the switch is off", async () => {

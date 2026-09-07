@@ -86,8 +86,10 @@ export const escapeXml = (text) => String(text)
 export const badgeLabel = (raw) => {
     if (typeof raw !== "string") return BADGE_LABEL_DEFAULT;
 
+    // Cut by glyph, not by code unit: a cut through a surrogate pair leaves a
+    // lone surrogate that renders as a broken glyph.
     // eslint-disable-next-line no-control-regex
-    const clean = raw.replace(/[\x00-\x1f\x7f]/g, "").trim().slice(0, BADGE_LABEL_MAX_LENGTH);
+    const clean = [...raw.replace(/[\x00-\x1f\x7f]/g, "").trim()].slice(0, BADGE_LABEL_MAX_LENGTH).join("");
 
     return clean === "" ? BADGE_LABEL_DEFAULT : clean;
 };
@@ -127,7 +129,18 @@ export const badgeText = (reading, metric) => {
     return `${download} ${upload} ${SPEED_UNIT} · ${ping}`;
 };
 
-const textWidth = (text) => Math.ceil(text.length * CHAR_WIDTH) + PADDING * 2;
+/**
+ * Where the wide scripts start: CJK, Hangul and their punctuation all sit
+ * above this, and each takes roughly two Latin glyphs' worth of width.
+ */
+const WIDE_GLYPHS_FROM = 0x2E80;
+const WIDE_GLYPH_FACTOR = 2;
+
+const glyphWidth = (glyph) => glyph.codePointAt(0) >= WIDE_GLYPHS_FROM ? CHAR_WIDTH * WIDE_GLYPH_FACTOR : CHAR_WIDTH;
+
+// Per glyph rather than per code unit, so a label in Chinese is not fitted
+// into half its width and an emoji is not counted twice.
+const textWidth = (text) => Math.ceil([...text].reduce((width, glyph) => width + glyphWidth(glyph), 0)) + PADDING * 2;
 
 /**
  * The badge itself.

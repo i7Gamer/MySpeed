@@ -70,9 +70,17 @@ export const OUTAGE_AFTER_MIN = 1;
 
 const MS_PER_MINUTE = 60_000;
 
-/** A whole number at or above the floor, or null. */
+/**
+ * A whole number at or above the floor, or null.
+ *
+ * A number or the text of one, and nothing else: Number(true) is 1, and a
+ * restored configuration - importConfig writes integration rows without
+ * validateInput - could carry a boolean where the count belongs, which read
+ * as "announce on the first failure".
+ */
 const wholeNumber = (value) => {
-    if (value === null || value === undefined || value === "") return null;
+    if (typeof value !== "number" && typeof value !== "string") return null;
+    if (value === "") return null;
 
     const number = Number(value);
 
@@ -98,7 +106,8 @@ export const outageAfter = (data) => wholeNumber(data?.[OUTAGE_AFTER_FIELD]) ?? 
  */
 const streakOf = (payload) => {
     const count = payload?.[FAILURES_IN_ROW];
-    if (count === null || count === undefined || count === "") return null;
+    if (typeof count !== "number" && typeof count !== "string") return null;
+    if (count === "") return null;
 
     const number = Number(count);
 

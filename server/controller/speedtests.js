@@ -347,13 +347,20 @@ export const listForBaseline = async (targetId, since) => tests.findAll({
  * How many of a target's newest rows are failures, and when the first of them
  * ran - the streak util/outage.js turns into an outage and its recovery.
  *
- * Two narrow queries rather than a walk over the rows: the newest successful
- * row's time, then the count and the earliest of the failures after it. A
+ * Three narrow statements rather than a walk over the rows: the newest
+ * successful row, then the count and the earliest of the failures after it. A
  * walk newest-first would have to be capped, and a target that has failed
  * every hour for a week is exactly the one whose streak must not saturate at
- * the cap - "down since" would then name the wrong day. Both queries take the
+ * the cap - "down since" would then name the wrong day. All three take the
  * covering index listForBaseline describes, and `created` is compared as the
  * ISO-8601 text it is stored as, for the reason given there.
+ *
+ * "After" is the order LIST_ORDER reads the table in - newer `created`, or
+ * the same `created` and a higher id - not `created` alone. A live run cannot
+ * share a stamp with another row, but a restored history can (getLatest says
+ * where they come from), and with a strict `created >` a failure stamped with
+ * the newest success was dropped from the streak: one short, and "down
+ * since" an hour late.
  *
  * A target that has never succeeded is down since its first failure: the
  * clause on the newest success is simply left off.
@@ -364,13 +371,21 @@ export const listForBaseline = async (targetId, since) => tests.findAll({
 export const failureStreak = async (targetId) => {
     const newestSuccess = await tests.findOne({
         where: {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
-        attributes: ["created"],
+        attributes: ["id", "created"],
         order: LIST_ORDER,
         raw: true
     });
 
-    const where = {[Op.and]: [FAILED_TEST_FILTER, {targetId},
-        ...(newestSuccess ? [{created: {[Op.gt]: new Date(newestSuccess.created).toISOString()}}] : [])]};
+    const after = (row) => {
+        const created = new Date(row.created).toISOString();
+
+        return {[Op.or]: [
+            {created: {[Op.gt]: created}},
+            {[Op.and]: [{created}, {id: {[Op.gt]: row.id}}]}
+        ]};
+    };
+
+    const where = {[Op.and]: [FAILED_TEST_FILTER, {targetId}, ...(newestSuccess ? [after(newestSuccess)] : [])]};
 
     const count = await tests.count({where});
     if (count === 0) return {count: 0, since: null};

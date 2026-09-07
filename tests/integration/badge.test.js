@@ -44,6 +44,11 @@ describe("GET /api/badge", () => {
         assert.equal(status, 200);
         assert.match(headers.get("content-type"), /^image\/svg\+xml/);
         assert.match(headers.get("cache-control"), /max-age=\d+/);
+        // Public, so a README's image cache may keep it - and varying on
+        // what the door reads, so a shared cache never hands the operator's
+        // figures to the next stranger on a locked instance.
+        assert.match(headers.get("vary"), /Cookie/);
+        assert.match(headers.get("vary"), /x-password/);
         assert.match(text, /^<svg /);
     });
 
