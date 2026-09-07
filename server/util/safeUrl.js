@@ -363,9 +363,9 @@ export const safeLookup = (hostname, options, callback) => {
  * it.
  *
  * The residual gap, named rather than hidden: a hostname that resolves to a
- * link-local address still passes, and the global fetch accepts no `lookup` to
- * pin it and follows redirects, so a far end answering 302 can still choose a
- * destination after the check. Closing either needs the node path's node:http
+ * link-local or metadata address still passes, because the global fetch
+ * accepts no `lookup` to pin the resolution (redirects are no longer part of
+ * it: http.js refuses every one). Closing it needs the node path's node:http
  * client. What this buys is that a webhook cannot be *pointed* at the metadata
  * service in the first place, which is the shape the field's regex allowed.
  *
