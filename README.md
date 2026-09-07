@@ -29,6 +29,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 server
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
 - 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
+- 🛰️ Trace the route to the test server when a test fails or slows down, and see hop by hop where the line broke
 
 ### ⬇️ Installation
 
@@ -125,6 +126,8 @@ NIC, and the interface picker in the settings starts listing your actual interfa
 
 MySpeed still listens on port 5216, now directly on the host. This has no effect on
 Docker Desktop for Windows and macOS, where the traffic goes through a VM either way.
+
+The route trace (switched on under *Optimal values*) uses the operating system's own tool: `tracert` on Windows, `traceroute` on macOS and Linux. The Docker image ships `tracepath` instead, because `traceroute` needs a raw socket and the container runs as an unprivileged user; on a bare Linux install, either one on the `PATH` is used.
 
 #### 🔧 From source
 

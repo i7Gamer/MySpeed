@@ -329,7 +329,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Připojení",
-      "changed": "změna"
+      "changed": "změna",
+      "route": "Trasa",
+      "route_hop": "Skok",
+      "route_address": "Adresa",
+      "route_latency": "Latence",
+      "route_no_reply": "Žádná odpověď",
+      "route_lost": "{{count}} ztraceno"
     }
   },
   "errors": {
@@ -696,7 +702,9 @@
   },
   "optimal_values": {
     "title": "Optimální hodnoty",
-    "use_recommended": "Použít doporučené"
+    "use_recommended": "Použít doporučené",
+    "trace_route": "Sledovat trasu u zhoršených testů",
+    "trace_route_description": "Když test selže, klesne pod svou základní hodnotu nebo nedosáhne optimálního pingu, MySpeed sleduje trasu k testovacímu serveru a zobrazí každý skok v detailech testu."
   },
   "preferences": {
     "title": "Předvolby",

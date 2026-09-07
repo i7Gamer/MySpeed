@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Forbindelse",
-      "changed": "ændret"
+      "changed": "ændret",
+      "route": "Rute",
+      "route_hop": "Hop",
+      "route_address": "Adresse",
+      "route_latency": "Latens",
+      "route_no_reply": "Intet svar",
+      "route_lost": "{{count}} tabt"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Optimale Værdier",
-    "use_recommended": "Brug anbefalet"
+    "use_recommended": "Brug anbefalet",
+    "trace_route": "Spor ruten ved forringede tests",
+    "trace_route_description": "Når en test fejler, falder under sin basislinje eller ikke rammer det optimale ping, sporer MySpeed ruten til testserveren og viser hvert hop i testdetaljerne."
   },
   "preferences": {
     "title": "Præferencer",

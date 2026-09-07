@@ -123,6 +123,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     da: [
+        // The route trace's hop table: the networking terms this language uses.
+        "test.details.route_hop",
         "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
@@ -139,6 +141,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
+        // The route trace's hop table: the networking terms this language uses.
+        "test.details.route", "test.details.route_hop",
         "notification.ping", "notification.download", "notification.upload",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",
@@ -175,6 +179,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     fr: [
+        // The route trace's hop table: the networking terms this language uses.
+        "test.details.route",
         "notification.ping", "notification.metric_ping",
         "dialog.provider.interface", "storage.configuration", "storage.tests",
         "latest.ping", "latest.ping_unit", "latest.jitter", "latest.jitter_unit", "latest.speed_unit",
@@ -247,6 +253,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nl: [
+        // The route trace's hop table: the networking terms this language uses.
+        "test.details.route", "test.details.route_hop",
         "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",
         "dialog.provider.iperf_bitrate",
         "latest.down", "latest.up", "integrations.healthChecks.fields.url", "integrations.influxdb.fields.bucket",

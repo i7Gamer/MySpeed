@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Bağlantı",
-      "changed": "değişti"
+      "changed": "değişti",
+      "route": "Rota",
+      "route_hop": "Adım",
+      "route_address": "Adres",
+      "route_latency": "Gecikme",
+      "route_no_reply": "Yanıt yok",
+      "route_lost": "{{count}} kayıp"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Optimum değerler",
-    "use_recommended": "Önerileni kullan"
+    "use_recommended": "Önerileni kullan",
+    "trace_route": "Bozulan testlerin rotasını izle",
+    "trace_route_description": "Bir test başarısız olduğunda, temel değerinin altına düştüğünde veya en uygun ping'i kaçırdığında MySpeed test sunucusuna giden rotayı izler ve her adımı test ayrıntılarında gösterir."
   },
   "preferences": {
     "title": "Tercihler",

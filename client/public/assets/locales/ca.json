@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Connexió",
-      "changed": "canviat"
+      "changed": "canviat",
+      "route": "Ruta",
+      "route_hop": "Salt",
+      "route_address": "Adreça",
+      "route_latency": "Latència",
+      "route_no_reply": "Cap resposta",
+      "route_lost": "{{count}} perduts"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Valors òptims",
-    "use_recommended": "Utilitza els recomanats"
+    "use_recommended": "Utilitza els recomanats",
+    "trace_route": "Traçar la ruta de les proves degradades",
+    "trace_route_description": "Quan una prova falla, queda per sota de la seva línia base o no assoleix el ping òptim, MySpeed traça la ruta fins al servidor de prova i mostra cada salt als detalls de la prova."
   },
   "preferences": {
     "title": "Preferències",

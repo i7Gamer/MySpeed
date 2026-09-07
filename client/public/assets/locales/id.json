@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Koneksi",
-      "changed": "berubah"
+      "changed": "berubah",
+      "route": "Rute",
+      "route_hop": "Lompatan",
+      "route_address": "Alamat",
+      "route_latency": "Latensi",
+      "route_no_reply": "Tidak ada balasan",
+      "route_lost": "{{count}} hilang"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Nilai optimal",
-    "use_recommended": "Gunakan yang disarankan"
+    "use_recommended": "Gunakan yang disarankan",
+    "trace_route": "Lacak rute pada tes yang menurun",
+    "trace_route_description": "Ketika sebuah tes gagal, berada di bawah baseline-nya, atau tidak mencapai ping optimal, MySpeed melacak rute ke server tes dan menampilkan setiap lompatan dalam detail tes."
   },
   "preferences": {
     "title": "Preferensi",

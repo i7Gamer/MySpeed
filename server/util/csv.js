@@ -3,7 +3,7 @@
 // columns are inserted before it rather than appended.
 export const CSV_COLUMNS = ["id", "ping", "jitter", "download", "upload", "time", "type", "created", "provider",
     "serverId", "serverName", "serverHost", "serverLocation", "packetLoss", "downloadLatency", "uploadLatency", "isp", "externalIp",
-    "bytesDownloaded", "bytesUploaded", "resultId", "targetName", "error"];
+    "bytesDownloaded", "bytesUploaded", "resultId", "targetName", "hops", "error"];
 
 export const CSV_HEADER = `${CSV_COLUMNS.join(",")}\n`;
 
@@ -24,9 +24,12 @@ const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
 // RFC 4180: wrap every field in quotes and double any quote inside it. Quoting
 // unconditionally means commas and newlines in free-text columns such as `error`
 // or a server name can never shift the column layout of the row.
+// A value that is not a scalar - the hop table is an array of objects - goes
+// out as its JSON text. String() of an array is its elements joined by commas,
+// which quoting would keep in one cell but nothing could read back.
 const cell = (value) => {
     if (value === null || value === undefined) return '""';
-    const str = String(value);
+    const str = typeof value === "object" ? JSON.stringify(value) : String(value);
     const sanitized = FORMULA_TRIGGER.test(str) && !PLAIN_NUMBER.test(str) ? `'${str}` : str;
     return `"${sanitized.replaceAll('"', '""')}"`;
 };

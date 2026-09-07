@@ -358,3 +358,53 @@ $fact-gap: 2rem
 @media (max-width: 605px)
   .detail-fact
     font-size: 0.9rem
+
+// The hop table of a degraded run, under whichever branch the pane took. A
+// table rather than facts: the reading is down the columns - where the
+// latency jumps, where the losses start - and a grid of facts has no columns.
+// Scrolls sideways inside its own box on a phone rather than widening the pane.
+.detail-route
+  margin-top: 1rem
+
+  h3
+    margin: 0 0 0.5rem
+    font-size: 1.05rem
+    color: $white
+
+.detail-route-scroll
+  overflow-x: auto
+
+.detail-route table
+  width: 100%
+  border-collapse: collapse
+  font-size: 0.85rem
+
+  th, td
+    padding: 0.35rem 0.5rem
+    text-align: left
+    white-space: nowrap
+    border-bottom: 1px solid $light-gray
+
+  th
+    font-weight: 600
+    color: $subtext
+
+  td
+    color: $white
+
+.detail-route-rtt
+  margin-right: 0.5rem
+
+.detail-route-unit
+  margin-left: 0.15rem
+  color: $subtext
+  font-size: 0.75rem
+
+.detail-route-lost
+  color: $accent-danger
+  font-size: 0.8rem
+
+// The hops where the route broke, or where somebody drops probes - the
+// table cannot tell, which is why the colour marks rather than judges.
+.detail-hop-lost td
+  color: $accent-danger

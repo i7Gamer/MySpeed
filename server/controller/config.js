@@ -43,8 +43,20 @@ export const configDefaults = {
     // host's own, which is what both used unconditionally before this existed -
     // and which is Etc/UTC in the Docker image, however the operator's own
     // evening runs (upstream #1115, #748).
-    timezone: "none"
+    timezone: "none",
+    // Whether a degraded run traces the route to its server - see
+    // tasks/hopDiagnostics.js. Off: a trace spawns a tool, and an instance
+    // that never asked for the table should not pay for one.
+    traceroute: "false"
 }
+
+/**
+ * The keys that hold a boolean, stored as the strings "true" and "false".
+ * Validated together so a new switch cannot arrive with a validation of its
+ * own that reads the raw boolean differently - see the scheduleOffset note
+ * in validateInput for what that cost.
+ */
+const BOOLEAN_KEYS = ["scheduleOffset", "traceroute"];
 
 /**
  * The longest history the server will keep, in days.
@@ -480,7 +492,7 @@ export const validateInput = async (key, value) => {
     // compares equal to "true". The offset silently stayed off behind a 200,
     // and every later config export carried a value that fails validation on
     // the way back in, so the whole restore was refused.
-    if (key === "scheduleOffset") {
+    if (BOOLEAN_KEYS.includes(key)) {
         if (!["true", "false"].includes(value?.toString()))
             return "You need to provide either true or false";
 

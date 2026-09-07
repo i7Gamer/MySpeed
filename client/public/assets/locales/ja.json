@@ -323,7 +323,13 @@
       "bufferbloat": "バッファブロート",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "接続",
-      "changed": "変更あり"
+      "changed": "変更あり",
+      "route": "ルート",
+      "route_hop": "ホップ",
+      "route_address": "アドレス",
+      "route_latency": "遅延",
+      "route_no_reply": "応答なし",
+      "route_lost": "{{count}} 件損失"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "最適値",
-    "use_recommended": "推奨値を使用"
+    "use_recommended": "推奨値を使用",
+    "trace_route": "劣化したテストのルートをトレースする",
+    "trace_route_description": "テストが失敗した場合、ベースラインを下回った場合、または最適な ping に達しなかった場合、MySpeed はテストサーバーへのルートをトレースし、テスト詳細にすべてのホップを表示します。"
   },
   "preferences": {
     "title": "環境設定",

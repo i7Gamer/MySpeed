@@ -323,7 +323,13 @@
       "bufferbloat": "버퍼블로트",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "연결",
-      "changed": "변경됨"
+      "changed": "변경됨",
+      "route": "경로",
+      "route_hop": "홉",
+      "route_address": "주소",
+      "route_latency": "지연 시간",
+      "route_no_reply": "응답 없음",
+      "route_lost": "{{count}}개 손실"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "최적 값",
-    "use_recommended": "권장값 사용"
+    "use_recommended": "권장값 사용",
+    "trace_route": "저하된 테스트의 경로 추적",
+    "trace_route_description": "테스트가 실패하거나 기준선 아래로 떨어지거나 최적의 핑을 놓친 경우, MySpeed는 테스트 서버까지의 경로를 추적하여 테스트 세부 정보에 모든 홉을 표시합니다."
   },
   "preferences": {
     "title": "환경 설정",

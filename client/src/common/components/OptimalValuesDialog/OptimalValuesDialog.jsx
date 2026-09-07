@@ -10,6 +10,7 @@ import {ConfigContext} from "@/common/contexts/Config";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 import {isThresholdNumber} from "@/common/utils/TestUtil";
+import ToggleSwitch from "@/common/components/ToggleSwitch";
 
 const NOT_ENOUGH_TESTS_STATUS = 501;
 
@@ -20,11 +21,15 @@ export const OptimalValuesDialog = ({open, onClose}) => {
     const [ping, setPing] = useState("");
     const [download, setDownload] = useState("");
     const [upload, setUpload] = useState("");
+    // Whether a degraded run traces its route - here because the optimum
+    // above is what a run is judged against. Stored as "true"/"false".
+    const [traceroute, setTraceroute] = useState(false);
 
     useSyncOnOpen(open, () => {
         setPing(config.ping || "");
         setDownload(config.download || "");
         setUpload(config.upload || "");
+        setTraceroute(config.traceroute === "true");
     });
     const [recommendations, setRecommendations] = useState(null);
     // Distinguishes "not enough tests yet", which the API reports as 501, from a
@@ -92,6 +97,8 @@ export const OptimalValuesDialog = ({open, onClose}) => {
             if (ping !== config.ping) await patch("/config/ping", ping);
             if (download !== config.download) await patch("/config/download", download);
             if (upload !== config.upload) await patch("/config/upload", upload);
+            if (traceroute !== (config.traceroute === "true"))
+                await patch("/config/traceroute", traceroute ? "true" : "false");
             reloadConfig();
             updateToast(t("dropdown.changes_applied"), "green", faCheck);
             close();
@@ -161,6 +168,15 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                             {tooFewTests && (
                                 <p className="optimal-values-note">{t("info.recommendations_error")}</p>
                             )}
+
+                            <div className="optimal-values-switch-row">
+                                <div className="optimal-values-switch-text">
+                                    <span>{t("optimal_values.trace_route")}</span>
+                                    <p>{t("optimal_values.trace_route_description")}</p>
+                                </div>
+                                <ToggleSwitch id="optimal-values-traceroute" checked={traceroute}
+                                              onChange={setTraceroute} label={t("optimal_values.trace_route")}/>
+                            </div>
                         </div>
                     </DialogBody>
                     <DialogFooter>

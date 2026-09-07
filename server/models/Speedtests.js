@@ -103,6 +103,14 @@ export default db.define("speedtests", {
         allowNull: true,
         defaultValue: null
     },
+    // The route a degraded run traced to its server, as a JSON table - see
+    // util/traceroute.js - or null for a run that was not traced, which is
+    // every run that went well. TEXT for the reason `error` below is.
+    hops: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+        defaultValue: null
+    },
     // TEXT, not STRING: this holds whatever the CLI printed to stderr, which
     // routinely runs past the 255 characters a VARCHAR gives it. sqlite ignores
     // the length, but MySQL in strict mode refused the insert - and it did so

@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Connection",
-      "changed": "changed"
+      "changed": "changed",
+      "route": "Route",
+      "route_hop": "Hop",
+      "route_address": "Address",
+      "route_latency": "Latency",
+      "route_no_reply": "No reply",
+      "route_lost": "{{count}} lost"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Optimal Values",
-    "use_recommended": "Use recommended"
+    "use_recommended": "Use recommended",
+    "trace_route": "Trace the route of degraded tests",
+    "trace_route_description": "When a test fails, falls under its baseline or misses the optimal ping, MySpeed traces the route to the test server and shows every hop in the test details."
   },
   "preferences": {
     "title": "Preferences",

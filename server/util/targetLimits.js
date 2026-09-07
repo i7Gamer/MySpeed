@@ -73,6 +73,21 @@ export const figureMeets = (figure, limit, higherIsBetter) => {
 const trimmedLatency = (ping) => parseFloat(ping.toFixed(LATENCY_DECIMALS));
 
 /**
+ * Whether a latency earns the good grade, judged as the screen prints it.
+ *
+ * The one spelling of "this ping is too slow" the server has: meetsLimits
+ * counts with it, and the hop diagnostics decide with it whether a successful
+ * run is worth tracing. Null for a latency nobody measured or an optimum
+ * nobody set - a question with no answer rather than a miss.
+ */
+export const latencyMeets = (ping, limit) => {
+    const measured = measuredPing(ping);
+    if (limit === null || limit === undefined || measured === null) return null;
+
+    return figureMeets(trimmedLatency(measured), limit, false);
+};
+
+/**
  * Whether a successful test met its target on every figure it measured.
  *
  * A figure with no optimum to judge against is not judged; neither is a latency
@@ -83,8 +98,8 @@ const trimmedLatency = (ping) => parseFloat(ping.toFixed(LATENCY_DECIMALS));
 export const meetsLimits = (entry, limits) => {
     const verdicts = [];
 
-    const ping = measuredPing(entry.ping);
-    if (limits.ping !== null && ping !== null) verdicts.push(figureMeets(trimmedLatency(ping), limits.ping, false));
+    const ping = latencyMeets(entry.ping, limits.ping);
+    if (ping !== null) verdicts.push(ping);
 
     const download = usableFigure(entry.download);
     if (limits.download !== null && download !== null) verdicts.push(figureMeets(download, limits.download, true));

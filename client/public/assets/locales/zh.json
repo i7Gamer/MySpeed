@@ -323,7 +323,13 @@
       "bufferbloat": "缓冲膨胀",
       "bufferbloat_value": "+{{increase}} 毫秒",
       "connection": "连接",
-      "changed": "已变更"
+      "changed": "已变更",
+      "route": "路由",
+      "route_hop": "跳",
+      "route_address": "地址",
+      "route_latency": "延迟",
+      "route_no_reply": "无响应",
+      "route_lost": "{{count}} 丢失"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "最佳值",
-    "use_recommended": "使用推荐值"
+    "use_recommended": "使用推荐值",
+    "trace_route": "为降级的测试追踪路由",
+    "trace_route_description": "当测试失败、低于基准线或未达到最佳 ping 时，MySpeed 会追踪到测试服务器的路由，并在测试详情中显示每一跳。"
   },
   "preferences": {
     "title": "偏好设置",

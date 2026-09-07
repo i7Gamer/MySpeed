@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} мс",
       "connection": "Соединение",
-      "changed": "изменился"
+      "changed": "изменился",
+      "route": "Маршрут",
+      "route_hop": "Хоп",
+      "route_address": "Адрес",
+      "route_latency": "Задержка",
+      "route_no_reply": "Нет ответа",
+      "route_lost": "{{count}} потеряно"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Оптимальные значения",
-    "use_recommended": "Использовать рекомендованные"
+    "use_recommended": "Использовать рекомендованные",
+    "trace_route": "Отслеживать маршрут при ухудшенных тестах",
+    "trace_route_description": "Когда тест не удаётся, падает ниже своего базового уровня или не достигает оптимального пинга, MySpeed отслеживает маршрут до тестового сервера и показывает каждый хоп в деталях теста."
   },
   "preferences": {
     "title": "Предпочтения",

@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Nasc",
-      "changed": "athraithe"
+      "changed": "athraithe",
+      "route": "Bealach",
+      "route_hop": "Léim",
+      "route_address": "Seoladh",
+      "route_latency": "Moill",
+      "route_no_reply": "Gan freagra",
+      "route_lost": "{{count}} caillte"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Luachanna Optamacha",
-    "use_recommended": "Úsáid molta"
+    "use_recommended": "Úsáid molta",
+    "trace_route": "Rianaigh bealach na dtástálacha lagaithe",
+    "trace_route_description": "Nuair a theipeann ar thástáil, nuair a thiteann sí faoina bunlíne nó nuair nach mbaineann sí an ping optamach amach, rianaíonn MySpeed an bealach chuig an bhfreastalaí tástála agus taispeánann sé gach léim i sonraí na tástála."
   },
   "preferences": {
     "title": "Roghanna",

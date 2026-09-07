@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} мс",
       "connection": "З'єднання",
-      "changed": "змінився"
+      "changed": "змінився",
+      "route": "Маршрут",
+      "route_hop": "Хоп",
+      "route_address": "Адреса",
+      "route_latency": "Затримка",
+      "route_no_reply": "Немає відповіді",
+      "route_lost": "{{count}} втрачено"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Оптимальні значення",
-    "use_recommended": "Використати рекомендовані"
+    "use_recommended": "Використати рекомендовані",
+    "trace_route": "Відстежувати маршрут для погіршених тестів",
+    "trace_route_description": "Коли тест не вдається, падає нижче своєї базової лінії або не досягає оптимального пінгу, MySpeed відстежує маршрут до тестового сервера та показує кожен хоп у деталях тесту."
   },
   "preferences": {
     "title": "Уподобання",

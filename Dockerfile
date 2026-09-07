@@ -53,7 +53,10 @@ FROM oven/bun:1.3.14-alpine
 # so there is nothing to purge afterwards.
 # su-exec drops privileges in the entrypoint, which is what lets the container
 # start as root just long enough to take ownership of an upgraded volume.
-RUN apk add --no-cache tzdata ca-certificates su-exec
+# iputils-tracepath is the route trace (util/traceroute.js): traceroute needs a
+# raw socket, which the unprivileged user the entrypoint drops to does not
+# have, and tracepath does the same job over UDP without one.
+RUN apk add --no-cache tzdata ca-certificates su-exec iputils-tracepath
 
 ENV TZ=Etc/UTC
 

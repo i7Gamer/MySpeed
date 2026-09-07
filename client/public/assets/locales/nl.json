@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Verbinding",
-      "changed": "gewijzigd"
+      "changed": "gewijzigd",
+      "route": "Route",
+      "route_hop": "Hop",
+      "route_address": "Adres",
+      "route_latency": "Latentie",
+      "route_no_reply": "Geen antwoord",
+      "route_lost": "{{count}} verloren"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Optimale waarden",
-    "use_recommended": "Gebruik aanbevolen"
+    "use_recommended": "Gebruik aanbevolen",
+    "trace_route": "Route van verslechterde tests traceren",
+    "trace_route_description": "Wanneer een test mislukt, onder zijn basislijn valt of de optimale ping mist, traceert MySpeed de route naar de testserver en toont elke hop in de testdetails."
   },
   "preferences": {
     "title": "Voorkeuren",

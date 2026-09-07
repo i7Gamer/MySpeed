@@ -33,7 +33,7 @@ const app = express.Router();
 // they do: the window says when the operator's evening begins, and this says
 // which evening - roughly where in the world the instance is being run from.
 const WITHHELD_FROM_UNTRUSTED = ["interface",
-    "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd", "timezone"];
+    "cron", "scheduleOffset", "passwordLevel", "quietHoursStart", "quietHoursEnd", "timezone", "traceroute"];
 
 app.get("/", password(true), async (req, res) => {
     const withhold = isUntrustedReader(req);

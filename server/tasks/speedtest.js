@@ -21,6 +21,7 @@ import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
 import { trackRound } from '../util/activeRound.js';
+import { diagnoseRun } from './hopDiagnostics.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -1251,6 +1252,13 @@ const executeTarget = async (target, type, retried = false) => {
             primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
 
+        // Last, after the row and the notification, because it takes seconds
+        // and neither should wait on it. Awaited all the same: the running
+        // latch and the round's own wait are what keep the next scheduled run
+        // off the line while the trace probes it. Decides for itself whether
+        // the run was degraded, and never throws - see diagnoseRun.
+        await diagnoseRun(testResult, target, {serverHost, ping, baselineBreached: baseline.baselineBreached ?? null});
+
         // How the member went, for the round's one completion event. The
         // retry above answers with its own attempt's outcome, so a member
         // that failed once and then measured reports the measurement.
@@ -1309,6 +1317,12 @@ const executeTarget = async (target, type, retried = false) => {
             primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+
+        // The failure this row records is final - the retry above has had its
+        // turn - so this is the run most worth a route. Unless the provider
+        // refused it, which rateLimited says: that fault is at the provider,
+        // and a trace to it would say nothing.
+        await diagnoseRun(testResult, target, {failed: true, rateLimited});
 
         return {failed: true};
     }

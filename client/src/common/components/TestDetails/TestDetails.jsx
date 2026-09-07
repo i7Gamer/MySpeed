@@ -14,6 +14,7 @@ import {
     roundsToZeroLatency
 } from "@/common/utils/FormatUtil";
 import FigureWithUnit from "@/common/components/FigureWithUnit";
+import RouteTable from "./RouteTable";
 import {
     bufferbloat, bufferbloatColour, connectionChange, getIconBySpeed, gradeForIncrease, isMeasured,
     jitterColour, latencyIncrease, measuredLatency, packetLossColour, readableFigure
@@ -684,6 +685,13 @@ export const TestDetails = ({test, previous, previousConnection, className = "",
                     </div>
                 </>
             )}
+
+            {/* The route a degraded run traced to its server, hop by hop -
+                outside the branch above, because a failed run is the one most
+                worth a route and must not lose it to the error block. Only a
+                run the server judged degraded carries one; see
+                server/tasks/hopDiagnostics.js. */}
+            <RouteTable hops={test.hops}/>
         </div>
     );
 };

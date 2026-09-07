@@ -38,5 +38,11 @@ export const stripConnectionIdentity = (row) => {
     if (PRIVATE_SERVER_PROVIDERS.has(row.provider)) row.serverHost = null;
     delete row.resultId;
 
+    // The route a degraded run traced: the LAN gateway and the provider's
+    // path, hop by hop - which is the whole of what this function withholds.
+    // Deleted like the result id, since absence is what an untraced row
+    // already looks like.
+    delete row.hops;
+
     return row;
 };

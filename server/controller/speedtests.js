@@ -98,8 +98,50 @@ export const getOne = async (id) => {
     let speedtest = await tests.findByPk(id);
     if (speedtest === null) return null;
     if (speedtest.error === null) delete speedtest.error;
-    return speedtest
+    return presentHops(speedtest);
 }
+
+/**
+ * The hop table as the column stores it: JSON, since a route is a list of
+ * hops and the row has one column for it. The one writer, so the reader
+ * below cannot disagree with it about the encoding.
+ */
+export const storedHops = (hops) => JSON.stringify(hops);
+
+/**
+ * The hop table as the API answers it: the array it was, or no key at all.
+ *
+ * Absent rather than null, the way a null error and a null resultId leave
+ * every list path: a row without a trace then looks like every row did
+ * before the column existed, and no reader has to learn a new null. A column
+ * holding anything that is not a table - a hand-edited backup, a truncated
+ * write - is dropped the same way rather than handed out as a string.
+ */
+export const presentHops = (row) => {
+    const hops = parsedHops(row.hops);
+
+    if (hops === null) delete row.hops;
+    else row.hops = hops;
+
+    return row;
+};
+
+/** The stored column as the array it holds, or null for no table and for anything that is not one. */
+export const parsedHops = (stored) => {
+    if (stored == null) return null;
+
+    try {
+        const hops = JSON.parse(stored);
+        return Array.isArray(hops) ? hops : null;
+    } catch {
+        return null;
+    }
+};
+
+/** Writes a traced route onto its row. */
+export const setHops = async (id, hops) => {
+    await tests.update({hops: storedHops(hops)}, {where: {id}});
+};
 
 /**
  * The whole history, one page at a time, newest first.
@@ -132,6 +174,7 @@ export const listPages = async function* (pageSize = EXPORT_PAGE_ROWS) {
         for (const row of rows) {
             if (row.error === null) delete row.error;
             if (row.resultId === null) delete row.resultId;
+            presentHops(row);
 
             // The column CSV_COLUMNS has promised since the dashboard export
             // gained it, and which every backup CSV wrote as '""' on every
@@ -226,6 +269,7 @@ export const listTests = async (afterId, limit, range = null, after = null, targ
     for (let dbEntry of dbEntries) {
         if (dbEntry.error === null) delete dbEntry.error;
         if (dbEntry.resultId === null) delete dbEntry.resultId;
+        presentHops(dbEntry);
     }
 
     return dbEntries;
@@ -508,6 +552,13 @@ export const importTests = async (data) => {
         // backup, and the restore then silently discards exactly the
         // overlapping week. Left to the database, nothing collides.
         const {id, targetId, targetName, ...row} = entry;
+
+        // The JSON export writes the hop table as the array the API answers,
+        // and bulkCreate would hand that array to a TEXT column as whatever
+        // the dialect makes of it. Stored the way the trace stores it, or
+        // not at all - a backup carries no other shape of it worth keeping.
+        if (Array.isArray(row.hops)) row.hops = storedHops(row.hops);
+        else delete row.hops;
 
         // As unmeasured, not as an error: the row is the history somebody is
         // restoring, and one poisoned figure must not cost the measurements
@@ -1069,7 +1120,7 @@ export const getLatest = async (targetId = undefined) => {
     if (latest === null) return undefined;
     if (latest.error === null) delete latest.error;
     if (latest.resultId === null) delete latest.resultId;
-    return latest;
+    return presentHops(latest);
 }
 
 /**
@@ -1100,7 +1151,9 @@ export const getLatest = async (targetId = undefined) => {
 export const latestOfTargets = async (targetIds) => {
     if (targetIds.length === 0) return undefined;
 
-    return await tests.findOne({where: {targetId: {[Op.in]: targetIds}}, order: LIST_ORDER}) ?? undefined;
+    const latest = await tests.findOne({where: {targetId: {[Op.in]: targetIds}}, order: LIST_ORDER});
+
+    return latest === null ? undefined : presentHops(latest);
 }
 
 // Named field by field rather than spread, so an export is a deliberate choice
@@ -1151,6 +1204,9 @@ export const exportTests = async (range, target = undefined) => {
     // column guard in retentionAndExport asked why.
     resultId: entry.resultId,
     targetName: names.get(entry.targetId) ?? null,
-    error: entry.error
+    error: entry.error,
+    // Named on every row, null where nothing was traced: the export names
+    // every column the model has, and the CSV writes the array as JSON text.
+    hops: parsedHops(entry.hops)
 }));
 };

@@ -323,7 +323,13 @@
       "bufferbloat": "Bufferbloat",
       "bufferbloat_value": "+{{increase}} ms",
       "connection": "Anslutning",
-      "changed": "ändrad"
+      "changed": "ändrad",
+      "route": "Rutt",
+      "route_hop": "Hopp",
+      "route_address": "Adress",
+      "route_latency": "Latens",
+      "route_no_reply": "Inget svar",
+      "route_lost": "{{count}} förlorade"
     }
   },
   "errors": {
@@ -690,7 +696,9 @@
   },
   "optimal_values": {
     "title": "Optimala värden",
-    "use_recommended": "Använd rekommenderade"
+    "use_recommended": "Använd rekommenderade",
+    "trace_route": "Spåra rutten för försämrade tester",
+    "trace_route_description": "När ett test misslyckas, hamnar under sin baslinje eller missar det optimala pinget, spårar MySpeed rutten till testservern och visar varje hopp i testdetaljerna."
   },
   "preferences": {
     "title": "Preferenser",

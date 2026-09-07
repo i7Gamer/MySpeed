@@ -106,6 +106,30 @@
   font-size: $dialog-hint
   line-height: 1.5
 
+// The trace switch, shaped like the preferences' switch rows: the text on
+// the left, the toggle on the right, one bordered row.
+.optimal-values-switch-row
+  display: flex
+  align-items: center
+  justify-content: space-between
+  gap: 1rem
+  margin: 1.25rem 0 0
+  padding: 0.5rem 0.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.625rem
+
+.optimal-values-switch-text
+  display: flex
+  flex-direction: column
+  gap: 0.15rem
+  font-size: $dialog-body
+
+  p
+    margin: 0
+    color: $subtext
+    font-size: $dialog-hint
+    line-height: 1.4
+
 @media screen and (max-width: 600px)
   .optimal-values-content .optimal-values-speeds
     flex-direction: column
