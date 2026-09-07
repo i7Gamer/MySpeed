@@ -10,6 +10,7 @@ import * as targetsController from './targets.js';
 import db from '../config/database.js';
 import { isHopTable } from '../util/traceroute.js';
 import * as connectionChanges from './connectionChanges.js';
+import { storableAddress, storableIsp } from '../util/connectionChange.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
 const MS_PER_DAY = 86400000;
@@ -627,6 +628,13 @@ export const importTests = async (data) => {
         for (const column of NON_NEGATIVE_COLUMNS)
             if (typeof row[column] === "number" && row[column] < 0) row[column] = null;
 
+        // The connection identity as the change log reads it back - see
+        // storableAddress. A run's parser already answers this shape; the
+        // file hands the columns through as they were written, and bulkCreate
+        // validates nothing.
+        row.isp = storableIsp(row.isp);
+        row.externalIp = storableAddress(row.externalIp);
+
         // The file's targetId does not go through either, and it is dropped
         // rather than trusted: it is an id of the instance that wrote the file,
         // and on an instance that already measures its own lines it did not
@@ -1122,6 +1130,9 @@ export const listStatisticsByTarget = async (range, ids, options = {}) => {
 export const deleteOne = async (id) => {
     if (await getOne(id) === null) return false;
     await tests.destroy({where: {id: id}});
+    // And the address change that test saw, for the reason deleteTests and
+    // removeOld take the log with the history.
+    await connectionChanges.removeForTest(id);
     return true;
 }
 

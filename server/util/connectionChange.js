@@ -48,6 +48,19 @@ const named = (value) => typeof value === "string" && value.trim() !== "";
 export const normalisedIsp = (isp) => named(isp) ? isp.trim().replace(/\s+/g, " ").toLowerCase() : null;
 
 /**
+ * The address a row may store, or null: an IP literal, trimmed, and nothing
+ * else. A run's parser already nulls what the provider left blank, but an
+ * imported history passes the column through as written - and a stored ""
+ * or "unknown" is picked as "the newest earlier address of this family" by
+ * shape, then refused as a comparison, so the real previous address behind
+ * it is never reached and one rotation goes unlogged.
+ */
+export const storableAddress = (ip) => addressFamily(ip) === 0 ? null : ip.trim();
+
+/** The provider name a row may store, or null: non-blank text, trimmed. */
+export const storableIsp = (isp) => named(isp) ? isp.trim() : null;
+
+/**
  * What changed between the run just written and the connection seen before
  * it, or null for nothing.
  *

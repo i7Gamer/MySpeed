@@ -8,6 +8,10 @@
  * child was asked for `/api/nodes/%35/config`, which its SPA fallback
  * answered with the index page.
  */
-const NODE_PREFIX = /^\/api\/nodes\/[^/?#]+/;
+// Case-insensitive, as Express's own routing is: a request spelled
+// /API/nodes/1/config reaches the proxy handler, and a fold that then did
+// not match asked the child for /API/nodes/1/config - which the child's
+// proxy, if it has a node 1 of its own, sends on again, unshortened.
+const NODE_PREFIX = /^\/api\/nodes\/[^/?#]+/i;
 
 export const childPath = (path) => path.replace(NODE_PREFIX, "/api");

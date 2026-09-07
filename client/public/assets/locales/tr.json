@@ -853,7 +853,7 @@
     "delete_confirm": {
       "title": "Bu belirteç iptal edilsin mi?",
       "description": "\"{{name}}\" kullanan hiçbir şey artık test başlatamayacak. Bu geri alınamaz.",
-      "yes": "İptal et"
+      "yes": "Geri çek"
     }
   },
   "connections": {

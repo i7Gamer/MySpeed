@@ -1,7 +1,7 @@
 import * as config from '../controller/config.js';
 import * as tests from '../controller/speedtests.js';
 import { getByMode } from '../controller/servers.js';
-import { degradedRun, runTrace, traceHost } from '../util/traceroute.js';
+import { degradedRun, isHopTable, runTrace, traceHost } from '../util/traceroute.js';
 import { resolveLimits } from '../util/targetLimits.js';
 import { toErrorMessage } from '../util/helpers.js';
 
@@ -71,6 +71,15 @@ export const diagnoseRun = async (test, target,
 
         const hops = await trace(host);
         if (hops === null) return null;
+
+        // The readers - the pane, both exports, the import - all run the
+        // table through isHopTable and drop one it refuses without a word.
+        // A table written that they will not read is logged here as a
+        // success and then invisible, so it is refused on the way in.
+        if (!isHopTable(hops)) {
+            log.log(`Test #${test.id}: not traced (${reason}), the trace to ${host} produced no readable table`);
+            return null;
+        }
 
         await save(test.id, hops);
         log.log(`Test #${test.id}: traced ${hops.length} hops to ${host} (${reason})`);

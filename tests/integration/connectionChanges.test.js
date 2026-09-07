@@ -225,6 +225,19 @@ describe("forgetting", () => {
 
         assert.equal(await model.count(), 0);
     });
+
+    it("goes with the one test that saw it, and no other", async () => {
+        await seedTests(server.tests, [{created: at(2), externalIp: "b"}, {created: at(1), externalIp: "c"}]);
+        const [older, newer] = await Promise.all([seen({created: at(2)}), seen({created: at(1)})]);
+        await model.bulkCreate([
+            {targetId: 3, testId: older.id, created: at(2), provider: "ookla", previousIp: "a", ip: "b"},
+            {targetId: 3, testId: newer.id, created: at(1), provider: "ookla", previousIp: "b", ip: "c"}
+        ]);
+
+        assert.equal(await speedtests.deleteOne(newer.id), true);
+
+        assert.deepEqual((await model.findAll()).map((row) => row.ip), ["b"]);
+    });
 });
 
 describe("the route", () => {

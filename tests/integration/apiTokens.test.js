@@ -237,3 +237,19 @@ describe("tokens in the backup", () => {
         assert.equal((body.match(/tokens\.replaceAll\(/g) ?? []).length, 1, "the tokens are restored twice");
     });
 });
+
+/**
+ * A reset revokes every session and drops the password; a token that
+ * survived it went on starting tests on an instance that no longer asked
+ * for a password at all. Read as source, the way the import's transaction
+ * is above and the reset's own is in factoryResetAtomicity.test.js: firing
+ * a real reset tears down the timers this harness shares.
+ */
+describe("a factory reset", () => {
+    it("revokes every token, inside the reset's own transaction", () => {
+        const body = bodyOf(readSource("server/controller/config.js"), "export const factoryReset");
+        const transaction = bodyOf(body, "await db.transaction(async (transaction) => {");
+
+        assert.match(transaction, /tokens\.replaceAll\(\[\], transaction\)/);
+    });
+});

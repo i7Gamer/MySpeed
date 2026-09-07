@@ -2,7 +2,7 @@ import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import {
     IPV4, IPV6, IP_CHANGED_EVENT, IP_CHANGED_MESSAGE_FIELD, SEND_IP_CHANGED_FIELD,
-    addressFamily, describeChange, normalisedIsp
+    addressFamily, describeChange, normalisedIsp, storableAddress, storableIsp
 } from "../../server/util/connectionChange.js";
 import { connectionSummary, plainDefaults } from "../../server/util/notificationLocale.js";
 import {
@@ -50,6 +50,21 @@ describe("normalisedIsp", () => {
     it("answers null for nothing", () => {
         for (const value of [null, undefined, "", "   ", 42])
             assert.equal(normalisedIsp(value), null, JSON.stringify(value));
+    });
+});
+
+describe("what a row may store", () => {
+    it("keeps an address, trimmed, and nothing that is not one", () => {
+        assert.equal(storableAddress(" 203.0.113.10 "), "203.0.113.10");
+        assert.equal(storableAddress("2001:db8::1"), "2001:db8::1");
+        for (const value of [null, undefined, "", "   ", "unknown", "203.0.113", 42])
+            assert.equal(storableAddress(value), null, JSON.stringify(value));
+    });
+
+    it("keeps a provider's name, trimmed, and nothing blank", () => {
+        assert.equal(storableIsp(" Old Net "), "Old Net");
+        for (const value of [null, undefined, "", "   ", 42])
+            assert.equal(storableIsp(value), null, JSON.stringify(value));
     });
 });
 

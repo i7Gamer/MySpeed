@@ -86,6 +86,11 @@ describe("tokenNameProblem", () => {
             assert.equal(typeof tokenNameProblem(name), "string", String(name));
     });
 
+    it("refuses a name carrying a control character, which the log would print", () => {
+        for (const name of ["Home\nAssistant", "Home\rAssistant", "Home\x00Assistant", "Home\x7fAssistant"])
+            assert.equal(typeof tokenNameProblem(name), "string", JSON.stringify(name));
+    });
+
     it("refuses a name past the limit, counted after trimming", () => {
         assert.equal(tokenNameProblem("a".repeat(TOKEN_NAME_LIMIT)), null);
         assert.equal(typeof tokenNameProblem("a".repeat(TOKEN_NAME_LIMIT + 1)), "string");

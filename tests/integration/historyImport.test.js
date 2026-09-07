@@ -165,6 +165,25 @@ describe("importing a history", () => {
 
     // Zero is deliberately not impossible: a line that carried nothing in the
     // time allowed is a real reading, and what an outage looks like.
+    // The change log picks "the newest earlier address of this family" by
+    // shape, and a stored "" or "unknown" shadowed the real one behind it.
+    it("stores a connection identity only where the file holds one", async () => {
+        await testModel.destroy({where: {}});
+
+        const rows = [
+            {...row(0), externalIp: " 203.0.113.10 ", isp: " Old Net "},
+            {...row(1), externalIp: "", isp: ""},
+            {...row(2), externalIp: "unknown", isp: "   "}
+        ];
+
+        const {status} = await importHistory(rows);
+        assert.equal(status, 200);
+
+        const stored = await testModel.findAll({raw: true, order: [["created", "ASC"]]});
+        assert.deepEqual(stored.map((entry) => [entry.externalIp, entry.isp]),
+            [["203.0.113.10", "Old Net"], [null, null], [null, null]]);
+    });
+
     it("keeps a measured zero", async () => {
         await testModel.destroy({where: {}});
 

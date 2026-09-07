@@ -157,6 +157,33 @@ describe("the API tokens dialog", () => {
         assert.match(example.textContent, /\/api\/speedtests\/run/);
     });
 
+    // The dashboard routes its requests to the node it is showing; a token
+    // issued that way belonged to the node while the printed request named
+    // this instance, which does not hold it.
+    it("talks to this instance even while a node is selected", async () => {
+        scripted();
+        const asked = [];
+        const scriptedFetch = globalThis.fetch;
+        globalThis.fetch = (url, init) => { asked.push(String(url)); return scriptedFetch(url, init); };
+        window.localStorage.setItem("currentNode", "5");
+
+        try {
+            const document = await mount();
+            await typeName(document, "Kitchen tablet");
+            click(document.querySelector("#api-token-create"));
+            await settle();
+            await settle();
+
+            assert.ok(asked.length >= 2, "nothing was requested");
+            for (const url of asked) {
+                assert.match(url, /\/api\/tokens/, url);
+                assert.doesNotMatch(url, /\/api\/nodes\//, url);
+            }
+        } finally {
+            window.localStorage.removeItem("currentNode");
+        }
+    });
+
     it("refuses to send an empty name", async () => {
         const {writes} = scripted();
         const document = await mount();

@@ -59,4 +59,14 @@ describe("the places a node name is written", () => {
         assert.match(problem, /nodeNameProblem\(row\.name\)/,
             "a restored node row is held to a different rule than a created one");
     });
+
+    // The url and the password are the same column type as the name, and a
+    // restore that held only the name to it refused the whole backup on
+    // ER_DATA_TOO_LONG with nothing naming the row.
+    it("hold the url and the password to the same column", () => {
+        const problem = bodyOf(readSource("server/controller/config.js"), "const nodeProblem = ");
+
+        assert.match(problem, /row\.url\.length > NODE_NAME_LIMIT/);
+        assert.match(problem, /row\.password\.length > NODE_NAME_LIMIT/);
+    });
 });

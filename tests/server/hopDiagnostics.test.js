@@ -107,6 +107,14 @@ describe("diagnoseRun", () => {
         assert.deepEqual(calls.traced, []);
     });
 
+    it("writes nothing for a table the readers would refuse, and says so", async () => {
+        const {calls, deps} = harness({hops: [{hop: 0, address: "10.0.0.1", rtt: [1], lost: 0}]});
+
+        assert.equal(await diagnoseRun(test, target, {failed: true}, deps), null);
+        assert.deepEqual(calls.saved, []);
+        assert.ok(calls.logged.some((line) => /no readable table/.test(line)), calls.logged.join("\n"));
+    });
+
     it("writes nothing when the trace produced no table", async () => {
         const {calls, deps} = harness({hops: null});
 

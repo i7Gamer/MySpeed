@@ -69,6 +69,11 @@ export const parseBearer = (header) => {
 export const tokenNameProblem = (name) => {
     if (typeof name !== "string" || name.trim() === "") return "A token needs a name";
     if (name.trim().length > TOKEN_NAME_LIMIT) return `A token's name must be ${TOKEN_NAME_LIMIT} characters or fewer`;
+    // The name is printed into the log when the token starts a run, and a
+    // name carrying a line break forges a log line; a node password is
+    // refused the same characters for a smaller blast radius.
+    // eslint-disable-next-line no-control-regex
+    if (/[\x00-\x1f\x7f]/.test(name)) return "A token's name must not contain a control character";
 
     return null;
 };

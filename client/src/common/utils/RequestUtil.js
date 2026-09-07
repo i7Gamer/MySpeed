@@ -197,6 +197,25 @@ export const deleteRequest = async (path, body = {}, headers = {}) => {
     return await request(path, "DELETE", body, headers);
 }
 
+/*
+ * The same three against this instance alone, whichever node the dashboard
+ * is showing. What they manage belongs to the instance the page was reached
+ * on - an API token issued through the proxy would belong to the node, and
+ * the request the dialog prints beside it would name an instance that does
+ * not hold it.
+ */
+export const localJsonRequest = async (path, headers = {}) => {
+    const response = await baseRequest(path, "GET", null, headers);
+    await assertOk(response, path);
+    return await response.json();
+}
+
+export const localPostRequest = async (path, body = {}, headers = {}) =>
+    await baseRequest(path, "POST", body, headers);
+
+export const localDeleteRequest = async (path, body = {}, headers = {}) =>
+    await baseRequest(path, "DELETE", body, headers);
+
 /**
  * Downloads a file from the response output.
  *

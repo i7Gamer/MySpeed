@@ -63,6 +63,22 @@ describe("a context menu near the viewport's edge", () => {
             {left: 1000 - MENU.width - VIEWPORT_MARGIN, top: 800 - MENU.height - VIEWPORT_MARGIN});
     });
 
+    it("is clamped again when the viewport shrinks under it", async () => {
+        window.innerWidth = 1000;
+        window.innerHeight = 800;
+
+        assert.deepEqual(await open({x: 600, y: 500}), {left: 600, top: 500});
+
+        window.innerWidth = 700;
+        window.innerHeight = 600;
+        window.dispatchEvent(new window.Event("resize"));
+        await settle();
+
+        const menu = window.document.querySelector(".context-menu");
+        assert.deepEqual({left: parseInt(menu.style.left), top: parseInt(menu.style.top)},
+            {left: 700 - MENU.width - VIEWPORT_MARGIN, top: 600 - MENU.height - VIEWPORT_MARGIN});
+    });
+
     it("stops at the margin rather than leaving by the other side", async () => {
         window.innerWidth = MENU.width - 50;
         window.innerHeight = MENU.height - 50;

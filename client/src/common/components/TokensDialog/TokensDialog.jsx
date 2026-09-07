@@ -6,7 +6,7 @@ import "./styles.sass";
 import React, {useContext, useState} from "react";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {formatDateTime, formatDay} from "@/common/utils/FormatUtil";
-import {assertOk, deleteRequest, jsonRequest, postRequest, RequestError} from "@/common/utils/RequestUtil";
+import {assertOk, localDeleteRequest, localJsonRequest, localPostRequest, RequestError} from "@/common/utils/RequestUtil";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
@@ -26,6 +26,11 @@ import {withBasePath} from "@/common/utils/BasePath";
  * The request a token is for, spelled out for pasting. The origin is this
  * page's, since that is the address the operator reached the instance on,
  * and the path carries the base path the way every request here does.
+ *
+ * Which is also why every request this dialog makes is pinned to this
+ * instance rather than routed to the node the dashboard is showing: a token
+ * issued through the proxy would belong to that node, and the line printed
+ * here would name an instance that does not hold it.
  */
 export const triggerExample = (token, origin = window.location.origin) =>
     `curl -X POST -H "Authorization: Bearer ${token}" ${origin}${withBasePath("/api/speedtests/run")}`;
@@ -45,7 +50,7 @@ export const TokensDialog = ({open, onClose}) => {
 
     const load = async () => {
         try {
-            setTokens(await jsonRequest("/tokens"));
+            setTokens(await localJsonRequest("/tokens"));
         } catch (e) {
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
@@ -63,7 +68,7 @@ export const TokensDialog = ({open, onClose}) => {
         setSaving(true);
 
         try {
-            const response = await assertOk(await postRequest("/tokens", {name: name.trim()}), "tokens");
+            const response = await assertOk(await localPostRequest("/tokens", {name: name.trim()}), "tokens");
             setIssued(await response.json());
             setName("");
             await load();
@@ -84,7 +89,7 @@ export const TokensDialog = ({open, onClose}) => {
         if (!confirmed) return;
 
         try {
-            await assertOk(await deleteRequest(`/tokens/${row.id}`), "tokens");
+            await assertOk(await localDeleteRequest(`/tokens/${row.id}`), "tokens");
             if (issued?.id === row.id) setIssued(null);
             await load();
             updateToast(t("tokens.removed"), "green", faCheck);
@@ -100,8 +105,9 @@ export const TokensDialog = ({open, onClose}) => {
             updateToast(t("tokens.copied"), "green", faCheck);
         } catch {
             // No clipboard on this page (plain http, or a browser that
-            // refuses); the secret is on screen to select by hand.
-            updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+            // refuses); the secret is on screen to select by hand. Nothing
+            // was being saved, so the "could not be saved" toast this used
+            // to show was a false alarm about a token that is fine.
         }
     };
 

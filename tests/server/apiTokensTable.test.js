@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { DataTypes } from "sequelize";
-import { bodyOf, readSource, withoutJsComments } from "../helpers/source.js";
+import { bodyOf, listSources, readSource, withoutJsComments } from "../helpers/source.js";
 import apiTokens from "../../server/models/ApiTokens.js";
 import { up } from "../../server/migrations/0019-add-api-tokens.js";
 import { SCOPE_RUN } from "../../server/controller/tokens.js";
@@ -152,9 +152,13 @@ describe("the routes a token opens", () => {
     });
 
     it("are the only mounts that read a token", () => {
-        const others = ["config", "targets", "storage", "nodes", "integrations", "session", "recommendations", "system"]
-            .map((name) => readSource(`server/routes/${name}.js`));
+        // Every route file there is, read off the directory rather than
+        // listed here: a list named eight of fourteen, so a token gate
+        // added to any of the other six left this green.
+        const others = listSources("server/routes").filter((name) => name !== "speedtests.js");
+        assert.ok(others.length >= 10, `only ${others.length} route files were found`);
 
-        for (const other of others) assert.doesNotMatch(other, /tokenOrPassword/);
+        for (const other of others)
+            assert.doesNotMatch(readSource(`server/routes/${other}`), /tokenOrPassword/, other);
     });
 });

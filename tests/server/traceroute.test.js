@@ -183,6 +183,24 @@ describe("parseTrace", () => {
         assert.deepEqual(parseTrace(null), []);
     });
 
+    // What the parser writes is what the readers will read: a table past
+    // either ceiling was stored, logged as traced, and shown nowhere.
+    it("keeps no more latencies per hop than a table may hold", () => {
+        const lines = Array.from({length: MAX_RTT_PER_HOP + 1}, (unused, index) =>
+            ` 1:  192.168.1.1  ${index + 1}.000ms`).join("\n");
+        const [hop] = parseTrace(lines);
+
+        assert.equal(hop.rtt.length, MAX_RTT_PER_HOP);
+        assert.ok(isHopTable([hop]));
+    });
+
+    it("drops a hop numbered zero, which is the tool naming its own interface", () => {
+        const hops = parseTrace(" 0  10.0.0.1  0.1 ms\n 1  192.168.1.1  0.5 ms\n");
+
+        assert.deepEqual(hops.map((hop) => hop.hop), [1]);
+        assert.ok(isHopTable(hops));
+    });
+
     it("reads no more than the hop ceiling", () => {
         const lines = Array.from({length: MAX_HOPS + 5}, (_, i) => ` ${i + 1}  10.0.0.${i + 1}  1 ms`);
 
@@ -503,6 +521,37 @@ describe("runTrace", () => {
         const hops = await pending;
 
         assert.equal(hops.length, 1);
+    });
+
+    // Linux offers two tools, and a first that ends on its own with no table
+    // falls through to the second - so a deadline handed to each tool let one
+    // trace hold the round's latch for two of them.
+    it("shares one deadline between the tools it falls through", async () => {
+        let second;
+        const spawn = fakeSpawn({
+            traceroute: (child) => setTimeout(() => child.finish("", 0), 30),
+            tracepath: (child) => { second = child; }
+        });
+
+        const started = Date.now();
+        const pending = runTrace("fra.example.net", {spawn, platform: "linux", timeoutMs: 50});
+
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        assert.ok(second, "the second tool was never asked");
+        assert.deepEqual(second.signals, ["SIGTERM"], "the second tool was given a whole deadline of its own");
+
+        second.finish("", null);
+        assert.equal(await pending, null);
+        assert.ok(Date.now() - started < 100, "the trace outlived its one deadline");
+    });
+
+    it("spawns no second tool once the deadline has passed", async () => {
+        const spawn = fakeSpawn({
+            traceroute: (child) => setTimeout(() => child.finish("", 0), 30)
+        });
+
+        assert.equal(await runTrace("fra.example.net", {spawn, platform: "linux", timeoutMs: 20}), null);
+        assert.deepEqual(spawn.calls.map((call) => call.file), ["traceroute"]);
     });
 
     it("answers null for a deadline that passed before any hop", async () => {

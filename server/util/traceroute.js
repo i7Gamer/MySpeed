@@ -233,6 +233,14 @@ const addressIn = (rest) => {
 };
 
 /**
+ * The most latencies one hop may carry. Every tool probes a hop a handful
+ * of times - three by default, one under the flags used here - and the
+ * parser merges a hop's lines and cuts at this, so a hop past it is a
+ * hand-edited file, and the pane draws a span per latency.
+ */
+export const MAX_RTT_PER_HOP = 10;
+
+/**
  * The tool's output as a table.
  *
  * `[{hop, address, rtt, lost}]` in the order printed: the address that
@@ -252,6 +260,10 @@ export const parseTrace = (output) => {
         const number = Number(match[1]);
         const rest = match[2];
 
+        // A hop is numbered from one; a zero is a tool printing its own
+        // interface, and isHopTable refuses it - so it must not be produced.
+        if (number <= 0) continue;
+
         const rtt = [...rest.matchAll(LATENCY)]
             .map(([, under, figure]) => under ? UNDER_ONE_MS : Number(figure.replace(",", ".")));
         const address = addressIn(rest);
@@ -264,7 +276,10 @@ export const parseTrace = (output) => {
         const known = byNumber.get(number);
 
         if (known) {
-            known.rtt.push(...rtt);
+            // Capped where the readers cap it: tracepath prints one line per
+            // probe, and a hop that answered eleven of them is a table the
+            // pane, both exports and the import all refuse.
+            known.rtt.push(...rtt.slice(0, Math.max(0, MAX_RTT_PER_HOP - known.rtt.length)));
             known.lost += lost;
             if (known.address === null) known.address = address;
             continue;
@@ -272,7 +287,7 @@ export const parseTrace = (output) => {
 
         if (hops.length >= MAX_HOPS) break;
 
-        const hop = {hop: number, address, rtt, lost};
+        const hop = {hop: number, address, rtt: rtt.slice(0, MAX_RTT_PER_HOP), lost};
         hops.push(hop);
         byNumber.set(number, hop);
     }
@@ -281,14 +296,6 @@ export const parseTrace = (output) => {
 };
 
 const isCount = (value) => Number.isInteger(value) && value >= 0;
-
-/**
- * The most latencies one hop may carry. Every tool probes a hop a handful
- * of times - three by default, one under the flags used here - and the
- * parser merges a hop's lines, so a hop past this is a hand-edited file,
- * and the pane draws a span per latency.
- */
-export const MAX_RTT_PER_HOP = 10;
 
 /**
  * Whether a value is a table the parser could have produced - and so one
@@ -409,11 +416,20 @@ export const runTrace = async (host, {
 } = {}) => {
     if (!isTraceableHost(host)) return null;
 
+    // One deadline for the whole trace, not one per tool. Linux offers two
+    // tools, and since a tool that ends on its own having printed nothing
+    // falls through to the next, a per-tool deadline let one trace spend
+    // two of them - and the round's latch with it.
+    const deadline = Date.now() + timeoutMs;
+
     for (const command of traceCommands(host, platform)) {
         if (missingTools.has(command.file)) continue;
         if (isShuttingDown()) return null;
 
-        const {output, missing, stopped} = await runTool(command, {spawn, timeoutMs, track, untrack});
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return null;
+
+        const {output, missing, stopped} = await runTool(command, {spawn, timeoutMs: remaining, track, untrack});
 
         if (missing) {
             missingTools.add(command.file);

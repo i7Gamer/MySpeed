@@ -19,7 +19,9 @@ import FigureWithUnit from "@/common/components/FigureWithUnit";
  * on the way in and on the way out, but the pane also draws what a proxied
  * node sends, and one hop it cannot draw must not cost the rest of the pane.
  */
-const drawable = (hop) => hop !== null && typeof hop === "object" && Array.isArray(hop.rtt);
+// The number as well as the latencies: the rows are keyed on it, and two
+// hops without one collide on the same key.
+const drawable = (hop) => hop !== null && typeof hop === "object" && Number.isInteger(hop.hop) && Array.isArray(hop.rtt);
 
 const RouteTable = ({hops}) => {
     const rows = Array.isArray(hops) ? hops.filter(drawable) : [];
@@ -40,7 +42,7 @@ const RouteTable = ({hops}) => {
                     <tbody>
                         {rows.map((hop) => (
                             <tr key={hop.hop}
-                                className={hop.lost > 0 || hop.address === null ? "detail-hop-lost" : undefined}>
+                                className={hop.lost > 0 || hop.address == null ? "detail-hop-lost" : undefined}>
                                 <td>{hop.hop}</td>
                                 <td>{hop.address ?? t("test.details.route_no_reply")}</td>
                                 <td>

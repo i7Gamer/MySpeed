@@ -47,6 +47,14 @@ describe("the path the child is asked for", () => {
         assert.equal(childPath("/api/nodes/%35/config"), "/api/config");
     });
 
+    // Express routes case-insensitively, so this spelling reaches the proxy
+    // handler; left unfolded, two instances configured as each other's node
+    // sent it back and forth unshortened.
+    it("folds it however the prefix was cased", () => {
+        assert.equal(childPath("/API/nodes/5/config"), "/api/config");
+        assert.equal(childPath("/api/Nodes/5/config"), "/api/config");
+    });
+
     it("folds only the prefix that opens the path", () => {
         assert.equal(childPath("/api/nodes/5/config?next=/api/nodes/5/x"), "/api/config?next=/api/nodes/5/x");
     });

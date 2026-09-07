@@ -8,7 +8,7 @@ import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
 import connectionChanges from '../models/ConnectionChanges.js';
 import { asDataObject, triggerEvent, withoutSecrets } from './integrations.js';
-import { nodeNameProblem } from '../util/nodeName.js';
+import { NODE_NAME_LIMIT, nodeNameProblem } from '../util/nodeName.js';
 import bcrypt from 'bcryptjs';
 import * as timer from '../tasks/timer.js';
 import cron from 'cron-validator';
@@ -252,6 +252,12 @@ const nodeProblem = (row) => {
 
     if (!ALLOWED_PROTOCOLS.has(parsed.protocol)) return "A node's url must be http or https";
 
+    // The three text columns of a node row are one type - see nodeName.js -
+    // and the name was the only one held to it: a url or a password past it
+    // raised ER_DATA_TOO_LONG inside the restore, refusing the whole backup
+    // with nothing naming the row.
+    if (row.url.length > NODE_NAME_LIMIT) return `A node's url must be ${NODE_NAME_LIMIT} characters or fewer`;
+
     // Absent is legitimate - the model defaults it - but present and the
     // wrong shape, or longer than the column, is a hand-edited or corrupted
     // file. The same judge the routes use, so the limit has one home.
@@ -272,6 +278,9 @@ const nodeProblem = (row) => {
         // eslint-disable-next-line no-control-regex
         if (/[\x00-\x1F\x7F]/.test(row.password))
             return "A node's password must not contain a control character";
+
+        if (row.password.length > NODE_NAME_LIMIT)
+            return `A node's password must be ${NODE_NAME_LIMIT} characters or fewer`;
     }
 
     return null;
@@ -1115,6 +1124,10 @@ export const factoryReset = async () => {
         await targetsModel.destroy({where: {}, transaction});
         // The log of address changes: identity, which a reset ends too.
         await connectionChanges.destroy({where: {}, transaction});
+        // And every API token: a reset that revokes every session and drops
+        // the password while a leaked token still starts tests - on an
+        // instance that no longer even asks for a password - is not a reset.
+        await tokens.replaceAll([], transaction);
     });
 
     // The reset put the password back to the unprotected sentinel without going

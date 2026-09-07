@@ -89,8 +89,15 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
         return () => document.removeEventListener("keydown", handleKeyDown);
     }, [onClose, focusedIndex, actionableItems, handleItemClick]);
 
+    // Clamped when it opens and again whenever the viewport changes under
+    // it: the menu is fixed to the viewport, so a phone turned or a window
+    // narrowed with the menu open left it placed for the old size.
     useEffect(() => {
-        if (menuRef.current && position) {
+        if (!menuRef.current || !position) return undefined;
+
+        const clamp = () => {
+            if (!menuRef.current) return;
+
             const rect = menuRef.current.getBoundingClientRect();
             const viewportWidth = window.innerWidth;
             const viewportHeight = window.innerHeight;
@@ -107,7 +114,12 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
             }
 
             setAdjustedPosition({x: adjustedX, y: adjustedY});
-        }
+        };
+
+        clamp();
+        window.addEventListener("resize", clamp);
+
+        return () => window.removeEventListener("resize", clamp);
     }, [position]);
 
     /**

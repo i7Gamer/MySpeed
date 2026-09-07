@@ -116,6 +116,15 @@ export const removeAll = async () => {
 };
 
 /**
+ * The change one test saw, when that test is deleted on its own. The log is
+ * kept apart from the tests but forgotten with them, and deleting the two
+ * runs that showed a rotation one at a time left both addresses in it.
+ */
+export const removeForTest = async (testId) => {
+    await model.destroy({where: {testId}});
+};
+
+/**
  * Gone with the tests the retention sweep forgets. The same comparison the
  * sweep uses on the tests, on every dialect: the stored instant is an ISO
  * string, and so is the cutoff.
