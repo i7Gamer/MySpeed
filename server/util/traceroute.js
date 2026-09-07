@@ -283,6 +283,14 @@ export const parseTrace = (output) => {
 const isCount = (value) => Number.isInteger(value) && value >= 0;
 
 /**
+ * The most latencies one hop may carry. Every tool probes a hop a handful
+ * of times - three by default, one under the flags used here - and the
+ * parser merges a hop's lines, so a hop past this is a hand-edited file,
+ * and the pane draws a span per latency.
+ */
+export const MAX_RTT_PER_HOP = 10;
+
+/**
  * Whether a value is a table the parser could have produced - and so one
  * every reader may dereference: at most MAX_HOPS hops, each with a positive
  * integer number, an address string or null, a list of finite non-negative
@@ -297,8 +305,12 @@ export const isHopTable = (value) =>
         hop !== null && typeof hop === "object" && !Array.isArray(hop)
         && Number.isInteger(hop.hop) && hop.hop > 0
         && (hop.address === null || typeof hop.address === "string")
-        && Array.isArray(hop.rtt) && hop.rtt.every((rtt) => Number.isFinite(rtt) && rtt >= 0)
-        && isCount(hop.lost));
+        && Array.isArray(hop.rtt) && hop.rtt.length <= MAX_RTT_PER_HOP
+        && hop.rtt.every((rtt) => Number.isFinite(rtt) && rtt >= 0)
+        && isCount(hop.lost))
+    // Numbered once each: the parser merges a hop's lines, and the pane keys
+    // its rows on the number.
+    && new Set(value.map((hop) => hop.hop)).size === value.length;
 
 // Tools that failed to spawn, by file name, for the life of the process.
 const missingTools = new Set();
@@ -320,16 +332,20 @@ const runTool = ({file, args}, {spawn, timeoutMs, track, untrack}) => new Promis
     let output = "";
     let settled = false;
     let missing = false;
+    // Whether the tool was ended rather than ending: by the deadline, the
+    // output ceiling, or the shutdown that terminates every tracked child.
+    let stopped = false;
 
     const finish = () => {
         if (settled) return;
         settled = true;
         clearTimeout(deadline);
         if (child) untrack(child);
-        resolve({output, missing});
+        resolve({output, missing, stopped});
     };
 
     const stop = () => {
+        stopped = true;
         if (child && !hasExited(child)) terminate(child);
     };
 
@@ -364,15 +380,21 @@ const runTool = ({file, args}, {spawn, timeoutMs, track, untrack}) => new Promis
 
     // Node emits 'close' after 'error' for a spawn that failed, so a missing
     // tool ends here too.
-    child.on("close", finish);
+    // A close with no exit code is a child ended by a signal - the
+    // shutdown's, when it was not this deadline's.
+    child.on("close", (code) => {
+        if (code === null) stopped = true;
+        finish();
+    });
 });
 
 /**
  * The route to a host, as a table, or null.
  *
  * Tries the platform's tools in order, skipping the ones already known to be
- * missing. Null for a host the tools cannot be handed, for tools that are all
- * missing, for a tool that printed no table, and for a server that is
+ * missing and moving on from one that ran to its end and printed no table.
+ * Null for a host the tools cannot be handed, for tools that are all missing
+ * or silent, for a tool ended by its deadline, and for a server that is
  * shutting down - which is checked here, immediately before the spawn, so a
  * trace cannot start after the moment the shutdown terminated everything it
  * knew about.
@@ -391,7 +413,7 @@ export const runTrace = async (host, {
         if (missingTools.has(command.file)) continue;
         if (isShuttingDown()) return null;
 
-        const {output, missing} = await runTool(command, {spawn, timeoutMs, track, untrack});
+        const {output, missing, stopped} = await runTool(command, {spawn, timeoutMs, track, untrack});
 
         if (missing) {
             missingTools.add(command.file);
@@ -400,7 +422,16 @@ export const runTrace = async (host, {
         }
 
         const hops = parseTrace(output);
-        return hops.length > 0 ? hops : null;
+        if (hops.length > 0) return hops;
+
+        // Ended by the deadline, the ceiling or the shutdown: the budget is
+        // spent, and a second tool would spend it again.
+        if (stopped) return null;
+
+        // Ran to its end and printed no table: traceroute without the raw
+        // socket it needs writes its refusal to stderr and nothing to
+        // stdout, and tracepath is there for exactly that case. The next
+        // tool gets its turn; the last one's silence is the answer.
     }
 
     return null;

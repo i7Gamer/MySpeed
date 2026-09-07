@@ -148,14 +148,21 @@ describe("the plain default template for a change", () => {
 
 describe("the payload a change travels as", () => {
     const row = {
-        id: 7, created: "2026-09-07T10:00:00.000Z", testId: 99, targetId: 3, targetName: "WAN", provider: "ookla",
+        created: "2026-09-07T10:00:00.000Z", testId: 99, targetId: 3, targetName: "WAN", provider: "ookla",
         previousIp: "203.0.113.10", ip: "203.0.113.20", previousIsp: null, isp: null, alerts: true
     };
 
     it("carries the change, which test saw it and which member ran that test", () => {
-        const payload = connectionChangedPayload(row);
+        const payload = connectionChangedPayload({id: 7, ...row});
 
         for (const key of Object.keys(row)) assert.equal(payload[key], row[key], key);
+    });
+
+    // %id% is the test on every other template; the log row's own id would
+    // be the one number a template author reaches for and gets wrong.
+    it("does not offer the log row's id as %id%", () => {
+        assert.equal(Object.hasOwn(connectionChangedPayload({id: 7, ...row}), "id"), false);
+        assert.ok(!CONNECTION_VARIABLES.includes("id"));
     });
 
     it("answers with every key even for a record that carries none of them", () => {

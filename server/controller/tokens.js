@@ -151,8 +151,12 @@ export const touch = async (id, now = Date.now()) => {
 export const exportRows = async () => apiTokens.findAll({order: [["id", "ASC"]]});
 
 /** Replaces the table with a backup's rows, already judged by importableToken. */
-export const replaceAll = async (rows) => {
-    await apiTokens.destroy({where: {}});
+/**
+ * The stored tokens, replaced by exactly these. Inside the caller's
+ * transaction, so a restore refused halfway leaves the tokens it found.
+ */
+export const replaceAll = async (rows, transaction = undefined) => {
+    await apiTokens.destroy({where: {}, transaction});
     touched.clear();
-    if (rows.length > 0) await apiTokens.bulkCreate(rows);
+    if (rows.length > 0) await apiTokens.bulkCreate(rows, {transaction});
 };

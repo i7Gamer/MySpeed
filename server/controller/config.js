@@ -725,6 +725,10 @@ export const importConfig = async (obj) => {
 
         tokenRows = value.map(tokens.importableToken);
         if (tokenRows.includes(null)) return {ok: false, key: "tokens"};
+        // Two rows with one digest: the table's unique index refuses the
+        // second, and a refusal found while writing is a restore that half
+        // happened. Judged here, with the rest of the file.
+        if (new Set(tokenRows.map((row) => row.digest)).size !== tokenRows.length) return {ok: false, key: "tokens"};
     }
 
     let targetRows;
@@ -1047,9 +1051,9 @@ export const importConfig = async (obj) => {
 
             await targetsModel.destroy({where: {}, transaction});
             if (targetRows.length > 0) await targetsModel.bulkCreate(targetRows, {transaction});
-        });
 
-        if (tokenRows !== null) await tokens.replaceAll(tokenRows);
+            if (tokenRows !== null) await tokens.replaceAll(tokenRows, transaction);
+        });
     } catch {
         return REFUSED;
     }

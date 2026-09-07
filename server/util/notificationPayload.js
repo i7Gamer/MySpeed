@@ -118,9 +118,13 @@ export const CONNECTION_SUMMARY = "connectionChanges";
  * other pair is null - which test saw it and which member ran that test.
  * `alerts` travels for the reason it does on the other two: the gate reads
  * it. See util/connectionChange.js.
+ *
+ * No `id`: on every other template that name is the test, and the log row's
+ * own id would be the one number a template author reaches for and gets
+ * wrong. The test is `testId`.
  */
 const CONNECTION_KEYS = [
-    "id", "created", "testId", "targetId", "targetName", "provider",
+    "created", "testId", "targetId", "targetName", "provider",
     "previousIp", "ip", "previousIsp", "isp",
     "alerts",
     CONNECTION_SUMMARY

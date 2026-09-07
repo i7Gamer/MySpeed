@@ -2,7 +2,7 @@ import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { resolveLimits } from '../util/targetLimits.js';
-import { previousRange, shiftedRange, toCalendarParts, truncateToElapsed } from '../util/dateRange.js';
+import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue, MAX_RETENTION_DAYS } from './config.js';
@@ -515,18 +515,12 @@ export const importTests = async (data) => {
         if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.created)) { skipped++; continue; }
 
         // The regex above only proves the string looks like an ISO instant,
-        // never that the date it names exists: 2026-02-30 passes it, and
-        // `new Date` silently rolls that over into March, so the row was
-        // stored as written and then drawn on March 2 by every reader that
-        // parses the column - and absent from any range that asked for
-        // February.
-        if (toCalendarParts(entry.created.slice(0, 10)) === null) { skipped++; continue; }
-
-        // And the calendar check proves only the day. 25:61:99 parses to
-        // NaN, which no comparison below catches, and 24:00:00 rolls over
-        // into the next day the way February 30 rolled into March. The one
-        // string an instant survives a round trip through toISOString() as
-        // is the one every real export wrote.
+        // never that the instant exists: 2026-02-30 passes it and `new Date`
+        // rolls it over into March, so the row was stored as written and then
+        // drawn on March 2 by every reader that parses the column; 25:61:99
+        // parses to NaN, which no comparison below catches; 24:00:00 rolls
+        // over into the next day. The one string an instant survives a round
+        // trip through toISOString() as is the one every real export wrote.
         const instant = new Date(entry.created);
         if (Number.isNaN(instant.getTime()) || instant.toISOString() !== entry.created) { skipped++; continue; }
 

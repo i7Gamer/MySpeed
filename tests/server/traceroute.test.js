@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import {
-    MAX_HOPS, MAX_OUTPUT_BYTES, TRACE_FALLBACK_HOSTS, TRACE_REASONS, TRACE_TIMEOUT_MS, UNDER_ONE_MS,
+    MAX_HOPS, MAX_OUTPUT_BYTES, MAX_RTT_PER_HOP, TRACE_FALLBACK_HOSTS, TRACE_REASONS, TRACE_TIMEOUT_MS, UNDER_ONE_MS,
     degradedRun, isHopTable, isTraceableHost, parseTrace, resetMissingTools, runTrace, traceCommands, traceHost
 } from "../../server/util/traceroute.js";
 
@@ -38,6 +38,19 @@ describe("isHopTable", () => {
     it("refuses a table past the hop ceiling", () => {
         const table = Array.from({length: MAX_HOPS + 1}, (_, i) => hop({hop: i + 1}));
         assert.equal(isHopTable(table), false);
+    });
+
+    // The parser merges a hop's lines and probes at most a handful of times,
+    // so a hop with a hundred thousand latencies - or two hops numbered the
+    // same, which the parser also never produces - is a hand-edited file,
+    // and the pane would draw a span per latency and key two rows alike.
+    it("refuses a hop with more latencies than any tool probes", () => {
+        assert.equal(isHopTable([hop({rtt: Array(MAX_RTT_PER_HOP).fill(1)})]), true);
+        assert.equal(isHopTable([hop({rtt: Array(MAX_RTT_PER_HOP + 1).fill(1)})]), false);
+    });
+
+    it("refuses two hops with the same number", () => {
+        assert.equal(isHopTable([hop({hop: 3}), hop({hop: 3})]), false);
     });
 });
 import { trackProcess, terminateActiveProcess } from "../../server/util/speedtest.js";
@@ -436,6 +449,19 @@ describe("runTrace", () => {
         assert.equal(await runTrace("fra.example.net", {spawn, platform: "linux"}), null);
 
         assert.equal(spawn.calls.length, 2, "the missing tools were spawned again");
+    });
+
+    // A tool that is installed but refused - traceroute without the raw
+    // socket it needs on a bare-metal install - prints its refusal to
+    // stderr and nothing to stdout, and the next tool is the one the image
+    // ships for exactly that case.
+    it("falls through to the next tool when the first ran and printed no table", async () => {
+        const spawn = fakeSpawn({traceroute: (child) => child.finish("", 1), tracepath: (child) => child.finish(" 1:  192.168.1.1  0.5ms\n")});
+
+        const hops = await runTrace("fra.example.net", {spawn, platform: "linux"});
+
+        assert.deepEqual(spawn.calls.map((call) => call.file), ["traceroute", "tracepath"]);
+        assert.equal(hops[0].address, "192.168.1.1");
     });
 
     it("answers null when the tool ran and printed no table", async () => {

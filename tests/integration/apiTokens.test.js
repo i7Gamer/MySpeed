@@ -1,5 +1,6 @@
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
+import { bodyOf, readSource } from "../helpers/source.js";
 import { bootServer, api, setConfig } from "./helpers/boot.js";
 
 let server;
@@ -211,5 +212,28 @@ describe("tokens in the backup", () => {
 
         assert.equal(refused.status, 500);
         assert.equal(refused.body.key, "tokens");
+    });
+
+    // Two rows with one digest: the table's unique index refuses the second,
+    // and the restore used to notice only after every other table had been
+    // rewritten and the tokens destroyed - a refusal that had already
+    // happened. Judged with the rest of the file, before anything is written.
+    it("refuse two rows with the same digest, and leave the tokens standing", async () => {
+        const {body: {token}} = await createToken();
+        const {body: full} = await exportConfig("?includeSecrets=true");
+
+        const refused = await importConfig({...full, tokens: [full.tokens[0], {...full.tokens[0], name: "twin"}]});
+
+        assert.equal(refused.status, 500);
+        assert.equal(refused.body.key, "tokens");
+        assert.equal((await withToken(token, "/speedtests/status/live")).status, 200, "the tokens were destroyed by a refused restore");
+    });
+
+    it("are restored inside the same transaction as everything else", () => {
+        const body = bodyOf(readSource("server/controller/config.js"), "export const importConfig = async (obj) => {");
+        const transaction = bodyOf(body, "await db.transaction(async (transaction) => {");
+
+        assert.match(transaction, /tokens\.replaceAll\(tokenRows, transaction\)/);
+        assert.equal((body.match(/tokens\.replaceAll\(/g) ?? []).length, 1, "the tokens are restored twice");
     });
 });
