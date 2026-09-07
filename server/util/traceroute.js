@@ -280,6 +280,26 @@ export const parseTrace = (output) => {
     return hops;
 };
 
+const isCount = (value) => Number.isInteger(value) && value >= 0;
+
+/**
+ * Whether a value is a table the parser could have produced - and so one
+ * every reader may dereference: at most MAX_HOPS hops, each with a positive
+ * integer number, an address string or null, a list of finite non-negative
+ * latencies and a count of lost probes.
+ *
+ * The parser is the one honest writer of the column, but the history import
+ * writes it too, from whatever a file holds, and a row that reaches the
+ * detail pane with one malformed hop takes the whole pane down with it.
+ */
+export const isHopTable = (value) =>
+    Array.isArray(value) && value.length <= MAX_HOPS && value.every((hop) =>
+        hop !== null && typeof hop === "object" && !Array.isArray(hop)
+        && Number.isInteger(hop.hop) && hop.hop > 0
+        && (hop.address === null || typeof hop.address === "string")
+        && Array.isArray(hop.rtt) && hop.rtt.every((rtt) => Number.isFinite(rtt) && rtt >= 0)
+        && isCount(hop.lost));
+
 // Tools that failed to spawn, by file name, for the life of the process.
 const missingTools = new Set();
 

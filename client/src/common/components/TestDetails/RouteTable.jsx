@@ -14,8 +14,16 @@ import FigureWithUnit from "@/common/components/FigureWithUnit";
  * Nothing at all for a run with no table, which is every run that went
  * well: the section has no empty state to show.
  */
+/**
+ * Whether a hop has what a row needs. The server refuses a malformed table
+ * on the way in and on the way out, but the pane also draws what a proxied
+ * node sends, and one hop it cannot draw must not cost the rest of the pane.
+ */
+const drawable = (hop) => hop !== null && typeof hop === "object" && Array.isArray(hop.rtt);
+
 const RouteTable = ({hops}) => {
-    if (!Array.isArray(hops) || hops.length === 0) return null;
+    const rows = Array.isArray(hops) ? hops.filter(drawable) : [];
+    if (rows.length === 0) return null;
 
     return (
         <div className="detail-route">
@@ -30,7 +38,7 @@ const RouteTable = ({hops}) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {hops.map((hop) => (
+                        {rows.map((hop) => (
                             <tr key={hop.hop}
                                 className={hop.lost > 0 || hop.address === null ? "detail-hop-lost" : undefined}>
                                 <td>{hop.hop}</td>

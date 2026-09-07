@@ -8,6 +8,7 @@ import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue, MAX_RETENTION_DAYS } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
+import { isHopTable } from '../util/traceroute.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
 const MS_PER_DAY = 86400000;
@@ -126,13 +127,17 @@ export const presentHops = (row) => {
     return row;
 };
 
-/** The stored column as the array it holds, or null for no table and for anything that is not one. */
+/**
+ * The stored column as the array it holds, or null for no table and for
+ * anything that is not one - a table with one hop no reader could draw
+ * included, since the pane dereferences every hop it is handed.
+ */
 export const parsedHops = (stored) => {
     if (stored == null) return null;
 
     try {
         const hops = JSON.parse(stored);
-        return Array.isArray(hops) ? hops : null;
+        return isHopTable(hops) ? hops : null;
     } catch {
         return null;
     }
@@ -514,11 +519,19 @@ export const importTests = async (data) => {
         // February.
         if (toCalendarParts(entry.created.slice(0, 10)) === null) { skipped++; continue; }
 
+        // And the calendar check proves only the day. 25:61:99 parses to
+        // NaN, which no comparison below catches, and 24:00:00 rolls over
+        // into the next day the way February 30 rolled into March. The one
+        // string an instant survives a round trip through toISOString() as
+        // is the one every real export wrote.
+        const instant = new Date(entry.created);
+        if (Number.isNaN(instant.getTime()) || instant.toISOString() !== entry.created) { skipped++; continue; }
+
         // A day or two of drift between the exporting and the importing clock
         // is normal; a row from next century is not a test anyone ran, it is
         // a hand-edited file, and it would become getLatest()'s answer for
         // good.
-        if (new Date(entry.created).getTime() - Date.now() > IMPORT_FUTURE_SKEW_DAYS * MS_PER_DAY) {
+        if (instant.getTime() - Date.now() > IMPORT_FUTURE_SKEW_DAYS * MS_PER_DAY) {
             skipped++;
             continue;
         }
@@ -556,8 +569,9 @@ export const importTests = async (data) => {
         // The JSON export writes the hop table as the array the API answers,
         // and bulkCreate would hand that array to a TEXT column as whatever
         // the dialect makes of it. Stored the way the trace stores it, or
-        // not at all - a backup carries no other shape of it worth keeping.
-        if (Array.isArray(row.hops)) row.hops = storedHops(row.hops);
+        // not at all - a backup carries no other shape of it worth keeping,
+        // and a hop the pane cannot draw is not worth keeping either.
+        if (isHopTable(row.hops)) row.hops = storedHops(row.hops);
         else delete row.hops;
 
         // As unmeasured, not as an error: the row is the history somebody is

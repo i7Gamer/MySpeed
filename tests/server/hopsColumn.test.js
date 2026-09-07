@@ -105,6 +105,17 @@ describe("how the table travels through the column", () => {
         }
     });
 
+    // A hand-edited backup can put anything into the column the import
+    // accepts. The pane dereferences every hop it is handed, so a table with
+    // one malformed hop is no table at all rather than a crash on open.
+    it("drops a table with a hop the pane could not draw", () => {
+        for (const table of [[null], [{hop: 1}], [{hop: 1, address: null, rtt: "1", lost: 0}], ["hop"]]) {
+            const row = presentHops({id: 1, [COLUMN]: JSON.stringify(table)});
+            assert.equal(Object.hasOwn(row, COLUMN), false, `${JSON.stringify(table)} came back as a table`);
+            assert.equal(parsedHops(JSON.stringify(table)), null);
+        }
+    });
+
     it("hands back the row it was given", () => {
         const row = {id: 1, [COLUMN]: null};
         assert.equal(presentHops(row), row);
@@ -145,6 +156,7 @@ describe("the read paths", () => {
         const body = bodyOf(controller, "export const importTests =");
 
         assert.match(body, /storedHops\(/, "an imported hop table reaches bulkCreate as an array");
+        assert.match(body, /isHopTable\(row\.hops\)/, "the import stores any array as a table, malformed hops included");
     });
 });
 

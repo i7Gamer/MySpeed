@@ -3,8 +3,43 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import {
     MAX_HOPS, MAX_OUTPUT_BYTES, TRACE_FALLBACK_HOSTS, TRACE_REASONS, TRACE_TIMEOUT_MS, UNDER_ONE_MS,
-    degradedRun, isTraceableHost, parseTrace, resetMissingTools, runTrace, traceCommands, traceHost
+    degradedRun, isHopTable, isTraceableHost, parseTrace, resetMissingTools, runTrace, traceCommands, traceHost
 } from "../../server/util/traceroute.js";
+
+/**
+ * The shape every reader of a stored table may rely on. The parser is the
+ * only honest producer, but the column is also written by the history import
+ * from whatever a file holds - and a reader that dereferences `hop.rtt` on a
+ * row the import let through crashes the detail pane for that test.
+ */
+describe("isHopTable", () => {
+    const hop = (extra = {}) => ({hop: 1, address: "192.168.1.1", rtt: [0.5, 1], lost: 0, ...extra});
+
+    it("accepts what the parser produces", () => {
+        assert.equal(isHopTable([hop(), hop({hop: 2, address: null, rtt: [], lost: 3})]), true);
+        assert.equal(isHopTable([]), true);
+    });
+
+    it("refuses anything that is not a list of hops", () => {
+        for (const value of [null, undefined, "[]", {}, 42, [null], ["hop"], [[]]])
+            assert.equal(isHopTable(value), false, JSON.stringify(value));
+    });
+
+    it("refuses a hop missing a field or carrying the wrong kind", () => {
+        const {rtt, ...noRtt} = hop();
+        const {lost, ...noLost} = hop();
+
+        for (const bad of [noRtt, noLost, hop({hop: 0}), hop({hop: 1.5}), hop({hop: "1"}),
+            hop({address: 5}), hop({address: undefined}), hop({rtt: "1"}), hop({rtt: [null]}), hop({rtt: [-1]}),
+            hop({rtt: [Infinity]}), hop({lost: -1}), hop({lost: 1.5}), hop({lost: "3"})])
+            assert.equal(isHopTable([bad]), false, JSON.stringify(bad));
+    });
+
+    it("refuses a table past the hop ceiling", () => {
+        const table = Array.from({length: MAX_HOPS + 1}, (_, i) => hop({hop: i + 1}));
+        assert.equal(isHopTable(table), false);
+    });
+});
 import { trackProcess, terminateActiveProcess } from "../../server/util/speedtest.js";
 import { resolveLimits } from "../../server/util/targetLimits.js";
 
@@ -145,6 +180,11 @@ describe("parseTrace", () => {
         const output = " 2  10.0.0.2  1 ms\n 1  10.0.0.1  1 ms";
 
         assert.deepEqual(parseTrace(output).map((hop) => hop.hop), [2, 1]);
+    });
+
+    it("always produces a table isHopTable accepts", () => {
+        for (const output of [WINDOWS_ENGLISH, " 1:  no reply\n 2:  10.0.0.1  1.2ms asymm 3", " 3  * * *", ""])
+            assert.equal(isHopTable(parseTrace(output)), true, JSON.stringify(output));
     });
 });
 

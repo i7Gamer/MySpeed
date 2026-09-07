@@ -623,6 +623,21 @@ describe("import validation", () => {
         assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
     });
 
+    // The regex proves the shape and the calendar check proves the day; the
+    // time of day had no check at all. 25:61:99 parses to NaN, NaN is never
+    // "further ahead than clock skew explains", and the row was stored as
+    // written - an instant no reader can place on a chart.
+    it("skips a row whose time of day does not exist", async () => {
+        await seedTests(server.tests, []);
+        const usable = daysAgo(1);
+
+        const {status} = await importTests([row({created: usable}),
+            row({created: "2026-02-01T25:61:99.999Z"}), row({created: "2026-02-01T24:00:00.000Z"})]);
+
+        assert.equal(status, 200);
+        assert.deepEqual((await server.tests.findAll()).map((test) => test.created), [usable]);
+    });
+
     // Reachable only by a hand-edited backup, since every real export's
     // `created` came from toISOString() at write time - but nothing else
     // stopped a file from claiming a date nobody has lived yet, and it would

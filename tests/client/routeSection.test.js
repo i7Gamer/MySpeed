@@ -98,6 +98,25 @@ describe("the route section of the detail pane", () => {
         assert.match(third.textContent, /2 lost/);
     });
 
+    // The server refuses a malformed table on the way in and on the way out,
+    // but the pane also draws rows a proxied node sends, and an older or a
+    // hand-edited row must not take the whole pane down with it.
+    it("draws the hops it can and skips the ones it cannot", () => {
+        const {container} = mount(row({hops: [null, "hop", {hop: 2, address: "10.0.0.1", rtt: [1.5], lost: 0},
+            {hop: 3, address: null, rtt: [], lost: 1}, {hop: 4, address: "10.0.0.4"}]}));
+
+        const rows = [...container.querySelectorAll(".detail-route tbody tr")];
+
+        assert.deepEqual(rows.map((line) => line.querySelector("td").textContent), ["2", "3"]);
+        assert.match(rows[0].textContent, /10\.0\.0\.1/);
+    });
+
+    it("draws nothing for a table with no hop it can draw", () => {
+        const {container} = mount(row({hops: [null, {}]}));
+
+        assert.equal(container.querySelector(".detail-route"), null);
+    });
+
     it("names its columns for a reader", () => {
         const {container} = mount(row({hops: HOPS}));
 
