@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { cloudflareList, libreList, ooklaList } from "../../server/config/binaries.js";
+import { cloudflareList, iperfList, libreList, ooklaList } from "../../server/config/binaries.js";
 import { DigestMismatchError, downloadAndExtract, verifyDigest } from "../../server/util/providers/downloadHelper.js";
 
 /**
@@ -36,7 +36,12 @@ describe("the pinned manifest", () => {
     const everyEntry = [
         ...ooklaList.map((entry) => ({provider: "ookla", ...entry})),
         ...libreList.map((entry) => ({provider: "libre", ...entry})),
-        ...cloudflareList.map((entry) => ({provider: "cloudflare", ...entry}))
+        ...cloudflareList.map((entry) => ({provider: "cloudflare", ...entry})),
+        // iperf3 was outside this sweep, which is the platform-sized hole the
+        // list above exists to close: its seven entries are downloaded and
+        // spawned like any other CLI, and nothing here asked whether they
+        // carried a digest at all.
+        ...iperfList.map((entry) => ({provider: "iperf3", ...entry}))
     ];
 
     it("has entries to check", () => {
@@ -72,6 +77,27 @@ describe("the pinned manifest", () => {
                 assert.equal(entry.sha256, seen, `${key} is pinned to two different digests`);
 
             bySuffix.set(key, entry.sha256);
+        }
+    });
+
+    /**
+     * And the other direction: two *different* assets pinned to one digest are
+     * a copy-paste, not a coincidence. Nothing catches that on its own - a
+     * duplicated line still downloads and still verifies, against the wrong
+     * file - and the risk is real whenever a publisher rebuilds and several
+     * digests are refreshed in one pass.
+     */
+    it("gives different assets different digests", () => {
+        const byDigest = new Map();
+
+        for (const entry of everyEntry) {
+            const asset = `${entry.provider}|${entry.suffix}`;
+            const seen = byDigest.get(entry.sha256);
+
+            if (seen !== undefined && seen !== asset)
+                assert.fail(`${asset} and ${seen} are pinned to the same digest`);
+
+            byDigest.set(entry.sha256, asset);
         }
     });
 });

@@ -134,6 +134,21 @@ export const cloudflareList = [
  * same footing as cfspeedtest's above; the Windows archive's was additionally
  * recomputed from the asset as served.
  *
+ * Refreshed on 2026-09-07, because this publisher rebuilds onto tags that
+ * already exist: an OpenSSL change to their Windows build on 2026-09-05 was
+ * dispatched on 2026-09-06 and replaced every asset on the 3.21 tag, which
+ * has been published since April. Until the pins caught up, every platform
+ * refused its own download - which is the guard working, not failing. The 3.20
+ * assets were replaced the same way in January, so an older tag is no safer;
+ * expect to do this again.
+ *
+ * Each of the seven below was checked against its GitHub build attestation
+ * before it was written here - subject digest, `userdocs/iperf3-static` at
+ * master, and that repository's own ci-windows / ci-osx / ci-linux-crossbuild
+ * workflow on a GitHub-hosted runner. That is what a refresh has to mean here:
+ * a digest copied from whatever the host happens to be serving records the
+ * substitution rather than checking it.
+ *
  * The macOS builds are per OS version. arm64 takes the macOS 14 build rather
  * than the 15 one on purpose - a binary built against an older SDK runs on the
  * newer system and not the other way about - and Intel is offered only a macOS
@@ -143,21 +158,21 @@ export const iperfVersion = "3.21";
 export const iperfList = [
     // MacOS
     {os: 'darwin', arch: 'x64', suffix: 'iperf3-amd64-osx-15',
-        sha256: '71474bb614e2d48f3c5fcb63ae7b77b51e37043f989478ee9021223db856a8e6'},
+        sha256: '9168916504291356a0779b401052db14c7f4fd93fa657154ea8e60e80cbaf279'},
     {os: 'darwin', arch: 'arm64', suffix: 'iperf3-arm64-osx-14',
-        sha256: 'ffe369fe1b556b62bb2b6c2b4708cc9905c06fea810c7ca74459769a03ddccff'},
+        sha256: 'c7c8945847f5228c428b7d1975243c185e4710fbdeb66ce69e87169d76e14d38'},
 
     // Windows. The one archive, and the one entry carrying a second file.
     {os: 'win32', arch: 'x64', suffix: 'iperf3-amd64-win.zip', archive: true,
-        sha256: '425c87f0618d0527c959e1c2edcb213c5383f87522d31e9e7f5220ab49371afa'},
+        sha256: '913d9aac883f53c2f8c63ab3adcd7c8b00ceceae768e8d03a5a93c75d09c42b4'},
 
     // Linux
     {os: 'linux', arch: 'x64', suffix: 'iperf3-amd64',
-        sha256: 'fde45980958b6a5b32e947d379699a8a3b54152d4971cce87ffa4c93ca2d2b9e'},
+        sha256: '201cbaed73d4e4da72c44c9aee895a2d58c75f1d1a4d721137f4888f6b7f5016'},
     {os: 'linux', arch: 'arm64', suffix: 'iperf3-arm64v8',
-        sha256: '6c005b04dfab35840fbf1d1b3202c8997afed95de3db0b78fe95c3834dc5233a'},
+        sha256: '2ce83dceb64fe08cea59926647f7ca20a7cb7baa8320e9648823d9b7de562c8e'},
     {os: 'linux', arch: 'arm', suffix: 'iperf3-arm32v7',
-        sha256: '2e16f26c4a44985425db57fdf4be05dbd2cd81a1726e7eaec19bbc15e2a36e0d'},
+        sha256: 'ea23e677bd4a56cfb46f72a4b0aaf1fc9b8ad304d074001554851fa9ad37f608'},
     {os: 'linux', arch: 'ia32', suffix: 'iperf3-i386',
-        sha256: '6929b78eaa177234e1c4b8c990687b25919c9d15b7db47bad64552ea983f60aa'}
+        sha256: '59daa2e73236f445763a34bb9c392ef72f80becd40cfe8a256eca6737a6605d6'}
 ];
