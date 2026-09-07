@@ -99,6 +99,47 @@ describe("parseCliOutput", () => {
             assert.equal(parsed.error, '{"code":429}');
         });
 
+        /**
+         * A CLI that names the key and leaves it empty - `"error": null` - is
+         * saying there was no error, not that the error was the word "null".
+         *
+         * The cap ran on anything that was not `undefined`, so null reached
+         * `String()` and came back as a four-character message. Seen on a real
+         * librespeed run, where the stored reason read "null" and the detail
+         * pane showed "Unknown error: null."
+         *
+         * Cosmetic only if the record holds nothing else. When it holds a
+         * measurement too, the caller throws on the truthy string and a run
+         * that produced figures is recorded as a failure instead.
+         */
+        it("treats an error reported as null the way it treats no error at all", () => {
+            const withNull = parseCliOutput("libre", '{"error":null,"download":12}', "");
+            const without = parseCliOutput("libre", '{"download":12}', "");
+
+            assert.deepEqual(withNull, without);
+        });
+
+        it("does not store the word null as the reason a run failed", () => {
+            const parsed = parseCliOutput("ookla", '{"type":"result","error":null}', "");
+
+            assert.equal(parsed.error, undefined);
+        });
+
+        /**
+         * And the point of the line above: emptied of the null, the record has
+         * no keys left, which is the state exitError needs before it will
+         * explain a run by its exit code. A stored "null" suppressed that.
+         */
+        it("leaves a record of nothing but a null error empty", () => {
+            assert.deepEqual(parseCliOutput("libre", '{"error":null}', ""), {});
+        });
+
+        it("still reports an error the CLI did give a reason for", () => {
+            const parsed = parseCliOutput("libre", '{"error":"host unreachable"}', "");
+
+            assert.equal(parsed.error, "host unreachable");
+        });
+
         it("is empty when the CLI printed nothing at all", () => {
             assert.deepEqual(parseCliOutput("ookla", "", ""), {});
         });

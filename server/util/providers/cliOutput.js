@@ -205,6 +205,22 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         if (text) result.error = normaliseError(text);
     }
 
+    /*
+     * A record that names the key and leaves it empty - `"error": null` - is
+     * saying there was no error, not that the error was the word "null". The
+     * cap below ran on anything that was not `undefined`, so null went through
+     * String() and became a four-character reason: a librespeed run stored
+     * "null" and the detail pane showed "Unknown error: null."
+     *
+     * Removed rather than left in place, because two things downstream read the
+     * absence rather than the falsiness. `if (result.error) throw` would let a
+     * record carrying a measurement *and* a null error through - today it
+     * throws the string and discards the figures - and exitError explains a run
+     * by its exit code only for a result with no keys at all, which a lingering
+     * null would keep it from being.
+     */
+    if (result.error === null) delete result.error;
+
     // Capped in one place, so it holds however the error was arrived at.
     if (result.error !== undefined) result.error = capError(result.error);
 
