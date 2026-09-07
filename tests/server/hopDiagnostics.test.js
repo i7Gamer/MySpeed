@@ -1,6 +1,6 @@
-import { describe, it } from "node:test";
+import { beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { TRACEROUTE_KEY, diagnoseRun } from "../../server/tasks/hopDiagnostics.js";
+import { MAX_TRACES_PER_ROUND, TRACEROUTE_KEY, diagnoseRun, resetTraceBudget } from "../../server/tasks/hopDiagnostics.js";
 import { TRACE_REASONS } from "../../server/util/traceroute.js";
 
 /*
@@ -32,6 +32,8 @@ const test = {id: 42};
 const target = {id: 7, name: "Home", provider: "ookla", serverId: null};
 
 describe("diagnoseRun", () => {
+    beforeEach(resetTraceBudget);
+
     it("traces a final failure and writes the table onto the row", async () => {
         const {calls, deps} = harness();
 
@@ -154,5 +156,60 @@ describe("diagnoseRun", () => {
             assert.equal(calls.errors.length, 1);
             assert.match(calls.errors[0], /#42/);
         });
+    });
+});
+
+/**
+ * A round of five degraded members would otherwise spend five full trace
+ * deadlines inside the running latch, and a cron tick in that window is a
+ * scheduled run dropped. The round opens a budget of a few traces; a
+ * member past it is skipped and says so.
+ */
+describe("the round's trace budget", () => {
+    beforeEach(resetTraceBudget);
+
+    it("is a small number of traces", () => {
+        assert.ok(Number.isInteger(MAX_TRACES_PER_ROUND) && MAX_TRACES_PER_ROUND >= 1 && MAX_TRACES_PER_ROUND <= 3);
+    });
+
+    it("traces the first members of a round and skips the rest, saying so", async () => {
+        const {calls, deps} = harness();
+
+        for (let i = 0; i < MAX_TRACES_PER_ROUND + 2; i++)
+            await diagnoseRun({id: i}, target, {failed: true}, deps);
+
+        assert.equal(calls.traced.length, MAX_TRACES_PER_ROUND);
+        assert.equal(calls.saved.length, MAX_TRACES_PER_ROUND);
+        assert.equal(calls.logged.length, MAX_TRACES_PER_ROUND + 2, "a skipped member leaves no line");
+        assert.match(calls.logged.at(-1), /budget/);
+    });
+
+    it("opens again with the next round", async () => {
+        const {calls, deps} = harness();
+
+        for (let i = 0; i < MAX_TRACES_PER_ROUND; i++) await diagnoseRun({id: i}, target, {failed: true}, deps);
+        resetTraceBudget();
+        await diagnoseRun({id: 99}, target, {failed: true}, deps);
+
+        assert.equal(calls.traced.length, MAX_TRACES_PER_ROUND + 1);
+    });
+
+    it("is not spent by a member that needed no trace", async () => {
+        const {calls, deps} = harness();
+
+        for (let i = 0; i < MAX_TRACES_PER_ROUND + 2; i++) await diagnoseRun({id: i}, target, {ping: 5}, deps);
+        await diagnoseRun({id: 99}, target, {failed: true}, deps);
+
+        assert.equal(calls.traced.length, 1);
+    });
+
+    // Neither is a trace that found no table: the tool ran, the deadline
+    // was spent, and that is what the budget counts.
+    it("is spent by a trace that found nothing", async () => {
+        const {calls, deps} = harness({hops: null});
+
+        for (let i = 0; i < MAX_TRACES_PER_ROUND + 1; i++) await diagnoseRun({id: i}, target, {failed: true}, deps);
+
+        assert.equal(calls.traced.length, MAX_TRACES_PER_ROUND);
     });
 });

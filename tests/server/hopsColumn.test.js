@@ -278,4 +278,15 @@ describe("where the run loop asks for a trace", () => {
         assert.match(success, /await diagnoseRun\(/);
         assert.match(failure, /await diagnoseRun\(/);
     });
+
+    // Opened once per round, before the first member: the budget is the
+    // round's, and a member cannot be the one to reset it.
+    it("opens the trace budget once per round, ahead of its members", () => {
+        const round = bodyOf(source, "const executeRound = async (type, targetId) => {");
+        const opened = round.indexOf("resetTraceBudget()");
+
+        assert.notEqual(opened, -1, "the round never opens a trace budget");
+        assert.ok(opened < round.indexOf("for (const [index, target] of members.entries())"));
+        assert.equal((round.match(/resetTraceBudget\(\)/g) ?? []).length, 1);
+    });
 });

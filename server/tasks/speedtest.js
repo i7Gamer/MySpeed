@@ -21,7 +21,7 @@ import { withinQuietHours } from './timer.js';
 import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
 import { trackRound } from '../util/activeRound.js';
-import { diagnoseRun } from './hopDiagnostics.js';
+import { diagnoseRun, resetTraceBudget } from './hopDiagnostics.js';
 import { recordChange } from '../controller/connectionChanges.js';
 
 // The placeholder a failed test stores in every numeric column. The client
@@ -770,6 +770,10 @@ const executeRound = async (type, targetId) => {
     // an announcement and its answer have to be the same decision.
     const announce = members[0].provider !== "preview";
     setRunning(true, announce);
+
+    // The round's trace budget - see MAX_TRACES_PER_ROUND. Opened here,
+    // before the first member, so no member can be the one to reset it.
+    resetTraceBudget();
 
     // Members that could not record, counted down the round rather than across
     // it - see MAX_CONSECUTIVE_ESCAPES.

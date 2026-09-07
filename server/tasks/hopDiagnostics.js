@@ -13,6 +13,20 @@ import { toErrorMessage } from '../util/helpers.js';
 export const TRACEROUTE_KEY = "traceroute";
 
 /**
+ * How many traces one round may run. Each is awaited inside the running
+ * latch for up to its own deadline, so a round of five degraded members
+ * would otherwise hold the latch for five deadlines and drop the scheduled
+ * run that ticked meanwhile. Two: the first degraded member and one more,
+ * which is where a fault common to the whole line has already been seen.
+ */
+export const MAX_TRACES_PER_ROUND = 2;
+
+let tracesThisRound = 0;
+
+/** Opens the round's budget. Called once per round, ahead of its members. */
+export const resetTraceBudget = () => { tracesThisRound = 0; };
+
+/**
  * Traces the route of a run that went badly and writes the table onto its row.
  *
  * Called at the tail of every member's run, success and failure alike, after
@@ -46,6 +60,14 @@ export const diagnoseRun = async (test, target,
 
         const host = traceHost(target, {serverHost, servers: servers(target.provider) ?? {}});
         if (host === null) return null;
+
+        // Counted whether or not a table comes back: the deadline is what
+        // the budget measures, and a silent tool spends it all the same.
+        if (tracesThisRound >= MAX_TRACES_PER_ROUND) {
+            log.log(`Test #${test.id}: not traced (${reason}), the round's trace budget of ${MAX_TRACES_PER_ROUND} is spent`);
+            return null;
+        }
+        tracesThisRound++;
 
         const hops = await trace(host);
         if (hops === null) return null;

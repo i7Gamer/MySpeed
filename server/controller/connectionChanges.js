@@ -33,18 +33,21 @@ const NEWEST_FIRST = [["created", "DESC"], ["id", "DESC"]];
 const IPV6_SHAPE = "%:%";
 
 /**
- * The connection seen before this run: the newest earlier address of the
- * same family, whichever provider saw it - the WAN address is a fact about
- * the instance - and the newest earlier name the same provider gave, since
- * providers spell a network their own way and a cross-provider comparison
- * would flap on every target switch.
+ * The connection seen before this run, by the same target: the newest
+ * earlier address of the same family, and the newest earlier name the same
+ * provider gave. The target's own runs only, because two targets pinned to
+ * two WAN links would otherwise find each other's address as "the previous
+ * one" and log a change on every alternation; the name by the same provider
+ * too, because providers spell a network their own way and a target whose
+ * provider was edited would compare two spellings of one network. A run from before
+ * targets existed carries no target and is compared with nothing.
  *
  * Strictly earlier by instant, which excludes the run itself and any
  * imported row stamped later. The window is closed at the lookback below.
  */
-export const previousIdentity = async ({id, created, externalIp, provider}) => {
+export const previousIdentity = async ({id, created, externalIp, provider, targetId = null}) => {
     const floor = new Date(new Date(created).getTime() - LOOKBACK_DAYS * MS_PER_DAY).toISOString();
-    const earlier = {created: {[Op.lt]: created, [Op.gte]: floor}, id: {[Op.ne]: id}};
+    const earlier = {created: {[Op.lt]: created, [Op.gte]: floor}, id: {[Op.ne]: id}, targetId};
 
     const family = addressFamily(externalIp);
     // `:` is no wildcard on either dialect, and an IPv4 address never holds
@@ -84,12 +87,15 @@ const trim = async () => {
 export const recordChange = async (test, target) => {
     try {
         if (addressFamily(test.externalIp) === 0 && normalisedIsp(test.isp) === null) return null;
+        // A run from before targets existed has nothing of its own to be
+        // compared with.
+        if (target?.id == null) return null;
 
-        const change = describeChange(test, await previousIdentity(test));
+        const change = describeChange(test, await previousIdentity({...test, targetId: target.id}));
         if (change === null) return null;
 
         const row = await model.create({
-            created: test.created, testId: test.id, targetId: target?.id ?? null, provider: test.provider, ...change
+            created: test.created, testId: test.id, targetId: target.id, provider: test.provider, ...change
         });
         await trim();
 

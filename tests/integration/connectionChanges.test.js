@@ -37,55 +37,71 @@ beforeEach(async () => {
 /** A stored test as the run loop hands it to the verdict: id, instant and the connection it saw. */
 const seen = async (row) => {
     const [stored] = await server.tests.findAll({where: {created: row.created}});
-    return {id: stored.id, created: stored.created, isp: stored.isp, externalIp: stored.externalIp, provider: stored.provider};
+    return {id: stored.id, created: stored.created, isp: stored.isp, externalIp: stored.externalIp, provider: stored.provider, targetId: stored.targetId};
 };
 
 const target = {id: 3, name: "WAN", alerts: true};
 
 describe("what the verdict compares against", () => {
-    it("the newest earlier address of the same family, whatever provider saw it", async () => {
+    it("the newest earlier address of the same family, whichever provider saw it", async () => {
         await seedTests(server.tests, [
-            {created: at(3), externalIp: "203.0.113.1", isp: "Net", provider: "ookla"},
-            {created: at(2), externalIp: "2001:db8::1", isp: null, provider: "cloudflare"},
-            {created: at(1), externalIp: "203.0.113.2", isp: null, provider: "cloudflare"},
-            {created: at(0), externalIp: "203.0.113.9", isp: "Net", provider: "ookla"}
+            {targetId: 3, created: at(3), externalIp: "203.0.113.1", isp: "Net", provider: "ookla"},
+            {targetId: 3, created: at(2), externalIp: "2001:db8::1", isp: null, provider: "cloudflare"},
+            {targetId: 3, created: at(1), externalIp: "203.0.113.2", isp: null, provider: "cloudflare"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.9", isp: "Net", provider: "ookla"}
         ]);
 
-        const previous = await changes.previousIdentity(await seen({created: at(0)}));
+        const previous = await changes.previousIdentity(await seen({targetId: 3, created: at(0)}));
 
         assert.equal(previous.externalIp, "203.0.113.2");
     });
 
-    it("the newest earlier provider name from the same provider", async () => {
+    // Its own earlier runs only. Two targets pinned to two WAN links of one
+    // family would otherwise find each other's address as "the previous
+    // one" and log a change on every alternation.
+    it("only what the same target saw before", async () => {
         await seedTests(server.tests, [
-            {created: at(3), externalIp: "203.0.113.1", isp: "Ookla says A", provider: "ookla"},
-            {created: at(2), externalIp: "203.0.113.1", isp: "Libre says B", provider: "libre"},
-            {created: at(0), externalIp: "203.0.113.1", isp: "Ookla says A", provider: "ookla"}
+            {targetId: 3, created: at(3), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 4, created: at(2), externalIp: "198.51.100.7", isp: "Other Net"},
+            {targetId: null, created: at(1), externalIp: "192.0.2.9", isp: "Old Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.1", isp: "Net"}
         ]);
 
         const previous = await changes.previousIdentity(await seen({created: at(0)}));
+
+        assert.deepEqual(previous, {externalIp: "203.0.113.1", isp: "Net"});
+    });
+
+    it("the newest earlier provider name from the same provider", async () => {
+        await seedTests(server.tests, [
+            {targetId: 3, created: at(3), externalIp: "203.0.113.1", isp: "Ookla says A", provider: "ookla"},
+            {targetId: 3, created: at(2), externalIp: "203.0.113.1", isp: "Libre says B", provider: "libre"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.1", isp: "Ookla says A", provider: "ookla"}
+        ]);
+
+        const previous = await changes.previousIdentity(await seen({targetId: 3, created: at(0)}));
 
         assert.equal(previous.isp, "Ookla says A");
     });
 
     it("never the run itself, nor one after it", async () => {
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0, 5), externalIp: "203.0.113.5", isp: "Later"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0, 5), externalIp: "203.0.113.5", isp: "Later"}
         ]);
 
-        const previous = await changes.previousIdentity(await seen({created: at(1)}));
+        const previous = await changes.previousIdentity(await seen({targetId: 3, created: at(1)}));
 
         assert.deepEqual(previous, {externalIp: null, isp: null});
     });
 
     it("nothing from further back than the lookback", async () => {
         await seedTests(server.tests, [
-            {created: at(changes.LOOKBACK_DAYS + 1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0), externalIp: "203.0.113.9", isp: "Net"}
+            {targetId: 3, created: at(changes.LOOKBACK_DAYS + 1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.9", isp: "Net"}
         ]);
 
-        const previous = await changes.previousIdentity(await seen({created: at(0)}));
+        const previous = await changes.previousIdentity(await seen({targetId: 3, created: at(0)}));
 
         assert.deepEqual(previous, {externalIp: null, isp: null});
     });
@@ -94,10 +110,10 @@ describe("what the verdict compares against", () => {
 describe("recording a change", () => {
     it("writes a row naming the change, the test and the member, and answers it", async () => {
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Old Net"},
-            {created: at(0), externalIp: "203.0.113.2", isp: "Old Net"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Old Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.2", isp: "Old Net"}
         ]);
-        const test = await seen({created: at(0)});
+        const test = await seen({targetId: 3, created: at(0)});
 
         const change = await changes.recordChange(test, target);
 
@@ -116,21 +132,21 @@ describe("recording a change", () => {
 
     it("writes nothing, and answers null, when nothing changed", async () => {
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0), externalIp: "203.0.113.1", isp: "Net"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.1", isp: "Net"}
         ]);
 
-        assert.equal(await changes.recordChange(await seen({created: at(0)}), target), null);
+        assert.equal(await changes.recordChange(await seen({targetId: 3, created: at(0)}), target), null);
         assert.equal(await model.count(), 0);
     });
 
     it("writes nothing for a run that saw no connection at all", async () => {
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0), externalIp: null, isp: null, provider: "iperf3"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0), externalIp: null, isp: null, provider: "iperf3"}
         ]);
 
-        assert.equal(await changes.recordChange(await seen({created: at(0)}), target), null);
+        assert.equal(await changes.recordChange(await seen({targetId: 3, created: at(0)}), target), null);
         assert.equal(await model.count(), 0);
     });
 
@@ -141,23 +157,23 @@ describe("recording a change", () => {
         }));
         await model.bulkCreate(rows);
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0), externalIp: "203.0.113.2", isp: "Net"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.2", isp: "Net"}
         ]);
 
-        await changes.recordChange(await seen({created: at(0)}), target);
+        await changes.recordChange(await seen({targetId: 3, created: at(0)}), target);
 
         assert.equal(await model.count(), changes.CHANGE_LOG_LIMIT);
         assert.equal(await model.count({where: {created: rows[0].created}}), 0, "the oldest row survived");
-        assert.equal(await model.count({where: {created: at(0)}}), 1, "the newest row was the one dropped");
+        assert.equal(await model.count({where: {targetId: 3, created: at(0)}}), 1, "the newest row was the one dropped");
     });
 
     it("answers null rather than throwing when the database refuses", async () => {
         await seedTests(server.tests, [
-            {created: at(1), externalIp: "203.0.113.1", isp: "Net"},
-            {created: at(0), externalIp: "203.0.113.2", isp: "Net"}
+            {targetId: 3, created: at(1), externalIp: "203.0.113.1", isp: "Net"},
+            {targetId: 3, created: at(0), externalIp: "203.0.113.2", isp: "Net"}
         ]);
-        const test = await seen({created: at(0)});
+        const test = await seen({targetId: 3, created: at(0)});
 
         const change = await changes.recordChange({...test, provider: null}, target);
 
@@ -181,7 +197,7 @@ describe("listing the log", () => {
     });
 
     it("answers plain rows", async () => {
-        await model.create({created: at(0), provider: "ookla", previousIsp: "A", isp: "B"});
+        await model.create({targetId: 3, created: at(0), provider: "ookla", previousIsp: "A", isp: "B"});
 
         const [row] = await changes.listChanges();
 
@@ -193,8 +209,8 @@ describe("listing the log", () => {
 describe("forgetting", () => {
     it("goes with the retention sweep", async () => {
         await model.bulkCreate([
-            {created: at(400), provider: "ookla", previousIp: "a", ip: "b"},
-            {created: at(1), provider: "ookla", previousIp: "b", ip: "c"}
+            {targetId: 3, created: at(400), provider: "ookla", previousIp: "a", ip: "b"},
+            {targetId: 3, created: at(1), provider: "ookla", previousIp: "b", ip: "c"}
         ]);
 
         await speedtests.removeOld();
@@ -203,7 +219,7 @@ describe("forgetting", () => {
     });
 
     it("goes with the history", async () => {
-        await model.create({created: at(1), provider: "ookla", previousIp: "b", ip: "c"});
+        await model.create({targetId: 3, created: at(1), provider: "ookla", previousIp: "b", ip: "c"});
 
         await speedtests.deleteTests();
 
@@ -226,8 +242,8 @@ describe("the route", () => {
 
     it("hands the operator the log, newest first", async () => {
         await model.bulkCreate([
-            {created: at(2), provider: "ookla", previousIp: "a", ip: "b"},
-            {created: at(1), provider: "ookla", previousIsp: "A", isp: "B"}
+            {targetId: 3, created: at(2), provider: "ookla", previousIp: "a", ip: "b"},
+            {targetId: 3, created: at(1), provider: "ookla", previousIsp: "A", isp: "B"}
         ]);
 
         const {status, body} = await admin("/speedtests/connections");
