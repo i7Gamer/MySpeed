@@ -85,7 +85,8 @@
     "preferences": "Předvolby",
     "provider": "O poskytovateli",
     "integrations": "Integrace",
-    "tokens": "API tokeny"
+    "tokens": "API tokeny",
+    "connections": "Změny připojení"
   },
   "about": {
     "title": "O aplikaci MySpeed",
@@ -682,7 +683,10 @@
       "digest_weekly": "Posílat týdenní přehled",
       "digest_monthly": "Posílat měsíční přehled",
       "language": "Jazyk zpráv",
-      "language_placeholder": "Angličtina (výchozí)"
+      "language_placeholder": "Angličtina (výchozí)",
+      "send_ip_changed": "Upozornit při změně externí IP nebo poskytovatele",
+      "ip_changed_message": "Zpráva o změně připojení",
+      "ip_changed_message_placeholder": "Nová adresa: %ip% (byla %previousIp%)"
     },
     "variables": "Dostupné proměnné",
     "variables_hint": "Kliknutím ji přidáte do zprávy"
@@ -817,7 +821,11 @@
     "not_measured": "{{metric}} (neměřeno)",
     "below_usual": "Pod obvyklou rychlostí: {{crossings}} méně",
     "shortfall": "{{metric}} o {{shortfall}} %",
-    "and": " a "
+    "and": " a ",
+    "connection_changed": "Připojení se změnilo",
+    "connection_changed_subject": "MySpeed: změna připojení",
+    "ip_changed": "IP adresa {{from}} → {{to}}",
+    "isp_changed": "Poskytovatel {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API tokeny",
@@ -840,5 +848,13 @@
       "description": "Vše, co používá \"{{name}}\", už nebude moci spouštět testy. Toto nelze vrátit zpět.",
       "yes": "Zrušit"
     }
+  },
+  "connections": {
+    "title": "Změny připojení",
+    "description": "Pokaždé, když se mezi dvěma testy změnila externí IP adresa nebo poskytovatel, tak jak je viděl poskytovatel testu. IPv4 a IPv6 jsou sledovány zvlášť a změnu může zaznamenat jen test, který hlásí adresu.",
+    "empty": "Zatím nebyly zaznamenány žádné změny.",
+    "ip": "IP adresa",
+    "isp": "Poskytovatel",
+    "unknown_target": "Odebraný cíl"
   }
 }

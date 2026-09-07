@@ -85,7 +85,8 @@
     "preferences": "Preferenser",
     "provider": "Om leverantören",
     "integrations": "Integrationer",
-    "tokens": "API-tokens"
+    "tokens": "API-tokens",
+    "connections": "Ändringar av anslutning"
   },
   "about": {
     "title": "Om MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Skicka en veckosammanfattning",
       "digest_monthly": "Skicka en månadssammanfattning",
       "language": "Språk för meddelanden",
-      "language_placeholder": "Engelska (standard)"
+      "language_placeholder": "Engelska (standard)",
+      "send_ip_changed": "Meddela när den externa IP-adressen eller leverantören ändras",
+      "ip_changed_message": "Meddelande om förändring av anslutning",
+      "ip_changed_message_placeholder": "Ny adress: %ip% (var %previousIp%)"
     },
     "variables": "Tillgängliga variabler",
     "variables_hint": "Klicka för att lägga till den i meddelandet"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (inte uppmätt)",
     "below_usual": "Under den vanliga hastigheten: {{crossings}} lägre",
     "shortfall": "{{metric}} {{shortfall}} %",
-    "and": " och "
+    "and": " och ",
+    "connection_changed": "Anslutningen har ändrats",
+    "connection_changed_subject": "MySpeed: anslutning ändrad",
+    "ip_changed": "IP-adress {{from}} → {{to}}",
+    "isp_changed": "Leverantör {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API-tokens",
@@ -834,5 +842,13 @@
       "description": "Allt som använder \"{{name}}\" kommer inte längre att kunna starta tester. Detta kan inte ångras.",
       "yes": "Återkalla"
     }
+  },
+  "connections": {
+    "title": "Ändringar av anslutning",
+    "description": "Varje gång den externa IP-adressen eller leverantören ändrades mellan två tester, enligt vad testets leverantör såg. IPv4 och IPv6 följs separat, och bara ett test som rapporterar en adress kan upptäcka en förändring.",
+    "empty": "Inga ändringar registrerade än.",
+    "ip": "IP-adress",
+    "isp": "Leverantör",
+    "unknown_target": "Borttaget mål"
   }
 }

@@ -21,7 +21,7 @@ import { bodyOf, readSource } from "../helpers/source.js";
 const body = bodyOf(readSource("server/controller/config.js"), "export const factoryReset");
 const transactionBlock = bodyOf(body, "db.transaction");
 
-const TABLES = ["config", "node", "recommendations", "integration", "targetsModel"];
+const TABLES = ["config", "node", "recommendations", "integration", "targetsModel", "connectionChanges"];
 
 describe("the factory reset", () => {
     for (const model of TABLES) {

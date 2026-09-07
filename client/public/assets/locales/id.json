@@ -85,7 +85,8 @@
     "preferences": "Preferensi",
     "provider": "Tentang penyedia",
     "integrations": "Integrasi",
-    "tokens": "Token API"
+    "tokens": "Token API",
+    "connections": "Perubahan koneksi"
   },
   "about": {
     "title": "Tentang MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Kirim ringkasan mingguan",
       "digest_monthly": "Kirim ringkasan bulanan",
       "language": "Bahasa pesan",
-      "language_placeholder": "Inggris (bawaan)"
+      "language_placeholder": "Inggris (bawaan)",
+      "send_ip_changed": "Beritahu saat IP eksternal atau penyedia layanan berubah",
+      "ip_changed_message": "Pesan perubahan koneksi",
+      "ip_changed_message_placeholder": "Alamat baru: %ip% (sebelumnya %previousIp%)"
     },
     "variables": "Variabel yang tersedia",
     "variables_hint": "Klik untuk menambahkannya ke pesan"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (tidak terukur)",
     "below_usual": "Di bawah kecepatan biasanya: {{crossings}} lebih rendah",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " dan "
+    "and": " dan ",
+    "connection_changed": "Koneksi telah berubah",
+    "connection_changed_subject": "MySpeed: koneksi berubah",
+    "ip_changed": "Alamat IP {{from}} → {{to}}",
+    "isp_changed": "Penyedia layanan {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Token API",
@@ -834,5 +842,13 @@
       "description": "Apa pun yang memakai \"{{name}}\" tidak akan bisa memulai tes lagi. Ini tidak bisa dibatalkan.",
       "yes": "Cabut"
     }
+  },
+  "connections": {
+    "title": "Perubahan koneksi",
+    "description": "Setiap kali alamat IP eksternal atau penyedia layanan berubah antara dua tes, sebagaimana dilihat oleh penyedia layanan tes tersebut. IPv4 dan IPv6 ditelusuri secara terpisah, dan hanya tes yang melaporkan alamat dapat mendeteksi perubahan.",
+    "empty": "Belum ada perubahan yang dicatat.",
+    "ip": "Alamat IP",
+    "isp": "Penyedia layanan",
+    "unknown_target": "Target dihapus"
   }
 }

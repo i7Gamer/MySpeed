@@ -4,6 +4,7 @@ import * as pauseController from '../controller/pause.js';
 import * as config from '../controller/config.js';
 import * as testTask from '../tasks/speedtest.js';
 import * as targets from '../controller/targets.js';
+import * as connectionChanges from '../controller/connectionChanges.js';
 import { isPreviewInstance } from '../util/previewMode.js';
 import password from '../middlewares/password.js';
 import { tokenOrPassword } from '../middlewares/apiToken.js';
@@ -598,6 +599,16 @@ app.post("/pause", password(false), previewReadOnly, (req, res) => {
 app.post("/continue", password(false), previewReadOnly, (req, res) => {
     pauseController.updateState(false);
     res.json({message: "Successfully resumed the speedtests"});
+});
+
+// When the external address or the provider changed. Nothing but the
+// identity every other route strips from a viewer, so sealed from viewers
+// outright - and from a demo, whose password gate opens to everyone. Above
+// "/:id", which would otherwise answer it as a test called "connections".
+const CONNECTIONS_DEMO_MESSAGE = "For privacy reasons, the connection log is not available in preview mode";
+
+app.get("/connections", password(false), previewReadOnly.blocking(CONNECTIONS_DEMO_MESSAGE), async (req, res) => {
+    res.json(await connectionChanges.listChanges());
 });
 
 app.get("/:id", password(true), async (req, res) => {

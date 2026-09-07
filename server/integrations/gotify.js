@@ -2,6 +2,7 @@ import { plainDefaults } from '../util/notificationLocale.js';
 import { postJson } from "../util/http.js";
 import { headerSafe, replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
+import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
@@ -73,6 +74,12 @@ export default (registerEvent) => {
         if (c.send_failed) await send(c,
             replaceVariables(c.error_message || defaults(c.language).failed, failure, zone),
             FAILED_PRIORITY, activity);
+    });
+
+    registerEvent(IP_CHANGED_EVENT, async ({data: c}, change, activity, zone) => {
+        if (c.send_ip_changed) await send(c,
+            replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, change, zone),
+            priorityOf(c.priority, FINISHED_PRIORITY), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

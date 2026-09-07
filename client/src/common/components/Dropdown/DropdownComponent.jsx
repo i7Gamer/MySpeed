@@ -7,6 +7,7 @@ import {
     faInfo,
     faKey,
     faTicket,
+    faRightLeft,
     faPause,
     faPlay,
     faSliders,
@@ -38,6 +39,7 @@ import PasswordDialog from "@/common/components/PasswordDialog";
 import PauseDialog from "@/common/components/PauseDialog";
 import PreferencesDialog from "@/common/components/PreferencesDialog";
 import TokensDialog from "@/common/components/TokensDialog";
+import ConnectionsDialog from "@/common/components/ConnectionsDialog";
 
 /**
  * Whether this instance is offered a given entry.
@@ -73,6 +75,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [showFrequencyDialog, setShowFrequencyDialog] = useState(false);
     const [showPasswordDialog, setShowPasswordDialog] = useState(false);
     const [showTokensDialog, setShowTokensDialog] = useState(false);
+    const [showConnectionsDialog, setShowConnectionsDialog] = useState(false);
     const [showPauseDialog, setShowPauseDialog] = useState(false);
     const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
     const ref = useRef();
@@ -212,6 +215,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         {key: "cron", run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron"), previewDisabled: true},
         {key: "pause", run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests")), previewDisabled: true},
         {key: "integrations", run: () => setShowIntegrationDialog(true), icon: faCircleNodes, text: t("dropdown.integrations")},
+        {key: "connections", run: () => setShowConnectionsDialog(true), icon: faRightLeft, text: t("dropdown.connections"), previewDisabled: true},
         {hr: true, key: "hr-2"},
         {key: "language", run: () => setShowLanguageDialog(true), icon: faGlobeEurope, text: t("dropdown.language"), allowView: true},
         {key: "preferences", run: () => setShowPreferencesDialog(true), icon: faUserGear, text: t("dropdown.preferences"), allowView: true},
@@ -228,6 +232,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
             <FrequencyDialog open={showFrequencyDialog} onClose={() => setShowFrequencyDialog(false)}/>
             <PasswordDialog open={showPasswordDialog} onClose={() => setShowPasswordDialog(false)}/>
             <TokensDialog open={showTokensDialog} onClose={() => setShowTokensDialog(false)}/>
+            <ConnectionsDialog open={showConnectionsDialog} onClose={() => setShowConnectionsDialog(false)}/>
             <PauseDialog open={showPauseDialog} onClose={() => setShowPauseDialog(false)} onPause={updateStatus}/>
             <PreferencesDialog open={showPreferencesDialog} onClose={() => setShowPreferencesDialog(false)}/>
             <div className={`dropdown ${isOpen ? '' : 'dropdown-invisible'}`} ref={ref}>

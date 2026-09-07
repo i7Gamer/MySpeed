@@ -1,0 +1,60 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
+
+.connections-dialog
+  width: $settings-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+.connections-content
+  margin: 1rem 0
+  user-select: none
+
+.connections-description
+  margin: 0 0 1rem 0
+  color: $subtext
+  font-size: $dialog-lead
+  line-height: 1.5
+
+.connections-list
+  display: flex
+  flex-direction: column
+  gap: 0.5rem
+
+.connections-empty
+  margin: 0
+  color: $subtext
+  font-size: $dialog-hint
+
+.connection-row
+  padding: 0.6rem 0.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.5rem
+
+  &-when
+    margin: 0 0 0.35rem
+    color: $subtext
+    font-size: $dialog-hint
+
+.connection-change
+  display: flex
+  align-items: center
+  flex-wrap: wrap
+  gap: 0.4rem
+  font-size: $dialog-body
+  color: $white
+
+  &-label
+    color: $subtext
+    min-width: 4rem
+
+  // Addresses and names are the reader's to copy.
+  &-from, &-to
+    user-select: text
+    word-break: break-all
+
+  &-arrow
+    color: $subtext

@@ -6,6 +6,7 @@ import { legacyTarget } from '../migrations/0013-add-targets.js';
 import test from '../models/Speedtests.js';
 import recommendations from '../models/Recommendations.js';
 import integration from '../models/IntegrationData.js';
+import connectionChanges from '../models/ConnectionChanges.js';
 import { asDataObject, triggerEvent, withoutSecrets } from './integrations.js';
 import { nodeNameProblem } from '../util/nodeName.js';
 import bcrypt from 'bcryptjs';
@@ -1108,6 +1109,8 @@ export const factoryReset = async () => {
         await recommendations.destroy({where: {}, transaction});
         await integration.destroy({where: {}, transaction});
         await targetsModel.destroy({where: {}, transaction});
+        // The log of address changes: identity, which a reset ends too.
+        await connectionChanges.destroy({where: {}, transaction});
     });
 
     // The reset put the password back to the unprotected sentinel without going

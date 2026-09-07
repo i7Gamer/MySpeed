@@ -85,7 +85,8 @@
     "preferences": "Preferences",
     "provider": "About the provider",
     "integrations": "Integrations",
-    "tokens": "API tokens"
+    "tokens": "API tokens",
+    "connections": "Connection changes"
   },
   "about": {
     "title": "About MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Send a weekly digest",
       "digest_monthly": "Send a monthly digest",
       "language": "Message language",
-      "language_placeholder": "English (default)"
+      "language_placeholder": "English (default)",
+      "send_ip_changed": "Notify when the external IP or the provider changes",
+      "ip_changed_message": "Connection change message",
+      "ip_changed_message_placeholder": "New address: %ip% (was %previousIp%)"
     },
     "variables": "Available variables",
     "variables_hint": "Click to add it to the message"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (not measured)",
     "below_usual": "Below its usual speed: {{crossings}} under",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " and "
+    "and": " and ",
+    "connection_changed": "The connection has changed",
+    "connection_changed_subject": "MySpeed: connection changed",
+    "ip_changed": "IP address {{from}} → {{to}}",
+    "isp_changed": "Provider {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API tokens",
@@ -834,5 +842,13 @@
       "description": "Anything using \"{{name}}\" will stop being able to start tests. This cannot be undone.",
       "yes": "Revoke"
     }
+  },
+  "connections": {
+    "title": "Connection changes",
+    "description": "Every time the external IP address or the provider changed between two tests, as the test's provider saw it. IPv4 and IPv6 are followed separately, and only a test that reports an address can notice a change.",
+    "empty": "No changes recorded yet.",
+    "ip": "IP address",
+    "isp": "Provider",
+    "unknown_target": "Removed target"
   }
 }

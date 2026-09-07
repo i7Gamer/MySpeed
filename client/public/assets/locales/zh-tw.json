@@ -85,7 +85,8 @@
     "preferences": "偏好設定",
     "provider": "關於供應商",
     "integrations": "整合",
-    "tokens": "API 權杖"
+    "tokens": "API 權杖",
+    "connections": "連線變更"
   },
   "about": {
     "title": "關於 MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "傳送每週摘要",
       "digest_monthly": "傳送每月摘要",
       "language": "訊息語言",
-      "language_placeholder": "英文（預設）"
+      "language_placeholder": "英文（預設）",
+      "send_ip_changed": "當外部 IP 或服務供應商變更時通知",
+      "ip_changed_message": "連線變更訊息",
+      "ip_changed_message_placeholder": "新位址：%ip%（原為 %previousIp%）"
     },
     "variables": "可用變數",
     "variables_hint": "點一下即可加入訊息中"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}}（未測量）",
     "below_usual": "低於平常速度：{{crossings}}",
     "shortfall": "{{metric}} 下降 {{shortfall}}%",
-    "and": "、"
+    "and": "、",
+    "connection_changed": "連線已變更",
+    "connection_changed_subject": "MySpeed：連線已變更",
+    "ip_changed": "IP 位址 {{from}} → {{to}}",
+    "isp_changed": "服務供應商 {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API 權杖",
@@ -834,5 +842,13 @@
       "description": "任何使用「{{name}}」的程式將無法再啟動測試。此操作無法復原。",
       "yes": "撤銷"
     }
+  },
+  "connections": {
+    "title": "連線變更",
+    "description": "每次外部 IP 位址或服務供應商在兩次測試之間發生變更時，即視為有變更（以測試所見之服務供應商為準）。IPv4 與 IPv6 會分別追蹤，且僅有報告地址的測試才能察覺到變更。",
+    "empty": "尚未記錄任何變更。",
+    "ip": "IP 位址",
+    "isp": "服務供應商",
+    "unknown_target": "已移除目標"
   }
 }

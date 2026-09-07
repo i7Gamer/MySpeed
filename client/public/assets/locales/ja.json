@@ -85,7 +85,8 @@
     "preferences": "環境設定",
     "provider": "プロバイダーについて",
     "integrations": "連携",
-    "tokens": "API トークン"
+    "tokens": "API トークン",
+    "connections": "接続の変更"
   },
   "about": {
     "title": "MySpeed について",
@@ -676,7 +677,10 @@
       "digest_weekly": "週次ダイジェストを送信",
       "digest_monthly": "月次ダイジェストを送信",
       "language": "メッセージの言語",
-      "language_placeholder": "英語（既定）"
+      "language_placeholder": "英語（既定）",
+      "send_ip_changed": "外部 IP やプロバイダーが変更された際に通知する",
+      "ip_changed_message": "接続変更メッセージ",
+      "ip_changed_message_placeholder": "新しいアドレス：%ip%（以前は %previousIp%）"
     },
     "variables": "使用できる変数",
     "variables_hint": "クリックするとメッセージに追加されます"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}}（未計測）",
     "below_usual": "通常の速度を下回りました: {{crossings}} 低下",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": "、"
+    "and": "、",
+    "connection_changed": "接続が変更されました",
+    "connection_changed_subject": "MySpeed：接続が変更されました",
+    "ip_changed": "IP アドレス {{from}} → {{to}}",
+    "isp_changed": "プロバイダー {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API トークン",
@@ -834,5 +842,13 @@
       "description": "「{{name}}」を使っているものはテストを開始できなくなります。この操作は取り消せません。",
       "yes": "無効化"
     }
+  },
+  "connections": {
+    "title": "接続の変更",
+    "description": "外部 IP アドレスまたはプロバイダーが 2 回のテストの間に変わるたびに、テストのプロバイダーから見た内容で記録します。IPv4 と IPv6 は別々に追跡され、アドレスを報告するテストだけが変更に気づけます。",
+    "empty": "まだ記録された変更はありません。",
+    "ip": "IP アドレス",
+    "isp": "プロバイダー",
+    "unknown_target": "削除されたターゲット"
   }
 }

@@ -85,7 +85,8 @@
     "preferences": "偏好设置",
     "provider": "关于供应商",
     "integrations": "集成",
-    "tokens": "API 令牌"
+    "tokens": "API 令牌",
+    "connections": "连接变更"
   },
   "about": {
     "title": "关于 MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "发送每周摘要",
       "digest_monthly": "发送每月摘要",
       "language": "消息语言",
-      "language_placeholder": "英语（默认）"
+      "language_placeholder": "英语（默认）",
+      "send_ip_changed": "外部 IP 或运营商变更时通知",
+      "ip_changed_message": "连接变更消息",
+      "ip_changed_message_placeholder": "新地址：%ip%（原为 %previousIp%）"
     },
     "variables": "可用变量",
     "variables_hint": "点击即可将其加入消息"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}}（未测量）",
     "below_usual": "低于平常速度：{{crossings}}",
     "shortfall": "{{metric}} 下降 {{shortfall}}%",
-    "and": "、"
+    "and": "、",
+    "connection_changed": "连接已更改",
+    "connection_changed_subject": "MySpeed：连接已更改",
+    "ip_changed": "IP 地址 {{from}} → {{to}}",
+    "isp_changed": "运营商 {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API 令牌",
@@ -834,5 +842,13 @@
       "description": "任何使用“{{name}}”的程序将无法再启动测试。此操作无法撤销。",
       "yes": "撤销"
     }
+  },
+  "connections": {
+    "title": "连接变更",
+    "description": "每次外部 IP 地址或运营商在两次测试之间发生变化时都会记录，以测试所见的运营商为准。IPv4 和 IPv6 分别跟踪，只有报告了地址的测试才能注意到变化。",
+    "empty": "尚未记录任何变更。",
+    "ip": "IP 地址",
+    "isp": "运营商",
+    "unknown_target": "已移除的目标"
   }
 }

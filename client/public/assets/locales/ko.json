@@ -85,7 +85,8 @@
     "preferences": "환경 설정",
     "provider": "제공업체 정보",
     "integrations": "통합",
-    "tokens": "API 토큰"
+    "tokens": "API 토큰",
+    "connections": "연결 변경"
   },
   "about": {
     "title": "MySpeed 정보",
@@ -676,7 +677,10 @@
       "digest_weekly": "주간 요약 보내기",
       "digest_monthly": "월간 요약 보내기",
       "language": "메시지 언어",
-      "language_placeholder": "영어 (기본값)"
+      "language_placeholder": "영어 (기본값)",
+      "send_ip_changed": "외부 IP 나 제공자가 변경될 때 알림",
+      "ip_changed_message": "연결 변경 메시지",
+      "ip_changed_message_placeholder": "새 주소: %ip% (이전: %previousIp%)"
     },
     "variables": "사용 가능한 변수",
     "variables_hint": "클릭하면 메시지에 추가됩니다"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (측정되지 않음)",
     "below_usual": "평소 속도 미만: {{crossings}} 감소",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " 및 "
+    "and": " 및 ",
+    "connection_changed": "연결이 변경되었습니다",
+    "connection_changed_subject": "MySpeed: 연결 변경",
+    "ip_changed": "IP 주소 {{from}} → {{to}}",
+    "isp_changed": "제공자 {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API 토큰",
@@ -834,5 +842,13 @@
       "description": "\"{{name}}\"을(를) 사용하는 모든 것이 더 이상 테스트를 시작할 수 없게 됩니다. 되돌릴 수 없습니다.",
       "yes": "철회"
     }
+  },
+  "connections": {
+    "title": "연결 변경",
+    "description": "두 테스트 사이에 외부 IP 주소나 제공자가 바뀔 때마다, 테스트의 제공자가 본 대로 기록합니다. IPv4와 IPv6는 따로 추적하며, 주소를 보고하는 테스트만 변경을 알아챌 수 있습니다.",
+    "empty": "아직 변경 사항이 없습니다.",
+    "ip": "IP 주소",
+    "isp": "제공자",
+    "unknown_target": "대상 제거됨"
   }
 }

@@ -2,12 +2,12 @@ import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
-import { setState, sendRunning, sendError, sendFinished, sendRoundFinished, watchedFailureStands }
+import { setState, sendRunning, sendError, sendFinished, sendConnectionChanged, sendRoundFinished, watchedFailureStands }
     from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
-import { failedPayload, finishedPayload } from '../util/notificationPayload.js';
+import { connectionChangedPayload, failedPayload, finishedPayload } from '../util/notificationPayload.js';
 import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
@@ -22,6 +22,7 @@ import errorHandler from '../util/errorHandler.js';
 import { outageFrom } from '../util/databaseOutage.js';
 import { trackRound } from '../util/activeRound.js';
 import { diagnoseRun } from './hopDiagnostics.js';
+import { recordChange } from '../controller/connectionChanges.js';
 
 // The placeholder a failed test stores in every numeric column. The client
 // tells a failure apart by it, so it is not a value anyone should read as one.
@@ -1251,6 +1252,21 @@ const executeTarget = async (target, type, retried = false) => {
             // this member got rather than to a claim - see wasPrimaryMember.
             primary: await wasPrimaryMember(target)})).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+
+        // Whether the address or the provider changed with this run. After
+        // the row and the finished notification - the change is told after
+        // the measurement it came with and never delays it - and before the
+        // trace, which takes seconds. Not on a demo, whose address is
+        // whatever the simulation made up. Contained the way
+        // createRecommendations is: a log that cannot be written must not
+        // fail the test it follows, and the send is fire and forget like the
+        // one above it.
+        if (mode !== "preview") {
+            const change = await recordChange({id: testResult.id, created: testResult.created, isp, externalIp, provider}, target)
+                .catch((err) => { console.error(`Could not judge the connection of test #${testResult.id}: ${toErrorMessage(err)}`); return null; });
+            if (change !== null) sendConnectionChanged(connectionChangedPayload({...change, targetName: target.name, alerts: Boolean(target.alerts)}))
+                .catch((err) => console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+        }
 
         // Last, after the row and the notification, because it takes seconds
         // and neither should wait on it. Awaited all the same: the running

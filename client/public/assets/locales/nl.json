@@ -85,7 +85,8 @@
     "preferences": "Voorkeuren",
     "provider": "Over de provider",
     "integrations": "Integraties",
-    "tokens": "API-tokens"
+    "tokens": "API-tokens",
+    "connections": "Verbindingswijzigingen"
   },
   "about": {
     "title": "Over MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Wekelijkse samenvatting versturen",
       "digest_monthly": "Maandelijkse samenvatting versturen",
       "language": "Taal van de berichten",
-      "language_placeholder": "Engels (standaard)"
+      "language_placeholder": "Engels (standaard)",
+      "send_ip_changed": "Meld als het externe IP of de provider verandert",
+      "ip_changed_message": "Bericht bij een verbindingswijziging",
+      "ip_changed_message_placeholder": "Nieuw adres: %ip% (was %previousIp%)"
     },
     "variables": "Beschikbare variabelen",
     "variables_hint": "Klik om hem aan het bericht toe te voegen"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (niet gemeten)",
     "below_usual": "Onder de gebruikelijke snelheid: {{crossings}} lager",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " en "
+    "and": " en ",
+    "connection_changed": "De verbinding is veranderd",
+    "connection_changed_subject": "MySpeed: verbinding veranderd",
+    "ip_changed": "IP-adres {{from}} → {{to}}",
+    "isp_changed": "Provider {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API-tokens",
@@ -834,5 +842,13 @@
       "description": "Alles wat \"{{name}}\" gebruikt, kan dan geen tests meer starten. Dit kan niet ongedaan worden gemaakt.",
       "yes": "Intrekken"
     }
+  },
+  "connections": {
+    "title": "Verbindingswijzigingen",
+    "description": "Elke keer als het externe IP-adres of de provider tussen twee tests veranderd is, zoals de testprovider het zag. IPv4 en IPv6 worden apart gevolgd, en alleen een test die een adres rapporteert kan een verandering opmerken.",
+    "empty": "Nog geen wijzigingen geregistreerd.",
+    "ip": "IP-adres",
+    "isp": "Provider",
+    "unknown_target": "Verwijderd doelwit"
   }
 }

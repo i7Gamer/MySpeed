@@ -9,6 +9,7 @@ import { getValue, MAX_RETENTION_DAYS } from './config.js';
 import * as targetsController from './targets.js';
 import db from '../config/database.js';
 import { isHopTable } from '../util/traceroute.js';
+import * as connectionChanges from './connectionChanges.js';
 
 const DEFAULT_RETENTION_DAYS = 365;
 const MS_PER_DAY = 86400000;
@@ -372,6 +373,8 @@ export const countFailuresSince = async (since, targetIds = undefined) => {
 
 export const deleteTests = async () => {
     await tests.destroy({where: {}});
+    // The log of address changes describes the history and goes with it.
+    await connectionChanges.removeAll();
     return true;
 }
 
@@ -1105,6 +1108,8 @@ export const removeOld = async () => {
     const cutoff = new Date(Date.now() - days * MS_PER_DAY);
 
     await tests.destroy({where: {created: retentionCutoffFilter(cutoff)}});
+    // And the address changes those tests saw, by the same cutoff.
+    await connectionChanges.removeOlderThan(cutoff);
     return true;
 }
 

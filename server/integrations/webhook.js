@@ -1,5 +1,6 @@
 import { postJson } from "../util/http.js";
 import { wantsDigest } from "../util/digestOptIn.js";
+import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
 
 const send = (url, event, data, activity) =>
     postJson(url, {event, data}, {headers: {"user-agent": "MySpeed/WebhookAgent"}, activity});
@@ -9,6 +10,7 @@ const events = [
     ['minutePassed', 'send_alive', "KEEP_ALIVE"],
     ['testFinished', 'send_finished', "TEST_FINISHED", (d) => d],
     ['testFailed', 'send_failed', "TEST_FAILED", (d) => d],
+    [IP_CHANGED_EVENT, 'send_ip_changed', "IP_CHANGED", (d) => d],
     ['recommendationsUpdated', 'send_recommendations', "RECOMMENDATIONS_UPDATED", (d) => d],
     ['configUpdated', 'send_config_updates', "CONFIG_UPDATED", (d) => d]
 ];

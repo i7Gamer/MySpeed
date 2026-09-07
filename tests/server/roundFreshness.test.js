@@ -317,7 +317,9 @@ describe("what the round says when it ends", () => {
     it("sends every member's events and lets the fan-out route them", () => {
         assert.doesNotMatch(source, /if \(target\.alerts\) send/,
             "an unwatched member's data never reaches the sinks");
-        assert.equal((source.match(/alerts: Boolean\(target\.alerts\)/g) ?? []).length, 2,
+        // Three payloads: finished, failed, and the connection change a
+        // finished run may carry - the gate reads the flag on all of them.
+        assert.equal((source.match(/alerts: Boolean\(target\.alerts\)/g) ?? []).length, 3,
             "a payload does not say whether its member alerts, so the notifiers cannot stay quiet");
     });
 

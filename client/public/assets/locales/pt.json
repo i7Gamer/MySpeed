@@ -85,7 +85,8 @@
     "preferences": "Preferências",
     "provider": "Sobre o provedor",
     "integrations": "Integrações",
-    "tokens": "Tokens de API"
+    "tokens": "Tokens de API",
+    "connections": "Alterações de conexão"
   },
   "about": {
     "title": "Sobre o MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Enviar um resumo semanal",
       "digest_monthly": "Enviar um resumo mensal",
       "language": "Idioma das mensagens",
-      "language_placeholder": "Inglês (padrão)"
+      "language_placeholder": "Inglês (padrão)",
+      "send_ip_changed": "Notificar quando o IP externo ou o provedor mudar",
+      "ip_changed_message": "Mensagem de alteração de conexão",
+      "ip_changed_message_placeholder": "Novo endereço: %ip% (era %previousIp%)"
     },
     "variables": "Variáveis disponíveis",
     "variables_hint": "Clique para adicioná-la à mensagem"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (não medido)",
     "below_usual": "Abaixo da velocidade habitual: {{crossings}} a menos",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " e "
+    "and": " e ",
+    "connection_changed": "A conexão mudou",
+    "connection_changed_subject": "MySpeed: conexão alterada",
+    "ip_changed": "Endereço IP {{from}} → {{to}}",
+    "isp_changed": "Provedor {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Tokens de API",
@@ -834,5 +842,13 @@
       "description": "Tudo o que usa \"{{name}}\" deixará de poder iniciar testes. Isto não pode ser anulado.",
       "yes": "Revogar"
     }
+  },
+  "connections": {
+    "title": "Alterações de conexão",
+    "description": "A cada vez que o endereço IP externo ou o provedor mudou entre dois testes, como visto pelo provedor do teste. IPv4 e IPv6 são seguidos separadamente, e apenas um teste que reporta um endereço pode notar uma mudança.",
+    "empty": "Nenhuma alteração registrada ainda.",
+    "ip": "Endereço IP",
+    "isp": "Provedor",
+    "unknown_target": "Alvo removido"
   }
 }

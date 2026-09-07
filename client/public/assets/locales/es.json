@@ -85,7 +85,8 @@
     "preferences": "Preferencias",
     "provider": "Acerca del proveedor",
     "integrations": "Integraciones",
-    "tokens": "Tokens de API"
+    "tokens": "Tokens de API",
+    "connections": "Cambios de conexión"
   },
   "about": {
     "title": "Acerca de MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Enviar un resumen semanal",
       "digest_monthly": "Enviar un resumen mensual",
       "language": "Idioma de los mensajes",
-      "language_placeholder": "Inglés (predeterminado)"
+      "language_placeholder": "Inglés (predeterminado)",
+      "send_ip_changed": "Notificar cuando la IP externa o el proveedor cambie",
+      "ip_changed_message": "Mensaje de cambio de conexión",
+      "ip_changed_message_placeholder": "Nueva dirección: %ip% (era %previousIp%)"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Haz clic para añadirla al mensaje"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (sin medir)",
     "below_usual": "Por debajo de la velocidad habitual: {{crossings}} menos",
     "shortfall": "{{metric}} {{shortfall}} %",
-    "and": " y "
+    "and": " y ",
+    "connection_changed": "La conexión ha cambiado",
+    "connection_changed_subject": "MySpeed: conexión cambiada",
+    "ip_changed": "Dirección IP {{from}} → {{to}}",
+    "isp_changed": "Proveedor {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Tokens de API",
@@ -834,5 +842,13 @@
       "description": "Todo lo que use \"{{name}}\" dejará de poder iniciar pruebas. Esto no se puede deshacer.",
       "yes": "Revocar"
     }
+  },
+  "connections": {
+    "title": "Cambios de conexión",
+    "description": "Cada vez que la dirección IP externa o el proveedor cambie entre dos pruebas, tal como lo vio el proveedor de la prueba. IPv4 e IPv6 se siguen por separado, y solo una prueba que reporta una dirección podrá notar un cambio.",
+    "empty": "No hay cambios registrados aún.",
+    "ip": "Dirección IP",
+    "isp": "Proveedor",
+    "unknown_target": "Objetivo eliminado"
   }
 }

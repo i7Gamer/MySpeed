@@ -105,6 +105,28 @@ const FINISHED_KEYS = [
 const FAILED_KEYS = ["id", "created", "provider", "error", "targetId", "targetName", "primary", "alerts"];
 
 /**
+ * The passage that says what changed, filled in per recipient by the
+ * dispatcher in that integration's language - the same arrangement as the
+ * alert summary, for the same reason. Empty, never null, so it can sit at
+ * the end of the shipped templates.
+ */
+export const CONNECTION_SUMMARY = "connectionChanges";
+
+/**
+ * What an integration is told when the external address or the provider
+ * changed: the change itself - only the half that changed is filled, the
+ * other pair is null - which test saw it and which member ran that test.
+ * `alerts` travels for the reason it does on the other two: the gate reads
+ * it. See util/connectionChange.js.
+ */
+const CONNECTION_KEYS = [
+    "id", "created", "testId", "targetId", "targetName", "provider",
+    "previousIp", "ip", "previousIsp", "isp",
+    "alerts",
+    CONNECTION_SUMMARY
+];
+
+/**
  * A record reduced to exactly the advertised keys.
  *
  * Every key is present whether or not the record carried it: a template naming
@@ -118,6 +140,8 @@ export const finishedPayload = (record) => pick(FINISHED_KEYS, record);
 
 export const failedPayload = (record) => pick(FAILED_KEYS, record);
 
+export const connectionChangedPayload = (record) => pick(CONNECTION_KEYS, record);
+
 /**
  * The names the integration dialog offers for each kind of message.
  *
@@ -129,3 +153,5 @@ export const failedPayload = (record) => pick(FAILED_KEYS, record);
 export const FINISHED_VARIABLES = [...FINISHED_KEYS, ...DATE_VARIABLES];
 
 export const FAILED_VARIABLES = [...FAILED_KEYS, ...DATE_VARIABLES];
+
+export const CONNECTION_VARIABLES = [...CONNECTION_KEYS, ...DATE_VARIABLES];

@@ -1,5 +1,6 @@
 import schedule from 'node-schedule';
 import { triggerEvent } from "../controller/integrations.js";
+import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
 import { getLatest } from "../controller/speedtests.js";
 import * as targetsController from "../controller/targets.js";
 import { isFailedTest } from "../util/testOutcome.js";
@@ -164,6 +165,17 @@ export const sendRunning = async () => {
 
 export const sendFinished = async (data) => {
     await triggerEvent("testFinished", data);
+};
+
+/**
+ * The external address or the provider changed with a run - see
+ * util/connectionChange.js for the verdict and controller/connectionChanges.js
+ * for where it is kept.
+ *
+ * @param payload what connectionChangedPayload built from the row written.
+ */
+export const sendConnectionChanged = async (payload) => {
+    await triggerEvent(IP_CHANGED_EVENT, payload);
 };
 
 /**

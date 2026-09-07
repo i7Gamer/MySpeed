@@ -5,10 +5,13 @@ import { zoneFromName } from '../util/timezone.js';
 import { ALERT_CROSSED, ALERT_METRICS, ALERT_ONLY, ALERT_SUMMARY, alertSummary, breachesThreshold,
     crossedLimits, wantsOnlyBreaches } from '../util/alertThreshold.js';
 import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.js';
-import { LANGUAGE_FIELD, NOTIFICATION_LANGUAGES } from '../util/notificationLocale.js';
+import { LANGUAGE_FIELD, NOTIFICATION_LANGUAGES, connectionSummary } from '../util/notificationLocale.js';
 export { wantsDigest } from '../util/digestOptIn.js';
-import { FAILED_VARIABLES, FINISHED_VARIABLES } from '../util/notificationPayload.js';
+import {
+    CONNECTION_SUMMARY, CONNECTION_VARIABLES, FAILED_VARIABLES, FINISHED_VARIABLES
+} from '../util/notificationPayload.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
+import { IP_CHANGED_EVENT, IP_CHANGED_MESSAGE_FIELD, SEND_IP_CHANGED_FIELD } from '../util/connectionChange.js';
 
 const integrations = {};
 
@@ -186,10 +189,14 @@ export const triggerEvent = async (name, data) => {
              * useless beside the %error% the failure template already has.
              */
             const settings = composingSettings(module.module, integration.data);
+            // And the connection change's own passage, per recipient for the
+            // same reason: it is written in the integration's language.
             const described = name === "testFinished"
                 ? {...data, [ALERT_CROSSED]: crossedLimits(data, settings),
                     [ALERT_SUMMARY]: alertSummary(data, settings)}
-                : data;
+                : name === IP_CHANGED_EVENT
+                    ? {...data, [CONNECTION_SUMMARY]: connectionSummary(data, settings[LANGUAGE_FIELD])}
+                    : data;
 
             tasks.push(Promise.resolve()
                 .then(() => module.callback(integration, described,
@@ -258,6 +265,24 @@ const ALERT_FIELDS = [
 const DIGEST_FIELDS = [
     {name: DIGEST_WEEKLY_FIELD, type: "boolean", required: false},
     {name: DIGEST_MONTHLY_FIELD, type: "boolean", required: false}
+];
+
+/**
+ * The switch for the connection-change event, on every notifier, declared
+ * once for the reason the two lists above are. Off until turned on: nobody
+ * is opted into a new message by an upgrade.
+ *
+ * The template beside it goes only to the notifiers that write prose - the
+ * webhook posts the payload whole, and a template on its form would be a
+ * field nothing reads. The names live in util/connectionChange.js, a leaf
+ * the modules can read too.
+ */
+const CONNECTION_FIELDS = [
+    {name: SEND_IP_CHANGED_FIELD, type: "boolean", required: false}
+];
+
+const CONNECTION_TEMPLATE_FIELDS = [
+    {name: IP_CHANGED_MESSAGE_FIELD, type: "textarea", required: false}
 ];
 
 /**
@@ -346,7 +371,8 @@ const TEMPLATE_VARIABLES = {
     finished_message: FINISHED_VARIABLES,
     finished_subject: FINISHED_VARIABLES,
     error_message: FAILED_VARIABLES,
-    error_subject: FAILED_VARIABLES
+    error_subject: FAILED_VARIABLES,
+    [IP_CHANGED_MESSAGE_FIELD]: CONNECTION_VARIABLES
 };
 
 const withVariables = (field) => Object.hasOwn(TEMPLATE_VARIABLES, field.name)
@@ -371,8 +397,8 @@ export const initialize = async () => {
         // reference, so appending in place stacks another copy on every pass.
         const fields = [
             ...definition.fields,
-            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS] : []),
-            ...(isLocalised(definition) ? LANGUAGE_FIELDS : [])
+            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS, ...CONNECTION_FIELDS] : []),
+            ...(isLocalised(definition) ? [...LANGUAGE_FIELDS, ...CONNECTION_TEMPLATE_FIELDS] : [])
         ].map(withVariables);
 
         integrations[name] = {...definition, fields};
@@ -388,7 +414,8 @@ export const initialize = async () => {
  * hears from MySpeed at all, and triggerEvent below cannot be exercised without
  * a database behind it.
  *
- * Only the two per-test events are ever withheld, and only from modules that
+ * Only the per-member events are ever withheld - the two per-test events
+ * and the connection change, which a test saw - and only from modules that
  * call themselves notifiers - influxdb is a time series whose gaps read as an
  * outage, MQTT feeds a Home Assistant history that wants every point, and
  * healthChecks follows the round's own completion rather than the member
@@ -406,8 +433,10 @@ export const initialize = async () => {
  * the integration's own thresholds, which withhold only the finished event - a
  * failure of a watched line is the notification people most want.
  */
+const MEMBER_EVENTS = new Set(["testFinished", "testFailed", IP_CHANGED_EVENT]);
+
 export const suppressesEvent = (eventName, moduleName, integration, payload) => {
-    if (eventName !== "testFinished" && eventName !== "testFailed") return false;
+    if (!MEMBER_EVENTS.has(eventName)) return false;
     if (!isNotifier(getIntegration(moduleName))) return false;
 
     if (payload?.alerts === false) return true;

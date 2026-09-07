@@ -85,7 +85,8 @@
     "preferences": "Preferenze",
     "provider": "Informazioni sul fornitore",
     "integrations": "Integrazioni",
-    "tokens": "Token API"
+    "tokens": "Token API",
+    "connections": "Modifiche alla connessione"
   },
   "about": {
     "title": "Informazioni Su MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Invia un riepilogo settimanale",
       "digest_monthly": "Invia un riepilogo mensile",
       "language": "Lingua dei messaggi",
-      "language_placeholder": "Inglese (predefinita)"
+      "language_placeholder": "Inglese (predefinita)",
+      "send_ip_changed": "Notifica quando l'IP esterno o l'operatore cambia",
+      "ip_changed_message": "Messaggio di modifica della connessione",
+      "ip_changed_message_placeholder": "Nuovo indirizzo: %ip% (era %previousIp%)"
     },
     "variables": "Variabili disponibili",
     "variables_hint": "Clicca per aggiungerla al messaggio"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (non misurato)",
     "below_usual": "Sotto la velocità abituale: {{crossings}} in meno",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " e "
+    "and": " e ",
+    "connection_changed": "La connessione è cambiata",
+    "connection_changed_subject": "MySpeed: connessione cambiata",
+    "ip_changed": "Indirizzo IP {{from}} → {{to}}",
+    "isp_changed": "Operatore {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Token API",
@@ -834,5 +842,13 @@
       "description": "Tutto ciò che usa \"{{name}}\" non potrà più avviare test. Non si può annullare.",
       "yes": "Revoca"
     }
+  },
+  "connections": {
+    "title": "Modifiche alla connessione",
+    "description": "Ogni volta che l'indirizzo IP esterno o l'operatore è cambiato tra due test, come lo ha visto l'operatore del test. IPv4 e IPv6 sono seguiti separatamente, e solo un test che riporta un indirizzo può notare un cambiamento.",
+    "empty": "Nessuna modifica registrata finora.",
+    "ip": "Indirizzo IP",
+    "isp": "Operatore",
+    "unknown_target": "Target rimosso"
   }
 }

@@ -256,7 +256,11 @@ export const ENGLISH_PHRASES = Object.freeze({
     not_measured: "{{metric}} (not measured)",
     below_usual: "Below its usual speed: {{crossings}} under",
     shortfall: "{{metric}} {{shortfall}}%",
-    and: " and "
+    and: " and ",
+    connection_changed: "The connection has changed",
+    connection_changed_subject: "MySpeed: connection changed",
+    ip_changed: "IP address {{from}} → {{to}}",
+    isp_changed: "Provider {{from}} → {{to}}"
 });
 
 /**
@@ -297,6 +301,29 @@ export const plainDefaults = (language) => {
         // One literal, however long: tests/server/integrationSends.test.js reads
         // the template off this source, and a literal ends at its first backtick.
         finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n${word("upload")}: %upload% Mbps\n${word("download")}: %download% Mbps%alertSummary%`,
-        failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`
+        failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`,
+        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`
     };
+};
+
+/**
+ * What changed about the connection, as the one passage a template prints
+ * through %connectionChanges% - filled in per recipient at the dispatch
+ * point, the way the alert summary is, because the language is the
+ * integration's own setting.
+ *
+ * Only the half that changed, each on a line of its own. A template has no
+ * conditional, so a template naming %previousIp% and %ip% would print
+ * "IP a → a" on a run that changed only its provider; this says nothing
+ * about a half that stayed. Empty for a payload that changed nothing.
+ */
+export const connectionSummary = (change, language) => {
+    const lines = [];
+
+    if (change?.ip != null && change?.previousIp != null)
+        lines.push(phrase(language, "ip_changed", {from: change.previousIp, to: change.ip}));
+    if (change?.isp != null && change?.previousIsp != null)
+        lines.push(phrase(language, "isp_changed", {from: change.previousIsp, to: change.isp}));
+
+    return lines.join("\n");
 };

@@ -85,7 +85,8 @@
     "preferences": "Предпочитания",
     "provider": "За доставчика",
     "integrations": "Интеграции",
-    "tokens": "API токени"
+    "tokens": "API токени",
+    "connections": "Промяна на връзката"
   },
   "about": {
     "title": "Относно MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Изпращане на седмично резюме",
       "digest_monthly": "Изпращане на месечно резюме",
       "language": "Език на съобщенията",
-      "language_placeholder": "Английски (по подразбиране)"
+      "language_placeholder": "Английски (по подразбиране)",
+      "send_ip_changed": "Уведомяване при промяна на външния IP или доставчика",
+      "ip_changed_message": "Съобщение за промяна на връзката",
+      "ip_changed_message_placeholder": "Нов адрес: %ip% (беше %previousIp%)"
     },
     "variables": "Налични променливи",
     "variables_hint": "Щракнете, за да я добавите към съобщението"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (не е измерено)",
     "below_usual": "Под обичайната скорост: {{crossings}} по-малко",
     "shortfall": "{{metric}} с {{shortfall}} %",
-    "and": " и "
+    "and": " и ",
+    "connection_changed": "Връзката се промени",
+    "connection_changed_subject": "MySpeed: промяна на връзката",
+    "ip_changed": "IP адрес {{from}} → {{to}}",
+    "isp_changed": "Доставчик {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API токени",
@@ -834,5 +842,13 @@
       "description": "Всичко, което използва \"{{name}}\", вече няма да може да стартира тестове. Това не може да бъде отменено.",
       "yes": "Отмяна"
     }
+  },
+  "connections": {
+    "title": "Промяна на връзката",
+    "description": "Всяка промяна на външния IP адрес или доставчика между два теста, както го вижда доставчикът на теста. IPv4 и IPv6 се следват отделно и само тест, който отчита адрес, може да забележи промяна.",
+    "empty": "Все още няма записани промени.",
+    "ip": "IP адрес",
+    "isp": "Доставчик",
+    "unknown_target": "Премахната цел"
   }
 }

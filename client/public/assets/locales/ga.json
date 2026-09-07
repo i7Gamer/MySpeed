@@ -85,7 +85,8 @@
     "preferences": "Roghanna",
     "provider": "Maidir leis an soláthraí",
     "integrations": "Comhtháthúcháin",
-    "tokens": "Comharthaí API"
+    "tokens": "Comharthaí API",
+    "connections": "Athruithe ceangail"
   },
   "about": {
     "title": "Maidir le MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Seol achoimre sheachtainiúil",
       "digest_monthly": "Seol achoimre mhíosúil",
       "language": "Teanga na dteachtaireachtaí",
-      "language_placeholder": "Béarla (réamhshocrú)"
+      "language_placeholder": "Béarla (réamhshocrú)",
+      "send_ip_changed": "Cuir in iúl nuair a athraíonn an IP seachtrach nó an soláthraí",
+      "ip_changed_message": "Teachtaireacht faoi athrú ceangail",
+      "ip_changed_message_placeholder": "Seoladh nua: %ip% (ba é %previousIp% é)"
     },
     "variables": "Athróga ar fáil",
     "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (gan tomhas)",
     "below_usual": "Faoi bhun an ghnáthluais: {{crossings}} níos lú",
     "shortfall": "{{metric}} {{shortfall}}%",
-    "and": " agus "
+    "and": " agus ",
+    "connection_changed": "Tá an ceangal athraithe",
+    "connection_changed_subject": "MySpeed: athraíodh an ceangal",
+    "ip_changed": "Seoladh IP {{from}} → {{to}}",
+    "isp_changed": "Soláthraí {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Comharthaí API",
@@ -834,5 +842,13 @@
       "description": "Ní bheidh aon rud a úsáideann \"{{name}}\" in ann tástálacha a thosú a thuilleadh. Ní féidir é seo a chealú.",
       "yes": "Cúlghair"
     }
+  },
+  "connections": {
+    "title": "Athruithe ceangail",
+    "description": "Gach uair a d'athraigh an seoladh IP seachtrach nó an soláthraí idir dhá thástáil, mar a chonaic soláthraí na tástála é. Leantar IPv4 agus IPv6 ar leithligh, agus ní féidir ach le tástáil a thuairiscíonn seoladh athrú a thabhairt faoi deara.",
+    "empty": "Níl aon athruithe taifeadta fós.",
+    "ip": "Seoladh IP",
+    "isp": "Soláthraí",
+    "unknown_target": "Sprioc bainte"
   }
 }

@@ -85,7 +85,8 @@
     "preferences": "Preferències",
     "provider": "Quant al proveïdor",
     "integrations": "Integracions",
-    "tokens": "Tokens d'API"
+    "tokens": "Tokens d'API",
+    "connections": "Canvis de connexió"
   },
   "about": {
     "title": "Quant a MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Envia un resum setmanal",
       "digest_monthly": "Envia un resum mensual",
       "language": "Idioma dels missatges",
-      "language_placeholder": "Anglès (per defecte)"
+      "language_placeholder": "Anglès (per defecte)",
+      "send_ip_changed": "Notificar quan l'adreça IP externa o el proveïdor canviïn",
+      "ip_changed_message": "Missatge de canvi de connexió",
+      "ip_changed_message_placeholder": "Nova adreça: %ip% (era %previousIp%)"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Fes-hi clic per afegir-la al missatge"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (no mesurat)",
     "below_usual": "Per sota de la velocitat habitual: {{crossings}} menys",
     "shortfall": "{{metric}} {{shortfall}} %",
-    "and": " i "
+    "and": " i ",
+    "connection_changed": "La connexió ha canviat",
+    "connection_changed_subject": "MySpeed: canvi de connexió",
+    "ip_changed": "Adreça IP {{from}} → {{to}}",
+    "isp_changed": "Proveïdor {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Tokens d'API",
@@ -834,5 +842,13 @@
       "description": "Tot el que faci servir \"{{name}}\" deixarà de poder iniciar proves. Això no es pot desfer.",
       "yes": "Revoca"
     }
+  },
+  "connections": {
+    "title": "Canvis de connexió",
+    "description": "Cada vegada que l'adreça IP externa o el proveïdor canviïn entre dos tests, tal com el del test els va veure. IPv4 i IPv6 es segueixen separatament, i només un test que reporta una adreça pot notar un canvi.",
+    "empty": "Encara no s'han registrat cap canvi.",
+    "ip": "Adreça IP",
+    "isp": "Proveïdor",
+    "unknown_target": "Objectiu eliminat"
   }
 }

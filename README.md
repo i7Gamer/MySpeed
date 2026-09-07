@@ -31,6 +31,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
 - 🛰️ Trace the route to the test server when a test fails or slows down, and see hop by hop where the line broke
 - 🔑 Let a script or Home Assistant start a test with a revocable API token instead of the password
+- 🔀 Keep a log of when your external IP or your provider changed, and get told when it happens
 
 ### ⬇️ Installation
 
@@ -237,6 +238,10 @@ rest_command:
 ```
 
 Tokens travel in a configuration export only when it includes the secrets, the way node passwords do; a redacted export leaves them out and restoring it leaves them alone.
+
+#### Connection changes
+
+Every Ookla, LibreSpeed and Cloudflare test records the external address the provider saw, and Ookla and LibreSpeed record the provider's name. When either differs from the previous test, MySpeed writes the change to a log you can read under *Settings → Connection changes*, and every notifier offers a switch to be told about it - Discord, Telegram, email, Gotify, ntfy, Pushover and the webhook, which posts it as an `IP_CHANGED` event. IPv4 and IPv6 are followed separately, so a dual-stack line that answers one test over each does not count as a change, and a provider's name is compared only with what the same provider said before. The message template may use `%ip%`, `%previousIp%`, `%isp%`, `%previousIsp%` and `%connectionChanges%`, which spells out only what changed. The log is kept apart from the tests but forgotten with them: the retention setting prunes it by the same cutoff, and clearing the history or a factory reset clears it too. It is not part of a configuration export.
 
 #### Put a reverse proxy in front
 

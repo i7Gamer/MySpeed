@@ -5,6 +5,7 @@ import { checkOutboundHost } from "../util/safeUrl.js";
 import { bareHost } from "../util/helpers.js";
 import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { wantsDigest } from "../util/digestOptIn.js";
+import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
 
 /**
  * Email, which is upstream #1259.
@@ -41,7 +42,9 @@ const defaults = (language) => {
         finished_subject: word("finished_subject"),
         finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n${word("download")}: %download% Mbps\n${word("upload")}: %upload% Mbps%alertSummary%`,
         error_subject: word("failed_subject"),
-        failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`
+        failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`,
+        connection_changed_subject: word("connection_changed_subject"),
+        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`
     };
 };
 
@@ -234,6 +237,15 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
         if (c.send_failed) await send(c,
             replaceVariables(c.error_subject || defaults(c.language).error_subject, failure, zone),
             replaceVariables(c.error_message || defaults(c.language).failed, failure, zone), activity);
+    });
+
+    // No custom subject of its own: the two the form already carries are the
+    // ones a mailbox rule sorts on, and a change is rare enough that a fourth
+    // text field would buy one string.
+    registerEvent(IP_CHANGED_EVENT, async ({data: c}, change, activity, zone) => {
+        if (c.send_ip_changed) await send(c,
+            replaceVariables(defaults(c.language).connection_changed_subject, change, zone),
+            replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, change, zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

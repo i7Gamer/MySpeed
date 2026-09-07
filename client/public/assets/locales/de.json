@@ -85,7 +85,8 @@
     "preferences": "Darstellung",
     "provider": "Über den Anbieter",
     "integrations": "Integrationen",
-    "tokens": "API-Tokens"
+    "tokens": "API-Tokens",
+    "connections": "Verbindungsänderungen"
   },
   "about": {
     "title": "Über MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Wöchentliche Zusammenfassung senden",
       "digest_monthly": "Monatliche Zusammenfassung senden",
       "language": "Sprache der Nachrichten",
-      "language_placeholder": "Englisch (Standard)"
+      "language_placeholder": "Englisch (Standard)",
+      "send_ip_changed": "Benachrichtigen, wenn sich die externe IP oder der Anbieter ändert",
+      "ip_changed_message": "Nachricht zur Verbindungsänderung",
+      "ip_changed_message_placeholder": "Neue Adresse: %ip% (war %previousIp%)"
     },
     "variables": "Verfügbare Variablen",
     "variables_hint": "Zum Einfügen in die Nachricht anklicken"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (nicht gemessen)",
     "below_usual": "Unter der üblichen Geschwindigkeit: {{crossings}} darunter",
     "shortfall": "{{metric}} um {{shortfall}} %",
-    "and": " und "
+    "and": " und ",
+    "connection_changed": "Die Verbindung hat sich geändert",
+    "connection_changed_subject": "MySpeed: Verbindung geändert",
+    "ip_changed": "IP-Adresse {{from}} → {{to}}",
+    "isp_changed": "Anbieter {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API-Tokens",
@@ -834,5 +842,13 @@
       "description": "Alles, was \"{{name}}\" verwendet, kann dann keine Tests mehr starten. Das lässt sich nicht rückgängig machen.",
       "yes": "Widerrufen"
     }
+  },
+  "connections": {
+    "title": "Verbindungsänderungen",
+    "description": "Jedes Mal, wenn sich die externe IP-Adresse oder der Anbieter zwischen zwei Tests geändert hat, so wie der Anbieter des Tests es gesehen hat. IPv4 und IPv6 werden getrennt verfolgt, und nur ein Test, der eine Adresse meldet, kann eine Änderung bemerken.",
+    "empty": "Noch keine Änderungen aufgezeichnet.",
+    "ip": "IP-Adresse",
+    "isp": "Anbieter",
+    "unknown_target": "Entferntes Ziel"
   }
 }

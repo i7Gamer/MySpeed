@@ -370,7 +370,8 @@ describe("every read route decides what a demo may have", () => {
         "storage.js /tests/history/json": "the raw history, which /speedtests/export serves redacted",
         "storage.js /tests/history/csv": "the same rows in the other format",
         "system.js /interfaces": "the adapter names GET /config withholds one of",
-        "tokens.js /": "the names and last uses of the operator's API tokens, behind a gate a demo opens to everyone"
+        "tokens.js /": "the names and last uses of the operator's API tokens, behind a gate a demo opens to everyone",
+        "speedtests.js /connections": "when the external address or the provider changed: nothing but the identity every other route strips"
     };
 
     /**

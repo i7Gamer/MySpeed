@@ -85,7 +85,8 @@
     "preferences": "Tercihler",
     "provider": "Sağlayıcı hakkında",
     "integrations": "Entegrasyonlar",
-    "tokens": "API belirteçleri"
+    "tokens": "API belirteçleri",
+    "connections": "Bağlantı değişiklikleri"
   },
   "about": {
     "title": "MySpeed hakkında",
@@ -676,7 +677,10 @@
       "digest_weekly": "Haftalık özet gönder",
       "digest_monthly": "Aylık özet gönder",
       "language": "Mesaj dili",
-      "language_placeholder": "İngilizce (varsayılan)"
+      "language_placeholder": "İngilizce (varsayılan)",
+      "send_ip_changed": "Dış IP veya sağlayıcı değiştiğinde bildirim gönder",
+      "ip_changed_message": "Bağlantı değişikliği mesajı",
+      "ip_changed_message_placeholder": "Yeni adres: %ip% (önceki %previousIp%)"
     },
     "variables": "Kullanılabilir değişkenler",
     "variables_hint": "Mesaja eklemek için tıklayın"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (ölçülmedi)",
     "below_usual": "Olağan hızın altında: {{crossings}} daha düşük",
     "shortfall": "{{metric}} %{{shortfall}}",
-    "and": " ve "
+    "and": " ve ",
+    "connection_changed": "Bağlantı değişti",
+    "connection_changed_subject": "MySpeed: bağlantı değişti",
+    "ip_changed": "IP adresi {{from}} → {{to}}",
+    "isp_changed": "Sağlayıcı {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API belirteçleri",
@@ -834,5 +842,13 @@
       "description": "\"{{name}}\" kullanan hiçbir şey artık test başlatamayacak. Bu geri alınamaz.",
       "yes": "İptal et"
     }
+  },
+  "connections": {
+    "title": "Bağlantı değişiklikleri",
+    "description": "İki test arasında dış IP adresi veya sağlayıcı her değiştiğinde, testin sağlayıcısının gördüğü şekilde kaydedilir. IPv4 ve IPv6 ayrı ayrı takip edilir ve bir değişikliği yalnızca adres bildiren bir test fark edebilir.",
+    "empty": "Henüz kaydedilen değişiklik yok.",
+    "ip": "IP adresi",
+    "isp": "Sağlayıcı",
+    "unknown_target": "Kaldırılmış hedef"
   }
 }

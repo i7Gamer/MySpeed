@@ -85,7 +85,8 @@
     "preferences": "Preferanser",
     "provider": "Om leverandøren",
     "integrations": "Integrasjoner",
-    "tokens": "API-tokens"
+    "tokens": "API-tokens",
+    "connections": "Tilkoblingsendringer"
   },
   "about": {
     "title": "Om MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Send et ukentlig sammendrag",
       "digest_monthly": "Send et månedlig sammendrag",
       "language": "Språk for meldinger",
-      "language_placeholder": "Engelsk (standard)"
+      "language_placeholder": "Engelsk (standard)",
+      "send_ip_changed": "Varsle når den eksterne IP eller leverandøren endres",
+      "ip_changed_message": "Melding om tilkoblingsendring",
+      "ip_changed_message_placeholder": "Ny adresse: %ip% (var %previousIp%)"
     },
     "variables": "Tilgjengelige variabler",
     "variables_hint": "Klikk for å legge den til i meldingen"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (ikke målt)",
     "below_usual": "Under den vanlige hastigheten: {{crossings}} lavere",
     "shortfall": "{{metric}} {{shortfall}} %",
-    "and": " og "
+    "and": " og ",
+    "connection_changed": "Tilkoblingen har endret seg",
+    "connection_changed_subject": "MySpeed: tilkobling endret",
+    "ip_changed": "IP-adresse {{from}} → {{to}}",
+    "isp_changed": "Leverandør {{from}} → {{to}}"
   },
   "tokens": {
     "title": "API-tokens",
@@ -834,5 +842,13 @@
       "description": "Alt som bruker \"{{name}}\" vil ikke lenger kunne starte tester. Dette kan ikke angres.",
       "yes": "Tilbakekall"
     }
+  },
+  "connections": {
+    "title": "Tilkoblingsendringer",
+    "description": "Hver gang den eksterne IP-adressen eller leverandøren endret seg mellom to tester, slik testens leverandør så det. IPv4 og IPv6 følges hver for seg, og bare en test som rapporterer en adresse kan legge merke til en endring.",
+    "empty": "Ingen endringer registrert enda.",
+    "ip": "IP-adresse",
+    "isp": "Leverandør",
+    "unknown_target": "Fjernet mål"
   }
 }

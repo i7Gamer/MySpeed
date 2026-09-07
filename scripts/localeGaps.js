@@ -257,6 +257,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nl: [
+        "notification.isp_changed", "connections.isp",
         // The route trace's hop table: the networking terms this language uses.
         "test.details.route", "test.details.route_hop",
         "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",

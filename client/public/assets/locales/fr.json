@@ -85,7 +85,8 @@
     "preferences": "Préférences",
     "provider": "A propos du fournisseur",
     "integrations": "Intégrations",
-    "tokens": "Jetons API"
+    "tokens": "Jetons API",
+    "connections": "Changements de connexion"
   },
   "about": {
     "title": "À propos de MySpeed",
@@ -676,7 +677,10 @@
       "digest_weekly": "Envoyer un résumé hebdomadaire",
       "digest_monthly": "Envoyer un résumé mensuel",
       "language": "Langue des messages",
-      "language_placeholder": "Anglais (par défaut)"
+      "language_placeholder": "Anglais (par défaut)",
+      "send_ip_changed": "Notifier quand l'adresse IP externe ou le fournisseur change",
+      "ip_changed_message": "Message de changement de connexion",
+      "ip_changed_message_placeholder": "Nouvelle adresse : %ip% (était %previousIp%)"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Cliquez pour l'ajouter au message"
@@ -811,7 +815,11 @@
     "not_measured": "{{metric}} (non mesuré)",
     "below_usual": "En dessous de la vitesse habituelle : {{crossings}} de moins",
     "shortfall": "{{metric}} {{shortfall}} %",
-    "and": " et "
+    "and": " et ",
+    "connection_changed": "La connexion a changé",
+    "connection_changed_subject": "MySpeed : connexion changée",
+    "ip_changed": "Adresse IP {{from}} → {{to}}",
+    "isp_changed": "Fournisseur {{from}} → {{to}}"
   },
   "tokens": {
     "title": "Jetons API",
@@ -834,5 +842,13 @@
       "description": "Tout ce qui utilise « {{name}} » ne pourra plus lancer de tests. Cette action est irréversible.",
       "yes": "Révoquer"
     }
+  },
+  "connections": {
+    "title": "Changements de connexion",
+    "description": "Chaque fois que l'adresse IP externe ou le fournisseur a changé entre deux tests, tel que le fournisseur du test l'a vu. IPv4 et IPv6 sont suivis séparément, et seul un test qui rapporte une adresse peut remarquer un changement.",
+    "empty": "Aucun changement enregistré pour le moment.",
+    "ip": "Adresse IP",
+    "isp": "Fournisseur",
+    "unknown_target": "Cible supprimée"
   }
 }
