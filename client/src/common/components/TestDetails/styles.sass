@@ -406,5 +406,10 @@ $fact-gap: 2rem
 
 // The hops where the route broke, or where somebody drops probes - the
 // table cannot tell, which is why the colour marks rather than judges.
-.detail-hop-lost td
+//
+// Written out under the table rather than as a bare ".detail-hop-lost td":
+// the rule it overrides is ".detail-route table td", and one class against
+// one class and two elements loses on specificity, so every hop drew in the
+// ordinary colour and the mark was in the markup only.
+.detail-route table tr.detail-hop-lost td
   color: $accent-danger

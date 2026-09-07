@@ -155,9 +155,12 @@ export const TokensDialog = ({open, onClose}) => {
                                             <p>
                                                 {t("tokens.created_at", {date: formatDay(row.created)})}
                                                 {" · "}
-                                                {t("tokens.last_used", {date: row.lastUsed
-                                                    ? formatDateTime(row.lastUsed, preferences)
-                                                    : t("tokens.never_used")})}
+                                                {/* The label is written for a date, so a token
+                                                    with none says so on its own rather than as
+                                                    "Last used: Never used". */}
+                                                {row.lastUsed
+                                                    ? t("tokens.last_used", {date: formatDateTime(row.lastUsed, preferences)})
+                                                    : t("tokens.never_used")}
                                             </p>
                                         </div>
                                         <button type="button" className="token-action token-delete"

@@ -114,6 +114,18 @@ describe("the API tokens dialog", () => {
         assert.doesNotMatch(rows[0].textContent, /Never used/);
     });
 
+    // "Last used: Never used" - the label was written for a date and read
+    // against the stand-in for having no date, the way "Last run before Just
+    // now" was. A token nothing has used says so once.
+    it("says a token has never been used without prefixing it with a label for a date", async () => {
+        scripted();
+        const document = await mount();
+
+        const rows = rowsOf(document);
+        assert.doesNotMatch(rows[1].textContent, /Last used:\s*Never used/);
+        assert.match(rows[0].textContent, /Last used:/);
+    });
+
     it("says so when there are none", async () => {
         scripted([]);
         const document = await mount();
