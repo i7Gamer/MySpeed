@@ -84,7 +84,8 @@
     "language": "Change language",
     "preferences": "Preferences",
     "provider": "About the provider",
-    "integrations": "Integrations"
+    "integrations": "Integrations",
+    "tokens": "API tokens"
   },
   "about": {
     "title": "About MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Below its usual speed: {{crossings}} under",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": " and "
+  },
+  "tokens": {
+    "title": "API tokens",
+    "description": "A token lets a script, a router hook or a home-automation platform start a test without your password. It can start a test and read the live status of the run, nothing else. Revoke it here whenever you like.",
+    "name": "Name",
+    "name_placeholder": "e.g. Home Assistant",
+    "create": "Create token",
+    "created_at": "Created {{date}}",
+    "last_used": "Last used: {{date}}",
+    "never_used": "Never used",
+    "empty": "No tokens yet.",
+    "secret_title": "Token for {{name}}",
+    "secret_once": "Copy it now. It is shown this one time and cannot be recovered later.",
+    "example": "Start a test with it:",
+    "copy": "Copy",
+    "copied": "Copied to the clipboard.",
+    "removed": "The token has been revoked.",
+    "delete_confirm": {
+      "title": "Revoke this token?",
+      "description": "Anything using \"{{name}}\" will stop being able to start tests. This cannot be undone.",
+      "yes": "Revoke"
+    }
   }
 }

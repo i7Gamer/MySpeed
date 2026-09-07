@@ -1,0 +1,131 @@
+@use "@/common/styles/colors" as *
+@use "@/common/styles/layout" as *
+@use "@/common/styles/typography" as *
+
+.tokens-dialog
+  width: $settings-dialog-width
+  max-width: 95vw
+
+  .dialog-main
+    display: block
+
+.tokens-content
+  margin: 1rem 0
+  user-select: none
+
+.tokens-description
+  margin: 0 0 1rem 0
+  color: $subtext
+  font-size: $dialog-lead
+  line-height: 1.5
+
+// The token just issued: the one time the secret is on screen, set apart
+// from the list so it cannot be mistaken for a row that could show it again.
+.token-issued
+  margin-bottom: 1.25rem
+  padding: 0.75rem
+  border: 1px solid $accent-secondary
+  border-radius: 0.5rem
+
+  h3
+    margin: 0 0 0.25rem
+    font-size: $dialog-body
+    color: $white
+
+  p
+    margin: 0 0 0.5rem
+    color: $subtext
+    font-size: $dialog-hint
+    line-height: 1.4
+
+.token-example-label
+  margin-top: 0.75rem
+
+.token-secret-row
+  display: flex
+  align-items: center
+  gap: 0.5rem
+
+  code
+    flex: 1
+    min-width: 0
+    padding: 0.5rem 0.6rem
+    border-radius: 0.4rem
+    background-color: $darker-gray
+    border: 1px solid $light-gray
+    color: $white
+    font-size: $dialog-hint
+    // The secret and the example are chosen by the reader, not by us: let
+    // them select and scroll rather than wrap a token across three lines.
+    user-select: text
+    overflow-x: auto
+    white-space: nowrap
+
+.tokens-list
+  display: flex
+  flex-direction: column
+  gap: 0.5rem
+
+.tokens-empty
+  margin: 0
+  color: $subtext
+  font-size: $dialog-hint
+
+.token-row
+  display: flex
+  align-items: center
+  gap: 0.75rem
+  padding: 0.6rem 0.75rem
+  border: 1px solid $light-gray
+  border-radius: 0.5rem
+
+  &-text
+    flex: 1
+    min-width: 0
+
+    h3
+      margin: 0
+      font-size: $dialog-body
+      color: $white
+      overflow: hidden
+      text-overflow: ellipsis
+      white-space: nowrap
+
+    p
+      margin: 0.15rem 0 0
+      color: $subtext
+      font-size: $dialog-hint
+
+.token-action
+  background: none
+  border: none
+  padding: 0.25rem
+  color: $subtext
+  cursor: pointer
+  border-radius: 0.3rem
+  line-height: 1
+
+  &:hover
+    color: $white
+
+  &.token-delete:hover
+    color: $accent-danger
+
+.token-create
+  margin-top: 1.25rem
+  padding-top: 1.25rem
+  border-top: 1px solid $light-gray
+
+  label
+    display: block
+    margin-bottom: 0.4rem
+    color: $subtext
+    font-size: $dialog-hint
+
+.token-create-row
+  display: flex
+  gap: 0.5rem
+
+  .dialog-input
+    flex: 1
+    min-width: 0

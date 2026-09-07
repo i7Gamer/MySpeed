@@ -6,6 +6,8 @@ import * as testTask from '../tasks/speedtest.js';
 import * as targets from '../controller/targets.js';
 import { isPreviewInstance } from '../util/previewMode.js';
 import password from '../middlewares/password.js';
+import { tokenOrPassword } from '../middlewares/apiToken.js';
+import { SCOPE_RUN } from '../util/tokenScopes.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { resolveTimezone } from '../util/timezone.js';
@@ -359,7 +361,9 @@ app.get("/export", password(true), async (req, res) => {
     }
 });
 
-app.post("/run", password(false), async (req, res) => {
+// Opened to an API token of the run scope - the one thing a token is for -
+// and to everyone the password gate admits, exactly as before.
+app.post("/run", tokenOrPassword(SCOPE_RUN), async (req, res) => {
     if (pauseController.currentState) return res.status(410).json({message: "The speedtests are currently paused"});
     if (!isPreviewInstance() && await targets.count() === 0)
         return res.status(410).json({message: "No targets configured"});
@@ -428,6 +432,11 @@ app.post("/run", password(false), async (req, res) => {
      */
     if (!testTask.tryReserve())
         return res.status(409).json({message: "An speedtest is already running"});
+
+    // Which automation asked, by the name the operator gave its token: a run
+    // that arrives from a router hook every few minutes is otherwise
+    // indistinguishable in the log from a click.
+    if (req.apiToken) console.log(`Speedtest started by API token "${req.apiToken.name}"`);
 
     // Deliberately not awaited: a speedtest runs for 30-60s and holding the
     // connection open that long trips the default read timeout of every common
@@ -561,7 +570,7 @@ app.get("/status", password(true), async (req, res) => {
  * moment this route has something to await is the moment it has stopped being
  * the cheap one, and tests/server/statusLiveRoute.test.js holds it to that.
  */
-app.get("/status/live", password(true), (req, res) => {
+app.get("/status/live", tokenOrPassword(SCOPE_RUN, true), (req, res) => {
     res.json({running: testTask.isRunning(), ...testTask.getProgress()});
 });
 

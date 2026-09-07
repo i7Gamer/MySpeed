@@ -84,7 +84,8 @@
     "language": "Alterar idioma",
     "preferences": "Preferências",
     "provider": "Sobre o provedor",
-    "integrations": "Integrações"
+    "integrations": "Integrações",
+    "tokens": "Tokens de API"
   },
   "about": {
     "title": "Sobre o MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Abaixo da velocidade habitual: {{crossings}} a menos",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": " e "
+  },
+  "tokens": {
+    "title": "Tokens de API",
+    "description": "Um token permite que um script, um hook do router ou uma plataforma de automação residencial inicie um teste sem a tua palavra-passe. Pode iniciar um teste e ler o estado em direto da execução, nada mais. Revoga-o aqui quando quiseres.",
+    "name": "Nome",
+    "name_placeholder": "p. ex. Home Assistant",
+    "create": "Criar token",
+    "created_at": "Criado em {{date}}",
+    "last_used": "Última utilização: {{date}}",
+    "never_used": "Nunca utilizado",
+    "empty": "Ainda não há tokens.",
+    "secret_title": "Token para {{name}}",
+    "secret_once": "Copia-o agora. É mostrado apenas desta vez e não pode ser recuperado mais tarde.",
+    "example": "Inicia um teste com ele:",
+    "copy": "Copiar",
+    "copied": "Copiado para a área de transferência.",
+    "removed": "O token foi revogado.",
+    "delete_confirm": {
+      "title": "Revogar este token?",
+      "description": "Tudo o que usa \"{{name}}\" deixará de poder iniciar testes. Isto não pode ser anulado.",
+      "yes": "Revogar"
+    }
   }
 }

@@ -31,12 +31,13 @@ describe("GET /status/live", () => {
         assert.notEqual(live, undefined, "the live status route is not registered");
     });
 
-    // The same gate as /status: readable with view-mode access. The payload
-    // carries no identity and no schedule - nothing /status withholds from an
-    // untrusted reader.
-    it("stands behind the same read gate as /status", () => {
-        assert.match(live.text, /password\(true\)/,
-            "the live route is not gated the way /status is");
+    // The same read gate as /status - view-mode access - reached through the
+    // token gate, which hands every caller without a MySpeed token to it. The
+    // payload carries no identity and no schedule, which is what makes it the
+    // one status an API token may read.
+    it("stands behind the read gate /status uses, opened to a run token", () => {
+        assert.match(live.text, /tokenOrPassword\(SCOPE_RUN, true\)/,
+            "the live route is not gated the way /status is, or lost its token gate");
     });
 
     it("answers from the running task's memory", () => {

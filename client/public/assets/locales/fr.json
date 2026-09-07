@@ -84,7 +84,8 @@
     "language": "Changer de langue",
     "preferences": "Préférences",
     "provider": "A propos du fournisseur",
-    "integrations": "Intégrations"
+    "integrations": "Intégrations",
+    "tokens": "Jetons API"
   },
   "about": {
     "title": "À propos de MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "En dessous de la vitesse habituelle : {{crossings}} de moins",
     "shortfall": "{{metric}} {{shortfall}} %",
     "and": " et "
+  },
+  "tokens": {
+    "title": "Jetons API",
+    "description": "Un jeton permet à un script, un hook de routeur ou une plateforme domotique de lancer un test sans votre mot de passe. Il peut lancer un test et lire l'état en direct de l'exécution, rien d'autre. Révoquez-le ici quand vous voulez.",
+    "name": "Nom",
+    "name_placeholder": "ex. Home Assistant",
+    "create": "Créer un jeton",
+    "created_at": "Créé le {{date}}",
+    "last_used": "Dernière utilisation : {{date}}",
+    "never_used": "Jamais utilisé",
+    "empty": "Aucun jeton pour le moment.",
+    "secret_title": "Jeton pour {{name}}",
+    "secret_once": "Copiez-le maintenant. Il n'est affiché que cette fois-ci et ne pourra pas être récupéré plus tard.",
+    "example": "Lancer un test avec :",
+    "copy": "Copier",
+    "copied": "Copié dans le presse-papiers.",
+    "removed": "Le jeton a été révoqué.",
+    "delete_confirm": {
+      "title": "Révoquer ce jeton ?",
+      "description": "Tout ce qui utilise « {{name}} » ne pourra plus lancer de tests. Cette action est irréversible.",
+      "yes": "Révoquer"
+    }
   }
 }

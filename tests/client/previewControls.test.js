@@ -34,7 +34,7 @@ describe("controls a demo instance cannot honour", () => {
      * Storage is deliberately absent: its exports are GETs and still work, and
      * its import and clear buttons report their own refusal.
      */
-    const REFUSED = ["optimal_values", "targets", "cron", "pause_tests"];
+    const REFUSED = ["optimal_values", "targets", "cron", "pause_tests", "tokens"];
 
     for (const entry of REFUSED) {
         it(`marks ${entry} as unavailable on a demo`, () => {

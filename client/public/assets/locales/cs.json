@@ -84,7 +84,8 @@
     "language": "Změnit jazyk",
     "preferences": "Předvolby",
     "provider": "O poskytovateli",
-    "integrations": "Integrace"
+    "integrations": "Integrace",
+    "tokens": "API tokeny"
   },
   "about": {
     "title": "O aplikaci MySpeed",
@@ -817,5 +818,27 @@
     "below_usual": "Pod obvyklou rychlostí: {{crossings}} méně",
     "shortfall": "{{metric}} o {{shortfall}} %",
     "and": " a "
+  },
+  "tokens": {
+    "title": "API tokeny",
+    "description": "Token umožní skriptu, háčku routeru nebo platformě chytré domácnosti spustit test bez vašeho hesla. Může spustit test a číst živý stav běhu, nic jiného. Zrušte jej zde, kdykoli chcete.",
+    "name": "Název",
+    "name_placeholder": "např. Home Assistant",
+    "create": "Vytvořit token",
+    "created_at": "Vytvořen {{date}}",
+    "last_used": "Naposledy použit: {{date}}",
+    "never_used": "Nikdy nepoužit",
+    "empty": "Zatím žádné tokeny.",
+    "secret_title": "Token pro {{name}}",
+    "secret_once": "Zkopírujte jej teď. Zobrazí se jen tentokrát a později jej nelze obnovit.",
+    "example": "Spusťte s ním test:",
+    "copy": "Kopírovat",
+    "copied": "Zkopírováno do schránky.",
+    "removed": "Token byl zrušen.",
+    "delete_confirm": {
+      "title": "Zrušit tento token?",
+      "description": "Vše, co používá \"{{name}}\", už nebude moci spouštět testy. Toto nelze vrátit zpět.",
+      "yes": "Zrušit"
+    }
   }
 }

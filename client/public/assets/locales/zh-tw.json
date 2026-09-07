@@ -84,7 +84,8 @@
     "language": "變更語言",
     "preferences": "偏好設定",
     "provider": "關於供應商",
-    "integrations": "整合"
+    "integrations": "整合",
+    "tokens": "API 權杖"
   },
   "about": {
     "title": "關於 MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "低於平常速度：{{crossings}}",
     "shortfall": "{{metric}} 下降 {{shortfall}}%",
     "and": "、"
+  },
+  "tokens": {
+    "title": "API 權杖",
+    "description": "權杖可以讓指令碼、路由器掛鉤或居家自動化平台在不知道你密碼的情況下啟動測試。它只能啟動測試並讀取執行的即時狀態，無法做其他事情。你隨時可以在這裡撤銷它。",
+    "name": "名稱",
+    "name_placeholder": "例如 Home Assistant",
+    "create": "建立權杖",
+    "created_at": "建立於 {{date}}",
+    "last_used": "最後使用：{{date}}",
+    "never_used": "從未使用",
+    "empty": "還沒有權杖。",
+    "secret_title": "{{name}} 的權杖",
+    "secret_once": "現在就複製它。它只會顯示這一次，之後無法復原。",
+    "example": "用它啟動測試：",
+    "copy": "複製",
+    "copied": "已複製到剪貼簿。",
+    "removed": "權杖已撤銷。",
+    "delete_confirm": {
+      "title": "撤銷此權杖？",
+      "description": "任何使用「{{name}}」的程式將無法再啟動測試。此操作無法復原。",
+      "yes": "撤銷"
+    }
   }
 }

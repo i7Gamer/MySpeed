@@ -84,7 +84,8 @@
     "language": "Dili değiştir",
     "preferences": "Tercihler",
     "provider": "Sağlayıcı hakkında",
-    "integrations": "Entegrasyonlar"
+    "integrations": "Entegrasyonlar",
+    "tokens": "API belirteçleri"
   },
   "about": {
     "title": "MySpeed hakkında",
@@ -811,5 +812,27 @@
     "below_usual": "Olağan hızın altında: {{crossings}} daha düşük",
     "shortfall": "{{metric}} %{{shortfall}}",
     "and": " ve "
+  },
+  "tokens": {
+    "title": "API belirteçleri",
+    "description": "Bir belirteç, bir betiğin, yönlendirici kancasının veya ev otomasyonu platformunun parolan olmadan test başlatmasını sağlar. Yalnızca test başlatabilir ve çalışmanın canlı durumunu okuyabilir, başka bir şey yapamaz. İstediğin zaman burada iptal edebilirsin.",
+    "name": "Ad",
+    "name_placeholder": "örn. Home Assistant",
+    "create": "Belirteç oluştur",
+    "created_at": "{{date}} tarihinde oluşturuldu",
+    "last_used": "Son kullanım: {{date}}",
+    "never_used": "Hiç kullanılmadı",
+    "empty": "Henüz belirteç yok.",
+    "secret_title": "{{name}} için belirteç",
+    "secret_once": "Şimdi kopyala. Yalnızca bu kez gösterilir ve daha sonra geri alınamaz.",
+    "example": "Onunla bir test başlat:",
+    "copy": "Kopyala",
+    "copied": "Panoya kopyalandı.",
+    "removed": "Belirteç iptal edildi.",
+    "delete_confirm": {
+      "title": "Bu belirteç iptal edilsin mi?",
+      "description": "\"{{name}}\" kullanan hiçbir şey artık test başlatamayacak. Bu geri alınamaz.",
+      "yes": "İptal et"
+    }
   }
 }

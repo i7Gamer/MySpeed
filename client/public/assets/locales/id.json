@@ -84,7 +84,8 @@
     "language": "Ubah bahasa",
     "preferences": "Preferensi",
     "provider": "Tentang penyedia",
-    "integrations": "Integrasi"
+    "integrations": "Integrasi",
+    "tokens": "Token API"
   },
   "about": {
     "title": "Tentang MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Di bawah kecepatan biasanya: {{crossings}} lebih rendah",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": " dan "
+  },
+  "tokens": {
+    "title": "Token API",
+    "description": "Token memungkinkan skrip, hook router, atau platform otomasi rumah memulai tes tanpa kata sandi Anda. Ia hanya bisa memulai tes dan membaca status langsung dari jalannya tes, tidak lebih. Cabut di sini kapan saja.",
+    "name": "Nama",
+    "name_placeholder": "mis. Home Assistant",
+    "create": "Buat token",
+    "created_at": "Dibuat {{date}}",
+    "last_used": "Terakhir dipakai: {{date}}",
+    "never_used": "Belum pernah dipakai",
+    "empty": "Belum ada token.",
+    "secret_title": "Token untuk {{name}}",
+    "secret_once": "Salin sekarang. Token hanya ditampilkan sekali ini dan tidak bisa dipulihkan nanti.",
+    "example": "Mulai tes dengannya:",
+    "copy": "Salin",
+    "copied": "Disalin ke papan klip.",
+    "removed": "Token telah dicabut.",
+    "delete_confirm": {
+      "title": "Cabut token ini?",
+      "description": "Apa pun yang memakai \"{{name}}\" tidak akan bisa memulai tes lagi. Ini tidak bisa dibatalkan.",
+      "yes": "Cabut"
+    }
   }
 }

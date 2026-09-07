@@ -84,7 +84,8 @@
     "language": "Taal wijzigen",
     "preferences": "Voorkeuren",
     "provider": "Over de provider",
-    "integrations": "Integraties"
+    "integrations": "Integraties",
+    "tokens": "API-tokens"
   },
   "about": {
     "title": "Over MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Onder de gebruikelijke snelheid: {{crossings}} lager",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": " en "
+  },
+  "tokens": {
+    "title": "API-tokens",
+    "description": "Met een token kan een script, een router-hook of een domoticaplatform een test starten zonder je wachtwoord. Het kan een test starten en de live status van de run lezen, verder niets. Trek het hier in wanneer je wilt.",
+    "name": "Naam",
+    "name_placeholder": "bijv. Home Assistant",
+    "create": "Token aanmaken",
+    "created_at": "Aangemaakt op {{date}}",
+    "last_used": "Laatst gebruikt: {{date}}",
+    "never_used": "Nooit gebruikt",
+    "empty": "Nog geen tokens.",
+    "secret_title": "Token voor {{name}}",
+    "secret_once": "Kopieer het nu. Het wordt maar één keer getoond en kan later niet meer worden opgehaald.",
+    "example": "Start er een test mee:",
+    "copy": "Kopiëren",
+    "copied": "Gekopieerd naar het klembord.",
+    "removed": "Het token is ingetrokken.",
+    "delete_confirm": {
+      "title": "Dit token intrekken?",
+      "description": "Alles wat \"{{name}}\" gebruikt, kan dan geen tests meer starten. Dit kan niet ongedaan worden gemaakt.",
+      "yes": "Intrekken"
+    }
   }
 }

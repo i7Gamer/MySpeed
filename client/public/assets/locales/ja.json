@@ -84,7 +84,8 @@
     "language": "言語を変更",
     "preferences": "環境設定",
     "provider": "プロバイダーについて",
-    "integrations": "連携"
+    "integrations": "連携",
+    "tokens": "API トークン"
   },
   "about": {
     "title": "MySpeed について",
@@ -811,5 +812,27 @@
     "below_usual": "通常の速度を下回りました: {{crossings}} 低下",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": "、"
+  },
+  "tokens": {
+    "title": "API トークン",
+    "description": "トークンを使うと、スクリプトやルーターのフック、ホームオートメーションのプラットフォームがパスワードなしでテストを開始できます。できるのはテストの開始と実行中のライブ状態の読み取りだけです。いつでもここで無効化できます。",
+    "name": "名前",
+    "name_placeholder": "例：Home Assistant",
+    "create": "トークンを作成",
+    "created_at": "作成日：{{date}}",
+    "last_used": "最終使用：{{date}}",
+    "never_used": "未使用",
+    "empty": "トークンはまだありません。",
+    "secret_title": "{{name}} のトークン",
+    "secret_once": "今すぐコピーしてください。表示されるのはこの一度だけで、後から復元することはできません。",
+    "example": "これでテストを開始する：",
+    "copy": "コピー",
+    "copied": "クリップボードにコピーしました。",
+    "removed": "トークンを無効化しました。",
+    "delete_confirm": {
+      "title": "このトークンを無効化しますか？",
+      "description": "「{{name}}」を使っているものはテストを開始できなくなります。この操作は取り消せません。",
+      "yes": "無効化"
+    }
   }
 }

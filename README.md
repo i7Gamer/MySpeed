@@ -30,6 +30,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
 - 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
 - 🛰️ Trace the route to the test server when a test fails or slows down, and see hop by hop where the line broke
+- 🔑 Let a script or Home Assistant start a test with a revocable API token instead of the password
 
 ### ⬇️ Installation
 
@@ -215,6 +216,27 @@ else is reading:
 | `111` | The database could not be opened at all. | Check that the data directory exists and is writable by the user the server runs as. |
 | `113` | The database opened and holds no MySpeed configuration. | Nothing was changed. The data is elsewhere — run the command from the directory the server runs in. |
 | `114` | The configuration is there and the write did not go through. | **The password is unchanged and you are still locked out.** The path is right; check that the database is not locked by another process and that the directory is writable. |
+
+#### Starting a test from outside
+
+A script, a router hook or Home Assistant can start a test without holding the admin password. Create a token under *Settings → API tokens* - it is shown once - and send it as a Bearer header:
+
+```bash
+curl -X POST -H "Authorization: Bearer msp_..." https://myspeed.example.org/api/speedtests/run
+```
+
+A token can start a test and read `GET /api/speedtests/status/live` to follow it, and nothing else. Revoke it from the same dialog. For Home Assistant, a `rest_command` does the same:
+
+```yaml
+rest_command:
+  myspeed_test:
+    url: https://myspeed.example.org/api/speedtests/run
+    method: POST
+    headers:
+      Authorization: "Bearer msp_..."
+```
+
+Tokens travel in a configuration export only when it includes the secrets, the way node passwords do; a redacted export leaves them out and restoring it leaves them alone.
 
 #### Put a reverse proxy in front
 

@@ -84,7 +84,8 @@
     "language": "Bytt språk",
     "preferences": "Preferanser",
     "provider": "Om leverandøren",
-    "integrations": "Integrasjoner"
+    "integrations": "Integrasjoner",
+    "tokens": "API-tokens"
   },
   "about": {
     "title": "Om MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Under den vanlige hastigheten: {{crossings}} lavere",
     "shortfall": "{{metric}} {{shortfall}} %",
     "and": " og "
+  },
+  "tokens": {
+    "title": "API-tokens",
+    "description": "Et token lar et skript, en router-hook eller en hjemmeautomasjonsplattform starte en test uten passordet ditt. Det kan starte en test og lese kjøringens live-status, ingenting annet. Tilbakekall det her når du vil.",
+    "name": "Navn",
+    "name_placeholder": "f.eks. Home Assistant",
+    "create": "Opprett token",
+    "created_at": "Opprettet {{date}}",
+    "last_used": "Sist brukt: {{date}}",
+    "never_used": "Aldri brukt",
+    "empty": "Ingen tokens ennå.",
+    "secret_title": "Token for {{name}}",
+    "secret_once": "Kopier det nå. Det vises bare denne ene gangen og kan ikke gjenopprettes senere.",
+    "example": "Start en test med det:",
+    "copy": "Kopier",
+    "copied": "Kopiert til utklippstavlen.",
+    "removed": "Tokenet er tilbakekalt.",
+    "delete_confirm": {
+      "title": "Tilbakekalle dette tokenet?",
+      "description": "Alt som bruker \"{{name}}\" vil ikke lenger kunne starte tester. Dette kan ikke angres.",
+      "yes": "Tilbakekall"
+    }
   }
 }

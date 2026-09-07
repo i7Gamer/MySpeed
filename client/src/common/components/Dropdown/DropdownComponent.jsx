@@ -6,6 +6,7 @@ import {
     faGlobeEurope,
     faInfo,
     faKey,
+    faTicket,
     faPause,
     faPlay,
     faSliders,
@@ -36,6 +37,7 @@ import FrequencyDialog from "@/common/components/FrequencyDialog";
 import PasswordDialog from "@/common/components/PasswordDialog";
 import PauseDialog from "@/common/components/PauseDialog";
 import PreferencesDialog from "@/common/components/PreferencesDialog";
+import TokensDialog from "@/common/components/TokensDialog";
 
 /**
  * Whether this instance is offered a given entry.
@@ -70,6 +72,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
     const [showOptimalValuesDialog, setShowOptimalValuesDialog] = useState(false);
     const [showFrequencyDialog, setShowFrequencyDialog] = useState(false);
     const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+    const [showTokensDialog, setShowTokensDialog] = useState(false);
     const [showPauseDialog, setShowPauseDialog] = useState(false);
     const [showPreferencesDialog, setShowPreferencesDialog] = useState(false);
     const ref = useRef();
@@ -205,6 +208,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
         // reports those itself.
         {key: "storage", run: () => setShowStorageDialog(true), icon: faHardDrive, text: t("dropdown.storage")},
         {key: "password", run: () => setShowPasswordDialog(true), icon: faKey, text: t("dropdown.password"), previewHidden: true},
+        {key: "tokens", run: () => setShowTokensDialog(true), icon: faTicket, text: t("dropdown.tokens"), previewDisabled: true},
         {key: "cron", run: () => setShowFrequencyDialog(true), icon: faClock, text: t("dropdown.cron"), previewDisabled: true},
         {key: "pause", run: togglePause, icon: status.paused ? faPlay : faPause, text: t("dropdown." + (status.paused ? "resume_tests" : "pause_tests")), previewDisabled: true},
         {key: "integrations", run: () => setShowIntegrationDialog(true), icon: faCircleNodes, text: t("dropdown.integrations")},
@@ -223,6 +227,7 @@ const DropdownComponent = ({isOpen, switchDropdown}) => {
             <OptimalValuesDialog open={showOptimalValuesDialog} onClose={() => setShowOptimalValuesDialog(false)}/>
             <FrequencyDialog open={showFrequencyDialog} onClose={() => setShowFrequencyDialog(false)}/>
             <PasswordDialog open={showPasswordDialog} onClose={() => setShowPasswordDialog(false)}/>
+            <TokensDialog open={showTokensDialog} onClose={() => setShowTokensDialog(false)}/>
             <PauseDialog open={showPauseDialog} onClose={() => setShowPauseDialog(false)} onPause={updateStatus}/>
             <PreferencesDialog open={showPreferencesDialog} onClose={() => setShowPreferencesDialog(false)}/>
             <div className={`dropdown ${isOpen ? '' : 'dropdown-invisible'}`} ref={ref}>

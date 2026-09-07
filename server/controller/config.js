@@ -22,6 +22,7 @@ import { QUIET_HOURS_OFF, isValidTimeOfDay } from '../util/quietHours.js';
 import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
+import * as tokens from './tokens.js';
 
 // Exported for the scheduler's fallback: an invalid stored cron at boot is
 // replaced by this default rather than by a silence with no schedule in it.
@@ -595,6 +596,13 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
     const integrationRows = (await integration.findAll()).map((row) => ({...row, data: asDataObject(row.data)}));
     obj.integrations = includeSecrets ? integrationRows : withoutSecrets(integrationRows);
 
+    // Only beside the other secrets. A digest is not the token, but a file
+    // that can be written back is a file that hands the run endpoint to
+    // whoever holds it - and the redacted export is the one that gets
+    // attached to bug reports. Absent rather than empty when redacted, so a
+    // restore of that file leaves the table alone (see importConfig).
+    if (includeSecrets) obj.tokens = await tokens.exportRows();
+
     // Stated in the file itself, so nobody restores a redacted backup and is
     // left guessing why their notifications stopped.
     obj.secretsRedacted = !includeSecrets;
@@ -704,6 +712,20 @@ export const importConfig = async (obj) => {
      * "none" file restores none, faithfully; the silent file is refused by
      * name.
      */
+    // Optional, unlike the three tables above: every backup written before
+    // tokens existed names none, and so does every redacted one - and
+    // restoring either must not delete the automation set up since. Judged
+    // whole before anything is touched, the way the node rows are.
+    let tokenRows = null;
+
+    if (obj.tokens !== undefined) {
+        const value = asRows(obj.tokens);
+        if (value === null || value.length > tokens.MAX_TOKENS) return {ok: false, key: "tokens"};
+
+        tokenRows = value.map(tokens.importableToken);
+        if (tokenRows.includes(null)) return {ok: false, key: "tokens"};
+    }
+
     let targetRows;
 
     if (obj.targets === undefined) {
@@ -1025,6 +1047,8 @@ export const importConfig = async (obj) => {
             await targetsModel.destroy({where: {}, transaction});
             if (targetRows.length > 0) await targetsModel.bulkCreate(targetRows, {transaction});
         });
+
+        if (tokenRows !== null) await tokens.replaceAll(tokenRows);
     } catch {
         return REFUSED;
     }

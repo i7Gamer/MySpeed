@@ -141,6 +141,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     de: [
+        // The token dialog's name field: the same noun as targets.name.
+        "tokens.name",
         // The route trace's hop table: the networking terms this language uses.
         "test.details.route", "test.details.route_hop",
         "notification.ping", "notification.download", "notification.upload",
@@ -237,6 +239,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     nb: [
+        // "Token for {{name}}": Norwegian spells the phrase the same way.
+        "tokens.secret_title",
         "notification.ping", "notification.metric_ping",
         "dialog.provider.iperf_bitrate",
         "dialog.provider.server", "update.pause",

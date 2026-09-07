@@ -84,7 +84,8 @@
     "language": "Athraigh teanga",
     "preferences": "Roghanna",
     "provider": "Maidir leis an soláthraí",
-    "integrations": "Comhtháthúcháin"
+    "integrations": "Comhtháthúcháin",
+    "tokens": "Comharthaí API"
   },
   "about": {
     "title": "Maidir le MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Faoi bhun an ghnáthluais: {{crossings}} níos lú",
     "shortfall": "{{metric}} {{shortfall}}%",
     "and": " agus "
+  },
+  "tokens": {
+    "title": "Comharthaí API",
+    "description": "Ligeann comhartha do script, do chrúca ródaire nó d'ardán uathoibrithe tí tástáil a thosú gan do phasfhocal. Is féidir leis tástáil a thosú agus stádas beo an rith a léamh, agus sin an méid. Cúlghair anseo é aon uair is mian leat.",
+    "name": "Ainm",
+    "name_placeholder": "m.sh. Home Assistant",
+    "create": "Cruthaigh comhartha",
+    "created_at": "Cruthaithe {{date}}",
+    "last_used": "Úsáidte go deireanach: {{date}}",
+    "never_used": "Níor úsáideadh riamh é",
+    "empty": "Níl aon chomhartha ann fós.",
+    "secret_title": "Comhartha do {{name}}",
+    "secret_once": "Cóipeáil anois é. Taispeántar é an t-aon uair seo amháin agus ní féidir é a fháil ar ais níos déanaí.",
+    "example": "Tosaigh tástáil leis:",
+    "copy": "Cóipeáil",
+    "copied": "Cóipeáilte chuig an ngearrthaisce.",
+    "removed": "Cúlghaireadh an comhartha.",
+    "delete_confirm": {
+      "title": "An comhartha seo a chúlghairm?",
+      "description": "Ní bheidh aon rud a úsáideann \"{{name}}\" in ann tástálacha a thosú a thuilleadh. Ní féidir é seo a chealú.",
+      "yes": "Cúlghair"
+    }
   }
 }

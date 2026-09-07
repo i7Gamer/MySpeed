@@ -1,0 +1,214 @@
+import { afterEach, describe, it } from "node:test";
+import assert from "node:assert/strict";
+import { readSource, withoutJsComments } from "../helpers/source.js";
+import { act, cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import { AlertProvider } from "@/common/contexts/Alert";
+import { ConfigContext } from "@/common/contexts/Config";
+import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
+import TokensDialog from "@/common/components/TokensDialog";
+import { PreferencesContext } from "@/common/contexts/Preferences";
+
+/*
+ * The dialog that issues and revokes tokens. Rendered against a scripted
+ * fetch: what matters is that the list shows what the server holds, that the
+ * secret is shown once after creation and never again, and that the copy of
+ * the trigger line a reader pastes into their automation is complete.
+ */
+
+afterEach(() => {
+    globalThis.fetch = realFetch;
+    cleanup();
+});
+
+const realFetch = globalThis.fetch;
+const noop = () => undefined;
+
+const answer = (body, status = 200) =>
+    new Response(JSON.stringify(body), {status, headers: {"content-type": "application/json"}});
+
+const TOKEN = "msp_" + "A".repeat(43);
+
+const ROWS = [
+    {id: 1, name: "Home Assistant", scope: "run", created: "2026-09-01T10:00:00.000Z", lastUsed: "2026-09-07T08:00:00.000Z"},
+    {id: 2, name: "Router hook", scope: "run", created: "2026-09-02T10:00:00.000Z", lastUsed: null}
+];
+
+/** A server with the rows above, recording every write. */
+const scripted = (rows = ROWS) => {
+    const writes = [];
+    let list = [...rows];
+
+    globalThis.fetch = async (url, init = {}) => {
+        const path = String(url);
+        const method = init.method ?? "GET";
+
+        if (path.endsWith("/api/tokens") && method === "GET") return answer(list);
+
+        if (path.endsWith("/api/tokens") && method === "POST") {
+            const {name} = JSON.parse(init.body);
+            writes.push({method, name});
+            const row = {id: 9, name, scope: "run", created: "2026-09-07T12:00:00.000Z", lastUsed: null};
+            list = [...list, row];
+            return answer({...row, token: TOKEN}, 201);
+        }
+
+        if (/\/api\/tokens\/\d+$/.test(path) && method === "DELETE") {
+            const id = Number(path.split("/").pop());
+            writes.push({method, id});
+            list = list.filter((row) => row.id !== id);
+            return answer({message: "Token revoked"});
+        }
+
+        return answer({}, 404);
+    };
+
+    return {writes};
+};
+
+const mount = async () => {
+    render(createElement(AlertProvider, null,
+        createElement(ConfigContext.Provider, {value: [{viewMode: false, previewMode: false}, noop, noop]},
+            createElement(ToastNotificationContext.Provider, {value: noop},
+                createElement(PreferencesContext.Provider, {value: [{}, noop]},
+                    createElement(TokensDialog, {open: true, onClose: noop}))))));
+    await settle();
+    await settle();
+
+    return window.document;
+};
+
+const rowsOf = (document) => [...document.querySelectorAll(".token-row")];
+
+/**
+ * The end of a CSS animation the stylesheet would have run. The shared alert
+ * resolves its promise only once its fade-out has ended, and jsdom runs no
+ * animation - see overlayFocusBehaviour.test.js.
+ */
+const animationEnd = (element, animationName) => act(() => {
+    const event = new window.Event("animationend", {bubbles: true});
+    Object.defineProperty(event, "animationName", {value: animationName});
+    element.dispatchEvent(event);
+});
+
+const typeName = async (document, name) => {
+    const input = document.querySelector("#api-token-name");
+    assert.ok(input, "there is no name field");
+
+    await act(async () => {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(input, name);
+        input.dispatchEvent(new window.Event("input", {bubbles: true}));
+    });
+};
+
+describe("the API tokens dialog", () => {
+    it("lists what the server holds, with when each was last used", async () => {
+        scripted();
+        const document = await mount();
+
+        const rows = rowsOf(document);
+        assert.equal(rows.length, 2);
+        assert.match(rows[0].textContent, /Home Assistant/);
+        assert.match(rows[1].textContent, /Router hook/);
+        assert.match(rows[1].textContent, /Never used/);
+        assert.doesNotMatch(rows[0].textContent, /Never used/);
+    });
+
+    it("says so when there are none", async () => {
+        scripted([]);
+        const document = await mount();
+
+        assert.equal(rowsOf(document).length, 0);
+        assert.match(document.querySelector(".tokens-content").textContent, /No tokens yet/);
+    });
+
+    it("creates a token from the name field and shows the secret once", async () => {
+        const {writes} = scripted();
+        const document = await mount();
+
+        assert.equal(document.querySelector(".token-secret"), null, "a secret is shown before one was issued");
+
+        await typeName(document, "Kitchen tablet");
+        click(document.querySelector("#api-token-create"));
+        await settle();
+        await settle();
+
+        assert.deepEqual(writes, [{method: "POST", name: "Kitchen tablet"}]);
+
+        const secret = document.querySelector(".token-secret");
+        assert.ok(secret, "the issued token is not shown");
+        assert.match(secret.textContent, new RegExp(TOKEN));
+        assert.equal(rowsOf(document).length, 3, "the list did not pick the new token up");
+    });
+
+    it("spells out the trigger request beside the secret", async () => {
+        scripted();
+        const document = await mount();
+
+        await typeName(document, "Kitchen tablet");
+        click(document.querySelector("#api-token-create"));
+        await settle();
+        await settle();
+
+        const example = document.querySelector(".token-example");
+        assert.ok(example, "no example request is shown");
+        assert.match(example.textContent, /curl/);
+        assert.match(example.textContent, /Authorization: Bearer msp_/);
+        assert.match(example.textContent, /\/api\/speedtests\/run/);
+    });
+
+    it("refuses to send an empty name", async () => {
+        const {writes} = scripted();
+        const document = await mount();
+
+        const create = document.querySelector("#api-token-create");
+        assert.equal(create.disabled, true, "the create button is live with nothing to name");
+
+        click(create);
+        await settle();
+
+        assert.deepEqual(writes, []);
+    });
+
+    it("revokes a token after the operator confirms", async () => {
+        const {writes} = scripted();
+        const document = await mount();
+
+        click(rowsOf(document)[1].querySelector(".token-delete"));
+        await settle();
+
+        // The shared confirm dialog: its danger button carries the confirming
+        // text.
+        const confirm = [...document.querySelectorAll("button")]
+            .find((button) => /^Revoke$/.test(button.textContent.trim()) && !button.classList.contains("token-delete"));
+        assert.ok(confirm, "no confirmation was asked before revoking");
+
+        click(confirm);
+        await settle();
+        await animationEnd(document.querySelector(".dialog.dialog-hidden"), "fadeOut");
+        await settle();
+        await settle();
+
+        assert.deepEqual(writes, [{method: "DELETE", id: 2}]);
+        assert.equal(rowsOf(document).length, 1);
+    });
+});
+
+describe("the dropdown entry", () => {
+    const dropdown = withoutJsComments(readSource("client/src/common/components/Dropdown/DropdownComponent.jsx"));
+
+    // Dimmed and explained on a demo rather than hidden, the shape every
+    // other refused setting takes - and beside the password it complements.
+    it("is offered next to the password, and refused on a demo", () => {
+        const line = dropdown.split("\n").find((candidate) => candidate.includes('key: "tokens"'));
+
+        assert.ok(line, "the dropdown has no tokens entry");
+        assert.match(line, /previewDisabled: true/);
+        assert.match(line, /t\("dropdown\.tokens"\)/);
+        assert.doesNotMatch(line, /allowView/, "a viewer is offered the token dialog");
+    });
+
+    it("mounts the dialog", () => {
+        assert.match(dropdown, /<TokensDialog open=\{showTokensDialog\} onClose=\{\(\) => setShowTokensDialog\(false\)\}\/>/);
+    });
+});

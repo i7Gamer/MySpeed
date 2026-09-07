@@ -84,7 +84,8 @@
     "language": "Skift sprog",
     "preferences": "Præferencer",
     "provider": "Om udbyderen",
-    "integrations": "Integrationer"
+    "integrations": "Integrationer",
+    "tokens": "API-tokens"
   },
   "about": {
     "title": "Om MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Under den sædvanlige hastighed: {{crossings}} lavere",
     "shortfall": "{{metric}} {{shortfall}} %",
     "and": " og "
+  },
+  "tokens": {
+    "title": "API-tokens",
+    "description": "Et token lader et script, en router-hook eller en hjemmeautomationsplatform starte en test uden din adgangskode. Det kan starte en test og læse kørslens live-status, intet andet. Tilbagekald det her, når du vil.",
+    "name": "Navn",
+    "name_placeholder": "f.eks. Home Assistant",
+    "create": "Opret token",
+    "created_at": "Oprettet {{date}}",
+    "last_used": "Sidst brugt: {{date}}",
+    "never_used": "Aldrig brugt",
+    "empty": "Ingen tokens endnu.",
+    "secret_title": "Token til {{name}}",
+    "secret_once": "Kopiér det nu. Det vises kun denne ene gang og kan ikke gendannes senere.",
+    "example": "Start en test med det:",
+    "copy": "Kopiér",
+    "copied": "Kopieret til udklipsholderen.",
+    "removed": "Tokenet er tilbagekaldt.",
+    "delete_confirm": {
+      "title": "Tilbagekald dette token?",
+      "description": "Alt, der bruger \"{{name}}\", vil ikke længere kunne starte tests. Dette kan ikke fortrydes.",
+      "yes": "Tilbagekald"
+    }
   }
 }

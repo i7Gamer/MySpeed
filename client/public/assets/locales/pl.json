@@ -84,7 +84,8 @@
     "language": "Zmień język",
     "preferences": "Preferencje",
     "provider": "O dostawcy",
-    "integrations": "Integracje"
+    "integrations": "Integracje",
+    "tokens": "Tokeny API"
   },
   "about": {
     "title": "Informacje o MySpeed",
@@ -817,5 +818,27 @@
     "below_usual": "Poniżej zwykłej prędkości: {{crossings}} mniej",
     "shortfall": "{{metric}} o {{shortfall}} %",
     "and": " i "
+  },
+  "tokens": {
+    "title": "Tokeny API",
+    "description": "Token pozwala skryptowi, hookowi routera lub platformie automatyki domowej uruchomić test bez Twojego hasła. Może uruchomić test i odczytać bieżący status przebiegu, nic więcej. Unieważnij go tutaj, kiedy chcesz.",
+    "name": "Nazwa",
+    "name_placeholder": "np. Home Assistant",
+    "create": "Utwórz token",
+    "created_at": "Utworzony {{date}}",
+    "last_used": "Ostatnio użyty: {{date}}",
+    "never_used": "Nigdy nie użyty",
+    "empty": "Brak tokenów.",
+    "secret_title": "Token dla {{name}}",
+    "secret_once": "Skopiuj go teraz. Jest pokazywany tylko ten jeden raz i nie można go później odzyskać.",
+    "example": "Uruchom nim test:",
+    "copy": "Kopiuj",
+    "copied": "Skopiowano do schowka.",
+    "removed": "Token został unieważniony.",
+    "delete_confirm": {
+      "title": "Unieważnić ten token?",
+      "description": "Wszystko, co używa \"{{name}}\", przestanie móc uruchamiać testy. Tego nie można cofnąć.",
+      "yes": "Unieważnij"
+    }
   }
 }

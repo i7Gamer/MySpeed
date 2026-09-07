@@ -84,7 +84,8 @@
     "language": "Sprache ändern",
     "preferences": "Darstellung",
     "provider": "Über den Anbieter",
-    "integrations": "Integrationen"
+    "integrations": "Integrationen",
+    "tokens": "API-Tokens"
   },
   "about": {
     "title": "Über MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Unter der üblichen Geschwindigkeit: {{crossings}} darunter",
     "shortfall": "{{metric}} um {{shortfall}} %",
     "and": " und "
+  },
+  "tokens": {
+    "title": "API-Tokens",
+    "description": "Ein Token lässt ein Skript, einen Router-Hook oder eine Smart-Home-Plattform einen Test starten, ohne dein Passwort zu kennen. Er kann einen Test starten und den Live-Status des Laufs lesen, sonst nichts. Widerrufe ihn hier, wann immer du willst.",
+    "name": "Name",
+    "name_placeholder": "z. B. Home Assistant",
+    "create": "Token erstellen",
+    "created_at": "Erstellt {{date}}",
+    "last_used": "Zuletzt verwendet: {{date}}",
+    "never_used": "Nie verwendet",
+    "empty": "Noch keine Tokens.",
+    "secret_title": "Token für {{name}}",
+    "secret_once": "Kopiere ihn jetzt. Er wird nur dieses eine Mal angezeigt und kann später nicht wiederhergestellt werden.",
+    "example": "So startest du damit einen Test:",
+    "copy": "Kopieren",
+    "copied": "In die Zwischenablage kopiert.",
+    "removed": "Der Token wurde widerrufen.",
+    "delete_confirm": {
+      "title": "Diesen Token widerrufen?",
+      "description": "Alles, was \"{{name}}\" verwendet, kann dann keine Tests mehr starten. Das lässt sich nicht rückgängig machen.",
+      "yes": "Widerrufen"
+    }
   }
 }

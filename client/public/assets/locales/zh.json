@@ -84,7 +84,8 @@
     "language": "修改语言",
     "preferences": "偏好设置",
     "provider": "关于供应商",
-    "integrations": "集成"
+    "integrations": "集成",
+    "tokens": "API 令牌"
   },
   "about": {
     "title": "关于 MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "低于平常速度：{{crossings}}",
     "shortfall": "{{metric}} 下降 {{shortfall}}%",
     "and": "、"
+  },
+  "tokens": {
+    "title": "API 令牌",
+    "description": "令牌可以让脚本、路由器钩子或家庭自动化平台在不知道你密码的情况下启动测试。它只能启动测试并读取运行的实时状态，不能做其他事情。你可以随时在这里撤销它。",
+    "name": "名称",
+    "name_placeholder": "例如 Home Assistant",
+    "create": "创建令牌",
+    "created_at": "创建于 {{date}}",
+    "last_used": "最后使用：{{date}}",
+    "never_used": "从未使用",
+    "empty": "还没有令牌。",
+    "secret_title": "{{name}} 的令牌",
+    "secret_once": "现在就复制它。它只显示这一次，之后无法找回。",
+    "example": "用它启动测试：",
+    "copy": "复制",
+    "copied": "已复制到剪贴板。",
+    "removed": "令牌已撤销。",
+    "delete_confirm": {
+      "title": "撤销此令牌？",
+      "description": "任何使用“{{name}}”的程序将无法再启动测试。此操作无法撤销。",
+      "yes": "撤销"
+    }
   }
 }

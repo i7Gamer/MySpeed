@@ -84,7 +84,8 @@
     "language": "Canvia l'idioma",
     "preferences": "Preferències",
     "provider": "Quant al proveïdor",
-    "integrations": "Integracions"
+    "integrations": "Integracions",
+    "tokens": "Tokens d'API"
   },
   "about": {
     "title": "Quant a MySpeed",
@@ -811,5 +812,27 @@
     "below_usual": "Per sota de la velocitat habitual: {{crossings}} menys",
     "shortfall": "{{metric}} {{shortfall}} %",
     "and": " i "
+  },
+  "tokens": {
+    "title": "Tokens d'API",
+    "description": "Un token permet que un script, un ganxo del router o una plataforma domòtica iniciï una prova sense la teva contrasenya. Pot iniciar una prova i llegir l'estat en directe de l'execució, res més. Revoca'l aquí quan vulguis.",
+    "name": "Nom",
+    "name_placeholder": "p. ex. Home Assistant",
+    "create": "Crea un token",
+    "created_at": "Creat el {{date}}",
+    "last_used": "Últim ús: {{date}}",
+    "never_used": "Mai utilitzat",
+    "empty": "Encara no hi ha tokens.",
+    "secret_title": "Token per a {{name}}",
+    "secret_once": "Copia'l ara. Només es mostra aquesta vegada i no es podrà recuperar més endavant.",
+    "example": "Inicia una prova amb ell:",
+    "copy": "Copia",
+    "copied": "Copiat al porta-retalls.",
+    "removed": "El token s'ha revocat.",
+    "delete_confirm": {
+      "title": "Vols revocar aquest token?",
+      "description": "Tot el que faci servir \"{{name}}\" deixarà de poder iniciar proves. Això no es pot desfer.",
+      "yes": "Revoca"
+    }
   }
 }

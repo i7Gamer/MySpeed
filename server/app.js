@@ -26,6 +26,7 @@ import integrationsRoutes from './routes/integrations.js';
 import prometheusRoutes from './routes/prometheus.js';
 import opengraphRoutes from './routes/opengraph.js';
 import healthRoutes from './routes/health.js';
+import tokensRoutes from './routes/tokens.js';
 
 /**
  * The HTTP layer on its own: routing, middleware and client delivery.
@@ -186,6 +187,7 @@ app.use("/api/recommendations", recommendationsRoutes);
 app.use("/api/nodes", nodesRoutes);
 app.use("/api/integrations", integrationsRoutes);
 app.use("/api/prometheus", prometheusRoutes);
+app.use("/api/tokens", tokensRoutes);
 app.use('/api/opengraph', opengraphRoutes);
 /*
  * A plain prefix, and it has to stay one. `"/api*all"` needed the parameter to
