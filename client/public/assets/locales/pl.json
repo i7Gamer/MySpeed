@@ -686,7 +686,14 @@
       "language_placeholder": "Angielski (domyślny)",
       "send_ip_changed": "Powiadamiaj o zmianie zewnętrznego adresu IP lub dostawcy",
       "ip_changed_message": "Wiadomość o zmianie połączenia",
-      "ip_changed_message_placeholder": "Nowy adres: %ip% (był %previousIp%)"
+      "ip_changed_message_placeholder": "Nowy adres: %ip% (był %previousIp%)",
+      "send_outage": "Powiadamiaj, gdy połączenie jest nieaktywne i gdy zostanie przywrócone",
+      "outage_after": "Traktuj jako awarię po tej liczbie nieudanych testów z rzędu",
+      "outage_after_placeholder": "np. 2",
+      "outage_message": "Wiadomość o awarii",
+      "outage_message_placeholder": "%targetName% jest nieaktywny: %outageSummary%",
+      "recovered_message": "Wiadomość o przywróceniu",
+      "recovered_message_placeholder": "%targetName% wrócił po %downtimeMinutes% minutach"
     },
     "variables": "Dostępne zmienne",
     "variables_hint": "Kliknij, aby dodać ją do wiadomości"
@@ -825,7 +832,13 @@
     "connection_changed": "Połączenie się zmieniło",
     "connection_changed_subject": "MySpeed: zmiana połączenia",
     "ip_changed": "Adres IP {{from}} → {{to}}",
-    "isp_changed": "Dostawca {{from}} → {{to}}"
+    "isp_changed": "Dostawca {{from}} → {{to}}",
+    "outage": "Połączenie jest nieaktywne",
+    "outage_subject": "MySpeed: połączenie nieaktywne",
+    "recovered": "Połączenie zostało przywrócone",
+    "recovered_subject": "MySpeed: połączenie przywrócone",
+    "outage_summary": "{{count}} testów z rzędu zakończyło się niepowodzeniem od {{since}}",
+    "recovered_summary": "Ponownie online po {{count}} nieudanych testach od {{since}}"
   },
   "tokens": {
     "title": "Tokeny API",

@@ -680,7 +680,14 @@
       "language_placeholder": "英語（既定）",
       "send_ip_changed": "外部 IP やプロバイダーが変更された際に通知する",
       "ip_changed_message": "接続変更メッセージ",
-      "ip_changed_message_placeholder": "新しいアドレス：%ip%（以前は %previousIp%）"
+      "ip_changed_message_placeholder": "新しいアドレス：%ip%（以前は %previousIp%）",
+      "send_outage": "接続がダウンしたとき、および復旧したときに通知する",
+      "outage_after": "この回数だけ連続してテストが失敗したらダウンとみなす",
+      "outage_after_placeholder": "例: 2",
+      "outage_message": "ダウン時のメッセージ",
+      "outage_message_placeholder": "%targetName% がダウンしています：%outageSummary%",
+      "recovered_message": "復旧時のメッセージ",
+      "recovered_message_placeholder": "%targetName% が %downtimeMinutes% 分後に復旧しました"
     },
     "variables": "使用できる変数",
     "variables_hint": "クリックするとメッセージに追加されます"
@@ -819,7 +826,13 @@
     "connection_changed": "接続が変更されました",
     "connection_changed_subject": "MySpeed：接続が変更されました",
     "ip_changed": "IP アドレス {{from}} → {{to}}",
-    "isp_changed": "プロバイダー {{from}} → {{to}}"
+    "isp_changed": "プロバイダー {{from}} → {{to}}",
+    "outage": "接続がダウンしています",
+    "outage_subject": "MySpeed：接続ダウン",
+    "recovered": "接続が復旧しました",
+    "recovered_subject": "MySpeed：接続復旧",
+    "outage_summary": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
+    "recovered_summary": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました"
   },
   "tokens": {
     "title": "API トークン",

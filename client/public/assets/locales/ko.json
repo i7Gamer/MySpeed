@@ -680,7 +680,14 @@
       "language_placeholder": "영어 (기본값)",
       "send_ip_changed": "외부 IP 나 제공자가 변경될 때 알림",
       "ip_changed_message": "연결 변경 메시지",
-      "ip_changed_message_placeholder": "새 주소: %ip% (이전: %previousIp%)"
+      "ip_changed_message_placeholder": "새 주소: %ip% (이전: %previousIp%)",
+      "send_outage": "연결이 끊겼을 때와 복구되었을 때 알림",
+      "outage_after": "이 횟수만큼 연속으로 테스트가 실패하면 끊김으로 간주",
+      "outage_after_placeholder": "예: 2",
+      "outage_message": "장애 메시지",
+      "outage_message_placeholder": "%targetName% 연결 끊김: %outageSummary%",
+      "recovered_message": "복구 메시지",
+      "recovered_message_placeholder": "%targetName% 이(가) %downtimeMinutes% 분 후 복구되었습니다"
     },
     "variables": "사용 가능한 변수",
     "variables_hint": "클릭하면 메시지에 추가됩니다"
@@ -819,7 +826,13 @@
     "connection_changed": "연결이 변경되었습니다",
     "connection_changed_subject": "MySpeed: 연결 변경",
     "ip_changed": "IP 주소 {{from}} → {{to}}",
-    "isp_changed": "제공자 {{from}} → {{to}}"
+    "isp_changed": "제공자 {{from}} → {{to}}",
+    "outage": "연결이 끊겼습니다",
+    "outage_subject": "MySpeed: 연결 끊김",
+    "recovered": "연결이 복구되었습니다",
+    "recovered_subject": "MySpeed: 연결 복구",
+    "outage_summary": "{{since}} 이후 {{count}}회 연속으로 테스트가 실패했습니다",
+    "recovered_summary": "{{since}} 이후 {{count}}회 실패한 테스트를 지나 다시 온라인 상태입니다"
   },
   "tokens": {
     "title": "API 토큰",

@@ -680,7 +680,14 @@
       "language_placeholder": "Anglais (par défaut)",
       "send_ip_changed": "Notifier quand l'adresse IP externe ou le fournisseur change",
       "ip_changed_message": "Message de changement de connexion",
-      "ip_changed_message_placeholder": "Nouvelle adresse : %ip% (était %previousIp%)"
+      "ip_changed_message_placeholder": "Nouvelle adresse : %ip% (était %previousIp%)",
+      "send_outage": "Notifier lorsque la connexion est coupée et lorsqu'elle est rétablie",
+      "outage_after": "La considérer comme coupée après ce nombre de tests échoués d'affilée",
+      "outage_after_placeholder": "ex. 2",
+      "outage_message": "Message de panne",
+      "outage_message_placeholder": "%targetName% est hors ligne : %outageSummary%",
+      "recovered_message": "Message de rétablissement",
+      "recovered_message_placeholder": "%targetName% est de retour après %downtimeMinutes% minutes"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Cliquez pour l'ajouter au message"
@@ -819,7 +826,13 @@
     "connection_changed": "La connexion a changé",
     "connection_changed_subject": "MySpeed : connexion changée",
     "ip_changed": "Adresse IP {{from}} → {{to}}",
-    "isp_changed": "Fournisseur {{from}} → {{to}}"
+    "isp_changed": "Fournisseur {{from}} → {{to}}",
+    "outage": "La connexion est coupée",
+    "outage_subject": "MySpeed : connexion coupée",
+    "recovered": "La connexion est rétablie",
+    "recovered_subject": "MySpeed : connexion rétablie",
+    "outage_summary": "{{count}} tests d'affilée ont échoué depuis {{since}}",
+    "recovered_summary": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}"
   },
   "tokens": {
     "title": "Jetons API",

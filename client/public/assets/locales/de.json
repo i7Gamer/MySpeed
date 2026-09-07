@@ -680,7 +680,14 @@
       "language_placeholder": "Englisch (Standard)",
       "send_ip_changed": "Benachrichtigen, wenn sich die externe IP oder der Anbieter ändert",
       "ip_changed_message": "Nachricht zur Verbindungsänderung",
-      "ip_changed_message_placeholder": "Neue Adresse: %ip% (war %previousIp%)"
+      "ip_changed_message_placeholder": "Neue Adresse: %ip% (war %previousIp%)",
+      "send_outage": "Benachrichtigen, wenn die Verbindung ausfällt und wenn sie wieder da ist",
+      "outage_after": "Erst nach so vielen fehlgeschlagenen Tests in Folge als Ausfall zählen",
+      "outage_after_placeholder": "z. B. 2",
+      "outage_message": "Ausfallnachricht",
+      "outage_message_placeholder": "%targetName% ist ausgefallen: %outageSummary%",
+      "recovered_message": "Wiederherstellungsnachricht",
+      "recovered_message_placeholder": "%targetName% ist nach %downtimeMinutes% Minuten wieder da"
     },
     "variables": "Verfügbare Variablen",
     "variables_hint": "Zum Einfügen in die Nachricht anklicken"
@@ -819,7 +826,13 @@
     "connection_changed": "Die Verbindung hat sich geändert",
     "connection_changed_subject": "MySpeed: Verbindung geändert",
     "ip_changed": "IP-Adresse {{from}} → {{to}}",
-    "isp_changed": "Anbieter {{from}} → {{to}}"
+    "isp_changed": "Anbieter {{from}} → {{to}}",
+    "outage": "Die Verbindung ist ausgefallen",
+    "outage_subject": "MySpeed: Verbindung ausgefallen",
+    "recovered": "Die Verbindung ist wieder da",
+    "recovered_subject": "MySpeed: Verbindung wiederhergestellt",
+    "outage_summary": "{{count}} Tests in Folge sind seit {{since}} fehlgeschlagen",
+    "recovered_summary": "Wieder online nach {{count}} fehlgeschlagenen Tests seit {{since}}"
   },
   "tokens": {
     "title": "API-Tokens",

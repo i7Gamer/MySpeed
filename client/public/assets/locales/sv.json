@@ -680,7 +680,14 @@
       "language_placeholder": "Engelska (standard)",
       "send_ip_changed": "Meddela när den externa IP-adressen eller leverantören ändras",
       "ip_changed_message": "Meddelande om förändring av anslutning",
-      "ip_changed_message_placeholder": "Ny adress: %ip% (var %previousIp%)"
+      "ip_changed_message_placeholder": "Ny adress: %ip% (var %previousIp%)",
+      "send_outage": "Meddela när anslutningen är nere och när den är tillbaka",
+      "outage_after": "Räkna den som nere efter så många misslyckade tester i rad",
+      "outage_after_placeholder": "t.ex. 2",
+      "outage_message": "Avbrottsmeddelande",
+      "outage_message_placeholder": "%targetName% är nere: %outageSummary%",
+      "recovered_message": "Återställningsmeddelande",
+      "recovered_message_placeholder": "%targetName% är tillbaka efter %downtimeMinutes% minuter"
     },
     "variables": "Tillgängliga variabler",
     "variables_hint": "Klicka för att lägga till den i meddelandet"
@@ -819,7 +826,13 @@
     "connection_changed": "Anslutningen har ändrats",
     "connection_changed_subject": "MySpeed: anslutning ändrad",
     "ip_changed": "IP-adress {{from}} → {{to}}",
-    "isp_changed": "Leverantör {{from}} → {{to}}"
+    "isp_changed": "Leverantör {{from}} → {{to}}",
+    "outage": "Anslutningen är nere",
+    "outage_subject": "MySpeed: anslutningen är nere",
+    "recovered": "Anslutningen är tillbaka",
+    "recovered_subject": "MySpeed: anslutningen återställd",
+    "outage_summary": "{{count}} tester i rad har misslyckats sedan {{since}}",
+    "recovered_summary": "Online igen efter {{count}} misslyckade tester sedan {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

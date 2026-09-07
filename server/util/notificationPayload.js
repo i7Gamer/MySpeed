@@ -5,6 +5,11 @@ import { DATE_VARIABLES } from './helpers.js';
 // failing to compile.
 import { ALERT_CROSSED, ALERT_SUMMARY, BASELINE_ARMED, BASELINE_BREACHED } from './alertThreshold.js';
 import { BASELINE_METRICS, shortfallKey } from './baselineAlert.js';
+// The outage summary's name lives in the leaf beside the streak keys, for the
+// reason its comment there gives; re-exported so the dispatcher and the
+// dialog find every summary name here.
+import { FAILURES_IN_ROW, OUTAGE_SUMMARY } from './outage.js';
+export { OUTAGE_SUMMARY } from './outage.js';
 
 /**
  * What an integration is told about a test, and what an operator may name in a
@@ -131,6 +136,30 @@ const CONNECTION_KEYS = [
 ];
 
 /**
+ * How long the line has been failing: how many tests in a row, since when,
+ * and for how many minutes. See util/outage.js for where the three come from.
+ */
+const STREAK_KEYS = [FAILURES_IN_ROW, "downSince", "downtimeMinutes"];
+
+/**
+ * What an integration is told when a target's failures have become an outage:
+ * the failure that tipped it, as testFailed describes one, and the streak it
+ * is the latest of.
+ */
+const OUTAGE_KEYS = [...FAILED_KEYS, ...STREAK_KEYS, OUTAGE_SUMMARY];
+
+/**
+ * And when the line came back: the test that ended the outage, with the three
+ * readings a message wants to print beside "back", and the streak it ended.
+ * No `error` - a recovery has none to report.
+ */
+const RECOVERED_KEYS = [
+    "id", "created", "provider", "ping", "download", "upload",
+    "targetId", "targetName", "primary", "alerts",
+    ...STREAK_KEYS, OUTAGE_SUMMARY
+];
+
+/**
  * A record reduced to exactly the advertised keys.
  *
  * Every key is present whether or not the record carried it: a template naming
@@ -146,6 +175,10 @@ export const failedPayload = (record) => pick(FAILED_KEYS, record);
 
 export const connectionChangedPayload = (record) => pick(CONNECTION_KEYS, record);
 
+export const outagePayload = (record) => pick(OUTAGE_KEYS, record);
+
+export const recoveredPayload = (record) => pick(RECOVERED_KEYS, record);
+
 /**
  * The names the integration dialog offers for each kind of message.
  *
@@ -159,3 +192,7 @@ export const FINISHED_VARIABLES = [...FINISHED_KEYS, ...DATE_VARIABLES];
 export const FAILED_VARIABLES = [...FAILED_KEYS, ...DATE_VARIABLES];
 
 export const CONNECTION_VARIABLES = [...CONNECTION_KEYS, ...DATE_VARIABLES];
+
+export const OUTAGE_VARIABLES = [...OUTAGE_KEYS, ...DATE_VARIABLES];
+
+export const RECOVERED_VARIABLES = [...RECOVERED_KEYS, ...DATE_VARIABLES];

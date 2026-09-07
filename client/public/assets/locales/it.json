@@ -680,7 +680,14 @@
       "language_placeholder": "Inglese (predefinita)",
       "send_ip_changed": "Notifica quando l'IP esterno o l'operatore cambia",
       "ip_changed_message": "Messaggio di modifica della connessione",
-      "ip_changed_message_placeholder": "Nuovo indirizzo: %ip% (era %previousIp%)"
+      "ip_changed_message_placeholder": "Nuovo indirizzo: %ip% (era %previousIp%)",
+      "send_outage": "Notifica quando la connessione è interrotta e quando torna",
+      "outage_after": "Considerala interrotta dopo questo numero di test consecutivi falliti",
+      "outage_after_placeholder": "es. 2",
+      "outage_message": "Messaggio di interruzione",
+      "outage_message_placeholder": "%targetName% è offline: %outageSummary%",
+      "recovered_message": "Messaggio di ripristino",
+      "recovered_message_placeholder": "%targetName% è tornato dopo %downtimeMinutes% minuti"
     },
     "variables": "Variabili disponibili",
     "variables_hint": "Clicca per aggiungerla al messaggio"
@@ -819,7 +826,13 @@
     "connection_changed": "La connessione è cambiata",
     "connection_changed_subject": "MySpeed: connessione cambiata",
     "ip_changed": "Indirizzo IP {{from}} → {{to}}",
-    "isp_changed": "Operatore {{from}} → {{to}}"
+    "isp_changed": "Operatore {{from}} → {{to}}",
+    "outage": "La connessione è interrotta",
+    "outage_subject": "MySpeed: connessione interrotta",
+    "recovered": "La connessione è tornata",
+    "recovered_subject": "MySpeed: connessione ripristinata",
+    "outage_summary": "{{count}} test consecutivi sono falliti da {{since}}",
+    "recovered_summary": "Di nuovo online dopo {{count}} test falliti da {{since}}"
   },
   "tokens": {
     "title": "Token API",

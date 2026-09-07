@@ -680,7 +680,14 @@
       "language_placeholder": "Engelsk (standard)",
       "send_ip_changed": "Varsle når den eksterne IP eller leverandøren endres",
       "ip_changed_message": "Melding om tilkoblingsendring",
-      "ip_changed_message_placeholder": "Ny adresse: %ip% (var %previousIp%)"
+      "ip_changed_message_placeholder": "Ny adresse: %ip% (var %previousIp%)",
+      "send_outage": "Varsle når tilkoblingen er nede, og når den er tilbake",
+      "outage_after": "Regn den som nede etter så mange mislykkede tester på rad",
+      "outage_after_placeholder": "f.eks. 2",
+      "outage_message": "Nedetidsmelding",
+      "outage_message_placeholder": "%targetName% er nede: %outageSummary%",
+      "recovered_message": "Gjenopprettingsmelding",
+      "recovered_message_placeholder": "%targetName% er tilbake etter %downtimeMinutes% minutter"
     },
     "variables": "Tilgjengelige variabler",
     "variables_hint": "Klikk for å legge den til i meldingen"
@@ -819,7 +826,13 @@
     "connection_changed": "Tilkoblingen har endret seg",
     "connection_changed_subject": "MySpeed: tilkobling endret",
     "ip_changed": "IP-adresse {{from}} → {{to}}",
-    "isp_changed": "Leverandør {{from}} → {{to}}"
+    "isp_changed": "Leverandør {{from}} → {{to}}",
+    "outage": "Tilkoblingen er nede",
+    "outage_subject": "MySpeed: tilkoblingen er nede",
+    "recovered": "Tilkoblingen er tilbake",
+    "recovered_subject": "MySpeed: tilkoblingen er gjenopprettet",
+    "outage_summary": "{{count}} tester på rad har mislyktes siden {{since}}",
+    "recovered_summary": "Tilbake på nett etter {{count}} mislykkede tester siden {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

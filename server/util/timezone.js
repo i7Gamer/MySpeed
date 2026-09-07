@@ -215,6 +215,27 @@ export const localWallClock = (zone, instant) =>
 /** The hour of the day an instant falls in, on the zone's wall clock. */
 export const localHourAt = (zone, instant) => localWallClock(zone, instant).getUTCHours();
 
+const TWO_DIGITS = 2;
+
+const twoDigits = (figure) => String(figure).padStart(TWO_DIGITS, "0");
+
+/**
+ * The zone's own calendar and clock parts of an instant, as the "YYYY-MM-DD"
+ * and "HH:MM" a message prints.
+ *
+ * Here rather than in the digest that first needed it, because the outage
+ * summary prints the same two parts and a second copy would have been the
+ * start of the two drifting - the same reason localWallClock above is the one
+ * home of the shift itself.
+ */
+export const localDateTime = (zone, value) => {
+    const wall = localWallClock(zone, new Date(value));
+    const date = `${wall.getUTCFullYear()}-${twoDigits(wall.getUTCMonth() + 1)}-${twoDigits(wall.getUTCDate())}`;
+    const time = `${twoDigits(wall.getUTCHours())}:${twoDigits(wall.getUTCMinutes())}`;
+
+    return {date, time};
+};
+
 /**
  * The zone a stored `timezone` setting names, or the host's own clock.
  *

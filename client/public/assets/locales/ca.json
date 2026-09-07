@@ -680,7 +680,14 @@
       "language_placeholder": "Anglès (per defecte)",
       "send_ip_changed": "Notificar quan l'adreça IP externa o el proveïdor canviïn",
       "ip_changed_message": "Missatge de canvi de connexió",
-      "ip_changed_message_placeholder": "Nova adreça: %ip% (era %previousIp%)"
+      "ip_changed_message_placeholder": "Nova adreça: %ip% (era %previousIp%)",
+      "send_outage": "Notificar quan la connexió caigui i quan torni",
+      "outage_after": "Comptar-la com a caiguda després d'aquest nombre de proves fallides seguides",
+      "outage_after_placeholder": "p. ex. 2",
+      "outage_message": "Missatge de caiguda",
+      "outage_message_placeholder": "%targetName% està caigut: %outageSummary%",
+      "recovered_message": "Missatge de recuperació",
+      "recovered_message_placeholder": "%targetName% ha tornat després de %downtimeMinutes% minuts"
     },
     "variables": "Variables disponibles",
     "variables_hint": "Fes-hi clic per afegir-la al missatge"
@@ -819,7 +826,13 @@
     "connection_changed": "La connexió ha canviat",
     "connection_changed_subject": "MySpeed: canvi de connexió",
     "ip_changed": "Adreça IP {{from}} → {{to}}",
-    "isp_changed": "Proveïdor {{from}} → {{to}}"
+    "isp_changed": "Proveïdor {{from}} → {{to}}",
+    "outage": "La connexió està caiguda",
+    "outage_subject": "MySpeed: connexió caiguda",
+    "recovered": "La connexió ha tornat",
+    "recovered_subject": "MySpeed: connexió restablerta",
+    "outage_summary": "{{count}} proves seguides han fallat des de {{since}}",
+    "recovered_summary": "De nou en línia després de {{count}} proves fallides des de {{since}}"
   },
   "tokens": {
     "title": "Tokens d'API",

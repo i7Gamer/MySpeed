@@ -680,7 +680,14 @@
       "language_placeholder": "English (default)",
       "send_ip_changed": "Notify when the external IP or the provider changes",
       "ip_changed_message": "Connection change message",
-      "ip_changed_message_placeholder": "New address: %ip% (was %previousIp%)"
+      "ip_changed_message_placeholder": "New address: %ip% (was %previousIp%)",
+      "send_outage": "Notify when the connection is down, and when it is back",
+      "outage_after": "Count it as down after this many failed tests in a row",
+      "outage_after_placeholder": "e.g. 2",
+      "outage_message": "Outage message",
+      "outage_message_placeholder": "%targetName% is down: %outageSummary%",
+      "recovered_message": "Recovery message",
+      "recovered_message_placeholder": "%targetName% is back after %downtimeMinutes% minutes"
     },
     "variables": "Available variables",
     "variables_hint": "Click to add it to the message"
@@ -819,7 +826,13 @@
     "connection_changed": "The connection has changed",
     "connection_changed_subject": "MySpeed: connection changed",
     "ip_changed": "IP address {{from}} → {{to}}",
-    "isp_changed": "Provider {{from}} → {{to}}"
+    "isp_changed": "Provider {{from}} → {{to}}",
+    "outage": "The connection is down",
+    "outage_subject": "MySpeed: connection down",
+    "recovered": "The connection is back",
+    "recovered_subject": "MySpeed: connection restored",
+    "outage_summary": "{{count}} tests in a row have failed since {{since}}",
+    "recovered_summary": "Back online after {{count}} failed tests since {{since}}"
   },
   "tokens": {
     "title": "API tokens",

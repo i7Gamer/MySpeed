@@ -3,6 +3,7 @@ import { postText } from "../util/http.js";
 import { headerSafe, replaceVariables, stripTrailingSlashes } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, RECOVERED_EVENT } from "../util/outage.js";
 
 // Both templates name the target: on a multi-target instance every message
 // otherwise reads identically whether it describes the WAN or the LAN box.
@@ -55,6 +56,9 @@ const send = (config, message, priority, activity) => {
  */
 const DIGEST_PRIORITY = 3;
 
+/** The band a failure arrives in when the operator set none - the top of ntfy's scale. */
+const FAILED_PRIORITY = NTFY_PRIORITY_MAX;
+
 
 export default (registerEvent) => {
     // `zone` is the instance's own clock, resolved once per event by
@@ -63,13 +67,13 @@ export default (registerEvent) => {
     registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
         if (c.send_finished) await send(c,
             replaceVariables(c.finished_message || defaults(c.language).finished, data, zone),
-            c.priority || 3, activity);
+            c.priority || DIGEST_PRIORITY, activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
         if (c.send_failed) await send(c,
             replaceVariables(c.error_message || defaults(c.language).failed, failure, zone),
-            c.error_priority || 5, activity);
+            c.error_priority || FAILED_PRIORITY, activity);
     });
 
     // At the digest's band: a change is news rather than an alarm.
@@ -77,6 +81,20 @@ export default (registerEvent) => {
         if (c.send_ip_changed) await send(c,
             replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, change, zone),
             DIGEST_PRIORITY, activity);
+    });
+
+    // An outage at the failure's band, its end at the measurement's: the
+    // first is the alarm a failure only hints at, the second is a good test.
+    registerEvent(OUTAGE_EVENT, async ({data: c}, outage, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(c.outage_message || defaults(c.language).outage, outage, zone),
+            c.error_priority || FAILED_PRIORITY, activity);
+    });
+
+    registerEvent(RECOVERED_EVENT, async ({data: c}, recovery, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(c.recovered_message || defaults(c.language).recovered, recovery, zone),
+            c.priority || DIGEST_PRIORITY, activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

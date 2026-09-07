@@ -680,7 +680,14 @@
       "language_placeholder": "Engels (standaard)",
       "send_ip_changed": "Meld als het externe IP of de provider verandert",
       "ip_changed_message": "Bericht bij een verbindingswijziging",
-      "ip_changed_message_placeholder": "Nieuw adres: %ip% (was %previousIp%)"
+      "ip_changed_message_placeholder": "Nieuw adres: %ip% (was %previousIp%)",
+      "send_outage": "Melden wanneer de verbinding is verbroken en wanneer deze terug is",
+      "outage_after": "Als verbroken tellen na dit aantal mislukte tests op rij",
+      "outage_after_placeholder": "bijv. 2",
+      "outage_message": "Storingsbericht",
+      "outage_message_placeholder": "%targetName% is offline: %outageSummary%",
+      "recovered_message": "Herstelbericht",
+      "recovered_message_placeholder": "%targetName% is terug na %downtimeMinutes% minuten"
     },
     "variables": "Beschikbare variabelen",
     "variables_hint": "Klik om hem aan het bericht toe te voegen"
@@ -819,7 +826,13 @@
     "connection_changed": "De verbinding is veranderd",
     "connection_changed_subject": "MySpeed: verbinding veranderd",
     "ip_changed": "IP-adres {{from}} → {{to}}",
-    "isp_changed": "Provider {{from}} → {{to}}"
+    "isp_changed": "Provider {{from}} → {{to}}",
+    "outage": "De verbinding is verbroken",
+    "outage_subject": "MySpeed: verbinding verbroken",
+    "recovered": "De verbinding is terug",
+    "recovered_subject": "MySpeed: verbinding hersteld",
+    "outage_summary": "{{count}} tests op rij zijn mislukt sinds {{since}}",
+    "recovered_summary": "Weer online na {{count}} mislukte tests sinds {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

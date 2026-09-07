@@ -680,7 +680,14 @@
       "language_placeholder": "Béarla (réamhshocrú)",
       "send_ip_changed": "Cuir in iúl nuair a athraíonn an IP seachtrach nó an soláthraí",
       "ip_changed_message": "Teachtaireacht faoi athrú ceangail",
-      "ip_changed_message_placeholder": "Seoladh nua: %ip% (ba é %previousIp% é)"
+      "ip_changed_message_placeholder": "Seoladh nua: %ip% (ba é %previousIp% é)",
+      "send_outage": "Cuir in iúl nuair a bhíonn an nasc thíos, agus nuair a bhíonn sé ar ais",
+      "outage_after": "Áirigh mar thíos é tar éis an oiread seo tástálacha a theip as a chéile",
+      "outage_after_placeholder": "m.sh. 2",
+      "outage_message": "Teachtaireacht bhriste",
+      "outage_message_placeholder": "Tá %targetName% thíos: %outageSummary%",
+      "recovered_message": "Teachtaireacht athchóirithe",
+      "recovered_message_placeholder": "Tá %targetName% ar ais tar éis %downtimeMinutes% nóiméad"
     },
     "variables": "Athróga ar fáil",
     "variables_hint": "Cliceáil chun é a chur leis an teachtaireacht"
@@ -819,7 +826,13 @@
     "connection_changed": "Tá an ceangal athraithe",
     "connection_changed_subject": "MySpeed: athraíodh an ceangal",
     "ip_changed": "Seoladh IP {{from}} → {{to}}",
-    "isp_changed": "Soláthraí {{from}} → {{to}}"
+    "isp_changed": "Soláthraí {{from}} → {{to}}",
+    "outage": "Tá an nasc thíos",
+    "outage_subject": "MySpeed: nasc thíos",
+    "recovered": "Tá an nasc ar ais",
+    "recovered_subject": "MySpeed: nasc athchóirithe",
+    "outage_summary": "Theip ar {{count}} thástáil as a chéile ó {{since}}",
+    "recovered_summary": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}"
   },
   "tokens": {
     "title": "Comharthaí API",

@@ -1,6 +1,7 @@
 import schedule from 'node-schedule';
 import { triggerEvent } from "../controller/integrations.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, RECOVERED_EVENT } from "../util/outage.js";
 import { getLatest } from "../controller/speedtests.js";
 import * as targetsController from "../controller/targets.js";
 import { isFailedTest } from "../util/testOutcome.js";
@@ -176,6 +177,14 @@ export const sendFinished = async (data) => {
  */
 export const sendConnectionChanged = async (payload) => {
     await triggerEvent(IP_CHANGED_EVENT, payload);
+};
+
+export const sendOutage = async (payload) => {
+    await triggerEvent(OUTAGE_EVENT, payload);
+};
+
+export const sendRecovered = async (payload) => {
+    await triggerEvent(RECOVERED_EVENT, payload);
 };
 
 /**

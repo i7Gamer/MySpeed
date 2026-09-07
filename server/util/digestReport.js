@@ -16,7 +16,7 @@
  * cadence, not a hole.
  */
 import { parseDateRange } from "./dateRange.js";
-import { localWallClock, serverZone } from "./timezone.js";
+import { localDateTime, localWallClock, serverZone } from "./timezone.js";
 
 const DAYS_PER_WEEK = 7;
 const PERCENT = 100;
@@ -86,18 +86,6 @@ const signedPercent = (current, previous) => {
     const change = ((current - previous) / previous) * PERCENT;
 
     return `${change >= 0 ? "+" : ""}${change.toFixed(DELTA_DECIMALS)}%`;
-};
-
-// The zone's own calendar and clock parts of an instant, printed
-// "YYYY-MM-DD HH:MM" - localWallClock shifts the instant so its getUTC*
-// reads ARE the wall clock, the same trick localParts uses above.
-const localDateTime = (zone, value) => {
-    const wall = localWallClock(zone, new Date(value));
-    const date = `${wall.getUTCFullYear()}-${String(wall.getUTCMonth() + 1).padStart(2, "0")}-`
-        + String(wall.getUTCDate()).padStart(2, "0");
-    const time = `${String(wall.getUTCHours()).padStart(2, "0")}:${String(wall.getUTCMinutes()).padStart(2, "0")}`;
-
-    return {date, time};
 };
 
 // "2026-08-26T14:02:00.000Z" -> the zone's own date, the zone's own minutes,

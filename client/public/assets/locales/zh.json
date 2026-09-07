@@ -680,7 +680,14 @@
       "language_placeholder": "英语（默认）",
       "send_ip_changed": "外部 IP 或运营商变更时通知",
       "ip_changed_message": "连接变更消息",
-      "ip_changed_message_placeholder": "新地址：%ip%（原为 %previousIp%）"
+      "ip_changed_message_placeholder": "新地址：%ip%（原为 %previousIp%）",
+      "send_outage": "连接中断时以及恢复时通知",
+      "outage_after": "连续失败达到此次数后视为中断",
+      "outage_after_placeholder": "例如 2",
+      "outage_message": "中断消息",
+      "outage_message_placeholder": "%targetName% 已中断：%outageSummary%",
+      "recovered_message": "恢复消息",
+      "recovered_message_placeholder": "%targetName% 在 %downtimeMinutes% 分钟后已恢复"
     },
     "variables": "可用变量",
     "variables_hint": "点击即可将其加入消息"
@@ -819,7 +826,13 @@
     "connection_changed": "连接已更改",
     "connection_changed_subject": "MySpeed：连接已更改",
     "ip_changed": "IP 地址 {{from}} → {{to}}",
-    "isp_changed": "运营商 {{from}} → {{to}}"
+    "isp_changed": "运营商 {{from}} → {{to}}",
+    "outage": "连接已中断",
+    "outage_subject": "MySpeed：连接中断",
+    "recovered": "连接已恢复",
+    "recovered_subject": "MySpeed：连接已恢复",
+    "outage_summary": "自 {{since}} 起已连续 {{count}} 次测试失败",
+    "recovered_summary": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线"
   },
   "tokens": {
     "title": "API 令牌",

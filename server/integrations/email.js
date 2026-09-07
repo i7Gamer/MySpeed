@@ -6,6 +6,7 @@ import { bareHost } from "../util/helpers.js";
 import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, OUTAGE_SUMMARY, RECOVERED_EVENT } from "../util/outage.js";
 
 /**
  * Email, which is upstream #1259.
@@ -44,7 +45,11 @@ const defaults = (language) => {
         error_subject: word("failed_subject"),
         failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`,
         connection_changed_subject: word("connection_changed_subject"),
-        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`
+        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`,
+        outage_subject: word("outage_subject"),
+        outage: `${word("outage")}.\n${word("target")}: %targetName%\n%${OUTAGE_SUMMARY}%`,
+        recovered_subject: word("recovered_subject"),
+        recovered: `${word("recovered")}.\n${word("target")}: %targetName%\n%${OUTAGE_SUMMARY}%`
     };
 };
 
@@ -246,6 +251,20 @@ export default (registerEvent, createTransport = nodemailer.createTransport) => 
         if (c.send_ip_changed) await send(c,
             replaceVariables(defaults(c.language).connection_changed_subject, change, zone),
             replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, change, zone), activity);
+    });
+
+    // Fixed subjects, for the reason the change's is: two more text fields
+    // would buy two strings a mailbox rule can already sort on.
+    registerEvent(OUTAGE_EVENT, async ({data: c}, outage, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(defaults(c.language).outage_subject, outage, zone),
+            replaceVariables(c.outage_message || defaults(c.language).outage, outage, zone), activity);
+    });
+
+    registerEvent(RECOVERED_EVENT, async ({data: c}, recovery, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(defaults(c.language).recovered_subject, recovery, zone),
+            replaceVariables(c.recovered_message || defaults(c.language).recovered, recovery, zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

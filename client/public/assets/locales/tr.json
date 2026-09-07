@@ -680,7 +680,14 @@
       "language_placeholder": "İngilizce (varsayılan)",
       "send_ip_changed": "Dış IP veya sağlayıcı değiştiğinde bildirim gönder",
       "ip_changed_message": "Bağlantı değişikliği mesajı",
-      "ip_changed_message_placeholder": "Yeni adres: %ip% (önceki %previousIp%)"
+      "ip_changed_message_placeholder": "Yeni adres: %ip% (önceki %previousIp%)",
+      "send_outage": "Bağlantı kesildiğinde ve geri geldiğinde bildir",
+      "outage_after": "Art arda bu kadar başarısız testten sonra kesinti say",
+      "outage_after_placeholder": "örn. 2",
+      "outage_message": "Kesinti mesajı",
+      "outage_message_placeholder": "%targetName% erişilemiyor: %outageSummary%",
+      "recovered_message": "Kurtarma mesajı",
+      "recovered_message_placeholder": "%targetName% %downtimeMinutes% dakika sonra geri geldi"
     },
     "variables": "Kullanılabilir değişkenler",
     "variables_hint": "Mesaja eklemek için tıklayın"
@@ -819,7 +826,13 @@
     "connection_changed": "Bağlantı değişti",
     "connection_changed_subject": "MySpeed: bağlantı değişti",
     "ip_changed": "IP adresi {{from}} → {{to}}",
-    "isp_changed": "Sağlayıcı {{from}} → {{to}}"
+    "isp_changed": "Sağlayıcı {{from}} → {{to}}",
+    "outage": "Bağlantı kesildi",
+    "outage_subject": "MySpeed: bağlantı kesildi",
+    "recovered": "Bağlantı geri geldi",
+    "recovered_subject": "MySpeed: bağlantı yeniden kuruldu",
+    "outage_summary": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
+    "recovered_summary": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi"
   },
   "tokens": {
     "title": "API belirteçleri",

@@ -686,7 +686,14 @@
       "language_placeholder": "Angličtina (výchozí)",
       "send_ip_changed": "Upozornit při změně externí IP nebo poskytovatele",
       "ip_changed_message": "Zpráva o změně připojení",
-      "ip_changed_message_placeholder": "Nová adresa: %ip% (byla %previousIp%)"
+      "ip_changed_message_placeholder": "Nová adresa: %ip% (byla %previousIp%)",
+      "send_outage": "Upozornit, když je připojení nedostupné a když je opět dostupné",
+      "outage_after": "Považovat za výpadek po tomto počtu neúspěšných testů po sobě",
+      "outage_after_placeholder": "např. 2",
+      "outage_message": "Zpráva o výpadku",
+      "outage_message_placeholder": "%targetName% je nedostupný: %outageSummary%",
+      "recovered_message": "Zpráva o obnovení",
+      "recovered_message_placeholder": "%targetName% je opět online po %downtimeMinutes% minutách"
     },
     "variables": "Dostupné proměnné",
     "variables_hint": "Kliknutím ji přidáte do zprávy"
@@ -825,7 +832,13 @@
     "connection_changed": "Připojení se změnilo",
     "connection_changed_subject": "MySpeed: změna připojení",
     "ip_changed": "IP adresa {{from}} → {{to}}",
-    "isp_changed": "Poskytovatel {{from}} → {{to}}"
+    "isp_changed": "Poskytovatel {{from}} → {{to}}",
+    "outage": "Připojení je nedostupné",
+    "outage_subject": "MySpeed: připojení nedostupné",
+    "recovered": "Připojení je opět dostupné",
+    "recovered_subject": "MySpeed: připojení obnoveno",
+    "outage_summary": "{{count}} testů po sobě selhalo od {{since}}",
+    "recovered_summary": "Opět online po {{count}} neúspěšných testech od {{since}}"
   },
   "tokens": {
     "title": "API tokeny",

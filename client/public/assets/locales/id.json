@@ -680,7 +680,14 @@
       "language_placeholder": "Inggris (bawaan)",
       "send_ip_changed": "Beritahu saat IP eksternal atau penyedia layanan berubah",
       "ip_changed_message": "Pesan perubahan koneksi",
-      "ip_changed_message_placeholder": "Alamat baru: %ip% (sebelumnya %previousIp%)"
+      "ip_changed_message_placeholder": "Alamat baru: %ip% (sebelumnya %previousIp%)",
+      "send_outage": "Beri tahu ketika koneksi terputus dan ketika kembali normal",
+      "outage_after": "Anggap terputus setelah sebanyak ini tes gagal berturut-turut",
+      "outage_after_placeholder": "mis. 2",
+      "outage_message": "Pesan gangguan",
+      "outage_message_placeholder": "%targetName% terputus: %outageSummary%",
+      "recovered_message": "Pesan pemulihan",
+      "recovered_message_placeholder": "%targetName% kembali setelah %downtimeMinutes% menit"
     },
     "variables": "Variabel yang tersedia",
     "variables_hint": "Klik untuk menambahkannya ke pesan"
@@ -819,7 +826,13 @@
     "connection_changed": "Koneksi telah berubah",
     "connection_changed_subject": "MySpeed: koneksi berubah",
     "ip_changed": "Alamat IP {{from}} → {{to}}",
-    "isp_changed": "Penyedia layanan {{from}} → {{to}}"
+    "isp_changed": "Penyedia layanan {{from}} → {{to}}",
+    "outage": "Koneksi terputus",
+    "outage_subject": "MySpeed: koneksi terputus",
+    "recovered": "Koneksi kembali normal",
+    "recovered_subject": "MySpeed: koneksi dipulihkan",
+    "outage_summary": "{{count}} tes berturut-turut gagal sejak {{since}}",
+    "recovered_summary": "Kembali online setelah {{count}} tes gagal sejak {{since}}"
   },
   "tokens": {
     "title": "Token API",

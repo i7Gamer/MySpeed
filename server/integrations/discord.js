@@ -4,6 +4,7 @@ import { replaceVariables, truncate } from "../util/helpers.js";
 import { DISCORD_MARKDOWN, stripMarkdown } from "../util/markdown.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, OUTAGE_SUMMARY, RECOVERED_EVENT } from "../util/outage.js";
 
 /**
  * What discord will accept as an embed description.
@@ -46,7 +47,9 @@ const defaults = (language) => {
     return {
         finished: `:sparkles: **${word("finished")}**\n > :dart: \`${word("target")}\`: %targetName%\n > :ping_pong: \`${word("ping")}\`: %ping% ms (±%jitter% ms)\n > :arrow_up: \`${word("upload")}\`: %upload% Mbps\n > :arrow_down: \`${word("download")}\`: %download% Mbps%alertSummary%`,
         failed: `:x: **${word("failed")}**\n > \`${word("target")}\`: %targetName%\n > \`${word("reason")}\`: %error%`,
-        ipChanged: `:arrows_counterclockwise: **${word("connection_changed")}**\n > :dart: \`${word("target")}\`: %targetName%\n > %connectionChanges%`
+        ipChanged: `:arrows_counterclockwise: **${word("connection_changed")}**\n > :dart: \`${word("target")}\`: %targetName%\n > %connectionChanges%`,
+        outage: `:no_entry: **${word("outage")}**\n > :dart: \`${word("target")}\`: %targetName%\n > %${OUTAGE_SUMMARY}%`,
+        recovered: `:white_check_mark: **${word("recovered")}**\n > :dart: \`${word("target")}\`: %targetName%\n > %${OUTAGE_SUMMARY}%`
     };
 };
 
@@ -151,6 +154,10 @@ const DIGEST_COLOR = 4543686;
  */
 const CONNECTION_COLOR = 3447003;
 
+/** The green of a good test and the red of a failure, as Discord reads a colour. */
+const FINISHED_COLOR = 4572762;
+const FAILED_COLOR = 12993861;
+
 
 export default (registerEvent) => {
     // `zone` is the instance's own clock, resolved once per event by
@@ -159,18 +166,30 @@ export default (registerEvent) => {
     // pins to UTC. Absent - an older caller, or a test that fires the callback
     // directly - replaceVariables reads the host clock, exactly as it did.
     registerEvent('testFinished', async ({data: c}, data, activity, zone) => {
-        if (c.send_finished) await send(c.url, c.display_name, 4572762,
+        if (c.send_finished) await send(c.url, c.display_name, FINISHED_COLOR,
             replaceVariables(c.finished_message || defaults(c.language).finished, clean(data), zone), activity);
     });
 
     registerEvent('testFailed', async ({data: c}, failure, activity, zone) => {
-        if (c.send_failed) await send(c.url, c.display_name, 12993861,
+        if (c.send_failed) await send(c.url, c.display_name, FAILED_COLOR,
             replaceVariables(c.error_message || defaults(c.language).failed, clean(failure), zone), activity);
     });
 
     registerEvent(IP_CHANGED_EVENT, async ({data: c}, change, activity, zone) => {
         if (c.send_ip_changed) await send(c.url, c.display_name, CONNECTION_COLOR,
             replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, clean(change), zone), activity);
+    });
+
+    // In the failure's red and the good test's green: an outage is the
+    // verdict a failure only hints at, and its end is the good news.
+    registerEvent(OUTAGE_EVENT, async ({data: c}, outage, activity, zone) => {
+        if (c.send_outage) await send(c.url, c.display_name, FAILED_COLOR,
+            replaceVariables(c.outage_message || defaults(c.language).outage, clean(outage), zone), activity);
+    });
+
+    registerEvent(RECOVERED_EVENT, async ({data: c}, recovery, activity, zone) => {
+        if (c.send_outage) await send(c.url, c.display_name, FINISHED_COLOR,
+            replaceVariables(c.recovered_message || defaults(c.language).recovered, clean(recovery), zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {

@@ -8,10 +8,15 @@ import { DIGEST_MONTHLY_FIELD, DIGEST_WEEKLY_FIELD } from '../util/digestOptIn.j
 import { LANGUAGE_FIELD, NOTIFICATION_LANGUAGES, connectionSummary } from '../util/notificationLocale.js';
 export { wantsDigest } from '../util/digestOptIn.js';
 import {
-    CONNECTION_SUMMARY, CONNECTION_VARIABLES, FAILED_VARIABLES, FINISHED_VARIABLES
+    CONNECTION_SUMMARY, CONNECTION_VARIABLES, FAILED_VARIABLES, FINISHED_VARIABLES,
+    OUTAGE_SUMMARY, OUTAGE_VARIABLES, RECOVERED_VARIABLES
 } from '../util/notificationPayload.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 import { IP_CHANGED_EVENT, IP_CHANGED_MESSAGE_FIELD, SEND_IP_CHANGED_FIELD } from '../util/connectionChange.js';
+import {
+    OUTAGE_AFTER_FIELD, OUTAGE_AFTER_MIN, OUTAGE_EVENT, OUTAGE_MESSAGE_FIELD, RECOVERED_EVENT,
+    RECOVERED_MESSAGE_FIELD, SEND_OUTAGE_FIELD, announcesOutage, announcesRecovery, outageSummary
+} from '../util/outage.js';
 
 const integrations = {};
 
@@ -191,12 +196,16 @@ export const triggerEvent = async (name, data) => {
             const settings = composingSettings(module.module, integration.data);
             // And the connection change's own passage, per recipient for the
             // same reason: it is written in the integration's language.
+            // And the outage's, which also needs the instance's clock: it
+            // prints since when the line has been down.
             const described = name === "testFinished"
                 ? {...data, [ALERT_CROSSED]: crossedLimits(data, settings),
                     [ALERT_SUMMARY]: alertSummary(data, settings)}
                 : name === IP_CHANGED_EVENT
                     ? {...data, [CONNECTION_SUMMARY]: connectionSummary(data, settings[LANGUAGE_FIELD])}
-                    : data;
+                    : OUTAGE_EVENTS.has(name)
+                        ? {...data, [OUTAGE_SUMMARY]: outageSummary(name, data, settings[LANGUAGE_FIELD], zone)}
+                        : data;
 
             tasks.push(Promise.resolve()
                 .then(() => module.callback(integration, described,
@@ -286,6 +295,28 @@ const CONNECTION_TEMPLATE_FIELDS = [
 ];
 
 /**
+ * The outage switch and the streak length it fires at, on every notifier,
+ * declared once for the reason the lists above are. Off until turned on. The
+ * length is optional and whole: a blank reads as the default the leaf names,
+ * and a fraction of a failed test is not a thing.
+ *
+ * The two templates beside them go only to the notifiers that write prose,
+ * the way the connection template does; the webhook posts the payload whole.
+ */
+const OUTAGE_FIELDS = [
+    {name: SEND_OUTAGE_FIELD, type: "boolean", required: false},
+    {name: OUTAGE_AFTER_FIELD, type: "number", required: false, min: OUTAGE_AFTER_MIN}
+];
+
+const OUTAGE_TEMPLATE_FIELDS = [
+    {name: OUTAGE_MESSAGE_FIELD, type: "textarea", required: false},
+    {name: RECOVERED_MESSAGE_FIELD, type: "textarea", required: false}
+];
+
+/** The two events an outage is told through, in the order they happen. */
+const OUTAGE_EVENTS = new Set([OUTAGE_EVENT, RECOVERED_EVENT]);
+
+/**
  * The language a notifier writes its per-test messages in - the finished and
  * failed templates and the alert summary - offered for the reason the two
  * lists above are declared once. The digest is composed once per instance
@@ -372,7 +403,9 @@ const TEMPLATE_VARIABLES = {
     finished_subject: FINISHED_VARIABLES,
     error_message: FAILED_VARIABLES,
     error_subject: FAILED_VARIABLES,
-    [IP_CHANGED_MESSAGE_FIELD]: CONNECTION_VARIABLES
+    [IP_CHANGED_MESSAGE_FIELD]: CONNECTION_VARIABLES,
+    [OUTAGE_MESSAGE_FIELD]: OUTAGE_VARIABLES,
+    [RECOVERED_MESSAGE_FIELD]: RECOVERED_VARIABLES
 };
 
 const withVariables = (field) => Object.hasOwn(TEMPLATE_VARIABLES, field.name)
@@ -397,8 +430,8 @@ export const initialize = async () => {
         // reference, so appending in place stacks another copy on every pass.
         const fields = [
             ...definition.fields,
-            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS, ...CONNECTION_FIELDS] : []),
-            ...(isLocalised(definition) ? [...LANGUAGE_FIELDS, ...CONNECTION_TEMPLATE_FIELDS] : [])
+            ...(isNotifier(definition) ? [...ALERT_FIELDS, ...DIGEST_FIELDS, ...CONNECTION_FIELDS, ...OUTAGE_FIELDS] : []),
+            ...(isLocalised(definition) ? [...LANGUAGE_FIELDS, ...CONNECTION_TEMPLATE_FIELDS, ...OUTAGE_TEMPLATE_FIELDS] : [])
         ].map(withVariables);
 
         integrations[name] = {...definition, fields};
@@ -433,13 +466,26 @@ export const initialize = async () => {
  * the integration's own thresholds, which withhold only the finished event - a
  * failure of a watched line is the notification people most want.
  */
-const MEMBER_EVENTS = new Set(["testFinished", "testFailed", IP_CHANGED_EVENT]);
+const MEMBER_EVENTS = new Set(["testFinished", "testFailed", IP_CHANGED_EVENT, ...OUTAGE_EVENTS]);
 
 export const suppressesEvent = (eventName, moduleName, integration, payload) => {
     if (!MEMBER_EVENTS.has(eventName)) return false;
     if (!isNotifier(getIntegration(moduleName))) return false;
 
     if (payload?.alerts === false) return true;
+
+    /*
+     * The streak is one fact about the target and travels on the payload; how
+     * long a streak is worth a message is each recipient's own number, so it
+     * is judged here, per recipient, the way the fixed limits are. The outage
+     * leaves on the one failure that makes the streak exactly that long, and
+     * the recovery on the first success after a streak at least that long -
+     * so a recipient is never told a line is back that it was not told had
+     * gone. The thresholds do not apply: they judge a measurement, and an
+     * outage has none.
+     */
+    if (eventName === OUTAGE_EVENT) return !announcesOutage(payload, integration?.data);
+    if (eventName === RECOVERED_EVENT) return !announcesRecovery(payload, integration?.data);
 
     if (eventName !== "testFinished") return false;
     if (!wantsOnlyBreaches(integration?.data)) return false;

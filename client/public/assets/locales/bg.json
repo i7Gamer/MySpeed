@@ -680,7 +680,14 @@
       "language_placeholder": "Английски (по подразбиране)",
       "send_ip_changed": "Уведомяване при промяна на външния IP или доставчика",
       "ip_changed_message": "Съобщение за промяна на връзката",
-      "ip_changed_message_placeholder": "Нов адрес: %ip% (беше %previousIp%)"
+      "ip_changed_message_placeholder": "Нов адрес: %ip% (беше %previousIp%)",
+      "send_outage": "Уведомяване, когато връзката прекъсне и когато се възстанови",
+      "outage_after": "Считай за прекъсната след толкова неуспешни теста подред",
+      "outage_after_placeholder": "напр. 2",
+      "outage_message": "Съобщение за прекъсване",
+      "outage_message_placeholder": "%targetName% е недостъпен: %outageSummary%",
+      "recovered_message": "Съобщение за възстановяване",
+      "recovered_message_placeholder": "%targetName% е отново онлайн след %downtimeMinutes% минути"
     },
     "variables": "Налични променливи",
     "variables_hint": "Щракнете, за да я добавите към съобщението"
@@ -819,7 +826,13 @@
     "connection_changed": "Връзката се промени",
     "connection_changed_subject": "MySpeed: промяна на връзката",
     "ip_changed": "IP адрес {{from}} → {{to}}",
-    "isp_changed": "Доставчик {{from}} → {{to}}"
+    "isp_changed": "Доставчик {{from}} → {{to}}",
+    "outage": "Връзката е прекъсната",
+    "outage_subject": "MySpeed: връзката е прекъсната",
+    "recovered": "Връзката е възстановена",
+    "recovered_subject": "MySpeed: връзката е възстановена",
+    "outage_summary": "{{count}} теста подред са неуспешни от {{since}}",
+    "recovered_summary": "Отново онлайн след {{count}} неуспешни теста от {{since}}"
   },
   "tokens": {
     "title": "API токени",

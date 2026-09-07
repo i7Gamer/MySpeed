@@ -680,7 +680,14 @@
       "language_placeholder": "Inglês (padrão)",
       "send_ip_changed": "Notificar quando o IP externo ou o provedor mudar",
       "ip_changed_message": "Mensagem de alteração de conexão",
-      "ip_changed_message_placeholder": "Novo endereço: %ip% (era %previousIp%)"
+      "ip_changed_message_placeholder": "Novo endereço: %ip% (era %previousIp%)",
+      "send_outage": "Notificar quando a conexão cair e quando voltar",
+      "outage_after": "Considerar caída após este número de testes falhados seguidos",
+      "outage_after_placeholder": "ex.: 2",
+      "outage_message": "Mensagem de queda",
+      "outage_message_placeholder": "%targetName% está fora do ar: %outageSummary%",
+      "recovered_message": "Mensagem de recuperação",
+      "recovered_message_placeholder": "%targetName% voltou após %downtimeMinutes% minutos"
     },
     "variables": "Variáveis disponíveis",
     "variables_hint": "Clique para adicioná-la à mensagem"
@@ -819,7 +826,13 @@
     "connection_changed": "A conexão mudou",
     "connection_changed_subject": "MySpeed: conexão alterada",
     "ip_changed": "Endereço IP {{from}} → {{to}}",
-    "isp_changed": "Provedor {{from}} → {{to}}"
+    "isp_changed": "Provedor {{from}} → {{to}}",
+    "outage": "A conexão caiu",
+    "outage_subject": "MySpeed: conexão caída",
+    "recovered": "A conexão voltou",
+    "recovered_subject": "MySpeed: conexão restabelecida",
+    "outage_summary": "{{count}} testes seguidos falharam desde {{since}}",
+    "recovered_summary": "De volta online após {{count}} testes falhados desde {{since}}"
   },
   "tokens": {
     "title": "Tokens de API",

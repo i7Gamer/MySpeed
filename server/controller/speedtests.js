@@ -344,6 +344,41 @@ export const listForBaseline = async (targetId, since) => tests.findAll({
 });
 
 /**
+ * How many of a target's newest rows are failures, and when the first of them
+ * ran - the streak util/outage.js turns into an outage and its recovery.
+ *
+ * Two narrow queries rather than a walk over the rows: the newest successful
+ * row's time, then the count and the earliest of the failures after it. A
+ * walk newest-first would have to be capped, and a target that has failed
+ * every hour for a week is exactly the one whose streak must not saturate at
+ * the cap - "down since" would then name the wrong day. Both queries take the
+ * covering index listForBaseline describes, and `created` is compared as the
+ * ISO-8601 text it is stored as, for the reason given there.
+ *
+ * A target that has never succeeded is down since its first failure: the
+ * clause on the newest success is simply left off.
+ *
+ * @returns {count, since} - since is the earliest failure's `created`, or
+ *          null when the count is zero
+ */
+export const failureStreak = async (targetId) => {
+    const newestSuccess = await tests.findOne({
+        where: {[Op.and]: [SUCCESSFUL_TEST_FILTER, {targetId}]},
+        attributes: ["created"],
+        order: LIST_ORDER,
+        raw: true
+    });
+
+    const where = {[Op.and]: [FAILED_TEST_FILTER, {targetId},
+        ...(newestSuccess ? [{created: {[Op.gt]: new Date(newestSuccess.created).toISOString()}}] : [])]};
+
+    const count = await tests.count({where});
+    if (count === 0) return {count: 0, since: null};
+
+    return {count, since: await tests.min("created", {where})};
+};
+
+/**
  * How many tests failed since the given moment - of the given targets, when a
  * scope is handed in.
  *

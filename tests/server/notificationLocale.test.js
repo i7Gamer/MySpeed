@@ -24,7 +24,7 @@ const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
  * and are listed from the metrics themselves.
  */
 const phrasesTheServerAsksFor = () => {
-    const files = ["server/util/alertThreshold.js", "server/util/notificationLocale.js",
+    const files = ["server/util/alertThreshold.js", "server/util/notificationLocale.js", "server/util/outage.js",
         ...fs.readdirSync(path.join(ROOT, "server", "integrations"))
             .filter((name) => name.endsWith(".js") && name !== "index.js")
             .map((name) => `server/integrations/${name}`)];

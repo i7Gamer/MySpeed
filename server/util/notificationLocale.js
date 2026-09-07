@@ -260,7 +260,13 @@ export const ENGLISH_PHRASES = Object.freeze({
     connection_changed: "The connection has changed",
     connection_changed_subject: "MySpeed: connection changed",
     ip_changed: "IP address {{from}} → {{to}}",
-    isp_changed: "Provider {{from}} → {{to}}"
+    isp_changed: "Provider {{from}} → {{to}}",
+    outage: "The connection is down",
+    outage_subject: "MySpeed: connection down",
+    recovered: "The connection is back",
+    recovered_subject: "MySpeed: connection restored",
+    outage_summary: "{{count}} tests in a row have failed since {{since}}",
+    recovered_summary: "Back online after {{count}} failed tests since {{since}}"
 });
 
 /**
@@ -302,7 +308,13 @@ export const plainDefaults = (language) => {
         // the template off this source, and a literal ends at its first backtick.
         finished: `${word("finished")}:\n${word("target")}: %targetName%\n${word("ping")}: %ping% ms (±%jitter% ms)\n${word("upload")}: %upload% Mbps\n${word("download")}: %download% Mbps%alertSummary%`,
         failed: `${word("failed")}.\n${word("target")}: %targetName%\n${word("reason")}: %error%`,
-        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`
+        ipChanged: `${word("connection_changed")}.\n${word("target")}: %targetName%\n%connectionChanges%`,
+        // The summary's name is a literal here, as the two above it are: this
+        // module is evaluated on its own by its test, and must import
+        // nothing of the tree. util/outage.js, which owns the name, pins the
+        // two against each other.
+        outage: `${word("outage")}.\n${word("target")}: %targetName%\n%outageSummary%`,
+        recovered: `${word("recovered")}.\n${word("target")}: %targetName%\n%outageSummary%`
     };
 };
 

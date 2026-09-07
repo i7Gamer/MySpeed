@@ -2,12 +2,15 @@ import speedTest, { isShuttingDown } from '../util/speedtest.js';
 import * as tests from '../controller/speedtests.js';
 import * as controller from "../controller/recommendations.js";
 import * as parseData from '../util/providers/parseData.js';
-import { setState, sendRunning, sendError, sendFinished, sendConnectionChanged, sendRoundFinished, watchedFailureStands }
-    from "./integrations.js";
+import { setState, sendRunning, sendError, sendFinished, sendConnectionChanged, sendOutage, sendRecovered,
+    sendRoundFinished, watchedFailureStands } from "./integrations.js";
 import * as serverController from "../controller/servers.js";
 import { toErrorMessage } from '../util/helpers.js';
 import { PHASE_ORDER, PHASE_START, overallProgress } from '../util/providers/progress.js';
-import { connectionChangedPayload, failedPayload, finishedPayload } from '../util/notificationPayload.js';
+import {
+    connectionChangedPayload, failedPayload, finishedPayload, outagePayload, recoveredPayload
+} from '../util/notificationPayload.js';
+import { FAILURES_IN_ROW, describeStreak } from '../util/outage.js';
 import { FAILED_TEST, impossibleMeasurement, isFailedTest, measuredPing, usableFigure }
     from '../util/testOutcome.js';
 import { isRateLimitMessage } from '../util/providers/cliOutput.js';
@@ -1108,6 +1111,16 @@ export const baselineKeys = async (target, measured) => {
     return {baselineArmed: armed, baselineBreached: breached, ...described};
 };
 
+/**
+ * How long this member has been failing, as the three keys the outage and
+ * recovery payloads carry - see util/outage.js.
+ *
+ * Exported for its test, the way baselineKeys is: what is being asked is one
+ * member's streak over a history already in the table, and the alternative is
+ * a spawned CLI run.
+ */
+export const streakKeys = async (target) => describeStreak(await tests.failureStreak(target.id));
+
 const executeTarget = async (target, type, retried = false) => {
     const mode = target.provider === "preview" ? "preview" : target.provider;
 
@@ -1214,6 +1227,16 @@ const executeTarget = async (target, type, retried = false) => {
          * -0.2 would throw away a throughput measurement that is perfectly good,
          * which is the opposite of what the guard above is for.
          */
+        // What this member was down for, if anything, read before the row
+        // below ends it: once the success is written the streak is zero, and
+        // the recovery it announces would have nothing to say. Degraded like
+        // the baseline above it, and to "not down" - a streak that cannot be
+        // read must not fail the test that ended it.
+        const ended = await streakKeys(target).catch((err) => {
+            console.error(`Could not read the failure streak of ${memberName(target)}: ${toErrorMessage(err)}`);
+            return null;
+        });
+
         let testResult = await tests.create({ping, download, upload, time, serverId, type,
             targetId: target.id,
             resultId, jitter, serverName, serverHost, serverLocation,
@@ -1238,7 +1261,7 @@ const executeTarget = async (target, type, retried = false) => {
         // still pages nobody.
         // testResult is the plain {id, created} the controller's create
         // answers, built by hand so the timestamp travels back with the id.
-        sendFinished(finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
+        const measured = finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,
@@ -1254,8 +1277,20 @@ const executeTarget = async (target, type, retried = false) => {
             ...baseline,
             // Degraded rather than thrown, and degraded to the last answer
             // this member got rather than to a claim - see wasPrimaryMember.
-            primary: await wasPrimaryMember(target)})).catch(err =>
+            primary: await wasPrimaryMember(target)});
+
+        sendFinished(measured).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
+
+        // The line is back. Told after the measurement that says so, the way
+        // the connection change is, and for every member: which recipients
+        // were ever told it had gone is judged per recipient at the gate,
+        // from the streak this carries. Built from the finished payload, so
+        // the member's flags are answered once. Fire and forget like the
+        // send above.
+        if (ended?.[FAILURES_IN_ROW] > 0)
+            sendRecovered(recoveredPayload({...measured, ...ended}))
+                .catch((err) => console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
 
         // Whether the address or the provider changed with this run. After
         // the row and the finished notification - the change is told after
@@ -1331,12 +1366,27 @@ const executeTarget = async (target, type, retried = false) => {
         // For every member like the success path, and for its reason: the
         // payload's alerts flag is what keeps an unwatched failure from
         // paging anybody, while the sinks still record it.
-        sendError(failedPayload({...testResult, provider: mode, error: message,
+        const failure = {...testResult, provider: mode, error: message,
             targetId: target.id, targetName: target.name,
             alerts: Boolean(target.alerts),
-            primary: await wasPrimaryMember(target)})).catch(err =>
+            primary: await wasPrimaryMember(target)};
+
+        sendError(failedPayload(failure)).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
         console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+
+        // And how long this has been going on, read after the row so the
+        // failure just recorded is counted. Every failure leaves with its
+        // streak; which one is "the outage" is each recipient's own number,
+        // judged at the gate. Degraded the way the recovery is: a streak that
+        // cannot be read costs the outage message, not the failure row.
+        const streak = await streakKeys(target).catch((err) => {
+            console.error(`Could not read the failure streak of ${memberName(target)}: ${toErrorMessage(err)}`);
+            return null;
+        });
+        if (streak?.[FAILURES_IN_ROW] > 0)
+            sendOutage(outagePayload({...failure, ...streak}))
+                .catch((err) => console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
 
         // The failure this row records is final - the retry above has had its
         // turn - so this is the run most worth a route. Unless the provider

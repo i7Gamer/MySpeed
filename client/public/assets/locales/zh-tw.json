@@ -680,7 +680,14 @@
       "language_placeholder": "英文（預設）",
       "send_ip_changed": "當外部 IP 或服務供應商變更時通知",
       "ip_changed_message": "連線變更訊息",
-      "ip_changed_message_placeholder": "新位址：%ip%（原為 %previousIp%）"
+      "ip_changed_message_placeholder": "新位址：%ip%（原為 %previousIp%）",
+      "send_outage": "連線中斷時以及恢復時通知",
+      "outage_after": "連續失敗達到此次數後視為中斷",
+      "outage_after_placeholder": "例如 2",
+      "outage_message": "中斷訊息",
+      "outage_message_placeholder": "%targetName% 已中斷：%outageSummary%",
+      "recovered_message": "恢復訊息",
+      "recovered_message_placeholder": "%targetName% 在 %downtimeMinutes% 分鐘後已恢復"
     },
     "variables": "可用變數",
     "variables_hint": "點一下即可加入訊息中"
@@ -819,7 +826,13 @@
     "connection_changed": "連線已變更",
     "connection_changed_subject": "MySpeed：連線已變更",
     "ip_changed": "IP 位址 {{from}} → {{to}}",
-    "isp_changed": "服務供應商 {{from}} → {{to}}"
+    "isp_changed": "服務供應商 {{from}} → {{to}}",
+    "outage": "連線已中斷",
+    "outage_subject": "MySpeed：連線中斷",
+    "recovered": "連線已恢復",
+    "recovered_subject": "MySpeed：連線已恢復",
+    "outage_summary": "自 {{since}} 起已連續 {{count}} 次測試失敗",
+    "recovered_summary": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線"
   },
   "tokens": {
     "title": "API 權杖",

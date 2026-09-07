@@ -680,7 +680,14 @@
       "language_placeholder": "Английский (по умолчанию)",
       "send_ip_changed": "Уведомлять при смене внешнего IP или провайдера",
       "ip_changed_message": "Сообщение о смене соединения",
-      "ip_changed_message_placeholder": "Новый адрес: %ip% (был %previousIp%)"
+      "ip_changed_message_placeholder": "Новый адрес: %ip% (был %previousIp%)",
+      "send_outage": "Уведомлять, когда соединение потеряно и когда оно восстановлено",
+      "outage_after": "Считать потерянным после такого числа неудачных тестов подряд",
+      "outage_after_placeholder": "напр. 2",
+      "outage_message": "Сообщение о сбое",
+      "outage_message_placeholder": "%targetName% недоступен: %outageSummary%",
+      "recovered_message": "Сообщение о восстановлении",
+      "recovered_message_placeholder": "%targetName% снова в сети через %downtimeMinutes% минут"
     },
     "variables": "Доступные переменные",
     "variables_hint": "Нажмите, чтобы добавить её в сообщение"
@@ -819,7 +826,13 @@
     "connection_changed": "Соединение изменилось",
     "connection_changed_subject": "MySpeed: соединение изменено",
     "ip_changed": "IP-адрес {{from}} → {{to}}",
-    "isp_changed": "Провайдер {{from}} → {{to}}"
+    "isp_changed": "Провайдер {{from}} → {{to}}",
+    "outage": "Соединение потеряно",
+    "outage_subject": "MySpeed: соединение потеряно",
+    "recovered": "Соединение восстановлено",
+    "recovered_subject": "MySpeed: соединение восстановлено",
+    "outage_summary": "{{count}} тестов подряд не удались с {{since}}",
+    "recovered_summary": "Снова в сети после {{count}} неудачных тестов с {{since}}"
   },
   "tokens": {
     "title": "API-токены",

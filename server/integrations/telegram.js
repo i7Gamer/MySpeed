@@ -4,6 +4,7 @@ import { replaceVariables, truncate } from "../util/helpers.js";
 import { TELEGRAM_MARKDOWN, stripMarkdown as strip, balancedForTelegram } from "../util/markdown.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, OUTAGE_SUMMARY, RECOVERED_EVENT } from "../util/outage.js";
 
 /**
  * What sendMessage will accept as text.
@@ -30,7 +31,9 @@ const defaults = (language) => {
     return {
         finished: `✨ *${word("finished")}*\n🎯 \`${word("target")}\`: %targetName%\n🏓 \`${word("ping")}\`: %ping% ms (±%jitter% ms)\n🔼 \`${word("upload")}\`: %upload% Mbps\n🔽 \`${word("download")}\`: %download% Mbps%alertSummary%`,
         failed: `❌ *${word("failed")}*\n\`${word("target")}\`: %targetName%\n\`${word("reason")}\`: %error%`,
-        ipChanged: `🔀 *${word("connection_changed")}*\n🎯 \`${word("target")}\`: %targetName%\n%connectionChanges%`
+        ipChanged: `🔀 *${word("connection_changed")}*\n🎯 \`${word("target")}\`: %targetName%\n%connectionChanges%`,
+        outage: `⛔ *${word("outage")}*\n🎯 \`${word("target")}\`: %targetName%\n%${OUTAGE_SUMMARY}%`,
+        recovered: `✅ *${word("recovered")}*\n🎯 \`${word("target")}\`: %targetName%\n%${OUTAGE_SUMMARY}%`
     };
 };
 
@@ -130,6 +133,18 @@ export default (registerEvent) => {
     registerEvent(IP_CHANGED_EVENT, async ({data: c}, change, activity, zone) => {
         if (c.send_ip_changed) await send(c.token, c.chat_id,
             replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, stripMarkdown(change), zone),
+            activity, c.message_thread_id);
+    });
+
+    registerEvent(OUTAGE_EVENT, async ({data: c}, outage, activity, zone) => {
+        if (c.send_outage) await send(c.token, c.chat_id,
+            replaceVariables(c.outage_message || defaults(c.language).outage, stripMarkdown(outage), zone),
+            activity, c.message_thread_id);
+    });
+
+    registerEvent(RECOVERED_EVENT, async ({data: c}, recovery, activity, zone) => {
+        if (c.send_outage) await send(c.token, c.chat_id,
+            replaceVariables(c.recovered_message || defaults(c.language).recovered, stripMarkdown(recovery), zone),
             activity, c.message_thread_id);
     });
 

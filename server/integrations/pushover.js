@@ -3,6 +3,7 @@ import { postJson } from "../util/http.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
+import { OUTAGE_EVENT, RECOVERED_EVENT } from "../util/outage.js";
 
 const URL = "https://api.pushover.net/1/messages.json";
 
@@ -60,6 +61,16 @@ export default (registerEvent) => {
     registerEvent(IP_CHANGED_EVENT, async ({data: c}, change, activity, zone) => {
         if (c.send_ip_changed) await send(c,
             replaceVariables(c.ip_changed_message || defaults(c.language).ipChanged, change, zone), activity);
+    });
+
+    registerEvent(OUTAGE_EVENT, async ({data: c}, outage, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(c.outage_message || defaults(c.language).outage, outage, zone), activity);
+    });
+
+    registerEvent(RECOVERED_EVENT, async ({data: c}, recovery, activity, zone) => {
+        if (c.send_outage) await send(c,
+            replaceVariables(c.recovered_message || defaults(c.language).recovered, recovery, zone), activity);
     });
 
     registerEvent('digestReady', async ({data: c}, payload, activity) => {
