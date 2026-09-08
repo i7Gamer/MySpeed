@@ -726,3 +726,61 @@ describe("the comparison row beside the target chips", () => {
             "the chips no longer sit beside the comparison row, so it is alone on every instance");
     });
 });
+
+/**
+ * And the picker does not move once the sentence beside it arrives.
+ *
+ * The two ends of the line are taken by a space-between row, which is a
+ * statement about the items in it: with the sentence still in flight the
+ * picker was the only one, and a flex line holding one item puts it at the
+ * start. So opening the statistics page drew the picker against the left
+ * margin, and the first payload moved it the width of the page to the right -
+ * a control jumping out from under a reader who had gone to click it.
+ *
+ * The sentence's place is held from the first paint instead: an empty box that
+ * the note is drawn into when there is one. The row therefore has the same two
+ * items throughout, and the only thing that changes when the answer lands is
+ * that the left-hand one has words in it.
+ *
+ * A single-target instance, which is where this shows: with two the chips
+ * already fill the line and the picker sits at its right edge whether or not
+ * anything shares the row.
+ */
+describe("the comparison picker while the sentence is still loading", () => {
+    afterEach(cleanup);
+
+    const realFetch = globalThis.fetch;
+    afterEach(() => { globalThis.fetch = realFetch; });
+
+    // A window with dates and nothing in it, which is the wording that renders
+    // for a range whose comparison held no tests. Either wording is one
+    // paragraph, and this shape needs no totals to reach it.
+    const WITH_COMPARISON = {tests: {total: 0}, previous: {dateRange: {from: "2026-09-01", to: "2026-09-07"}}};
+
+    it("holds the sentence's place from the first paint", async () => {
+        let answer = null;
+        globalThis.fetch = (url) => String(url).includes("/speedtests/statistics/")
+            ? new Promise((resolve) => { answer = () => resolve(json(WITH_COMPARISON)); })
+            : Promise.resolve(json([]));
+
+        const {container} = mount("/?range=7d", [{id: 1, name: "Fibre"}]);
+        await reachTheFirstRequest();
+
+        const row = () => container.querySelector(".statistics-compare-row");
+        const shape = () => [...row().children].map((child) => child.className);
+
+        assert.notEqual(row(), null, "the comparison row is not drawn while the payload is in flight");
+        assert.deepEqual(shape(), ["statistics-compare-notes", "compare-select"],
+            "the picker stands alone in the row, so the sentence's arrival moves it");
+        assert.equal(row().querySelectorAll(".statistics-compare-note").length, 0,
+            "a sentence is drawn before there is anything to say");
+
+        answer();
+        await settle();
+
+        assert.deepEqual(shape(), ["statistics-compare-notes", "compare-select"],
+            "the row's shape changed with the answer, which is the picker moving under the reader");
+        assert.equal(row().querySelectorAll(".statistics-compare-note").length, 1,
+            "the sentence is not drawn inside the box held for it");
+    });
+});

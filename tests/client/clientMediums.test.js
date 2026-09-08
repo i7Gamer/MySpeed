@@ -41,22 +41,57 @@ describe("the schedule offset switch", () => {
 });
 
 /**
- * A statistics page that keeps what it managed to load.
+ * A statistics page that keeps what it managed to load, and draws each half of
+ * it as soon as that half is there.
  *
  * The aggregation and the recent-tests list were fetched in one Promise.all,
  * so either rejection set loadError and the page rendered the full-screen
  * error instead of the charts - discarding a statistics payload that had
  * arrived perfectly. Two independent requests gating one page doubles the
  * chance of showing nothing.
+ *
+ * allSettled answered the failures and left the waiting: both answers were
+ * still applied in one handler, so the ten recent tests - a LIMIT 10 read that
+ * comes back in milliseconds - sat in hand unused until the range scan beside
+ * them finished. That is the latest-test card: a test that had just run was
+ * already in the header and in the history list, and this page went on showing
+ * the one before it for as long as the aggregation took. Each request applies
+ * its own answer now, and nothing waits for the other.
  */
 describe("loading the statistics page", () => {
-    const page = readSource("client/src/pages/Statistics/Statistics.jsx");
+    // Without the comments, the way the sibling suites read a source: the
+    // paragraph above this loader names Promise.all as the thing it stopped
+    // doing, and every window measured below would otherwise be counting prose.
+    const page = withoutJsComments(readSource("client/src/pages/Statistics/Statistics.jsx"));
 
-    it("does not let either request cancel the other", () => {
-        assert.doesNotMatch(page, /Promise\.all\(\[\s*jsonRequest\(`\/speedtests\/statistics/,
-            "one Promise.all still gates the whole page on both requests");
-        assert.match(page, /Promise\.allSettled\(/,
-            "the two loads are not settled independently");
+    // The loader itself, cut out so nothing here can be satisfied by the detail
+    // fetch or the comparison effect below it - both of which are also a
+    // jsonRequest with a .then and a .catch.
+    const start = page.indexOf("const updateStats = useCallback(");
+    const end = page.indexOf("}, [dateRange, currentNode, targetFilter, compare, historyRevision]);");
+    assert.ok(start !== -1 && end > start, "re-anchor this lift: updateStats or its dependency list moved");
+    const load = page.slice(start, end);
+
+    // Each request's own chain, cut at the one that follows it.
+    const statistics = load.slice(load.indexOf("jsonRequest(`/speedtests/statistics/"),
+        load.indexOf("jsonRequest(`/speedtests?limit="));
+    const recent = load.slice(load.indexOf("jsonRequest(`/speedtests?limit="));
+
+    it("does not hold either answer for the other", () => {
+        assert.doesNotMatch(load, /Promise\.all/,
+            "the two answers are still applied together, so the quicker read waits on the slower one");
+
+        for (const chain of [statistics, recent])
+            assert.match(chain, /\)\s*\.then\(/,
+                "a request no longer applies its own answer");
+    });
+
+    // The card the second read feeds is the whole point of splitting them: it
+    // is drawn from recentTests and from nothing the aggregation carries.
+    it("draws the recent tests without waiting for the aggregation", () => {
+        assert.match(recent, /setRecentTests\(/, "the recent tests are fetched and never applied");
+        assert.doesNotMatch(statistics, /setRecentTests\(/,
+            "the recent tests are still applied from the aggregation's answer");
     });
 
     // The rejected branch itself, not the name of the setter: updateStats opens
@@ -64,39 +99,35 @@ describe("loading the statistics page", () => {
     // /setLoadError\(/ matched that reset and passed with this whole branch
     // deleted - the one path that can still tell the visitor anything.
     it("still blanks the page when the statistics themselves fail", () => {
-        assert.match(page, /stats\.status === "rejected"[\s\S]{0,400}setLoadError\(stats\.reason\)/,
+        assert.match(statistics, /\.catch\([\s\S]{0,400}setLoadError\(error\)/,
             "a statistics failure no longer reports anything at all");
     });
 
     /**
-     * And a throw inside the handler still reaches the same place.
+     * And a throw inside a handler still reaches the same place.
      *
-     * The trailing .catch went out with Promise.all, on the reading that
-     * allSettled cannot reject. It cannot - but the .then body can, and then
-     * setLoading(false) never runs: the page spins for ever with nothing on it
-     * and nothing logged. A .catch on an allSettled chain guards the handler,
-     * not the requests.
+     * A request that rejects and a handler that throws land in the same .catch
+     * now, which is what one per chain buys. Without it a throw is terminal:
+     * setLoading(false) never runs, so the page spins for ever with nothing on
+     * it and nothing logged.
      */
     it("still catches a throw from its own handler", () => {
-        const chain = page.slice(page.indexOf("Promise.allSettled("));
-        // The cut is checked to exist: indexOf answers -1 for an anchor the
-        // dependency list has outgrown, slice(0, -1) then keeps the whole rest
-        // of the page, and two other .catch calls further down satisfied this
-        // with the handler's own catch deleted.
-        const end = chain.indexOf("}, [dateRange, currentNode");
-        assert.notEqual(end, -1, "re-anchor this lift: the updateStats dependency list moved");
+        for (const chain of [statistics, recent])
+            assert.match(chain, /\.catch\(/,
+                "anything this handler throws is an unhandled rejection and the page spins for ever");
 
-        assert.match(chain.slice(0, end), /\.catch\(/,
-            "anything the handler throws is now an unhandled rejection and the page spins for ever");
+        for (const chain of [statistics, recent])
+            assert.equal(chain.match(/if \(!isCurrent\(\)\) return;/g)?.length, 2,
+                "an abandoned range's answer can still write to the page from one of these two paths");
     });
 
     // The recent tests feed the latest-test card and the deltas beside it.
     // Their absence is a card that cannot draw, not a page that cannot load.
     it("keeps the page when only the recent tests fail", () => {
-        assert.match(page, /tests\.status === "fulfilled"/,
-            "the recent tests are read without asking whether they arrived");
-        assert.doesNotMatch(page, /if \(tests\.status === "rejected"\)\s*\{?\s*setLoadError/,
+        assert.doesNotMatch(recent, /setLoadError\(/,
             "a failed recent-tests fetch still blanks the page");
+        assert.match(recent, /\.catch\([\s\S]{0,300}setRecentTests\(\[\]\)/,
+            "a failed recent-tests fetch leaves the previous range's test in the card");
     });
 });
 

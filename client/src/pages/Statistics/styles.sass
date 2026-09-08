@@ -292,6 +292,17 @@
 
 // The offset control draws itself - see components/CompareSelect.
 
+// The sentence's box, which is one of the row's two items whether or not there
+// is a sentence in it yet. Empty it has no width and nothing to draw, and what
+// it buys is that the picker's place is decided by the row above and not by
+// whether the payload has landed - see the comment on it in Statistics.jsx.
+//
+// min-width, so a long sentence shrinks against the picker rather than pushing
+// it onto a line of its own: a flex item's floor is its longest word, and the
+// sentence names two dates.
+.statistics-compare-notes
+  min-width: 0
+
 .statistics-compare-note
   width: auto
   margin: 0

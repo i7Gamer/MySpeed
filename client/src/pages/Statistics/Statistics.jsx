@@ -352,38 +352,28 @@ export const Statistics = () => {
             setLoading(true);
         });
         /*
-         * Settled apart rather than awaited together.
+         * Two reads, and each one drawn the moment it lands.
          *
-         * These are two independent reads: the aggregation the page is made of,
-         * and the ten most recent tests behind the latest-test card and its
-         * deltas. Under Promise.all either rejection took the whole page to the
+         * These are independent: the aggregation the page is made of, and the
+         * ten most recent tests behind the latest-test card and its deltas.
+         * Under Promise.all either rejection took the whole page to the
          * full-screen error - so a recent-tests request timing out against a
          * flaky proxied node discarded a statistics payload that had arrived
-         * perfectly, and two failure sources gated one page.
+         * perfectly, and two failure sources gated one page. allSettled
+         * answered that and left them applied in one handler, which is a second
+         * way for one read to wait on the other: LIMIT 10 ordered by an indexed
+         * column comes back in milliseconds, and the aggregation beside it
+         * scans the range - twice, since a bounded range also asks for the
+         * window it is compared against. So the card that says what the latest
+         * test was held the *previous* test for as long as that scan took,
+         * which is the whole of the wait a reader sees when a run ends: the
+         * header and the history list are already showing the new row.
          *
-         * Only the aggregation can blank the page now. The card simply draws
-         * with nothing, which is what it already does before the first test.
+         * Only the aggregation can blank the page. The card simply draws with
+         * nothing, which is what it already does before the first test.
          */
-        Promise.allSettled([
-            jsonRequest(`/speedtests/statistics/?${query}`),
-            // The latest-test card follows the chip too - "the latest test"
-            // on a filtered page means the filtered target's latest.
-            jsonRequest(`/speedtests?limit=${RECENT_TESTS}`
-                + (targetFilter != null ? `&target=${targetFilter}` : ""))
-        ]).then(([stats, tests]) => {
+        jsonRequest(`/speedtests/statistics/?${query}`).then(payload => {
             if (!isCurrent()) return;
-
-            if (stats.status === "rejected") {
-                console.error("Failed to load statistics:", stats.reason);
-                startTransition(() => {
-                    setLoadError(stats.reason);
-                    setLoading(false);
-                });
-                return;
-            }
-
-            if (tests.status === "rejected")
-                console.error("Failed to load the recent tests:", tests.reason);
 
             startTransition(() => {
                 /*
@@ -404,23 +394,40 @@ export const Statistics = () => {
                  * updateStats is rebuilt per range, so the tag belongs to the
                  * request rather than to the moment it finished.
                  */
-                setStatistics(stats.value && {...stats.value, askedCompare: Boolean(dateRange)});
-                setRecentTests(tests.status === "fulfilled" && Array.isArray(tests.value) ? tests.value : []);
+                setStatistics(payload && {...payload, askedCompare: Boolean(dateRange)});
                 setLoading(false);
             });
         }).catch(error => {
-            // allSettled cannot reject; the handler above it can. Without this
-            // that throw was terminal - setLoading(false) never ran, so the page
-            // span for ever with nothing on it and nothing logged. The old
-            // .catch went out with Promise.all on the reading that it had become
-            // redundant, and what it actually guards is this handler.
+            // The request's own failure and a throw from the handler above it,
+            // which land in the same place because they cost the same thing: a
+            // handler that throws with nothing under it leaves setLoading(false)
+            // unrun, so the page spins for ever with nothing on it and nothing
+            // logged.
             if (!isCurrent()) return;
 
-            console.error("Failed to render the statistics:", error);
+            console.error("Failed to load statistics:", error);
             startTransition(() => {
                 setLoadError(error);
                 setLoading(false);
             });
+        });
+
+        // The latest-test card follows the chip too - "the latest test" on a
+        // filtered page means the filtered target's latest.
+        jsonRequest(`/speedtests?limit=${RECENT_TESTS}`
+            + (targetFilter != null ? `&target=${targetFilter}` : "")).then(tests => {
+            if (!isCurrent()) return;
+
+            startTransition(() => setRecentTests(Array.isArray(tests) ? tests : []));
+        }).catch(error => {
+            // Logged and emptied, never setLoadError: a card that cannot draw
+            // is not a page that cannot load. Emptied rather than left alone,
+            // because what is in hand belongs to the range or the chip this
+            // load is replacing.
+            if (!isCurrent()) return;
+
+            console.error("Failed to load the recent tests:", error);
+            startTransition(() => setRecentTests([]));
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask. The rule cannot see that
@@ -670,50 +677,70 @@ export const Statistics = () => {
        fit - see .toolbar-second-row. */
     const compareRow = dateRange ? (
         <div className="statistics-compare-row">
-            {/* Two sentences, not one and a silence.
-                The note used to render only when there was something to
-                compare against, so choosing a window the instance has no tests
-                in simply removed it - and every arrow on the page vanished with
-                no statement anywhere of why. The window is named either way;
-                what changes is whether it had anything in it. previousWindow is
-                the payload as it arrived, which carries the dates even when it
-                counted nothing, where `previous` is the gated one the deltas
-                read. */}
-            {previousWindow && (
-                <p className="statistics-compare-note">
-                    {previous
-                        ? t("statistics.compare.note", comparedWindow)
-                        : t("statistics.compare.empty", comparedWindow)}
-                </p>
-            )}
-            {/* The third silence: a node on an older release. Every ranged
-                request asks for a comparison - the default choice is
-                "previous" - so a current server always answers with the key,
-                an object or a null. A node from before the parameter ignores
-                what it does not know and answers without it, and the page drew
-                no arrows and no sentence saying why.
+            {/* The sentence's place, held whether or not there is a sentence.
 
-                `=== undefined`, not falsy: null is a current server saying
-                "nothing to compare against", which stays silent on purpose -
-                nothing has elapsed and the heading already names the range.
-                Absent is a server that never understood the question.
+                The row takes the two ends of its line where nothing else
+                shares it, and space-between says that of the items in the row:
+                with the payload still in flight the picker was the only one,
+                and a flex line holding one item puts it at the start. So the
+                page opened with the picker against the left margin and the
+                first answer moved it the width of the row to the right - a
+                control jumping out from under a reader on their way to click
+                it, on every visit and every range change.
 
-                Asked of the payload's own tag rather than of the range the
-                toolbar currently shows. `statistics` is never cleared on a
-                range change, so between choosing a bounded range and its
-                answer arriving this read the all-time payload still on screen
-                - which has no `previous` key because all time asks for no
-                comparison - and every current server accused itself of being
-                too old for as long as the request took. askedCompare travels
-                with the answer, so a payload fetched without a comparison
-                cannot be mistaken for one that asked and was ignored. It also
-                answers for the range on its own: an all-time payload is never
-                tagged, and the row around this only exists for a bounded one. */}
-            {deferredStatistics?.askedCompare && previousWindow === undefined && (
-                <p className="statistics-compare-note">
-                    {t("statistics.compare.unsupported")}
-                </p>
-            )}
+                An empty box takes up no width and is still an item, so the row
+                has the same two throughout and the only thing the answer
+                changes is whether there are words in the left-hand one. Which
+                is also the honest reading of the two silences below: the row
+                always has a place for a sentence, and sometimes there is
+                nothing to put in it. */}
+            <div className="statistics-compare-notes">
+                {/* Two sentences, not one and a silence.
+                    The note used to render only when there was something to
+                    compare against, so choosing a window the instance has no tests
+                    in simply removed it - and every arrow on the page vanished with
+                    no statement anywhere of why. The window is named either way;
+                    what changes is whether it had anything in it. previousWindow is
+                    the payload as it arrived, which carries the dates even when it
+                    counted nothing, where `previous` is the gated one the deltas
+                    read. */}
+                {previousWindow && (
+                    <p className="statistics-compare-note">
+                        {previous
+                            ? t("statistics.compare.note", comparedWindow)
+                            : t("statistics.compare.empty", comparedWindow)}
+                    </p>
+                )}
+                {/* The third silence: a node on an older release. Every ranged
+                    request asks for a comparison - the default choice is
+                    "previous" - so a current server always answers with the key,
+                    an object or a null. A node from before the parameter ignores
+                    what it does not know and answers without it, and the page drew
+                    no arrows and no sentence saying why.
+
+                    `=== undefined`, not falsy: null is a current server saying
+                    "nothing to compare against", which stays silent on purpose -
+                    nothing has elapsed and the heading already names the range.
+                    Absent is a server that never understood the question.
+
+                    Asked of the payload's own tag rather than of the range the
+                    toolbar currently shows. `statistics` is never cleared on a
+                    range change, so between choosing a bounded range and its
+                    answer arriving this read the all-time payload still on screen
+                    - which has no `previous` key because all time asks for no
+                    comparison - and every current server accused itself of being
+                    too old for as long as the request took. askedCompare travels
+                    with the answer, so a payload fetched without a comparison
+                    cannot be mistaken for one that asked and was ignored. It also
+                    answers for the range on its own: an all-time payload is never
+                    tagged, and the row around this only exists for a bounded one. */}
+                {deferredStatistics?.askedCompare && previousWindow === undefined && (
+                    <p className="statistics-compare-note">
+                        {t("statistics.compare.unsupported")}
+                    </p>
+                )}
+            </div>
+
             {/* How far back to look, never how much to look at - so the two
                 windows are the same length by construction and there is no
                 second range for a reader to reconcile with the first. The
