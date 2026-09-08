@@ -27,6 +27,7 @@ const RETRY_AFTER_ERROR_MS = 3000;
 
 export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
+    const [historyRevision, setHistoryRevision] = useState(0);
     const [loading, setLoading] = useState(false);
     /**
      * Why the first page is not on screen, when it is not.
@@ -408,6 +409,11 @@ export const SpeedtestProvider = (props) => {
         refreshTests();
     }, [refreshTests]);
 
+    const reloadTests = useCallback(() => {
+        setHistoryRevision(revision => revision + 1);
+        return loadInitialTests();
+    }, [loadInitialTests]);
+
     // The node the rows in hand belong to, so the effect below can tell a node
     // switch apart from a range change riding in through loadInitialTests.
     const lastNodeRef = useRef(currentNode);
@@ -468,7 +474,10 @@ export const SpeedtestProvider = (props) => {
     // stay covered twice over: RunUtil refreshes explicitly when the run call
     // returns, and the flag falls either way.
     useEffect(() => {
-        if (runJustFinished(wasRunningRef.current, status.running)) refreshTests();
+        if (runJustFinished(wasRunningRef.current, status.running)) {
+            setHistoryRevision(revision => revision + 1);
+            refreshTests();
+        }
         wasRunningRef.current = status.running;
     }, [status.running, refreshTests]);
 
@@ -476,7 +485,10 @@ export const SpeedtestProvider = (props) => {
     // coming back to the tab is the moment to catch up.
     useEffect(() => {
         const onVisibilityChange = () => {
-            if (!document.hidden) refreshTests();
+            if (!document.hidden) {
+                setHistoryRevision(revision => revision + 1);
+                refreshTests();
+            }
         };
         document.addEventListener("visibilitychange", onVisibilityChange);
         return () => document.removeEventListener("visibilitychange", onVisibilityChange);
@@ -512,9 +524,9 @@ export const SpeedtestProvider = (props) => {
      * so the merge path reported success and showed nothing.
      */
     const contextValue = useMemo(() => ({
-        speedtests, updateTests, reloadTests: loadInitialTests, deleteTest,
+        speedtests, historyRevision, updateTests, reloadTests, deleteTest,
         loadMoreTests, loading, loadError, hasMore, timeframe, range, selectTimeframe, selectRange
-    }), [speedtests, updateTests, loadInitialTests, deleteTest, loadMoreTests, loading, loadError,
+    }), [speedtests, historyRevision, updateTests, reloadTests, deleteTest, loadMoreTests, loading, loadError,
         hasMore, timeframe, range, selectTimeframe, selectRange]);
 
     return (

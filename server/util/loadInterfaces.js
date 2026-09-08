@@ -14,20 +14,20 @@ export let interfaces = {};
  * exists for this. Every scheduled test then went on binding to an address that
  * was gone, and failed, until the process restarted.
  *
- * The prune is keyed on the adapter being absent from the operating system, not
- * on this round's probe. A live interface whose Cloudflare probe happened to
- * fail is still there, and dropping it would fire the one-way fallback and
- * overwrite the operator's pinned choice for good.
+ * A cached binding survives a failed probe only while that external address
+ * is still assigned. The caller supplies an unprobed current address when a
+ * lease changes, preserving the operator's pinned adapter.
  *
  * @param previous the map as it stands
  * @param probed   {name: [address]} for the adapters that answered this round
- * @param present  every adapter name the operating system reports
+ * @param present  every adapter and its current address records from the operating system
  */
 export const resolveInterfaces = (previous, probed, present) => {
     const next = {};
 
     for (const name of Object.keys(previous))
-        if (present.includes(name)) next[name] = previous[name];
+        if (present[name]?.some((entry) => !entry.internal && entry.address === previous[name]))
+            next[name] = previous[name];
 
     // This round's answer wins over the stored one. The fallback that picks an
     // address used to read the stored map, so once an adapter had an IPv4
@@ -255,12 +255,10 @@ export const requestInterfaces = async () => {
     console.log("Looking for network interfaces...");
     const interfacesResult = await probeAll(interfacesNode);
 
-    const resolved = resolveInterfaces(interfaces, interfacesResult, Object.keys(interfacesNode));
+    const resolved = resolveInterfaces(interfaces, interfacesResult, interfacesNode);
 
-    // Once listed, an adapter persists through resolveInterfaces until the
-    // operating system drops it - so this admits each one once, and the
-    // warning does not repeat every round for a virtual adapter that will
-    // never answer.
+    // Admit a current address when none answered and the cached one disappeared.
+    // An unchanged unprobed address persists, avoiding a warning every round.
     for (const [name, address] of Object.entries(externalAddresses(interfacesNode))) {
         if (resolved[name]) continue;
 

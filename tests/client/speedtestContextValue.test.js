@@ -74,7 +74,7 @@ describe("the value SpeedtestProvider hands down", () => {
     it("still carries everything its consumers read", () => {
         const value = providerValue() + source.slice(source.indexOf("const contextValue = useMemo("));
 
-        for (const key of ["speedtests", "updateTests", "reloadTests", "deleteTest", "loadMoreTests",
+        for (const key of ["speedtests", "historyRevision", "updateTests", "reloadTests", "deleteTest", "loadMoreTests",
             "loading", "hasMore", "timeframe", "range", "selectTimeframe", "selectRange"])
             assert.match(value, new RegExp(`\\b${key}\\b`), `${key} is no longer handed down`);
     });

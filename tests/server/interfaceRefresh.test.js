@@ -19,15 +19,17 @@ import { bodyIn, readSource } from "../helpers/source.js";
  * overwrite the operator's pinned choice for good.
  */
 describe("resolveInterfaces", () => {
+    const addresses = (...values) => values.map((address) => ({address, internal: false}));
+
     it("keeps an adapter the probe reached", () => {
-        const next = resolveInterfaces({}, {eth0: ["192.168.1.2"]}, ["eth0"]);
+        const next = resolveInterfaces({}, {eth0: ["192.168.1.2"]}, {eth0: addresses("192.168.1.2")});
 
         assert.deepEqual(next, {eth0: "192.168.1.2"});
     });
 
     it("drops an adapter the operating system no longer reports", () => {
         const next = resolveInterfaces({eth0: "192.168.1.2", tun0: "10.8.0.2"},
-            {eth0: ["192.168.1.2"]}, ["eth0"]);
+            {eth0: ["192.168.1.2"]}, {eth0: addresses("192.168.1.2")});
 
         assert.deepEqual(next, {eth0: "192.168.1.2"});
     });
@@ -36,19 +38,20 @@ describe("resolveInterfaces", () => {
     // interface that is perfectly present.
     it("keeps an adapter that is still there but did not answer this round", () => {
         const next = resolveInterfaces({eth0: "192.168.1.2", wlan0: "192.168.1.9"},
-            {eth0: ["192.168.1.2"]}, ["eth0", "wlan0"]);
+            {eth0: ["192.168.1.2"]}, {eth0: addresses("192.168.1.2"), wlan0: addresses("192.168.1.9")});
 
         assert.deepEqual(next, {eth0: "192.168.1.2", wlan0: "192.168.1.9"});
     });
 
     it("prefers an IPv4 address when the adapter has both", () => {
-        const next = resolveInterfaces({}, {eth0: ["fe80::1", "192.168.1.2"]}, ["eth0"]);
+        const next = resolveInterfaces({}, {eth0: ["fe80::1", "192.168.1.2"]},
+            {eth0: addresses("fe80::1", "192.168.1.2")});
 
         assert.equal(next.eth0, "192.168.1.2");
     });
 
     it("takes the only address when it is IPv6", () => {
-        const next = resolveInterfaces({}, {eth0: ["2001:db8::1"]}, ["eth0"]);
+        const next = resolveInterfaces({}, {eth0: ["2001:db8::1"]}, {eth0: addresses("2001:db8::1")});
 
         assert.equal(next.eth0, "2001:db8::1");
     });
@@ -60,7 +63,8 @@ describe("resolveInterfaces", () => {
      * case that happens when a dual-stack interface loses its v4 lease.
      */
     it("replaces a stored IPv4 with the address the adapter now has", () => {
-        const next = resolveInterfaces({eth0: "192.168.1.2"}, {eth0: ["2001:db8::1"]}, ["eth0"]);
+        const next = resolveInterfaces({eth0: "192.168.1.2"}, {eth0: ["2001:db8::1"]},
+            {eth0: addresses("2001:db8::1")});
 
         assert.equal(next.eth0, "2001:db8::1");
     });
@@ -68,11 +72,12 @@ describe("resolveInterfaces", () => {
     it("changes nothing when the round found the same addresses", () => {
         const previous = {eth0: "192.168.1.2"};
 
-        assert.deepEqual(resolveInterfaces(previous, {eth0: ["192.168.1.2"]}, ["eth0"]), previous);
+        assert.deepEqual(resolveInterfaces(previous, {eth0: ["192.168.1.2"]},
+            {eth0: addresses("192.168.1.2")}), previous);
     });
 
     it("empties the map when every adapter is gone", () => {
-        assert.deepEqual(resolveInterfaces({tun0: "10.8.0.2"}, {}, []), {});
+        assert.deepEqual(resolveInterfaces({tun0: "10.8.0.2"}, {}, {}), {});
     });
 });
 

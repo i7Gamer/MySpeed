@@ -105,7 +105,7 @@ const report = (url, error) =>
  */
 const drain = (res) => {
     try {
-        Promise.resolve(res?.arrayBuffer?.()).catch(() => undefined);
+        Promise.resolve(res?.body?.pipeTo(new WritableStream())).catch(() => undefined);
     } catch {
         // A response object that offers no body at all.
     }
@@ -114,7 +114,7 @@ const drain = (res) => {
 /**
  * What an outbound send reports back.
  *
- * The Response itself is deliberately not returned. Its body has been drained
+ * The Response itself is deliberately not returned. Its body is being drained
  * by the time the caller sees it, so a Response is exactly the wrong shape to
  * hand over: the one thing that makes it useful is already spent, and a future
  * caller reaching for `res.json()` would get "body is unusable" from a file

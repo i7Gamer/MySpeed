@@ -80,6 +80,19 @@ export function previousConnection(tests, index) {
     return null;
 }
 
+// Compare the complete IPv6 address, preserving a case-sensitive interface
+// scope. Mirrored in connectionChange.js; addressEquivalence.test.js checks both paths.
+const comparableAddress = (value) => {
+    if (typeof value !== "string" || !value.includes(":")
+        || !/^[0-9a-f:.]+(?:%[0-9a-z.:-]+)?$/i.test(value)) return value;
+    const [address, ...scope] = value.split("%");
+    try {
+        return new URL(`http://[${address}]/`).hostname + (scope.length ? `%${scope.join("%")}` : "");
+    } catch {
+        return value;
+    }
+};
+
 export function connectionChange(test, previous) {
     if (!test || !previous) return null;
 
@@ -88,7 +101,7 @@ export function connectionChange(test, previous) {
         const before = previous[key];
         if (!now || !before) return false;
 
-        return now !== before;
+        return key === "externalIp" ? comparableAddress(now) !== comparableAddress(before) : now !== before;
     };
 
     const change = {isp: differs("isp"), externalIp: differs("externalIp")};

@@ -60,6 +60,19 @@ export const storableAddress = (ip) => addressFamily(ip) === 0 ? null : ip.trim(
 /** The provider name a row may store, or null: non-blank text, trimmed. */
 export const storableIsp = (isp) => named(isp) ? isp.trim() : null;
 
+// Compare the complete IPv6 address, preserving a case-sensitive interface
+// scope. Mirrored in TestUtil.js; addressEquivalence.test.js checks both paths.
+const comparableAddress = (value) => {
+    if (typeof value !== "string" || !value.includes(":")
+        || !/^[0-9a-f:.]+(?:%[0-9a-z.:-]+)?$/i.test(value)) return value;
+    const [address, ...scope] = value.split("%");
+    try {
+        return new URL(`http://[${address}]/`).hostname + (scope.length ? `%${scope.join("%")}` : "");
+    } catch {
+        return value;
+    }
+};
+
 /**
  * What changed between the run just written and the connection seen before
  * it, or null for nothing.
@@ -79,7 +92,8 @@ export const describeChange = (current, previous) => {
     const currentIp = named(current?.externalIp) ? current.externalIp.trim() : null;
     const previousIp = named(previous?.externalIp) ? previous.externalIp.trim() : null;
     const ipChanged = currentIp !== null && previousIp !== null
-        && addressFamily(currentIp) === addressFamily(previousIp) && currentIp !== previousIp;
+        && addressFamily(currentIp) === addressFamily(previousIp)
+        && comparableAddress(currentIp) !== comparableAddress(previousIp);
 
     const currentIsp = normalisedIsp(current?.isp);
     const previousIsp = normalisedIsp(previous?.isp);

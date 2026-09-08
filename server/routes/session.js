@@ -2,7 +2,7 @@ import express from 'express';
 import bcrypt from 'bcryptjs';
 import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
-import { createSession, destroySession, isValidSession, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
+import { createSession, destroySession, isValidSession, sessionGeneration, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
 import { expiredCookies, readCookies, serialiseCookie } from '../util/cookies.js';
 import {
     ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, clearFailedAttempts, reserveAttempt
@@ -48,6 +48,7 @@ app.post("/", async (req, res) => {
     let valid = false;
     let compared = false;
     let unconfigured;
+    const generation = sessionGeneration();
 
     try {
         const passwordHash = await config.getValue("password");
@@ -75,6 +76,13 @@ app.post("/", async (req, res) => {
             type: unconfigured ? SETUP_TOKEN_REQUIRED : PASSWORD_REQUIRED
         });
     }
+
+    // No await between this check and issuing the cookie: a committed password
+    // change must not be followed by a session checked against its predecessor.
+    if (generation !== sessionGeneration()) return res.status(401).json({
+        message: "Authentication changed while signing in. Please try again",
+        type: unconfigured ? SETUP_TOKEN_REQUIRED : PASSWORD_REQUIRED
+    });
 
     clearFailedAttempts(req);
 

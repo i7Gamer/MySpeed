@@ -127,7 +127,7 @@ describe("the comparison panels on the statistics page", () => {
         // The comparison offset too: the rows' deltas are read against it, so
         // an answer cached under one offset is the wrong answer under the
         // next - and the control that changes it sits beside these panels.
-        assert.match(statistics, /\.join\("\|"\), \[dateRange, currentNode, targets, compare]\)/,
+        assert.match(statistics, /\.join\("\|"\), \[dateRange, currentNode, targets, compare, historyRevision]\)/,
             "a compare change beside an open panel serves the previous offset's deltas");
     });
 

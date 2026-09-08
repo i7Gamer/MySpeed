@@ -18,6 +18,7 @@ import {FULL_DETAIL_POINTS, PreferencesContext} from "@/common/contexts/Preferen
 import {ConfigContext} from "@/common/contexts/Config";
 import {NodeContext} from "@/common/contexts/Node";
 import {TargetsContext} from "@/common/contexts/Targets";
+import {SpeedtestContext} from "@/common/contexts/Speedtests";
 import {previousOfTarget, resolveLimits} from "@/common/utils/TargetUtil";
 import {
     DEFAULT_TIMEFRAME,
@@ -212,6 +213,7 @@ export const Statistics = () => {
     // against. Absent until the config has loaded, and unset on an instance
     // nobody has told what it pays for - both render as no percentage.
     const [config] = useContext(ConfigContext);
+    const {historyRevision} = useContext(SpeedtestContext);
     const {targets, selectedTarget, pageTargetFor} = useContext(TargetsContext);
 
     // Which target the page is narrowed to, or null for all of them - the
@@ -426,7 +428,7 @@ export const Statistics = () => {
         // points rather than anything named in this callback, and reads it as
         // one to drop.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateRange, currentNode, targetFilter, compare]);
+    }, [dateRange, currentNode, targetFilter, compare, historyRevision]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });
@@ -532,7 +534,7 @@ export const Statistics = () => {
         // node's thousand-point series renders under the new node's heading.
         // Today the layout happens to make that unreachable - switching nodes
         // unmounts this page - but the dependency is what guards it on purpose.
-    }, [wantsDetail, isDownsampled, detailQuery, currentNode]);
+    }, [wantsDetail, isDownsampled, detailQuery, currentNode, historyRevision]);
 
     /*
      * What the comparison card's figures answer for, by value rather than by
@@ -549,8 +551,8 @@ export const Statistics = () => {
         // a cached answer taken under one window is the wrong answer under
         // the next - and the card can be open while the row below it changes
         // the window.
-        compare
-    ].join("|"), [dateRange, currentNode, targets, compare]);
+        compare, historyRevision
+    ].join("|"), [dateRange, currentNode, targets, compare, historyRevision]);
     const compareFresh = compareStats?.key === compareKey;
 
     /*

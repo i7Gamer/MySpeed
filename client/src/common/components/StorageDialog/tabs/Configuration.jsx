@@ -2,7 +2,6 @@ import React, {useContext, useState} from "react";
 import {deleteRequest, downloadRequest, putRequest} from "@/common/utils/RequestUtil";
 import {chooseAndReadJson} from "@/common/utils/FileImport";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
-import {ConfigContext} from "@/common/contexts/Config";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import ToggleSwitch from "@/common/components/ToggleSwitch";
@@ -10,7 +9,6 @@ import {faClockRotateLeft, faFileExport, faFileImport} from "@fortawesome/free-s
 
 export default ({close}) => {
     const [deleteWarning, setDeleteWarning] = useState(false);
-    const updateConfig = useContext(ConfigContext)[1];
     const updateToast = useContext(ToastNotificationContext);
 
     // Off by default, and stated rather than assumed: a plain export is safe to
@@ -50,8 +48,8 @@ export default ({close}) => {
 
         if (res?.ok) {
             updateToast(t("storage.settings_imported"), "green", faFileImport);
-            updateConfig();
             close();
+            window.location.reload();
             return;
         }
 
@@ -74,8 +72,8 @@ export default ({close}) => {
             if (!res.ok) return updateToast(t("dropdown.changes_unsaved"), "red");
 
             updateToast(t("storage.factory_reset_completed"), "green", faClockRotateLeft);
-            updateConfig();
             close();
+            window.location.reload();
         }).catch(() => updateToast(t("dropdown.changes_unsaved"), "red"));
     }
 

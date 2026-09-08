@@ -151,8 +151,10 @@ describe("the statistics page and its comparison choice", () => {
      * reads.
      */
     it("never compares the detail series", () => {
+        const detailEnd = statistics.indexOf("}, [wantsDetail, isDownsampled, detailQuery, currentNode, historyRevision]);");
+        assert.notEqual(detailEnd, -1, "the detail effect moved; re-anchor this lift");
         const detail = statistics.slice(statistics.indexOf('query.set("points"'),
-            statistics.indexOf("}, [wantsDetail, isDownsampled, detailQuery, currentNode]);"));
+            detailEnd);
 
         assert.notEqual(detail.length, 0, "the detail effect moved; re-anchor this lift");
         assert.doesNotMatch(detail, /applyCompare|compare/,

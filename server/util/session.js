@@ -23,6 +23,10 @@ export const SESSION_COOKIE = "myspeed_session";
 export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
 
 const sessions = new Map();
+let generation = 0;
+
+/** Captured before authentication starts so revocation also invalidates pending logins. */
+export const sessionGeneration = () => generation;
 
 const prune = (now) => {
     for (const [token, expiresAt] of sessions)
@@ -68,7 +72,10 @@ export const destroySession = (token) => {
  * storing the password is that access can be taken back, and leaving old
  * sessions alive would undo that.
  */
-export const destroyAllSessions = () => sessions.clear();
+export const destroyAllSessions = () => {
+    generation++;
+    sessions.clear();
+};
 
 /** Number of live sessions. For tests. */
 export const sessionCount = () => {

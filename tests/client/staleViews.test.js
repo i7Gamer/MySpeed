@@ -211,7 +211,7 @@ describe("the statistics page does not show the previous range's numbers", () =>
      */
     it("re-keys the detail fetch on the node like the page fetch", () => {
         assert.match(statistics,
-            /}, \[wantsDetail, isDownsampled, detailQuery, currentNode]\);/,
+            /}, \[wantsDetail, isDownsampled, detailQuery, currentNode, historyRevision]\);/,
             "a node switch would leave the previous node's series under the new node's heading");
     });
 });
@@ -293,7 +293,7 @@ describe("the config provider drops an answer for a config it has left", () => {
  */
 describe("the high-resolution series and the range", () => {
     const statistics = code("pages/Statistics/Statistics.jsx");
-    const DEPS = "}, [wantsDetail, isDownsampled, detailQuery, currentNode]);";
+    const DEPS = "}, [wantsDetail, isDownsampled, detailQuery, currentNode, historyRevision]);";
     const effect = statistics.slice(statistics.indexOf("if (!wantsDetail || !isDownsampled) {"),
         statistics.indexOf(DEPS));
 

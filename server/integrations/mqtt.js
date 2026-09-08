@@ -91,7 +91,7 @@ const announcementsFor = (c, target = null) => {
     // remembered as an ever-growing set of (id, name) pairs, renaming *back*
     // found the old pair still recorded and left the broker serving the
     // intermediate name until the process restarted.
-    const key = `${prefix}|${c.topic}|${target ? target.id : "base"}`;
+    const key = JSON.stringify([c.host, Number(c.port), prefix, c.topic, target ? target.id : "base"]);
     const name = target?.name ?? "";
 
     if (announced.get(key) === name) return null;

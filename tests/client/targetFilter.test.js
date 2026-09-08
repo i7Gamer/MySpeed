@@ -85,7 +85,7 @@ describe("the chip selection reaches every request it narrows", () => {
     it("re-fetches the statistics when the chip changes", () => {
         const statistics = readSource("client/src/pages/Statistics/Statistics.jsx");
 
-        assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter, compare\]\);/,
+        assert.match(statistics, /\}, \[dateRange, currentNode, targetFilter, compare, historyRevision\]\);/,
             "the statistics keep the previous target's figures under the new chip");
         // Through the memoised query the effect is keyed on, which carries
         // the chip: staleViews.test.js holds the effect to that key.

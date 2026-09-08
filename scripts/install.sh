@@ -170,12 +170,6 @@ if [ -d "$INSTALLATION_PATH" ]; then
     sleep 5
 fi
 
-if command -v systemctl &> /dev/null && systemctl --all --type service | grep -qE '(^|[[:space:]])myspeed\.service([[:space:]]|$)'; then
-  clear
-  echo -e "$YELLOWℹ MySpeed Service is being stopped..."
-  systemctl stop myspeed
-fi
-
 clear
 echo -e ""
 echo -e "$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-$BLUE-$NORMAL-"
@@ -417,8 +411,38 @@ fi
 # under the same mask, so the usual way in is an upgrade: the directory is
 # already there and traversable, nothing falls back to root, and only the new
 # binary comes out unreadable.
-chmod 755 "$DOWNLOAD_TMP"
-mv -f "$DOWNLOAD_TMP" myspeed
+if ! chmod 755 "$DOWNLOAD_TMP"; then
+    rm -f "$DOWNLOAD_TMP"
+    echo -e "$RED✗ Could not make the downloaded binary executable."
+    exit 1
+fi
+
+# Preparation can fail without interrupting the working service. Stop only
+# for the sibling rename, and restore its prior running state if that fails.
+SERVICE_WAS_ACTIVE=false
+recover_service() {
+    if [ "$SERVICE_WAS_ACTIVE" = true ] && ! systemctl start myspeed; then
+        echo -e "$RED✗ Could not restart the previous MySpeed service. See: journalctl -u myspeed -n 50 --no-pager"
+    fi
+}
+
+if command -v systemctl &> /dev/null && systemctl --all --type service | grep -qE '(^|[[:space:]])myspeed\.service([[:space:]]|$)'; then
+    if systemctl is-active --quiet myspeed; then SERVICE_WAS_ACTIVE=true; fi
+    echo -e "$YELLOWℹ MySpeed Service is being stopped..."
+    if ! systemctl stop myspeed; then
+        echo -e "$RED✗ Could not stop MySpeed; the existing binary was not replaced."
+        rm -f "$DOWNLOAD_TMP"
+        recover_service
+        exit 1
+    fi
+fi
+
+if ! mv -f "$DOWNLOAD_TMP" myspeed; then
+    echo -e "$RED✗ Could not replace the MySpeed binary."
+    rm -f "$DOWNLOAD_TMP"
+    recover_service
+    exit 1
+fi
 
 clear
 echo -e "$BLUE🔎 STATUS MESSAGE"

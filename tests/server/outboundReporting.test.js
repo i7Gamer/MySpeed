@@ -128,17 +128,28 @@ describe("an outbound call to an unparseable URL", () => {
  */
 describe("what an outbound call leaves behind", () => {
     const realFetch = globalThis.fetch;
+    let drains = [];
 
-    afterEach(() => {
+    afterEach(async () => {
+        await Promise.all(drains);
+        drains = [];
         globalThis.fetch = realFetch;
     });
 
-    const answering = (props, onRead) => async () => ({
-        ok: true,
-        status: 200,
-        arrayBuffer: async () => { onRead?.(); return new ArrayBuffer(0); },
-        ...props
-    });
+    const answering = (props = {}, onRead) => async () => {
+        const response = new Response("ok", {status: props.status ?? 200});
+        const pipeTo = response.body.pipeTo.bind(response.body);
+        const arrayBuffer = response.arrayBuffer.bind(response);
+        const observe = (read) => {
+            const complete = read.then((value) => { onRead?.(); return value; });
+            drains.push(complete);
+            return complete;
+        };
+
+        response.body.pipeTo = (...args) => observe(pipeTo(...args));
+        response.arrayBuffer = () => observe(arrayBuffer());
+        return response;
+    };
 
     /**
      * The body is read to the end rather than left, and rather than cancelled.
@@ -154,6 +165,7 @@ describe("what an outbound call leaves behind", () => {
         globalThis.fetch = answering({}, () => { read = true; });
 
         await postJson("https://example.test/hook", {});
+        await Promise.all(drains);
         assert.equal(read, true, "the body was left unread, holding the message open");
     });
 
@@ -162,6 +174,7 @@ describe("what an outbound call leaves behind", () => {
         globalThis.fetch = answering({ok: false, status: 429}, () => { read = true; });
 
         await postText("https://example.test/hook", "hello");
+        await Promise.all(drains);
         assert.equal(read, true);
     });
 

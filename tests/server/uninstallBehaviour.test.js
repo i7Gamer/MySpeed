@@ -28,7 +28,7 @@ import { readSource } from "../helpers/source.js";
  * what the script said, and what is still on disk.
  */
 const bash = (() => {
-    for (const candidate of ["bash", "/usr/bin/bash", "C:/Program Files/Git/bin/bash.exe"]) {
+    for (const candidate of ["C:/Program Files/Git/bin/bash.exe", "bash", "/usr/bin/bash"]) {
         try {
             if (execFileSync(candidate, ["-c", "echo ok"],
                 {encoding: "utf8", timeout: 10_000, stdio: ["pipe", "pipe", "ignore"]}).trim() === "ok")
@@ -42,6 +42,7 @@ const bash = (() => {
 })();
 
 const RUN_TIMEOUT = 20_000;
+const GUARD_FAILURE = 97;
 
 /**
  * The same directory, spelled the way the shell spells it.
@@ -85,7 +86,14 @@ const sandboxedScript = (sandbox) => {
 
     // The waiting and the screen-clearing, which would make the suite slow and
     // would throw the captured output away.
-    return source.replace(/^(\s*)sleep \d+$/gm, "$1sleep 0").replace(/^(\s*)clear$/gm, "$1:");
+    const guardedPath = 'export PATH="$MYSPEED_TEST_STUBS:$PATH"\n'
+        + 'for mocked in docker systemctl userdel id; do\n'
+        + `  [ "$(command -v "$mocked")" = "$MYSPEED_TEST_STUBS/$mocked" ] || exit ${GUARD_FAILURE}\n`
+        + 'done\n'
+        + 'if [ -f "$MYSPEED_TEST_STUBS/rm" ]; then\n'
+        + `  [ "$(command -v rm)" = "$MYSPEED_TEST_STUBS/rm" ] || exit ${GUARD_FAILURE}\n`
+        + 'fi\n';
+    return guardedPath + source.replace(/^(\s*)sleep \d+$/gm, "$1sleep 0").replace(/^(\s*)clear$/gm, "$1:");
 };
 
 const stub = (file, body) => {
@@ -192,7 +200,7 @@ const host = ({container = false, service = false, recorded = null, installed = 
                 output = execFileSync(bash, [path.join(sandbox, "uninstall.sh"), ...args], {
                     encoding: "utf8",
                     timeout: RUN_TIMEOUT,
-                    env: {...process.env, PATH: `${path.join(sandbox, "bin")}${path.delimiter}${process.env.PATH}`},
+                    env: {...process.env, MYSPEED_TEST_STUBS: `${posix(sandbox)}/bin`},
                     stdio: ["pipe", "pipe", "pipe"]
                 });
             } catch (error) {
@@ -211,12 +219,19 @@ const host = ({container = false, service = false, recorded = null, installed = 
     };
 };
 
+let noSymlinks = false;
 before(() => {
     // Forward slashes throughout. The script is POSIX and compares the path it
     // was given against the one the unit recorded; a native separator on Windows
     // makes those two spellings of the same directory unequal, which is a
     // property of the test rather than of the script.
     root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-uninstall-")).split(path.sep).join("/");
+    try {
+        fs.symlinkSync(path.join(root, "target"), path.join(root, "link"), "dir");
+    } catch (error) {
+        if (!["EPERM", "EACCES", "ENOSYS", "ENOTSUP"].includes(error.code)) throw error;
+        noSymlinks = `directory symlinks unavailable (${error.code})`;
+    }
 });
 
 after(() => {
@@ -537,7 +552,8 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
          * an installation with nothing to keep, and the link telling anyone where
          * that data lives went with the removal.
          */
-        it("keeps a link at the data path whose target is not mounted", () => {
+        it("keeps a link at the data path whose target is not mounted", (t) => {
+            if (noSymlinks) return t.skip(noSymlinks);
             const machine = host({service: true, recorded: true, installed: true, data: false, account: true});
 
             fs.symlinkSync(path.join(root, "not-mounted-right-now"), machine.at("opt", "myspeed", "data"), "dir");
@@ -557,7 +573,8 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
          * volume this script has no mandate over - stays untouched on both ends
          * of the round trip.
          */
-        it("keeps a link at the data path without touching what it points at", () => {
+        it("keeps a link at the data path without touching what it points at", (t) => {
+            if (noSymlinks) return t.skip(noSymlinks);
             const machine = host({service: true, recorded: true, installed: true, data: false, account: true});
             const volume = machine.at("volume");
 
