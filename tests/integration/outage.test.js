@@ -107,7 +107,12 @@ describe("failureStreak", () => {
     it("counts a failure that shares the newest success's stamp and follows it", async () => {
         const target = await seedTarget({name: "WAN"});
         const stamp = hoursAgo(2);
-        await seedTests(server.tests, [succeeded(target.id, 2), {...failed(target.id, 2), created: stamp}, failed(target.id, 1)]);
+        // Reuse the exact stamp: separate hoursAgo calls can cross a millisecond,
+        // making the failure older than the success instead of tied with it.
+        await seedTests(server.tests, [
+            {...succeeded(target.id, 2), created: stamp},
+            {...failed(target.id, 2), created: stamp}, failed(target.id, 1)
+        ]);
 
         const streak = await failureStreak(target.id);
 
