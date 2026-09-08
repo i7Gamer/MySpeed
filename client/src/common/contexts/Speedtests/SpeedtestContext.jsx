@@ -25,6 +25,13 @@ const PAGE_SIZE = 30;
 // enough that a scroll to the bottom does not look stuck.
 const RETRY_AFTER_ERROR_MS = 3000;
 
+// What the newest-test watch below holds before any status has answered.
+// A value of its own because both of the obvious ones are already answers:
+// null is an instance that holds no tests, and undefined is the key a node too
+// old to report one leaves out. Read as "nothing recorded yet", either would
+// refetch the whole page on the first poll of every visit.
+const NO_STATUS_ANSWERED = Symbol("no status answered yet");
+
 export const SpeedtestProvider = (props) => {
     const [speedtests, setSpeedtests] = useState([]);
     const [historyRevision, setHistoryRevision] = useState(0);
@@ -103,6 +110,9 @@ export const SpeedtestProvider = (props) => {
     const [config] = useContext(ConfigContext);
     const {selectedTarget} = useContext(TargetsContext);
     const wasRunningRef = useRef(status.running);
+    // The newest test the last answered status named - see the refresh effect
+    // below, which is the only thing that reads or writes it.
+    const newestTestRef = useRef(NO_STATUS_ANSWERED);
     // The permission the rows in hand were fetched under. See permission.js.
     const fetchedUnderRef = useRef(undefined);
 
@@ -468,18 +478,63 @@ export const SpeedtestProvider = (props) => {
             fetchedUnderRef.current, config.viewMode, loadInitialTests);
     }, [config.viewMode, loadInitialTests]);
 
-    // The list used to be refetched every five seconds around the clock. A new
-    // row can only appear when a run ends, and the polled status already says
-    // when that is - so the refresh rides its falling edge instead. Manual runs
-    // stay covered twice over: RunUtil refreshes explicitly when the run call
-    // returns, and the flag falls either way.
+    /**
+     * The newest test the server knows of, or NO_STATUS_ANSWERED until one has
+     * been answered.
+     *
+     * The placeholder this provider starts on - and the one StatusContext puts
+     * back when the node changes - carries no lastTest key at all, where every
+     * answer carries one: an object, or null for an instance with no tests.
+     */
+    const newestTest = status.lastTest === undefined
+        ? NO_STATUS_ANSWERED
+        : status.lastTest?.id ?? null;
+
+    /*
+     * The list used to be refetched every five seconds around the clock. A new
+     * row can only appear when a run ends, and the polled status already says
+     * when that is - so the refresh rides its falling edge instead. Manual runs
+     * stay covered twice over: RunUtil refreshes explicitly when the run call
+     * returns, and the flag falls either way.
+     *
+     * And on the newest test's identity beside it, because that edge is a
+     * *sample* of a flag that is only true while a round is in flight. The idle
+     * poll is five seconds and the live route is only watched once `running`
+     * has been seen true, so a round that begins and ends between two polls is
+     * never observed at all: no edge, no refresh, and everything hanging off
+     * this stays on the previous test until the next run - half an hour on an
+     * ordinary schedule. Reachable rather than theoretical: a provider that
+     * cannot read its own configuration fails the round in about four seconds,
+     * which the history of a live instance has several of, against successful
+     * runs of eight to thirty seconds that no five-second poll can miss.
+     *
+     * lastTest is a fact rather than a moment - a poll that missed the whole
+     * round still carries it - and it costs nothing, since /status has always
+     * sent it and this provider has always read this context.
+     *
+     * One effect for the two signals, and so one refresh between them: a run
+     * that ends the ordinary way reports both in the same answer, and two
+     * effects would each ask the server for the same thing.
+     *
+     * The first answer only records. Reading it as a change would refetch the
+     * list, and the statistics page with it, on the first poll of every visit -
+     * which is also how a node that never reports a lastTest degrades: the
+     * watch never arms and the falling edge carries the refresh alone.
+     */
     useEffect(() => {
-        if (runJustFinished(wasRunningRef.current, status.running)) {
+        const ended = runJustFinished(wasRunningRef.current, status.running);
+        const recorded = newestTest !== NO_STATUS_ANSWERED
+            && newestTestRef.current !== NO_STATUS_ANSWERED
+            && newestTest !== newestTestRef.current;
+
+        if (ended || recorded) {
             setHistoryRevision(revision => revision + 1);
             refreshTests();
         }
+
         wasRunningRef.current = status.running;
-    }, [status.running, refreshTests]);
+        newestTestRef.current = newestTest;
+    }, [status.running, newestTest, refreshTests]);
 
     // A hidden tab gets no status polls, so a run can end entirely unseen;
     // coming back to the tab is the moment to catch up.

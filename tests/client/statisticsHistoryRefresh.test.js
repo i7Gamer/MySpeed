@@ -239,6 +239,86 @@ describe("Statistics follows the shared history's actual invalidation events", (
         assert.ok(rig.ofKind("list").every(request => request.url.searchParams.get("limit") === String(LIST_PAGE_SIZE)));
     });
 
+    /**
+     * The run that is over before anybody looked.
+     *
+     * The falling edge is a sample of a flag that is only true while a round is
+     * in flight: the idle poll is five seconds and the live route is only
+     * watched once `running` has been seen true, so a round that begins and
+     * ends between two polls is never observed - no edge, no refresh, and every
+     * surface hanging off this stays on the previous test until the next run.
+     *
+     * Reachable, and not only in theory: the live instance's history has four
+     * rows whose provider could not read its own configuration, each written
+     * within five seconds of the tick that started it, against successful runs
+     * of eight to thirty seconds that no five-second poll can miss.
+     *
+     * So the newest test's identity is watched beside the flag. It is a fact
+     * rather than a moment - a poll that missed the whole round still carries
+     * it - and the status route has always sent it.
+     */
+    it("refreshes when a run too short to be sampled leaves a new test behind", async () => {
+        const rig = mount();
+        await ready();
+
+        await rig.status({running: false, lastTest: {id: 1}});
+        const before = rig.count();
+        assert.deepEqual(before, {main: 1, recent: 1, comparison: 1},
+            "the first status to name a test refetched the page that had just loaded it");
+
+        // No run was ever reported: the round began and ended between two polls
+        // and this is the first the client hears of it.
+        await rig.status({running: false, lastTest: {id: 2}});
+        assertRefreshed(rig, before);
+    });
+
+    // The two signals cost one refresh between them. A run that ends the
+    // ordinary way reports both in the same answer - the flag has fallen and
+    // the row it wrote is named beside it - and a page that asked twice for
+    // that would double every request this suite counts.
+    it("refreshes once when the run's end and its new row arrive together", async () => {
+        const rig = mount();
+        await ready();
+        await rig.status({running: false, lastTest: {id: 1}});
+        const before = rig.count();
+
+        await rig.status({running: true, lastTest: {id: 1}, progress: 0});
+        await rig.status({running: false, lastTest: {id: 2}, progress: 100});
+        assertRefreshed(rig, before);
+    });
+
+    // And the poll that says nothing new says nothing at all: the same test
+    // named again is the answer this instance gives every five seconds.
+    it("does not refresh while the newest test is the one it already has", async () => {
+        const rig = mount();
+        await ready();
+        await rig.status({running: false, lastTest: {id: 1}});
+        const before = rig.count();
+
+        await rig.status({running: false, lastTest: {id: 1}, recentFailures: 1});
+        await rig.status({running: false, lastTest: {id: 1}, nextTest: "2026-09-08T15:00:00.000Z"});
+        assert.deepEqual(rig.count(), before);
+    });
+
+    /**
+     * A history emptied somewhere else is a change like any other.
+     *
+     * null is what the route answers for an instance with no tests, and it has
+     * to be told from the key being absent - which is what a node too old to
+     * report one sends, and what the placeholder this provider starts on holds
+     * before any status has answered. Read as the same thing, the first poll of
+     * every page load would refetch the page it had just loaded.
+     */
+    it("refreshes when the newest test is deleted from another tab", async () => {
+        const rig = mount();
+        await ready();
+        await rig.status({running: false, lastTest: {id: 2}});
+        const before = rig.count();
+
+        await rig.status({running: false, lastTest: null});
+        assertRefreshed(rig, before);
+    });
+
     it("keeps the selected target when the completed run invalidates its statistics", async () => {
         const SELECTED_TARGET = 2;
         const rig = mount({selectedTarget: SELECTED_TARGET});
