@@ -1,13 +1,12 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const source = fs.readFileSync(
-    path.join(CLIENT_SRC, "pages", "Home", "components", "TestArea", "TestAreaComponent.jsx"), "utf8");
+const source = readSource(path.join(CLIENT_SRC, "pages", "Home", "components", "TestArea", "TestAreaComponent.jsx"));
 
 // The dependency array closing the useCallback or useEffect that begins at
 // `from`, as written.

@@ -1,13 +1,13 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import i18next from "i18next";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const source = fs.readFileSync(path.join(CLIENT_SRC, "i18n.js"), "utf8");
+const source = readSource(path.join(CLIENT_SRC, "i18n.js"));
 
 /**
  * Values interpolated into a translation are printed, not escaped.

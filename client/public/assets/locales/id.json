@@ -278,7 +278,17 @@
     "hours": "{{hours}} jam",
     "day": "1 hari",
     "days": "{{days}} hari",
-    "days_ago": "{{days}} hari"
+    "days_ago": "{{days}} hari",
+    "seconds_one": "{{seconds}} detik",
+    "seconds_other": "{{seconds}} detik",
+    "minutes_one": "{{minutes}} menit",
+    "minutes_other": "{{minutes}} menit",
+    "hours_one": "{{hours}} jam",
+    "hours_other": "{{hours}} jam",
+    "days_one": "{{days}} hari",
+    "days_ago_one": "{{days}} hari",
+    "days_other": "{{days}} hari",
+    "days_ago_other": "{{days}} hari"
   },
   "test": {
     "not_available": "Saat ini tidak ada pengujian yang tersedia",
@@ -450,7 +460,9 @@
       "range": "Antara {{min}} dan {{max}}",
       "sample_count": "Dari {{tests}} pengujian"
     },
-    "loaded_latency": "Saat terbebani"
+    "loaded_latency": "Saat terbebani",
+    "failed_in_period_one": "{{failed}} gagal dalam periode ini",
+    "failed_in_period_other": "{{failed}} gagal dalam periode ini"
   },
   "calendar": {
     "select_range": "Pilih rentang tanggal",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} tes berturut-turut gagal sejak {{since}}",
     "recovered_summary_one": "Kembali online setelah {{count}} tes gagal sejak {{since}}",
     "outage_summary": "{{count}} tes berturut-turut gagal sejak {{since}}",
-    "recovered_summary": "Kembali online setelah {{count}} tes gagal sejak {{since}}"
+    "recovered_summary": "Kembali online setelah {{count}} tes gagal sejak {{since}}",
+    "outage_summary_other": "{{count}} tes berturut-turut gagal sejak {{since}}",
+    "recovered_summary_other": "Kembali online setelah {{count}} tes gagal sejak {{since}}"
   },
   "tokens": {
     "title": "Token API",

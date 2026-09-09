@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,8 +9,8 @@ import {
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const dialog = fs.readFileSync(path.join(CLIENT_SRC,
-    "common/components/IntegrationDialog/IntegrationDialog.jsx"), "utf8");
+const dialog = readSource(path.join(CLIENT_SRC,
+    "common/components/IntegrationDialog/IntegrationDialog.jsx"));
 
 const DEFINITIONS = {
     discord: {name: "discord", fields: [{name: "url", type: "text", required: true}]},

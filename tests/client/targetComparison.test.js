@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -6,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
-const read = (file) => fs.readFileSync(path.join(ROOT, "client", "src", file), "utf8");
+const read = (file) => readSource(path.join(ROOT, "client", "src", file));
 
 const statistics = read("pages/Statistics/Statistics.jsx");
 const card = read("pages/Statistics/charts/TargetCompareChart/TargetCompareChart.jsx");
@@ -392,8 +393,7 @@ describe("the panels' stylesheet", () => {
      * here.
      */
     it("lets the table's panel size to its rows", () => {
-        const page = fs.readFileSync(
-            path.join(ROOT, "client", "src", "pages", "Statistics", "styles.sass"), "utf8");
+        const page = readSource(path.join(ROOT, "client", "src", "pages", "Statistics", "styles.sass"));
 
         assert.match(page, /> \.container-wide \.stats-content\s*\n\s*min-height: 0/,
             "the comparison table keeps the 14rem floor meant for cards that share a row");

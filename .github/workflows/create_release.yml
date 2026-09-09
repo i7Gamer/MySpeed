@@ -50,7 +50,7 @@ jobs:
       # Dispatch carries no branch restriction and the push below targets the
       # default branch by name, so a run started from a feature branch would
       # push that branch's HEAD onto the default one. Refused here, before the
-      # checkout writes a write-token into .git/config or anything is pushed.
+      # checkout authenticates to the repository or anything is pushed.
       #
       # Both names read through env, for the reason stated below the checkout: a
       # `${{ }}` expression is substituted into the shell source before bash
@@ -69,8 +69,9 @@ jobs:
           fi
 
       - name: Checkout project
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -80,8 +81,7 @@ jobs:
       # expression is substituted into the shell source before bash parses it,
       # so the dispatch input reached this step as code - eleven lines above the
       # regex that exists precisely because the value is not trusted, in a job
-      # where checkout has already written a contents:write token into
-      # .git/config. Dispatching needs write access, so this is not a boundary
+      # that holds a contents:write token. Dispatching needs write access, so this is not a boundary
       # being crossed; it is the difference between "can cut a release" and "can
       # run anything inside the release job". The cleanup jobs below already do
       # it this way, for the same reason.
@@ -96,14 +96,37 @@ jobs:
           # semver allows and exactly what this pipeline can deliver. build-msi
           # splices the version into WiX's Product/@Version as "<version>.0",
           # which must be numeric dotted fields, so a prerelease suffix or a
-          # fourth part reached candle and failed it - by which point the tag is
-          # pushed, all six binaries are uploaded, and Docker Hub's :latest has
-          # already been replaced, none of which the failure path undoes.
+          # fourth part reached candle and failed it after the version bump,
+          # tag and binary builds. Docker publication waits for MSI, but this
+          # input can be refused before any release artifacts need recovery.
           # Refused here instead, before anything has been published.
-          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          # Match the complete input: grep accepts a valid line beside a bad
+          # one, which could inject extra records into GITHUB_OUTPUT below.
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::'$VERSION' is not a release version. Use three numbers, as in 1.4.0 - prereleases and four-part versions cannot be built into the MSI."
             exit 1
           fi
+
+          # MSI ProductVersion stores major/minor as bytes and build as a word.
+          # Trim leading zeroes for comparison only; preserve the release name.
+          # Bound the length before numeric comparison so huge inputs cannot
+          # overflow shell arithmetic and escape the preflight.
+          MSI_MAX_MAJOR=255
+          MSI_MAX_MINOR=255
+          MSI_MAX_BUILD=65535
+          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_BUILD <<< "$VERSION"
+          VERSION_PARTS=("$VERSION_MAJOR" "$VERSION_MINOR" "$VERSION_BUILD")
+          VERSION_LIMITS=("$MSI_MAX_MAJOR" "$MSI_MAX_MINOR" "$MSI_MAX_BUILD")
+          for index in "${!VERSION_PARTS[@]}"; do
+            part="${VERSION_PARTS[$index]}"
+            part="${part#"${part%%[!0]*}"}"
+            part="${part:-0}"
+            limit="${VERSION_LIMITS[$index]}"
+            if [ "${#part}" -gt "${#limit}" ] || [ "$part" -gt "$limit" ]; then
+              echo "::error::Release version exceeds MSI limits: $MSI_MAX_MAJOR.$MSI_MAX_MINOR.$MSI_MAX_BUILD."
+              exit 1
+            fi
+          done
 
           if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
             echo "::error::Tag v$VERSION already exists."
@@ -142,9 +165,13 @@ jobs:
       # that guard exists to protect.
       - name: Commit and push version bump
         env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.get_version.outputs.version }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json client/package.json
@@ -169,9 +196,13 @@ jobs:
       # have been splicing anything into a shell.
       - name: Push release tag
         env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.get_version.outputs.tag }}
           SHA: ${{ steps.sha.outputs.sha }}
         run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
           git tag "$TAG" "$SHA"
           git push origin "$TAG"
 
@@ -179,7 +210,7 @@ jobs:
       # ref, so the artifacts and the version they report come from the same commit.
       - name: Create GitHub Release
         id: create_release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: ${{ steps.get_version.outputs.tag }}
           target_commitish: ${{ steps.sha.outputs.sha }}
@@ -194,7 +225,6 @@ jobs:
     with:
       version: ${{ needs.create-release.outputs.version }}
       release_id: ${{ needs.create-release.outputs.release_id }}
-    secrets: inherit
 
   # Two assets with one digest are one build under two names - v1.5.2's x64
   # and x64-baseline pairs under Bun 1.4.0 - and the release has to stop. It
@@ -227,7 +257,9 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     with:
       ref: v${{ needs.create-release.outputs.version }}
-    secrets: inherit
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   # The tags, and the first moment this release is visible to `docker pull`.
   #
@@ -254,7 +286,9 @@ jobs:
       tags: |
         latest
         ${{ needs.create-release.outputs.version }}
-    secrets: inherit
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
   build-msi:
     name: "Build MSI"
@@ -263,7 +297,6 @@ jobs:
     with:
       version: ${{ needs.create-release.outputs.version }}
       release_id: ${{ needs.create-release.outputs.release_id }}
-    secrets: inherit
 
   # The two installers, hashed after the fact.
   #
@@ -304,7 +337,7 @@ jobs:
       && needs.build-binaries.result == 'success'
     steps:
       - name: Add any unhashed asset to SHA256SUMS
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -390,7 +423,6 @@ jobs:
     with:
       version: ${{ needs.create-release.outputs.version }}
       release_id: ${{ needs.create-release.outputs.release_id }}
-    secrets: inherit
 
   # Tearing the release down is only right when nothing usable came out of it.
   # create-release failing leaves a bare tag and an empty draft; build-binaries
@@ -427,7 +459,7 @@ jobs:
       # spliced into the source produced a SyntaxError that masked the real error.
       - name: Delete release
         if: needs.create-release.outputs.release_id != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
         with:
@@ -445,7 +477,7 @@ jobs:
 
       - name: Delete tag
         if: needs.create-release.outputs.version != ''
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           VERSION: ${{ needs.create-release.outputs.version }}
         with:

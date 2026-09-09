@@ -84,8 +84,9 @@ describe("the release publishes what a download can be checked against", () => {
     it("hashes the assets after every job that uploads one", () => {
         const checksums = from(workflow, "\n  checksums:");
 
-        assert.match(checksums, /needs: \[build-windows, build-linux, build-macos, build-zip\]/,
+        assert.match(checksums, /needs: \[publish-binaries\]/,
             "SHA256SUMS can be written before an asset it is supposed to cover exists");
+        assert.match(jobIn(workflow, "publish-binaries"), /needs: \[build-windows, build-linux, build-macos, build-zip\]/);
         assert.match(checksums, /listReleaseAssets/,
             "the sums are taken from something other than the published assets");
         assert.match(checksums, /createHash\('sha256'\)/);

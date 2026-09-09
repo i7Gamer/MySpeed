@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -42,7 +43,7 @@ const collect = () => {
     const handlers = [];
 
     for (const file of sourcesIn(CLIENT_SRC)) {
-        const source = fs.readFileSync(file, "utf8");
+        const source = readSource(file);
         const relative = path.relative(CLIENT_SRC, file);
 
         for (const match of matchAll(source, DEFAULTED_FIRST_PARAM))

@@ -278,7 +278,32 @@
     "hours": "{{hours}} uair an chloig",
     "day": "1 lá",
     "days": "{{days}} lá",
-    "days_ago": "{{days}} lá"
+    "days_ago": "{{days}} lá",
+    "seconds_one": "{{seconds}} soicind",
+    "seconds_other": "{{seconds}} soicind",
+    "seconds_few": "{{seconds}} shoicind",
+    "seconds_many": "{{seconds}} soicind",
+    "seconds_two": "{{seconds}} shoicind",
+    "minutes_one": "{{minutes}} nóiméad",
+    "minutes_other": "{{minutes}} nóiméad",
+    "minutes_few": "{{minutes}} nóiméad",
+    "minutes_many": "{{minutes}} nóiméad",
+    "minutes_two": "{{minutes}} nóiméad",
+    "hours_one": "{{hours}} uair an chloig",
+    "hours_other": "{{hours}} uair an chloig",
+    "hours_few": "{{hours}} uair an chloig",
+    "hours_many": "{{hours}} uair an chloig",
+    "hours_two": "{{hours}} uair an chloig",
+    "days_one": "{{days}} lá",
+    "days_ago_one": "{{days}} lá",
+    "days_other": "{{days}} lá",
+    "days_ago_other": "{{days}} lá",
+    "days_few": "{{days}} lá",
+    "days_ago_few": "{{days}} lá",
+    "days_many": "{{days}} lá",
+    "days_ago_many": "{{days}} lá",
+    "days_two": "{{days}} lá",
+    "days_ago_two": "{{days}} lá"
   },
   "test": {
     "not_available": "Níl aon tástálacha ar fáil faoi láthair",
@@ -333,7 +358,10 @@
       "route_no_reply": "Gan freagra",
       "route_lost_one": "{{count}} caillte",
       "route_lost_other": "{{count}} caillte",
-      "route_lost": "{{count}} caillte"
+      "route_lost": "{{count}} caillte",
+      "route_lost_few": "{{count}} caillte",
+      "route_lost_many": "{{count}} caillte",
+      "route_lost_two": "{{count}} caillte"
     }
   },
   "errors": {
@@ -450,7 +478,12 @@
       "range": "Idir {{min}} agus {{max}}",
       "sample_count": "Thar {{tests}} tástáil"
     },
-    "loaded_latency": "Faoi ualach"
+    "loaded_latency": "Faoi ualach",
+    "failed_in_period_one": "{{failed}} teipthe sa tréimhse seo",
+    "failed_in_period_other": "{{failed}} teipthe sa tréimhse seo",
+    "failed_in_period_few": "{{failed}} teipthe sa tréimhse seo",
+    "failed_in_period_many": "{{failed}} teipthe sa tréimhse seo",
+    "failed_in_period_two": "{{failed}} teipthe sa tréimhse seo"
   },
   "calendar": {
     "select_range": "Roghnaigh raon dáta",
@@ -836,7 +869,15 @@
     "outage_summary_one": "Theip ar {{count}} tástáil ó {{since}}",
     "recovered_summary_one": "Ar líne arís tar éis {{count}} tástáil a theip ó {{since}}",
     "outage_summary": "Theip ar {{count}} thástáil as a chéile ó {{since}}",
-    "recovered_summary": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}"
+    "recovered_summary": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}",
+    "outage_summary_other": "Theip ar {{count}} tástáil as a chéile ó {{since}}",
+    "recovered_summary_other": "Ar líne arís tar éis {{count}} tástáil a theip ó {{since}}",
+    "outage_summary_few": "Theip ar {{count}} thástáil as a chéile ó {{since}}",
+    "recovered_summary_few": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}",
+    "outage_summary_many": "Theip ar {{count}} dtástáil as a chéile ó {{since}}",
+    "recovered_summary_many": "Ar líne arís tar éis {{count}} dtástáil a theip ó {{since}}",
+    "outage_summary_two": "Theip ar {{count}} thástáil as a chéile ó {{since}}",
+    "recovered_summary_two": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}"
   },
   "tokens": {
     "title": "Comharthaí API",

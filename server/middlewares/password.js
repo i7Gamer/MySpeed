@@ -5,6 +5,7 @@ import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
 import { isLoopbackRequest, namesLoopbackHost } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, sessionGeneration, SESSION_COOKIE } from '../util/session.js';
+import { authPolicyRevision } from '../util/authPolicy.js';
 import { trustedProxyUser } from '../util/trustedProxyAuth.js';
 import { readCookies } from '../util/cookies.js';
 import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
@@ -432,8 +433,19 @@ export default (allowViewAccess) => async (req, res, next) => {
     }
 
     const generation = sessionGeneration();
+    const policyRevision = authPolicyRevision();
     const passwordHash = await config.getValue("password");
     const passwordLevel = await config.getValue("passwordLevel");
+
+    const authenticationChanged = () =>
+        generation !== sessionGeneration() || policyRevision !== authPolicyRevision();
+    const retryAuthentication = () => res.status(401).json({
+        message: "Authentication changed. Please try again", type: PASSWORD_REQUIRED
+    });
+
+    // Both reads may yield to a password or access-policy commit. In particular,
+    // a stale no-password snapshot must never admit an old setup credential.
+    if (authenticationChanged()) return retryAuthentication();
 
     if (passwordHash === config.NO_PASSWORD) return handleUnconfigured(req, res, next);
 
@@ -486,6 +498,10 @@ export default (allowViewAccess) => async (req, res, next) => {
             return next();
         }
     }
+
+    // Failed comparisons also yield; their read-only fallback belongs to the
+    // policy observed before comparison, not to whatever now guards the API.
+    if (authenticationChanged()) return retryAuthentication();
 
     if (passwordLevel === "read" && allowViewAccess) {
         req.viewMode = true;

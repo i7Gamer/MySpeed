@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -12,14 +11,12 @@ import {
 import {
     changeFrom, differenceFromTarget, percentOfTarget
 } from "../../client/src/common/components/TestDetails/utils/details.js";
-import { escapeRegExp, withoutJsComments } from "../helpers/source.js";
+import { readSource, escapeRegExp, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const pane = fs.readFileSync(
-    path.join(CLIENT_SRC, "common", "components", "TestDetails", "TestDetails.jsx"), "utf8");
-const row = fs.readFileSync(
-    path.join(CLIENT_SRC, "pages", "Home", "components", "Speedtest", "SpeedtestComponent.jsx"), "utf8");
+const pane = readSource(path.join(CLIENT_SRC, "common", "components", "TestDetails", "TestDetails.jsx"));
+const row = readSource(path.join(CLIENT_SRC, "pages", "Home", "components", "Speedtest", "SpeedtestComponent.jsx"));
 
 /**
  * The pane's figure-building code, taken out of the JSX and run.

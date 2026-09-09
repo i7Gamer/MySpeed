@@ -14,8 +14,10 @@ jobs:
   # GitHub Actions bypass actor that would exempt it is only available to
   # organisation-owned repositories.
   test:
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'i7Gamer/MySpeed'
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'i7Gamer/MySpeed' && github.event.pull_request.head.repo.full_name == github.repository
     uses: ./.github/workflows/test.yml
+    with:
+      dependabot-call: true
 
   merge:
     name: "Auto-merge"
@@ -28,7 +30,7 @@ jobs:
     steps:
       - name: Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v3
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 

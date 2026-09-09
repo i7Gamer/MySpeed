@@ -111,6 +111,8 @@ if (readStored('language') === null)
 
 i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),
+    // Locale filenames and stored choices use lowercase (including zh-tw).
+    lowerCaseLng: true,
     fallbackLng: FALLBACK_LANGUAGE,
     // Seeds the store, rather than replacing the backend: with
     // partialBundledLanguages every other language is still fetched on demand,

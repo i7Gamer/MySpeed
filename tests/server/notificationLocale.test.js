@@ -32,6 +32,8 @@ const phrasesTheServerAsksFor = () => {
 
     const keys = new Set();
     for (const [, key] of source.matchAll(/\b(?:phrase\([^,)]+,|word\()\s*"([a-z_]+)"/g)) keys.add(key);
+    for (const [, key] of source.matchAll(/\bcountedPhrase\([^,)]+,\s*"([a-z_]+)"/g))
+        keys.add(key).add(`${key}_one`).add(`${key}_other`);
     for (const [, key] of source.matchAll(/_PHRASE = "([a-z_]+)"/g)) keys.add(key);
     for (const metric of ALERT_METRICS) keys.add(metric.crossing).add(`metric_${metric.key}`);
 
@@ -66,11 +68,12 @@ const inASandbox = (furnish) => {
 
         const probe = path.join(sandbox, "probe.mjs");
         fs.writeFileSync(probe,
-            'import { NOTIFICATION_LANGUAGES, phrase, plainDefaults } '
+            'import { NOTIFICATION_LANGUAGES, phrase, countedPhrase, plainDefaults } '
             + 'from "./server/util/notificationLocale.js";\n'
             + 'console.log(JSON.stringify({languages: NOTIFICATION_LANGUAGES, '
             + 'finished: phrase("en", "finished"), target: phrase("de", "target"), '
             + 'summary: phrase("en", "crossed_limits", {clauses: "download 40 Mbps under 100"}), '
+            + 'counted: [1, 21].map(count => countedPhrase("de", "outage_summary", {count, since: "today"})), '
             + 'plain: plainDefaults(null).finished}));\n');
 
         const printed = execFileSync(process.execPath, [probe], {cwd: elsewhere, encoding: "utf8"});
@@ -150,6 +153,7 @@ describe("the notification phrases", () => {
         assert.equal(answered.finished, "A speedtest is finished");
         assert.equal(answered.target, "Target");
         assert.equal(answered.summary, "Crossed limits: download 40 Mbps under 100");
+        assert.deepEqual(answered.counted, ["1 test has failed since today", "21 tests in a row have failed since today"]);
         assert.match(answered.plain, /^A speedtest is finished:\nTarget: %targetName%\n/,
             "the shipped template rendered as its own keys");
     });
@@ -179,6 +183,7 @@ describe("the notification phrases", () => {
 
         assert.deepEqual(answered.languages, ["en", "de"], "the build beside the server was not read");
         assert.equal(answered.finished, "The release build's own words");
+        assert.deepEqual(answered.counted, ["1 test has failed since today", "21 tests in a row have failed since today"]);
     });
 
     /**

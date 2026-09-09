@@ -3,12 +3,13 @@ import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faArrowRight} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
-import React, {useContext, useState} from "react";
+import React, {useCallback, useContext, useEffect, useState} from "react";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {TargetsContext} from "@/common/contexts/Targets";
 import {formatDateTime} from "@/common/utils/FormatUtil";
 import {jsonRequest} from "@/common/utils/RequestUtil";
-import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {useDialogSession} from "@/common/hooks/useDialogSession";
+import {NodeContext} from "@/common/contexts/Node";
 
 /**
  * When the external address or the provider changed, as the server keeps
@@ -33,25 +34,32 @@ const Change = ({label, from, to}) => (
 export const ConnectionsDialog = ({open, onClose}) => {
     const preferences = useContext(PreferencesContext)?.[0];
     const {byId} = useContext(TargetsContext);
+    const currentNode = useContext(NodeContext)?.[2];
+    const session = useDialogSession(open, currentNode);
 
     const [changes, setChanges] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
 
-    const load = async () => {
+    const load = useCallback(async () => {
+        if (!session.active) return;
+        const generation = ++session.generation;
+        const current = () => session.active && generation === session.generation;
         setLoading(true);
         setLoadError(null);
         try {
-            setChanges(await jsonRequest("/speedtests/connections"));
+            const rows = await jsonRequest("/speedtests/connections");
+            if (current()) setChanges(rows);
         } catch (e) {
+            if (!current()) return;
             console.error("Failed to load the connection changes:", e);
             setLoadError(e);
         } finally {
-            setLoading(false);
+            if (current()) setLoading(false);
         }
-    };
+    }, [session]);
 
-    useSyncOnOpen(open, load);
+    useEffect(() => { if (open) load(); }, [open, load]);
 
     // The member that ran the test, by the name it has now - or a note
     // that it is gone, since the log outlives the targets dialog's edits.

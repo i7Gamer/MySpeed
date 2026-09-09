@@ -1003,9 +1003,10 @@ const limitsResolver = async () => {
         Promise.all(OPTIMUM_KEYS.map((key) => getValue(key)))
     ]);
     const config = Object.fromEntries(OPTIMUM_KEYS.map((key, index) => [key, optima[index]]));
-    const byId = new Map(targetRows.map((row) => [row.id, row]));
+    const byId = new Map(targetRows.map((row) => [row.id, resolveLimits(row, config)]));
+    const fallback = resolveLimits(undefined, config);
 
-    return (targetId) => resolveLimits(byId.get(targetId), config);
+    return (targetId) => byId.get(targetId) ?? fallback;
 };
 
 export const listStatistics = async (range, options = {}) => {

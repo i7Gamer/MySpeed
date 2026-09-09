@@ -3,6 +3,7 @@ import password from '../middlewares/password.js';
 import previewReadOnly from '../middlewares/previewReadOnly.js';
 import * as targets from '../controller/targets.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
+import { mutateAdminEntities } from '../util/adminMutation.js';
 
 const app = express.Router();
 
@@ -34,7 +35,7 @@ app.get("/", password(true), async (req, res) => {
     res.json(isUntrustedReader(req) ? rows.map(targets.viewerFacing) : rows);
 });
 
-app.put("/", password(false), previewReadOnly, async (req, res) => {
+app.put("/", password(false), previewReadOnly, async (req, res) => mutateAdminEntities(async () => {
     const fields = writableFields(req.body);
 
     const problem = targets.targetProblem(fields);
@@ -48,10 +49,10 @@ app.put("/", password(false), previewReadOnly, async (req, res) => {
     const row = await targets.create(fields);
 
     res.json({message: "The target has been created", id: row.id});
-});
+}));
 
 // Declared ahead of /:id, or "order" would be read as an id.
-app.patch("/order", password(false), previewReadOnly, async (req, res) => {
+app.patch("/order", password(false), previewReadOnly, async (req, res) => mutateAdminEntities(async () => {
     const ids = req.body?.ids;
 
     if (!Array.isArray(ids) || ids.some((id) => !ID.test(String(id))))
@@ -67,9 +68,9 @@ app.patch("/order", password(false), previewReadOnly, async (req, res) => {
     await targets.reorder(numeric);
 
     res.json({message: "The order has been updated"});
-});
+}));
 
-app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
+app.patch("/:id", password(false), previewReadOnly, async (req, res) => mutateAdminEntities(async () => {
     if (!ID.test(req.params.id))
         return res.status(400).json({message: "You need to provide a numeric target id"});
 
@@ -129,9 +130,9 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => {
         + "list to hand the topic to another line.");
 
     res.json({message: "The target has been updated"});
-});
+}));
 
-app.delete("/:id", password(false), previewReadOnly, async (req, res) => {
+app.delete("/:id", password(false), previewReadOnly, async (req, res) => mutateAdminEntities(async () => {
     if (!ID.test(req.params.id))
         return res.status(400).json({message: "You need to provide a numeric target id"});
 
@@ -143,6 +144,6 @@ app.delete("/:id", password(false), previewReadOnly, async (req, res) => {
     await targets.deleteTarget(Number(req.params.id));
 
     res.json({message: "The target has been deleted"});
-});
+}));
 
 export default app;

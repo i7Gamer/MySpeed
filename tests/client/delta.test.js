@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -135,8 +136,7 @@ describe("hasPreviousData", () => {
  * A source scan, like the other rendering rules here: node cannot parse JSX.
  */
 describe("the delta states its direction in words", () => {
-    const source = fs.readFileSync(
-        path.join(ROOT, "client/src/common/components/Delta/Delta.jsx"), "utf8");
+    const source = readSource(path.join(ROOT, "client/src/common/components/Delta/Delta.jsx"));
     const english = JSON.parse(fs.readFileSync(
         path.join(ROOT, "client/public/assets/locales/en.json"), "utf8"));
 

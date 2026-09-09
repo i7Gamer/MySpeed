@@ -103,7 +103,10 @@ describe("the installer's network calls", () => {
 const WALK_TIMEOUT = 10_000;
 
 const bash = (() => {
-    for (const candidate of ["bash", "/usr/bin/bash", "C:/Program Files/Git/bin/bash.exe"]) {
+    const candidates = process.platform === "win32"
+        ? ["C:/Program Files/Git/bin/bash.exe", "bash", "/usr/bin/bash"]
+        : ["bash", "/usr/bin/bash"];
+    for (const candidate of candidates) {
         try {
             // On a deadline like every other call here, and for a sharper
             // reason: on Windows the first candidate resolves to the WSL

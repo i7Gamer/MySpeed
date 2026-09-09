@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compile, rules } from "../helpers/sass.mjs";
@@ -29,7 +29,7 @@ const CLIENT_SRC = path.join(ROOT, "client", "src");
  * correct and are now merely redundant, which is the right way round.
  */
 describe("controls are drawn in the page's typeface", () => {
-    const globals = fs.readFileSync(path.join(CLIENT_SRC, "common", "styles", "default.sass"), "utf8");
+    const globals = readSource(path.join(CLIENT_SRC, "common", "styles", "default.sass"));
 
     // The four elements a browser hands its own font to. `optgroup` and
     // `option` inherit from `select` in every engine this app supports.

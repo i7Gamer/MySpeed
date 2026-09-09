@@ -1,10 +1,9 @@
 import { after, before, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import i18next from "i18next";
-import { escapeRegExp, readLocale } from "../helpers/source.js";
+import { readSource, escapeRegExp, readLocale } from "../helpers/source.js";
 import {
     averageLineDataset, chartMotion, chartThemeColors, failedMarkersDataset, failureMarkers,
     isSingleDaySeries, lineChartOptions, seriesAverage, timeAxisBounds, timeAxisStep, timePoints,
@@ -122,7 +121,7 @@ describe("seriesAverage", () => {
 
 describe("the charts that draw the average", () => {
     const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-    const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+    const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
     for (const chart of ["pages/Statistics/charts/SpeedChart/SpeedChart.jsx",
         "pages/Statistics/charts/PingChart.jsx"]) {
@@ -161,7 +160,7 @@ describe("the charts that draw the average", () => {
  */
 describe("threading the failure count to the shared tooltip", () => {
     const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
-    const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+    const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
     for (const chart of ["pages/Statistics/charts/SpeedChart/SpeedChart.jsx",
         "pages/Statistics/charts/PingChart.jsx"]) {
@@ -733,7 +732,10 @@ describe("lineChartOptions", () => {
             // test is not about.
             i18next.addResourceBundle("pl", "translation", {statistics: {
                 failed_in_period: polish.failed_in_period,
-                failed_in_period_single: polish.failed_in_period_single
+                failed_in_period_one: polish.failed_in_period_one,
+                failed_in_period_other: polish.failed_in_period_other,
+                failed_in_period_few: polish.failed_in_period_few,
+                failed_in_period_many: polish.failed_in_period_many
             }}, true, true);
             await i18next.changeLanguage("pl");
 

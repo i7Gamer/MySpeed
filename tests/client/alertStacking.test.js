@@ -1,11 +1,11 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
-    "client", "src", "common", "contexts", "Alert", "AlertContext.jsx"), "utf8");
+const source = readSource(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
+    "client", "src", "common", "contexts", "Alert", "AlertContext.jsx"));
 
 /**
  * Alerts stack - openAlert while another is open renders both - and every

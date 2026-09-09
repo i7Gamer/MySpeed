@@ -185,7 +185,7 @@ describe("where the log is forgotten", () => {
     });
 
     it("is cleared by the factory reset, inside its transaction", () => {
-        const body = bodyOf(config, "export const factoryReset = async () => {");
+        const body = bodyOf(config, "export const factoryReset");
 
         assert.match(body, /connectionChanges\.destroy\(\{where: \{\}, transaction\}\)/);
     });

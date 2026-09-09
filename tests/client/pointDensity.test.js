@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
     DENSE_SERIES_THRESHOLD, lineTensionFor, lonePointHoverRadius, lonePointRadius, pointStyleFor
@@ -66,9 +66,7 @@ describe("lineTensionFor", () => {
  * bufferbloat reading interpolated over the tests that never measured one.
  */
 describe("what the line does at a gap", () => {
-    const read = (file) => fs.readFileSync(
-        fileURLToPath(new URL(`../../client/src/pages/Statistics/charts/${file}`, import.meta.url)),
-        "utf8");
+    const read = (file) => readSource(fileURLToPath(new URL(`../../client/src/pages/Statistics/charts/${file}`, import.meta.url)));
 
     it("breaks rather than bridging it", () => {
         for (const file of ["SpeedChart/SpeedChart.jsx", "PingChart.jsx",

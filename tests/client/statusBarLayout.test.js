@@ -1,7 +1,7 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as sass from "sass";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -22,8 +22,7 @@ const compile = (stylesheet) =>
 const bar = compile("common/components/StatusBar/styles.sass");
 const button = compile("common/components/StartTestButton/styles.sass");
 
-const source = fs.readFileSync(
-    path.join(CLIENT_SRC, "common/components/StatusBar/StatusBarComponent.jsx"), "utf8");
+const source = readSource(path.join(CLIENT_SRC, "common/components/StatusBar/StatusBarComponent.jsx"));
 
 // Everything before the first @media, i.e. what a desktop actually gets.
 const base = (css) => css.split("@media")[0];

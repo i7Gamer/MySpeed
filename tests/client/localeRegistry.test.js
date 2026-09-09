@@ -1,14 +1,16 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {flatten as flattenLocale, localeReferenceKey} from "../../scripts/localeGaps.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
 const FLAGS = path.join(ROOT, "client", "src", "common", "assets", "languages");
 
-const source = fs.readFileSync(path.join(ROOT, "client", "src", "i18n.js"), "utf8");
+const source = readSource(path.join(ROOT, "client", "src", "i18n.js"));
 
 /**
  * The language menu and the files behind it.
@@ -83,10 +85,8 @@ describe("locale files", () => {
         return value && typeof value === "object" ? flatten(value, full) : [full];
     });
 
-    const AGO_INFLECTION = /^time\.[a-z]+_ago$/;
-
     const read = (code) => JSON.parse(fs.readFileSync(path.join(LOCALES, `${code}.json`), "utf8"));
-    const english = new Set(flatten(read("en")));
+    const english = flattenLocale(read("en"));
 
     // Only the locales this build offers. The directory also holds files for
     // languages the menu does not list, which Crowdin keeps up to date on its
@@ -98,8 +98,7 @@ describe("locale files", () => {
                 // "ago" - see the family's note in localeParity.test.js. Which
                 // units need one is a fact about the language, so a locale
                 // carrying one English does not is right rather than stale.
-                .filter((key) => !AGO_INFLECTION.test(key))
-                .filter((key) => !english.has(key));
+                .filter((key) => localeReferenceKey(english, key) === null);
 
             assert.deepEqual(stale, [], `${code}.json translates keys that no longer exist`);
         });

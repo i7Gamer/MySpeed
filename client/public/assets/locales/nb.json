@@ -278,7 +278,17 @@
     "hours": "{{hours}} timer",
     "day": "1 dag",
     "days": "{{days}} dager",
-    "days_ago": "{{days}} dager"
+    "days_ago": "{{days}} dager",
+    "seconds_one": "{{seconds}} sekund",
+    "seconds_other": "{{seconds}} sekunder",
+    "minutes_one": "{{minutes}} minutt",
+    "minutes_other": "{{minutes}} minutter",
+    "hours_one": "{{hours}} time",
+    "hours_other": "{{hours}} timer",
+    "days_one": "{{days}} dag",
+    "days_ago_one": "{{days}} dag",
+    "days_other": "{{days}} dager",
+    "days_ago_other": "{{days}} dager"
   },
   "test": {
     "not_available": "Det er for øyeblikket ingen tester tilgjengelig",
@@ -450,7 +460,9 @@
       "range": "Mellom {{min}} og {{max}}",
       "sample_count": "Over {{tests}} tester"
     },
-    "loaded_latency": "Under belastning"
+    "loaded_latency": "Under belastning",
+    "failed_in_period_one": "{{failed}} mislyktes i denne perioden",
+    "failed_in_period_other": "{{failed}} mislyktes i denne perioden"
   },
   "calendar": {
     "select_range": "Velg datoperiode",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} test har mislyktes siden {{since}}",
     "recovered_summary_one": "Tilbake på nett etter {{count}} mislykket test siden {{since}}",
     "outage_summary": "{{count}} tester på rad har mislyktes siden {{since}}",
-    "recovered_summary": "Tilbake på nett etter {{count}} mislykkede tester siden {{since}}"
+    "recovered_summary": "Tilbake på nett etter {{count}} mislykkede tester siden {{since}}",
+    "outage_summary_other": "{{count}} tester på rad har mislyktes siden {{since}}",
+    "recovered_summary_other": "Tilbake på nett etter {{count}} mislykkede tester siden {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

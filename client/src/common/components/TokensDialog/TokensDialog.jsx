@@ -3,13 +3,13 @@ import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {faCheck, faCopy, faExclamationTriangle, faPlus, faTrashCan} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
-import React, {useContext, useState} from "react";
+import React, {useCallback, useContext, useEffect, useState} from "react";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {formatDateTime, formatDay} from "@/common/utils/FormatUtil";
 import {assertOk, localDeleteRequest, localJsonRequest, localPostRequest, RequestError} from "@/common/utils/RequestUtil";
 import {useAlert} from "@/common/contexts/Alert";
 import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
-import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
+import {useDialogSession} from "@/common/hooks/useDialogSession";
 import {withBasePath} from "@/common/utils/BasePath";
 
 /**
@@ -49,25 +49,33 @@ export const TokensDialog = ({open, onClose}) => {
     const [saving, setSaving] = useState(false);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
+    const session = useDialogSession(open);
 
-    const load = async () => {
+    const load = useCallback(async () => {
+        if (!session.active) return;
+        const generation = ++session.generation;
+        const current = () => session.active && generation === session.generation;
         setLoading(true);
         setLoadError(null);
         try {
-            setTokens(await localJsonRequest("/tokens"));
+            const rows = await localJsonRequest("/tokens");
+            if (current()) setTokens(rows);
         } catch (e) {
+            if (!current()) return;
             console.error("Failed to load the API tokens:", e);
             setLoadError(e);
         } finally {
-            setLoading(false);
+            if (current()) setLoading(false);
         }
-    };
+    }, [session]);
 
-    useSyncOnOpen(open, () => {
+    useEffect(() => {
+        if (!open) return;
+        setSaving(false);
         setIssued(null);
         setName("");
         load();
-    });
+    }, [open, session, load]);
 
     const create = async () => {
         if (saving || name.trim() === "") return;
@@ -75,14 +83,17 @@ export const TokensDialog = ({open, onClose}) => {
 
         try {
             const response = await assertOk(await localPostRequest("/tokens", {name: name.trim()}), "tokens");
-            setIssued(await response.json());
+            const created = await response.json();
+            if (!session.active) return;
+            setIssued(created);
             setName("");
             await load();
         } catch (e) {
+            if (!session.active) return;
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
         } finally {
-            setSaving(false);
+            if (session.active) setSaving(false);
         }
     };
 
@@ -92,14 +103,16 @@ export const TokensDialog = ({open, onClose}) => {
             t("tokens.delete_confirm.description", {name: row.name}),
             {buttonText: t("tokens.delete_confirm.yes"), danger: true}
         );
-        if (!confirmed) return;
+        if (!confirmed || !session.active) return;
 
         try {
             await assertOk(await localDeleteRequest(`/tokens/${row.id}`), "tokens");
+            if (!session.active) return;
             if (issued?.id === row.id) setIssued(null);
             await load();
-            updateToast(t("tokens.removed"), "green", faCheck);
+            if (session.active) updateToast(t("tokens.removed"), "green", faCheck);
         } catch (e) {
+            if (!session.active) return;
             updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
                 "red", faExclamationTriangle);
         }

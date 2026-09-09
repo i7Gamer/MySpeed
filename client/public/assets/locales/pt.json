@@ -278,7 +278,22 @@
     "hours": "{{hours}} horas",
     "day": "1 dia",
     "days": "{{days}} dias",
-    "days_ago": "{{days}} dias"
+    "days_ago": "{{days}} dias",
+    "seconds_one": "{{seconds}} segundo",
+    "seconds_other": "{{seconds}} segundos",
+    "seconds_many": "{{seconds}} segundos",
+    "minutes_one": "{{minutes}} minuto",
+    "minutes_other": "{{minutes}} minutos",
+    "minutes_many": "{{minutes}} minutos",
+    "hours_one": "{{hours}} hora",
+    "hours_other": "{{hours}} horas",
+    "hours_many": "{{hours}} horas",
+    "days_one": "{{days}} dia",
+    "days_ago_one": "{{days}} dia",
+    "days_other": "{{days}} dias",
+    "days_ago_other": "{{days}} dias",
+    "days_many": "{{days}} dias",
+    "days_ago_many": "{{days}} dias"
   },
   "test": {
     "not_available": "No momento, não há testes disponíveis",
@@ -333,7 +348,8 @@
       "route_no_reply": "Sem resposta",
       "route_lost_one": "{{count}} perdido",
       "route_lost_other": "{{count}} perdidos",
-      "route_lost": "{{count}} perdidos"
+      "route_lost": "{{count}} perdidos",
+      "route_lost_many": "{{count}} perdidos"
     }
   },
   "errors": {
@@ -450,7 +466,10 @@
       "range": "Entre {{min}} e {{max}}",
       "sample_count": "Ao longo de {{tests}} testes"
     },
-    "loaded_latency": "Sob carga"
+    "loaded_latency": "Sob carga",
+    "failed_in_period_one": "{{failed}} com falha neste período",
+    "failed_in_period_other": "{{failed}} com falha neste período",
+    "failed_in_period_many": "{{failed}} com falha neste período"
   },
   "calendar": {
     "select_range": "Selecionar período",
@@ -836,7 +855,11 @@
     "outage_summary_one": "{{count}} teste falhou desde {{since}}",
     "recovered_summary_one": "De volta online após {{count}} teste falhado desde {{since}}",
     "outage_summary": "{{count}} testes seguidos falharam desde {{since}}",
-    "recovered_summary": "De volta online após {{count}} testes falhados desde {{since}}"
+    "recovered_summary": "De volta online após {{count}} testes falhados desde {{since}}",
+    "outage_summary_other": "{{count}} testes seguidos falharam desde {{since}}",
+    "recovered_summary_other": "De volta online após {{count}} testes falhados desde {{since}}",
+    "outage_summary_many": "{{count}} testes seguidos falharam desde {{since}}",
+    "recovered_summary_many": "De volta online após {{count}} testes falhados desde {{since}}"
   },
   "tokens": {
     "title": "Tokens de API",

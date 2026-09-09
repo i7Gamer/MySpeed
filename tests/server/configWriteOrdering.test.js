@@ -1,8 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { bodyOf, readSource } from "../helpers/source.js";
 
 /**
  * Nothing is announced before it has happened.
@@ -20,26 +18,8 @@ import { fileURLToPath } from "node:url";
  * It was left standing here, which is the argument for a test rather than a
  * second careful reading.
  */
-const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
-
-const bodyOf = (source, name) => {
-    const start = source.indexOf(`export const ${name}`);
-    assert.notEqual(start, -1, `${name} is no longer exported`);
-
-    const from = source.indexOf("{", source.indexOf("=>", start));
-    let depth = 0;
-
-    for (let index = from; index < source.length; index++) {
-        if (source[index] === "{") depth++;
-        else if (source[index] === "}" && --depth === 0) return source.slice(from, index + 1);
-    }
-
-    assert.fail(`${name} is never closed`);
-};
-
 describe("updateValue", () => {
-    const body = bodyOf(read("server/controller/config.js"), "updateValue");
+    const body = bodyOf(readSource("server/controller/config.js"), "const writeValue");
 
     const at = (pattern, what) => {
         const index = body.search(pattern);
@@ -82,7 +62,7 @@ describe("updateValue", () => {
  * which is when a database under pressure is most likely to refuse.
  */
 describe("recommendations.update", () => {
-    const source = read("server/controller/recommendations.js");
+    const source = readSource("server/controller/recommendations.js");
     const announce = source.slice(source.indexOf("const announce"), source.indexOf("if (existing)"));
 
     it("still announces the change", () => {

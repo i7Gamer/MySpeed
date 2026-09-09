@@ -181,6 +181,7 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     fr: [
+        "time.minutes_one", "time.minutes_other",
         // The route trace's hop table: the networking terms this language uses.
         "test.details.route",
         "notification.ping", "notification.metric_ping",
@@ -335,7 +336,7 @@ export const LANGUAGE_SHARED = {
 export const sharedKeys = (code) => new Set(LANGUAGE_SHARED[code] ?? []);
 
 /**
- * The one family a locale is allowed to disagree with English about.
+ * Optional grammatical context for durations.
  *
  * `time.<unit>_ago` is the i18next context spanInWords wears behind the word
  * "ago" (FormatUtil.js), and which units need one is a fact about the language
@@ -358,6 +359,30 @@ const AGO_SUFFIX = "_ago";
 const isInflection = (key) => AGO_INFLECTION.test(key);
 const inflectionBase = (key) => key.slice(0, -AGO_SUFFIX.length);
 
+/** Counted families used by runtime consumers; suffixes elsewhere remain typos. */
+export const COUNTED_FAMILIES = Object.freeze([
+    "time.seconds", "time.minutes", "time.hours", "time.days",
+    "statistics.failed_in_period", "test.details.route_lost",
+    "notification.outage_summary", "notification.recovered_summary"
+]);
+const CATEGORY_SUFFIX = /_(zero|one|two|few|many|other)$/;
+
+/** The English value that defines a localized form's placeholders and tags. */
+export const localeReferenceKey = (source, key) => {
+    if (key in source) return key;
+    const plain = key.replace(CATEGORY_SUFFIX, "");
+    const base = plain.replace(/_ago$/, "");
+    if (CATEGORY_SUFFIX.test(key) && COUNTED_FAMILIES.includes(base)
+        && (!plain.endsWith("_ago") || base.startsWith("time."))) {
+        if (`${base}_other` in source) return `${base}_other`;
+        if (base in source) return base;
+    }
+    return isInflection(key) && inflectionBase(key) in source ? inflectionBase(key) : null;
+};
+
+const interpolations = (value) => [...String(value).matchAll(/\{\{\s*(\w+)\s*}}/g)].map(([, name]) => name).sort().join();
+const componentTags = (value) => [...String(value).matchAll(/<(\/?\w+)\/?>/g)].map(([, tag]) => tag).sort().join();
+
 /**
  * What stands between a locale and its source.
  *
@@ -365,17 +390,35 @@ const inflectionBase = (key) => key.slice(0, -AGO_SUFFIX.length);
  * at, and `extra` is a key that outlived the English it was translated from -
  * usually a rename, and always something to delete rather than to fill in.
  */
-export const localeGaps = (english, locale, shared = new Set()) => {
+export const localeGaps = (english, locale, shared = new Set(), code = undefined) => {
     const source = flatten(english);
     const target = flatten(locale);
     const has = (key) => key in target && String(target[key]).trim() !== "";
+    const required = new Set(Object.keys(source).filter(key => !isInflection(key)));
+    // Any surviving form establishes the context family. Requiring _one to
+    // survive first hid missing singular forms and let "ago" silently fall
+    // back to a duration in the wrong grammatical case.
+    const contexts = new Set(Object.keys(target).map(key => key.replace(CATEGORY_SUFFIX, ""))
+        .filter(key => key.endsWith(AGO_SUFFIX)));
+    if (code) for (const base of COUNTED_FAMILIES) {
+        if (!(`${base}_other` in source)) continue;
+        for (const category of new Intl.PluralRules(code).resolvedOptions().pluralCategories) {
+            required.add(`${base}_${category}`);
+            if (base.startsWith("time.") && contexts.has(`${base}_ago`))
+                required.add(`${base}_ago_${category}`);
+        }
+    }
 
     return {
-        missing: Object.keys(source).filter((key) => !has(key) && !isInflection(key)),
-        untranslated: Object.keys(source)
-            .filter((key) => has(key) && target[key] === source[key] && !shared.has(key)),
+        missing: [...required].filter((key) => !has(key)),
+        untranslated: [...new Set([...Object.keys(source), ...Object.keys(target)])]
+            .filter((key) => {
+                const reference = localeReferenceKey(source, key);
+                return reference !== null && has(key) && target[key] === source[reference]
+                    && !shared.has(key) && !shared.has(reference);
+            }),
         extra: Object.keys(target)
-            .filter((key) => !(key in source) && !(isInflection(key) && inflectionBase(key) in source))
+            .filter((key) => localeReferenceKey(source, key) === null)
     };
 };
 
@@ -395,19 +438,27 @@ export const mergeLocale = (english, locale, patch) => {
     const source = flatten(english);
     const target = flatten(locale);
 
-    const unknown = Object.keys(patch).filter((key) => !(key in source));
+    const unknown = Object.keys(patch).filter((key) => localeReferenceKey(source, key) === null);
     if (unknown.length)
         throw new Error(`patch names ${unknown.length} key(s) that en.json does not have: ${unknown.join(", ")}`);
 
+    for (const [key, value] of Object.entries(patch)) {
+        const reference = source[localeReferenceKey(source, key)];
+        if (typeof value !== "string" || !value.trim()) throw new Error(`empty or non-text translation: ${key}`);
+        if (interpolations(value) !== interpolations(reference)) throw new Error(`interpolation mismatch: ${key}`);
+        if (componentTags(value) !== componentTags(reference)) throw new Error(`component tag mismatch: ${key}`);
+    }
+
     const merged = {};
-    const inflections = Object.keys(target).filter((key) => isInflection(key) && !(key in source));
+    const combined = {...target, ...patch};
+    const inflections = Object.keys(combined).filter((key) => !(key in source) && localeReferenceKey(source, key) !== null);
 
     for (const key of Object.keys(source)) {
         const value = patch[key] ?? target[key];
         if (value !== undefined) merged[key] = value;
 
         for (const inflected of inflections)
-            if (inflectionBase(inflected) === key) merged[inflected] = target[inflected];
+            if (localeReferenceKey(source, inflected) === key) merged[inflected] = combined[inflected];
     }
 
     return nest(merged);

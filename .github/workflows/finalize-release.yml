@@ -13,6 +13,10 @@ on:
 env:
   REGISTRY_IMAGE: i7gamer/myspeed
 
+permissions:
+  contents: write
+  pull-requests: read
+
 jobs:
   finalize:
     name: "Update Versions & Publish"
@@ -21,8 +25,9 @@ jobs:
       # fetch-depth: 0 so the tag list below is complete. The version bump moved
       # to create-release, where it lands before the tag is cut; this job only
       # writes the notes and flips the draft.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          persist-credentials: false
           fetch-depth: 0
           ref: v${{ inputs.version }}
 
@@ -40,7 +45,7 @@ jobs:
           echo "tag=$PREV" >> $GITHUB_OUTPUT
 
       - name: Publish release notes
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           VERSION: ${{ inputs.version }}
           PREV_TAG: ${{ steps.prev.outputs.tag }}

@@ -1,12 +1,12 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 /**
  * One measurement, one glyph, everywhere - and no glyph doing two jobs.

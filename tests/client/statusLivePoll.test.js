@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IDLE_POLL_MS, LIVE_POLL_MS } from "@/common/utils/StatusUtil.js";
@@ -15,8 +15,7 @@ const SECONDS_PER_MINUTE = 60;
 // The server's general backstop, read from where it is declared - the number
 // is deliberately not restated here, so raising or lowering it moves this
 // test's bound with it.
-const appSource = fs.readFileSync(
-    path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "app.js"), "utf8");
+const appSource = readSource(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server", "app.js"));
 const backstop = Number(appSource.match(/API_REQUESTS_PER_MINUTE = (\d+)/)?.[1]);
 
 /**

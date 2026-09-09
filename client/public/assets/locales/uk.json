@@ -278,7 +278,39 @@
     "hours": "{{hours}} годин",
     "day": "1 день",
     "days": "{{days}} днів",
-    "days_ago": "{{days}} днів"
+    "days_ago": "{{days}} днів",
+    "seconds_one": "{{seconds}} секунда",
+    "seconds_ago_one": "{{seconds}} секунду",
+    "seconds_other": "{{seconds}} секунди",
+    "seconds_ago_other": "{{seconds}} секунди",
+    "seconds_few": "{{seconds}} секунди",
+    "seconds_ago_few": "{{seconds}} секунди",
+    "seconds_many": "{{seconds}} секунд",
+    "seconds_ago_many": "{{seconds}} секунд",
+    "minutes_one": "{{minutes}} хвилина",
+    "minutes_ago_one": "{{minutes}} хвилину",
+    "minutes_other": "{{minutes}} хвилини",
+    "minutes_ago_other": "{{minutes}} хвилини",
+    "minutes_few": "{{minutes}} хвилини",
+    "minutes_ago_few": "{{minutes}} хвилини",
+    "minutes_many": "{{minutes}} хвилин",
+    "minutes_ago_many": "{{minutes}} хвилин",
+    "hours_one": "{{hours}} година",
+    "hours_ago_one": "{{hours}} годину",
+    "hours_other": "{{hours}} години",
+    "hours_ago_other": "{{hours}} години",
+    "hours_few": "{{hours}} години",
+    "hours_ago_few": "{{hours}} години",
+    "hours_many": "{{hours}} годин",
+    "hours_ago_many": "{{hours}} годин",
+    "days_one": "{{days}} день",
+    "days_ago_one": "{{days}} день",
+    "days_other": "{{days}} дня",
+    "days_ago_other": "{{days}} дня",
+    "days_few": "{{days}} дні",
+    "days_ago_few": "{{days}} дні",
+    "days_many": "{{days}} днів",
+    "days_ago_many": "{{days}} днів"
   },
   "test": {
     "not_available": "Наразі немає доступних тестів",
@@ -333,7 +365,9 @@
       "route_no_reply": "Немає відповіді",
       "route_lost_one": "{{count}} втрачено",
       "route_lost_other": "{{count}} втрачено",
-      "route_lost": "{{count}} втрачено"
+      "route_lost": "{{count}} втрачено",
+      "route_lost_few": "{{count}} втрачено",
+      "route_lost_many": "{{count}} втрачено"
     }
   },
   "errors": {
@@ -450,7 +484,11 @@
       "range": "Від {{min}} до {{max}}",
       "sample_count": "За {{tests}} тестами"
     },
-    "loaded_latency": "Під навантаженням"
+    "loaded_latency": "Під навантаженням",
+    "failed_in_period_one": "{{failed}} невдалий за цей період",
+    "failed_in_period_other": "{{failed}} невдалих за цей період",
+    "failed_in_period_few": "{{failed}} невдалі за цей період",
+    "failed_in_period_many": "{{failed}} невдалих за цей період"
   },
   "calendar": {
     "select_range": "Оберіть діапазон дат",
@@ -836,7 +874,13 @@
     "outage_summary_one": "{{count}} тест не вдався з {{since}}",
     "recovered_summary_one": "Знову в мережі після {{count}} невдалого тесту з {{since}}",
     "outage_summary": "{{count}} тестів поспіль не вдалися з {{since}}",
-    "recovered_summary": "Знову в мережі після {{count}} невдалих тестів з {{since}}"
+    "recovered_summary": "Знову в мережі після {{count}} невдалих тестів з {{since}}",
+    "outage_summary_other": "{{count}} тестів поспіль не вдалися з {{since}}",
+    "recovered_summary_other": "Знову в мережі після {{count}} невдалих тестів з {{since}}",
+    "outage_summary_few": "{{count}} тести поспіль не вдалися з {{since}}",
+    "recovered_summary_few": "Знову в мережі після {{count}} невдалих тестів з {{since}}",
+    "outage_summary_many": "{{count}} тестів поспіль не вдалися з {{since}}",
+    "recovered_summary_many": "Знову в мережі після {{count}} невдалих тестів з {{since}}"
   },
   "tokens": {
     "title": "API-токени",

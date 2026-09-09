@@ -278,7 +278,22 @@
     "hours": "{{hours}} ore",
     "day": "1 giorno",
     "days": "{{days}} giorni",
-    "days_ago": "{{days}} giorni"
+    "days_ago": "{{days}} giorni",
+    "seconds_one": "{{seconds}} secondo",
+    "seconds_other": "{{seconds}} secondi",
+    "seconds_many": "{{seconds}} secondi",
+    "minutes_one": "{{minutes}} minuto",
+    "minutes_other": "{{minutes}} minuti",
+    "minutes_many": "{{minutes}} minuti",
+    "hours_one": "{{hours}} ora",
+    "hours_other": "{{hours}} ore",
+    "hours_many": "{{hours}} ore",
+    "days_one": "{{days}} giorno",
+    "days_ago_one": "{{days}} giorno",
+    "days_other": "{{days}} giorni",
+    "days_ago_other": "{{days}} giorni",
+    "days_many": "{{days}} giorni",
+    "days_ago_many": "{{days}} giorni"
   },
   "test": {
     "not_available": "Al momento non sono disponibili test",
@@ -333,7 +348,8 @@
       "route_no_reply": "Nessuna risposta",
       "route_lost_one": "{{count}} perso",
       "route_lost_other": "{{count}} persi",
-      "route_lost": "{{count}} persi"
+      "route_lost": "{{count}} persi",
+      "route_lost_many": "{{count}} persi"
     }
   },
   "errors": {
@@ -450,7 +466,10 @@
       "range": "Tra {{min}} e {{max}}",
       "sample_count": "Su {{tests}} test"
     },
-    "loaded_latency": "Sotto carico"
+    "loaded_latency": "Sotto carico",
+    "failed_in_period_one": "{{failed}} non riuscito in questo periodo",
+    "failed_in_period_other": "{{failed}} non riusciti in questo periodo",
+    "failed_in_period_many": "{{failed}} non riusciti in questo periodo"
   },
   "calendar": {
     "select_range": "Seleziona intervallo di date",
@@ -836,7 +855,11 @@
     "outage_summary_one": "{{count}} test è fallito da {{since}}",
     "recovered_summary_one": "Di nuovo online dopo {{count}} test fallito da {{since}}",
     "outage_summary": "{{count}} test consecutivi sono falliti da {{since}}",
-    "recovered_summary": "Di nuovo online dopo {{count}} test falliti da {{since}}"
+    "recovered_summary": "Di nuovo online dopo {{count}} test falliti da {{since}}",
+    "outage_summary_other": "{{count}} test consecutivi sono falliti da {{since}}",
+    "recovered_summary_other": "Di nuovo online dopo {{count}} test falliti da {{since}}",
+    "outage_summary_many": "{{count}} test consecutivi sono falliti da {{since}}",
+    "recovered_summary_many": "Di nuovo online dopo {{count}} test falliti da {{since}}"
   },
   "tokens": {
     "title": "Token API",

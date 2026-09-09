@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { MemoryRouter } from "react-router-dom";
@@ -19,8 +19,7 @@ import { NodeContainer, TARGETS_RECHECK_MS } from "@/pages/Nodes/components/Node
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const card = fs.readFileSync(
-    path.join(CLIENT_SRC, "pages", "Nodes", "components", "NodeContainer", "NodeContainer.jsx"), "utf8");
+const card = readSource(path.join(CLIENT_SRC, "pages", "Nodes", "components", "NodeContainer", "NodeContainer.jsx"));
 
 /**
  * The card's own statements, lifted out of the component and run.

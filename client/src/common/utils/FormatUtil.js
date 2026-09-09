@@ -392,19 +392,17 @@ export const spanInWords = (seconds, options = undefined) => {
     const context = options?.context;
 
     if (seconds < SECONDS_PER_MINUTE) {
-        return t("time.seconds", {replace: {seconds: Math.floor(seconds)}, context});
+        return t("time.seconds", {count: Math.floor(seconds), seconds: Math.floor(seconds), context});
     } else if (seconds < SECONDS_PER_HOUR) {
-        return Math.floor(seconds / SECONDS_PER_MINUTE) === 1
-            ? t("time.minute", {context})
-            : t("time.minutes", {replace: {minutes: Math.floor(seconds / SECONDS_PER_MINUTE)}, context});
+        const count = Math.floor(seconds / SECONDS_PER_MINUTE);
+        return t("time.minutes", {count, minutes: count, context});
     } else if (seconds < SECONDS_PER_DAY) {
-        return Math.floor(seconds / SECONDS_PER_HOUR) === 1
-            ? t("time.hour", {context})
-            : t("time.hours", {replace: {hours: Math.floor(seconds / SECONDS_PER_HOUR)}, context});
+        const count = Math.floor(seconds / SECONDS_PER_HOUR);
+        return t("time.hours", {count, hours: count, context});
     }
 
     const days = Math.floor(seconds / SECONDS_PER_DAY);
-    return days === 1 ? t("time.day", {context}) : t("time.days", {replace: {days: days}, context});
+    return t("time.days", {count: days, days, context});
 };
 
 /**

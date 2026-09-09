@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { flatten, localeGaps, sharedKeys } from './localeGaps.js';
+import { flatten, localeGaps, localeReferenceKey, sharedKeys } from './localeGaps.js';
 
 /**
  * What every locale is still missing, measured against en.json.
@@ -34,7 +34,7 @@ if (requested && !codes.includes(requested)) {
 }
 
 if (requested) {
-    const gaps = localeGaps(english, read(requested), sharedKeys(requested));
+    const gaps = localeGaps(english, read(requested), sharedKeys(requested), requested);
     const work = [...gaps.missing, ...gaps.untranslated];
 
     // The English source rather than the current value, because for an
@@ -42,7 +42,7 @@ if (requested) {
     // it. Ordered as en.json orders it, so neighbouring keys stay neighbours and
     // whoever fills it in can see the context a label sits in.
     console.log(JSON.stringify(Object.fromEntries(
-        Object.keys(source).filter((key) => work.includes(key)).map((key) => [key, source[key]])
+        work.map((key) => [key, source[localeReferenceKey(source, key)]])
     ), null, 2));
 
     process.exit(0);
@@ -51,7 +51,7 @@ if (requested) {
 const words = (value) => String(value).trim().split(/\s+/).filter(Boolean).length;
 
 const rows = codes.map((code) => {
-    const gaps = localeGaps(english, read(code), sharedKeys(code));
+    const gaps = localeGaps(english, read(code), sharedKeys(code), code);
     const outstanding = [...gaps.missing, ...gaps.untranslated];
 
     return {
@@ -59,7 +59,7 @@ const rows = codes.map((code) => {
         missing: gaps.missing.length,
         'still English': gaps.untranslated.length,
         stale: gaps.extra.length,
-        'words to write': outstanding.reduce((total, key) => total + words(source[key]), 0),
+        'words to write': outstanding.reduce((total, key) => total + words(source[localeReferenceKey(source, key)]), 0),
         translated: `${(((Object.keys(source).length - outstanding.length) / Object.keys(source).length) * 100).toFixed(1)}%`
     };
 });

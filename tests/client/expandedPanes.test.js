@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 const overview = read("pages/Statistics/charts/OverviewChart/OverviewChart.jsx");
 const consistency = read("pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx");

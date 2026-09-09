@@ -399,10 +399,20 @@ export const safeLookup = (hostname, options, callback) => {
  * service - and fd00:ec2::254, which is that service in the other family and is
  * Unique-Local rather than link-local, so the first check does not reach it.
  */
+const NUMERIC_IPV4_HOST = /^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}\.?$/i;
+
 export const checkOutboundHost = (value) => {
     // Strips the brackets an IPv6 literal carries in a URL, the same way the
     // dialers now do before they open the socket.
-    const hostname = bareHost(value);
+    let hostname = bareHost(value);
+
+    // WHATWG already canonicalizes integer, short, hex and octal IPv4 URLs.
+    // Apply that same address judgment to SMTP/MQTT hosts, without interpreting
+    // ordinary hostnames, IPv6 or malformed host text as URL syntax.
+    if (NUMERIC_IPV4_HOST.test(hostname)) {
+        try { hostname = new URL(`http://${hostname}`).hostname; }
+        catch { /* Preserve the existing handling of unparseable bare hosts. */ }
+    }
 
     if (hostname === "") return {safe: false, reason: "No host was given"};
 

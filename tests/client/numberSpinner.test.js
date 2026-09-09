@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -72,7 +73,7 @@ const GLOBAL = path.join("common", "styles", "default.sass");
 describe("the suppression", () => {
     it("lives in one stylesheet", () => {
         const copies = stylesheets.filter((file) => file !== GLOBAL
-            && /-webkit-(inner|outer)-spin-button/.test(fs.readFileSync(path.join(CLIENT_SRC, file), "utf8")));
+            && /-webkit-(inner|outer)-spin-button/.test(readSource(path.join(CLIENT_SRC, file))));
 
         assert.deepEqual(copies, [],
             "a component states the rule again; two copies of it can drift the way the select caret did");

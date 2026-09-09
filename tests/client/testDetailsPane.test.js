@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import * as sass from "sass";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -9,7 +9,7 @@ import { mediaBlocks } from "../helpers/sass.mjs";
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 const PANE = "common/components/TestDetails/TestDetails.jsx";
 
@@ -17,7 +17,7 @@ const pane = read(PANE);
 const speedtestRow = read("pages/Home/components/Speedtest/SpeedtestComponent.jsx");
 const latestChart = read("pages/Statistics/charts/LatestTestChart/LatestTestChart.jsx");
 const statistics = read("pages/Statistics/Statistics.jsx");
-const model = fs.readFileSync(path.join(ROOT, "server", "models", "Speedtests.js"), "utf8");
+const model = readSource(path.join(ROOT, "server", "models", "Speedtests.js"));
 
 /**
  * The detail pane used to live inside the overview's expandable row, so only

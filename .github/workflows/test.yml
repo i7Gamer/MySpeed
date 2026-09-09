@@ -7,12 +7,18 @@ on:
     branches: [development, main]
   pull_request:
   workflow_call:
+    inputs:
+      dependabot-call:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   test:
+    # The trusted bot caller owns this run; other events keep their usual checks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' || github.repository != 'i7Gamer/MySpeed' || github.event.pull_request.head.repo.full_name != github.repository || inputs['dependabot-call']
     name: "Unit & integration tests (${{ matrix.shard }} of ${{ strategy.job-total }})"
     runs-on: ubuntu-latest
 
@@ -30,12 +36,14 @@ jobs:
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # bun.lock is the only lockfile in the repository, so bun installs the
       # dependencies even though the suite itself runs under node.
       - name: Set up bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
@@ -43,7 +51,7 @@ jobs:
       # script, and which ships node:sqlite - the branch of the database shim
       # that the compiled binary does not take but the tests do.
       - name: Set up node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
 
@@ -83,20 +91,24 @@ jobs:
         run: npm run test:coverage
 
   checks:
+    # The trusted bot caller owns this run; other events keep their usual checks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' || github.repository != 'i7Gamer/MySpeed' || github.event.pull_request.head.repo.full_name != github.repository || inputs['dependabot-call']
     name: "Lint, build and embed"
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout project
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: latest
 
       - name: Set up node
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22
 

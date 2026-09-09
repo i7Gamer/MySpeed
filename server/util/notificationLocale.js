@@ -267,6 +267,8 @@ export const ENGLISH_PHRASES = Object.freeze({
     recovered_subject: "MySpeed: connection restored",
     outage_summary_one: "{{count}} test has failed since {{since}}",
     recovered_summary_one: "Back online after {{count}} failed test since {{since}}",
+    outage_summary_other: "{{count}} tests in a row have failed since {{since}}",
+    recovered_summary_other: "Back online after {{count}} failed tests since {{since}}",
     outage_summary: "{{count}} tests in a row have failed since {{since}}",
     recovered_summary: "Back online after {{count}} failed tests since {{since}}"
 });
@@ -291,6 +293,17 @@ export const phrase = (language, key, values = {}) => {
     const template = typeof english === "string" ? english : ENGLISH_PHRASES[key];
 
     return interpolate(typeof template === "string" ? template : key, values);
+};
+
+/** Cardinal selection mirrors the client's i18next count lookup. */
+export const countedPhrase = (language, key, values) => {
+    const code = NOTIFICATION_LANGUAGES.includes(language) ? language : DEFAULT_LANGUAGE;
+    const category = new Intl.PluralRules(code).select(values.count);
+    const own = sectionOf(code)[`${key}_${category}`];
+    if (typeof own === "string") return interpolate(own, values);
+    // A missing localized category falls back using English's own rule.
+    const fallback = new Intl.PluralRules(DEFAULT_LANGUAGE).select(values.count);
+    return phrase(DEFAULT_LANGUAGE, fallback === "one" ? `${key}_one` : key, values);
 };
 
 /**

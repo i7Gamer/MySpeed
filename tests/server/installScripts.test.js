@@ -1314,7 +1314,7 @@ describe("install.sh registers a service that is not root", () => {
      * means the service account cannot rewrite the binary it runs.
      */
     it("takes ownership of nothing but the directories the server writes", () => {
-        const targets = [...source.matchAll(/^[ \t]*chown.*$/gm)].map((m) => m[0]);
+        const targets = [...source.matchAll(/^[ \t]*(?:if ! )?(chown.*?)(?:; then)?$/gm)].map((m) => m[1]);
 
         assert.notEqual(targets.length, 0, "the installation is never handed to the service account");
 

@@ -1,13 +1,13 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PANE = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "components", "TestDetails", "TestDetails.jsx");
 
-const pane = fs.readFileSync(PANE, "utf8");
+const pane = readSource(PANE);
 const facts = pane.slice(pane.indexOf('className="detail-facts"'));
 
 const factAt = (key) => {

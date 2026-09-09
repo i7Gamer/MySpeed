@@ -62,8 +62,9 @@ describe("the Windows binaries a release publishes", () => {
     });
 
     it("uploads each variant under the name its own leg carries", () => {
-        assert.match(windows, /ASSET_NAME: \$\{\{ matrix\.artifact_name \}\}/,
-            "the release asset name is not the matrix's, so both legs publish the same one");
+        for (const name of matrixValues(windows, "artifact_name"))
+            assert.ok(job(binaries, "publish-binaries").includes("['" + name + "', 'MySpeed.exe']"),
+                "the publication job does not map this variant to its own release asset");
         assert.match(windows, /name: \$\{\{ matrix\.artifact_name \}\}/,
             "the build artifact name is not the matrix's, so the two legs collide");
     });
@@ -77,7 +78,7 @@ describe("the Windows binaries a release publishes", () => {
      */
     it("proves the binary boots before attaching it to the release", () => {
         const verify = windows.indexOf("verify-binary.ps1");
-        const upload = windows.indexOf("Upload to Release");
+        const upload = windows.indexOf("Upload artifact for MSI");
 
         assert.notEqual(verify, -1, "the Windows binaries are uploaded without ever having been run");
         assert.notEqual(upload, -1, "the Windows job no longer uploads anything");
@@ -219,8 +220,9 @@ describe("the MSI a release publishes", () => {
         assert.equal(names.length, 2, "the MSI job no longer builds exactly two installers");
         assert.equal(new Set(names).size, names.length,
             "both installers upload under one asset name, so the second upload fails mid-release");
-        assert.match(installer, /ASSET_NAME: \$\{\{ matrix\.asset_name \}\}/,
+        assert.match(installer, /name: release-msi-\$\{\{ matrix\.asset_name \}\}/,
             "the installers are uploaded under a fixed name rather than their leg's");
+        for (const name of names) assert.ok(job(msi, "publish-msi").includes("'" + name + "'"));
     });
 
     /**

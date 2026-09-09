@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -8,7 +9,7 @@ import integrations from "../../server/integrations/index.js";
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const ICONS_DIR = path.join(ROOT, "client", "src", "common", "assets", "icons");
 
-const app = fs.readFileSync(path.join(ROOT, "client", "src", "App.jsx"), "utf8");
+const app = readSource(path.join(ROOT, "client", "src", "App.jsx"));
 
 /**
  * The package each style class is served from, and the prefix it carries once
@@ -74,7 +75,7 @@ const importedFrom = (pkg) => {
 const custom = new Map(fs.readdirSync(ICONS_DIR)
     .filter((file) => file.endsWith(".js"))
     .map((file) => {
-        const source = fs.readFileSync(path.join(ICONS_DIR, file), "utf8");
+        const source = readSource(path.join(ICONS_DIR, file));
         const iconName = source.match(/iconName: *"([^"]+)"/)?.[1];
         const prefix = source.match(/prefix: *"([^"]+)"/)?.[1];
         const exported = source.match(/export const (\w+)/)?.[1];

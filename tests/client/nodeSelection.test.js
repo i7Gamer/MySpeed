@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { LOCAL_NODE, isLocalNode, selectedNode } from "@/common/contexts/Node/nodeSelection.js";
@@ -68,8 +68,8 @@ describe("selectedNode", () => {
  * nothing asks it - which is exactly the state this started in.
  */
 describe("the node provider", () => {
-    const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url),
-        "..", "..", "..", "client", "src", "common", "contexts", "Node", "NodeContext.jsx"), "utf8");
+    const source = readSource(path.resolve(fileURLToPath(import.meta.url),
+        "..", "..", "..", "client", "src", "common", "contexts", "Node", "NodeContext.jsx"));
 
     it("asks whether the selected node still exists", () => {
         assert.match(source, /selectedNode\(/,

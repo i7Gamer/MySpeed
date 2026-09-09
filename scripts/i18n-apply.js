@@ -52,7 +52,7 @@ const merged = mergeLocale(english, locale, patch);
 // on Linux is not rewritten end to end by the act of adding a hundred strings.
 fs.writeFileSync(localeFile, serialise(merged, raw.includes('\r\n') ? '\r\n' : '\n'));
 
-const gaps = localeGaps(english, merged, sharedKeys(code));
+const gaps = localeGaps(english, merged, sharedKeys(code), code);
 
 console.log(`${code}.json: wrote ${Object.keys(patch).length} string(s); `
     + `${gaps.missing.length} missing and ${gaps.untranslated.length} still English remain`);

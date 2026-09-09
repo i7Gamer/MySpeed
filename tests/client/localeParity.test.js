@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { flatten, localeGaps, LANGUAGE_SHARED, sharedKeys } from "../../scripts/localeGaps.js";
+import { flatten, localeGaps, localeReferenceKey, LANGUAGE_SHARED, sharedKeys } from "../../scripts/localeGaps.js";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const LOCALES = path.join(ROOT, "client", "public", "assets", "locales");
@@ -114,7 +114,7 @@ describe("the locale files", () => {
     for (const code of codes) {
         describe(`${code}.json`, () => {
             const locale = read(code);
-            const gaps = localeGaps(english, locale, sharedKeys(code));
+            const gaps = localeGaps(english, locale, sharedKeys(code), code);
 
             it("translates every English key", () => {
                 const missing = gaps.missing;
@@ -161,10 +161,10 @@ describe("the locale files", () => {
                 const target = flatten(locale);
                 const names = (value) => [...String(value).matchAll(/\{\{(\w+)}}/g)].map(([, name]) => name).sort();
 
-                const broken = Object.keys(source)
-                    .filter((key) => key in target)
-                    .filter((key) => names(source[key]).join() !== names(target[key]).join())
-                    .map((key) => `${key}: expected ${names(source[key]).join()||"none"}, got ${names(target[key]).join()||"none"}`);
+                const broken = Object.keys(target)
+                    .filter((key) => localeReferenceKey(source, key) !== null)
+                    .filter((key) => names(source[localeReferenceKey(source, key)]).join() !== names(target[key]).join())
+                    .map((key) => `${key}: placeholder mismatch`);
 
                 assert.deepEqual(broken, [], "the placeholders do not match English");
             });
@@ -179,10 +179,10 @@ describe("the locale files", () => {
                 const target = flatten(locale);
                 const tags = (value) => [...String(value).matchAll(/<(\/?\w+)\/?>/g)].map(([, tag]) => tag).sort();
 
-                const broken = Object.keys(source)
-                    .filter((key) => key in target && tags(source[key]).length)
-                    .filter((key) => tags(source[key]).join() !== tags(target[key]).join())
-                    .map((key) => `${key}: expected ${tags(source[key]).join()}, got ${tags(target[key]).join()||"none"}`);
+                const broken = Object.keys(target)
+                    .filter((key) => localeReferenceKey(source, key) !== null)
+                    .filter((key) => tags(source[localeReferenceKey(source, key)]).join() !== tags(target[key]).join())
+                    .map((key) => `${key}: component tag mismatch`);
 
                 assert.deepEqual(broken, [], "the <Trans> tags do not match English");
             });

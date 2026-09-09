@@ -278,7 +278,17 @@
     "hours": "{{hours}} uur",
     "day": "1 dag",
     "days": "{{days}} dagen",
-    "days_ago": "{{days}} dagen"
+    "days_ago": "{{days}} dagen",
+    "seconds_one": "{{seconds}} seconde",
+    "seconds_other": "{{seconds}} seconden",
+    "minutes_one": "{{minutes}} minuut",
+    "minutes_other": "{{minutes}} minuten",
+    "hours_one": "{{hours}} uur",
+    "hours_other": "{{hours}} uur",
+    "days_one": "{{days}} dag",
+    "days_ago_one": "{{days}} dag",
+    "days_other": "{{days}} dagen",
+    "days_ago_other": "{{days}} dagen"
   },
   "test": {
     "not_available": "Er zijn momenteel geen tests beschikbaar",
@@ -450,7 +460,9 @@
       "range": "Tussen {{min}} en {{max}}",
       "sample_count": "Over {{tests}} tests"
     },
-    "loaded_latency": "Onder belasting"
+    "loaded_latency": "Onder belasting",
+    "failed_in_period_one": "{{failed}} mislukt in deze periode",
+    "failed_in_period_other": "{{failed}} mislukt in deze periode"
   },
   "calendar": {
     "select_range": "Selecteer datumbereik",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} test is mislukt sinds {{since}}",
     "recovered_summary_one": "Weer online na {{count}} mislukte test sinds {{since}}",
     "outage_summary": "{{count}} tests op rij zijn mislukt sinds {{since}}",
-    "recovered_summary": "Weer online na {{count}} mislukte tests sinds {{since}}"
+    "recovered_summary": "Weer online na {{count}} mislukte tests sinds {{since}}",
+    "outage_summary_other": "{{count}} tests op rij zijn mislukt sinds {{since}}",
+    "recovered_summary_other": "Weer online na {{count}} mislukte tests sinds {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

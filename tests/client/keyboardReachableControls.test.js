@@ -1,12 +1,11 @@
 import { afterEach, beforeEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import * as sass from "sass";
 import { clickable } from "@/common/utils/Clickable.js";
 import { nextFocus } from "@/common/hooks/useModalFocus.js";
-import { blockEnd, escapeRegExp, tagHolding } from "../helpers/source.js";
+import { readSource, blockEnd, escapeRegExp, tagHolding } from "../helpers/source.js";
 import { compile, rules } from "../helpers/sass.mjs";
 import { cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -14,7 +13,7 @@ import { IntegrationDialog } from "@/common/components/IntegrationDialog/Integra
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 const pagination = read("common/components/Header/components/Pagination/Pagination.jsx");
 const paginationStyles = read("common/components/Header/components/Pagination/styles.sass");

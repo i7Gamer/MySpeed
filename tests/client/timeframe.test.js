@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -63,8 +63,8 @@ describe("timeframeLabelKey", () => {
     });
 
     it("is what the picker's trigger renders", () => {
-        const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
-            "client", "src", "common", "components", "DateRangePicker", "DateRangePicker.jsx"), "utf8");
+        const source = readSource(path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
+            "client", "src", "common", "components", "DateRangePicker", "DateRangePicker.jsx"));
 
         assert.match(source, /timeframeLabelKey\(/, "the trigger does not ask for the preset's name");
     });

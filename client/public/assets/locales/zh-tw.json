@@ -278,7 +278,17 @@
     "hours": "{{hours}} 小時",
     "day": "1 天",
     "days": "{{days}} 天",
-    "days_ago": "{{days}} 天"
+    "days_ago": "{{days}} 天",
+    "seconds_one": "{{seconds}} 秒",
+    "seconds_other": "{{seconds}} 秒",
+    "minutes_one": "{{minutes}} 分鐘",
+    "minutes_other": "{{minutes}} 分鐘",
+    "hours_one": "{{hours}} 小時",
+    "hours_other": "{{hours}} 小時",
+    "days_one": "{{days}} 天",
+    "days_ago_one": "{{days}} 天",
+    "days_other": "{{days}} 天",
+    "days_ago_other": "{{days}} 天"
   },
   "test": {
     "not_available": "目前沒有可用的測試",
@@ -450,7 +460,9 @@
       "range": "介於 {{min}} 與 {{max}} 之間",
       "sample_count": "共 {{tests}} 次測試"
     },
-    "loaded_latency": "負載下"
+    "loaded_latency": "負載下",
+    "failed_in_period_one": "此期間有 {{failed}} 次失敗",
+    "failed_in_period_other": "此期間有 {{failed}} 次失敗"
   },
   "calendar": {
     "select_range": "選取日期範圍",
@@ -836,7 +848,9 @@
     "outage_summary_one": "自 {{since}} 起已連續 {{count}} 次測試失敗",
     "recovered_summary_one": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線",
     "outage_summary": "自 {{since}} 起已連續 {{count}} 次測試失敗",
-    "recovered_summary": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線"
+    "recovered_summary": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線",
+    "outage_summary_other": "自 {{since}} 起已連續 {{count}} 次測試失敗",
+    "recovered_summary_other": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線"
   },
   "tokens": {
     "title": "API 權杖",

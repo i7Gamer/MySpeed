@@ -278,7 +278,22 @@
     "hours": "{{hours}} horas",
     "day": "1 día",
     "days": "{{days}} días",
-    "days_ago": "{{days}} días"
+    "days_ago": "{{days}} días",
+    "seconds_one": "{{seconds}} segundo",
+    "seconds_other": "{{seconds}} segundos",
+    "seconds_many": "{{seconds}} segundos",
+    "minutes_one": "{{minutes}} minuto",
+    "minutes_other": "{{minutes}} minutos",
+    "minutes_many": "{{minutes}} minutos",
+    "hours_one": "{{hours}} hora",
+    "hours_other": "{{hours}} horas",
+    "hours_many": "{{hours}} horas",
+    "days_one": "{{days}} día",
+    "days_ago_one": "{{days}} día",
+    "days_other": "{{days}} días",
+    "days_ago_other": "{{days}} días",
+    "days_many": "{{days}} días",
+    "days_ago_many": "{{days}} días"
   },
   "test": {
     "not_available": "Actualmente no hay tests disponibles",
@@ -333,7 +348,8 @@
       "route_no_reply": "Sin respuesta",
       "route_lost_one": "{{count}} perdido",
       "route_lost_other": "{{count}} perdidos",
-      "route_lost": "{{count}} perdidos"
+      "route_lost": "{{count}} perdidos",
+      "route_lost_many": "{{count}} perdidos"
     }
   },
   "errors": {
@@ -450,7 +466,10 @@
       "range": "Entre {{min}} y {{max}}",
       "sample_count": "En {{tests}} tests"
     },
-    "loaded_latency": "Bajo carga"
+    "loaded_latency": "Bajo carga",
+    "failed_in_period_one": "{{failed}} con error en este periodo",
+    "failed_in_period_other": "{{failed}} con error en este periodo",
+    "failed_in_period_many": "{{failed}} con error en este periodo"
   },
   "calendar": {
     "select_range": "Seleccionar rango de fechas",
@@ -836,7 +855,11 @@
     "outage_summary_one": "{{count}} prueba ha fallado desde {{since}}",
     "recovered_summary_one": "De nuevo en línea tras {{count}} prueba fallida desde {{since}}",
     "outage_summary": "{{count}} pruebas seguidas han fallado desde {{since}}",
-    "recovered_summary": "De nuevo en línea tras {{count}} pruebas fallidas desde {{since}}"
+    "recovered_summary": "De nuevo en línea tras {{count}} pruebas fallidas desde {{since}}",
+    "outage_summary_other": "{{count}} pruebas seguidas han fallado desde {{since}}",
+    "recovered_summary_other": "De nuevo en línea tras {{count}} pruebas fallidas desde {{since}}",
+    "outage_summary_many": "{{count}} pruebas seguidas han fallado desde {{since}}",
+    "recovered_summary_many": "De nuevo en línea tras {{count}} pruebas fallidas desde {{since}}"
   },
   "tokens": {
     "title": "Tokens de API",

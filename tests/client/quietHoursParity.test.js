@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isQuietHour as clientIsQuietHour } from "@/common/components/PauseDialog/quietHoursWindow.js";
@@ -8,7 +8,7 @@ import { isQuietHour as serverIsQuietHour } from "../../server/util/quietHours.j
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
-const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
+const read = (...parts) => readSource(path.join(ROOT, ...parts));
 
 const clientSource = read("client", "src", "common", "components", "PauseDialog", "quietHoursWindow.js");
 const serverSource = read("server", "util", "quietHours.js");

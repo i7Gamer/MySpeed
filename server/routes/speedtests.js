@@ -371,7 +371,7 @@ app.post("/run", tokenOrPassword(SCOPE_RUN), async (req, res) => {
     if (pauseController.currentState) return res.status(410).json({message: "The speedtests are currently paused"});
     if (!isPreviewInstance() && await targets.count() === 0)
         return res.status(410).json({message: "No targets configured"});
-    if (testTask.isRunning()) return res.status(409).json({message: "An speedtest is already running"});
+    if (testTask.isRunning()) return res.status(409).json({message: "A speedtest is already running"});
 
     // A named target runs alone - the per-row run button in the targets
     // dialog, and the one way a disabled (manual-only) target ever runs.
@@ -435,7 +435,7 @@ app.post("/run", tokenOrPassword(SCOPE_RUN), async (req, res) => {
      * click during a visible run has always got.
      */
     if (!testTask.tryReserve())
-        return res.status(409).json({message: "An speedtest is already running"});
+        return res.status(409).json({message: "A speedtest is already running"});
 
     // Which automation asked, by the name the operator gave its token: a run
     // that arrives from a router hook every few minutes is otherwise

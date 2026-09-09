@@ -278,7 +278,17 @@
     "hours": "{{hours}} hours",
     "day": "1 day",
     "days": "{{days}} days",
-    "days_ago": "{{days}} days"
+    "days_ago": "{{days}} days",
+    "seconds_one": "{{seconds}} second",
+    "seconds_other": "{{seconds}} seconds",
+    "minutes_one": "{{minutes}} minute",
+    "minutes_other": "{{minutes}} minutes",
+    "hours_one": "{{hours}} hour",
+    "hours_other": "{{hours}} hours",
+    "days_one": "{{days}} day",
+    "days_ago_one": "{{days}} day",
+    "days_other": "{{days}} days",
+    "days_ago_other": "{{days}} days"
   },
   "test": {
     "not_available": "There are currently no tests available",
@@ -450,7 +460,9 @@
       "range": "Between {{min}} and {{max}}",
       "sample_count": "Across {{tests}} tests"
     },
-    "loaded_latency": "Under load"
+    "loaded_latency": "Under load",
+    "failed_in_period_one": "{{failed}} failed in this period",
+    "failed_in_period_other": "{{failed}} failed in this period"
   },
   "calendar": {
     "select_range": "Select date range",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} test has failed since {{since}}",
     "recovered_summary_one": "Back online after {{count}} failed test since {{since}}",
     "outage_summary": "{{count}} tests in a row have failed since {{since}}",
-    "recovered_summary": "Back online after {{count}} failed tests since {{since}}"
+    "recovered_summary": "Back online after {{count}} failed tests since {{since}}",
+    "outage_summary_other": "{{count}} tests in a row have failed since {{since}}",
+    "recovered_summary_other": "Back online after {{count}} failed tests since {{since}}"
   },
   "tokens": {
     "title": "API tokens",

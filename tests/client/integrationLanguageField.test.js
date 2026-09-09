@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { initialize, getIntegrations } from "../../server/controller/integrations.js";
@@ -15,7 +15,7 @@ const I18N = path.join(ROOT, "client", "src", "i18n.js");
  * file merged ahead of its menu entry is not offered under a raw code.
  */
 const registeredCodes = () =>
-    [...fs.readFileSync(I18N, "utf8").matchAll(/code: '([a-z-]+)'/g)].map(([, code]) => code).sort();
+    [...readSource(I18N).matchAll(/code: '([a-z-]+)'/g)].map(([, code]) => code).sort();
 
 /**
  * The language a notifier writes in reaches the form as a select whose
@@ -97,7 +97,7 @@ describe("the language setting on every notifier", () => {
     });
 
     describe("in the dialog", () => {
-        const source = fs.readFileSync(DIALOG, "utf8");
+        const source = readSource(DIALOG);
 
         it("labels each code with the native name the language menu uses", () => {
             assert.match(source, /import \{[^}]*\blanguages\b[^}]*\} from "@\/i18n"/,

@@ -368,7 +368,7 @@ describe("what a configUpdated event carries", () => {
      * with its credential attached.
      */
     it("is what updateValue announces with", () => {
-        const body = bodyOf(readSource("server/controller/config.js"), "export const updateValue");
+        const body = bodyOf(readSource("server/controller/config.js"), "const writeValue");
 
         assert.match(body, /triggerEvent\("configUpdated",[^)]*announcedValue\(/,
             "the event is built inline again, so only the password is redacted");

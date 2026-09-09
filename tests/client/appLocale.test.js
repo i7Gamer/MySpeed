@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -86,7 +87,7 @@ describe("nothing formats in the browser's locale", () => {
             const full = path.join(directory, entry.name);
 
             if (entry.isDirectory()) collect(full);
-            else if (/\.jsx?$/.test(entry.name)) sources.push([path.relative(CLIENT_SRC, full), fs.readFileSync(full, "utf8")]);
+            else if (/\.jsx?$/.test(entry.name)) sources.push([path.relative(CLIENT_SRC, full), readSource(full)]);
         }
     };
 

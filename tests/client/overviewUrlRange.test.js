@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -145,8 +145,8 @@ describe("rangeKey", () => {
 });
 
 describe("the speedtest provider's query", () => {
-    const source = fs.readFileSync(path.resolve(fileURLToPath(import.meta.url),
-        "..", "..", "..", "client", "src", "common", "contexts", "Speedtests", "SpeedtestContext.jsx"), "utf8");
+    const source = readSource(path.resolve(fileURLToPath(import.meta.url),
+        "..", "..", "..", "client", "src", "common", "contexts", "Speedtests", "SpeedtestContext.jsx"));
 
     it("is keyed on the range rather than on the whole search string", () => {
         assert.match(source, /rangeKey\(/,

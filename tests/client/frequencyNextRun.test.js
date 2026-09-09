@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CronExpressionParser } from "cron-parser";
@@ -8,7 +8,7 @@ import { firstRunOutsideWindow, usableZone } from "@/common/components/PauseDial
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const read = (...parts) => fs.readFileSync(path.join(CLIENT_SRC, ...parts), "utf8");
+const read = (...parts) => readSource(path.join(CLIENT_SRC, ...parts));
 
 const source = read("common", "components", "FrequencyDialog", "FrequencyDialog.jsx");
 const dropdown = read("common", "components", "Dropdown", "DropdownComponent.jsx");

@@ -278,7 +278,17 @@
     "hours": "{{hours}} часа",
     "day": "1 ден",
     "days": "{{days}} дни",
-    "days_ago": "{{days}} дни"
+    "days_ago": "{{days}} дни",
+    "seconds_one": "{{seconds}} секунда",
+    "seconds_other": "{{seconds}} секунди",
+    "minutes_one": "{{minutes}} минута",
+    "minutes_other": "{{minutes}} минути",
+    "hours_one": "{{hours}} час",
+    "hours_other": "{{hours}} часа",
+    "days_one": "{{days}} ден",
+    "days_ago_one": "{{days}} ден",
+    "days_other": "{{days}} дни",
+    "days_ago_other": "{{days}} дни"
   },
   "test": {
     "not_available": "В момента няма налични тестове",
@@ -450,7 +460,9 @@
       "range": "Между {{min}} и {{max}}",
       "sample_count": "За {{tests}} теста"
     },
-    "loaded_latency": "При натоварване"
+    "loaded_latency": "При натоварване",
+    "failed_in_period_one": "{{failed}} неуспешен в този период",
+    "failed_in_period_other": "{{failed}} неуспешни в този период"
   },
   "calendar": {
     "select_range": "Изберете период",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} тест е неуспешен от {{since}}",
     "recovered_summary_one": "Отново онлайн след {{count}} неуспешен тест от {{since}}",
     "outage_summary": "{{count}} теста подред са неуспешни от {{since}}",
-    "recovered_summary": "Отново онлайн след {{count}} неуспешни теста от {{since}}"
+    "recovered_summary": "Отново онлайн след {{count}} неуспешни теста от {{since}}",
+    "outage_summary_other": "{{count}} теста подред са неуспешни от {{since}}",
+    "recovered_summary_other": "Отново онлайн след {{count}} неуспешни теста от {{since}}"
   },
   "tokens": {
     "title": "API токени",

@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it, beforeEach, after } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -28,8 +28,7 @@ const { baseRequest, patchRequest } = await import("../../client/src/common/util
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const nodeContainerSource = fs.readFileSync(
-    path.join(CLIENT_SRC, "pages/Nodes/components/NodeContainer/NodeContainer.jsx"), "utf8");
+const nodeContainerSource = readSource(path.join(CLIENT_SRC, "pages/Nodes/components/NodeContainer/NodeContainer.jsx"));
 
 beforeEach(() => {
     store.clear();

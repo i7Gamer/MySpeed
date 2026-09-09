@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { compile, rules, CLIENT_SRC } from "../helpers/sass.mjs";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 /**
  * Every native <select> wears the same arrow, from one place.
@@ -91,7 +91,7 @@ const components = (function walk(dir) {
 
         return [{
             file: path.relative(CLIENT_SRC, full),
-            source: withoutJsComments(fs.readFileSync(full, "utf8"))
+            source: withoutJsComments(readSource(full))
         }];
     });
 })(CLIENT_SRC);

@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyPage, cursorOf, removeTest } from "../../client/src/common/contexts/Speedtests/paging.js";
@@ -8,7 +8,7 @@ import { applyPage, cursorOf, removeTest } from "../../client/src/common/context
 const CONTEXT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "contexts", "Speedtests", "SpeedtestContext.jsx");
 
-const source = fs.readFileSync(CONTEXT, "utf8");
+const source = readSource(CONTEXT);
 
 const test = (id, created) => ({id, created});
 

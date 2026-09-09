@@ -506,7 +506,7 @@ describe("the scrollbar", () => {
     it("is stated once rather than per dialog", () => {
         const own = fs.readdirSync(COMPONENTS)
             .filter((name) => fs.existsSync(path.join(COMPONENTS, name, "styles.sass")))
-            .filter((name) => /::-webkit-scrollbar/.test(fs.readFileSync(path.join(COMPONENTS, name, "styles.sass"), "utf8")));
+            .filter((name) => /::-webkit-scrollbar/.test(readSource(path.join(COMPONENTS, name, "styles.sass"))));
 
         assert.deepEqual(own, [],
             "these carry their own scrollbar rules, which is how the colour got fixed everywhere except here");

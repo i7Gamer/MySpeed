@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -55,7 +56,7 @@ describe("dates on screen", () => {
             const relative = path.relative(CLIENT_SRC, file).split(path.sep).join("/");
             if (EXEMPT.includes(relative)) continue;
 
-            for (const line of fs.readFileSync(file, "utf8").split("\n"))
+            for (const line of readSource(file).split("\n"))
                 if (HAND_BUILT_DATE.test(line)) offenders.push(`${relative}: ${line.trim()}`);
         }
 

@@ -278,7 +278,17 @@
     "hours": "{{hours}} 時間",
     "day": "1 日",
     "days": "{{days}} 日",
-    "days_ago": "{{days}} 日"
+    "days_ago": "{{days}} 日",
+    "seconds_one": "{{seconds}} 秒",
+    "seconds_other": "{{seconds}} 秒",
+    "minutes_one": "{{minutes}} 分",
+    "minutes_other": "{{minutes}} 分",
+    "hours_one": "{{hours}} 時間",
+    "hours_other": "{{hours}} 時間",
+    "days_one": "{{days}} 日",
+    "days_ago_one": "{{days}} 日",
+    "days_other": "{{days}} 日",
+    "days_ago_other": "{{days}} 日"
   },
   "test": {
     "not_available": "現在、利用できるテストはありません",
@@ -450,7 +460,9 @@
       "range": "{{min}} 〜 {{max}} の間",
       "sample_count": "{{tests}} 件のテストに基づく"
     },
-    "loaded_latency": "負荷時"
+    "loaded_latency": "負荷時",
+    "failed_in_period_one": "この期間に {{failed}} 件が失敗",
+    "failed_in_period_other": "この期間に {{failed}} 件が失敗"
   },
   "calendar": {
     "select_range": "日付範囲を選択",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
     "recovered_summary_one": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました",
     "outage_summary": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
-    "recovered_summary": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました"
+    "recovered_summary": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました",
+    "outage_summary_other": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
+    "recovered_summary_other": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました"
   },
   "tokens": {
     "title": "API トークン",

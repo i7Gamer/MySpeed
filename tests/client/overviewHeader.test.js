@@ -4,7 +4,7 @@ import * as sass from "sass";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
@@ -17,7 +17,7 @@ const aliasImporter = {
     }
 };
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 const toolbar = read("common/components/PageToolbar/PageToolbar.jsx");
 const home = read("pages/Home/Home.jsx");

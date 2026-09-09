@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { passwordConfirmationProblem, PASSWORD_MISMATCH }
@@ -58,7 +58,7 @@ describe("passwordConfirmationProblem", () => {
 const DIALOG = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "components", "PasswordDialog", "PasswordDialog.jsx");
 
-const source = fs.readFileSync(DIALOG, "utf8");
+const source = readSource(DIALOG);
 
 /**
  * The check is only worth anything if the dialog actually consults it, and the

@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -33,7 +34,7 @@ const indentOf = (line) => line.length - line.trimStart().length;
 const UNIVERSAL_SELECTOR = /(^|[\s&>+~])\*\s*$/;
 
 const offendersIn = (file) => {
-    const lines = fs.readFileSync(file, "utf8").split("\n");
+    const lines = readSource(file).split("\n");
     const offenders = [];
 
     for (let index = 0; index < lines.length; index++) {

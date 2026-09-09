@@ -1,13 +1,13 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import {
     PASSWORD_REQUIRED, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS, lockedNoticeKeys
 } from "../../client/src/common/utils/AuthOutcome.js";
 
 const read = (relative) =>
-    fs.readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8");
+    readSource(fileURLToPath(new URL(relative, import.meta.url)));
 
 const english = JSON.parse(read("../../client/public/assets/locales/en.json"));
 const lookup = (key) => key.split(".").reduce((node, part) => node?.[part], english);

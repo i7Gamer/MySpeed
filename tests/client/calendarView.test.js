@@ -1,6 +1,5 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { monthToShow } from "../../client/src/common/components/DateRangePicker/calendarNav.js";
@@ -9,7 +8,7 @@ import { readSource } from "../helpers/source.js";
 const PICKER_DIR = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "components", "DateRangePicker");
 
-const source = fs.readFileSync(path.join(PICKER_DIR, "DateRangePicker.jsx"), "utf8");
+const source = readSource(path.join(PICKER_DIR, "DateRangePicker.jsx"));
 // readSource rather than a raw read: its "\n\n" anchor below never matches a
 // CRLF checkout of this file, and a -1 from indexOf is read as one character
 // from the end - not "no bound found" - so the slice it feeds ran to the end

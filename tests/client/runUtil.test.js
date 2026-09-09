@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it, beforeEach, afterEach, after } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const realLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
@@ -135,8 +135,8 @@ describe("startSpeedtest", () => {
 });
 
 describe("the vestigial guard", () => {
-    const source = fs.readFileSync(fileURLToPath(
-        new URL("../../client/src/common/utils/RunUtil.js", import.meta.url)), "utf8");
+    const source = readSource(fileURLToPath(
+        new URL("../../client/src/common/utils/RunUtil.js", import.meta.url)));
 
     it("is gone", () => {
         assert.doesNotMatch(source, /startBlockedReason/,

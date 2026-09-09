@@ -1,10 +1,32 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import os from "node:os";
+import fs from "node:fs";
+import path from "node:path";
+import {pathToFileURL} from "node:url";
 import {
     blockEnd, bodyIn, bodyOf, escapeRegExp, findMounts, listSources, mountText, normaliseLineEndings, readSource, runBodies,
     unreadableMountCount, withoutJsComments
 } from "../helpers/source.js";
+
+describe("source reads across checkout line endings", () => {
+    for (const ending of ["\n", "\r\n"]) it(`normalizes ${JSON.stringify(ending)} from resolved paths and file URLs`, () => {
+        const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-source-"));
+        const file = path.join(temporary, "fixture.js");
+        const source = "const first = () => {\n  plain();\n};\nconst second = () => {\n  caught().catch(noop);\n};\n";
+        try {
+            fs.writeFileSync(file, source.replaceAll("\n", ending));
+            for (const location of [file, pathToFileURL(file)]) {
+                const normalized = readSource(location);
+                assert.equal(normalized, source);
+                assert.doesNotMatch(bodyOf(normalized, "const first"), /catch/);
+                assert.throws(() => bodyOf(normalized, "const missing"), /not in this source/);
+            }
+        } finally {
+            fs.rmSync(temporary, {recursive: true, force: true});
+        }
+    });
+});
 
 describe("blockEnd", () => {
     it("returns the index of the matching closing brace", () => {

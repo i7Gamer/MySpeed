@@ -37,7 +37,7 @@ const uploadedAssets = () => {
 // workflow rather than restated here - a copy would go on passing after the
 // real one was widened.
 const validator = () => {
-    const found = release.match(/grep -Eq '\^([^']+)\$'/);
+    const found = release.match(/if \[\[ ! "\$VERSION" =~ \^(.+)\$ \]\]/);
     assert.notEqual(found, null, "the release workflow no longer validates the version it was given");
 
     return new RegExp(`^${found[1]}$`);

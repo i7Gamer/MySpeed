@@ -476,7 +476,7 @@ recover_before_start() {
         echo -e "$RED✗ Could not remove the incomplete MySpeed service definition."
         return 1
     fi
-    if ! systemctl daemon-reload; then
+    if command -v systemctl &> /dev/null && ! systemctl daemon-reload; then
         echo -e "$RED✗ Could not reload the restored MySpeed service definition."
         return 1
     fi
@@ -668,12 +668,21 @@ elif [ ! -d "$INSTALLATION_PATH/data" ]; then
     if ! mkdir -p "$INSTALLATION_PATH/data"; then
         echo -e "$RED✗ Could not create $INSTALLATION_PATH/data.$NORMAL Check that the installation"
         echo -e "$NORMAL directory is writable and that the path is not already taken by a file."
+        recover_before_start
         exit 1
     fi
 
-    chmod 700 "$INSTALLATION_PATH/data"
+    if ! chmod 700 "$INSTALLATION_PATH/data"; then
+        echo -e "$RED✗ Could not secure $INSTALLATION_PATH/data."
+        recover_before_start
+        exit 1
+    fi
 else
-    chmod o-rwx "$INSTALLATION_PATH/data"
+    if ! chmod o-rwx "$INSTALLATION_PATH/data"; then
+        echo -e "$RED✗ Could not secure $INSTALLATION_PATH/data."
+        recover_before_start
+        exit 1
+    fi
 fi
 
 if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
@@ -702,8 +711,16 @@ if [ "$SERVICE_ACCOUNT" = "$SERVICE_USER" ]; then
     # The user only, not user:group - useradd --system creates a matching group
     # on Debian and RHEL but not everywhere, and a chown that names a group that
     # does not exist changes nothing at all.
-    mkdir -p "$INSTALLATION_PATH/bin"
-    chown -Rh "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"
+    if ! mkdir -p "$INSTALLATION_PATH/bin"; then
+        echo -e "$RED✗ Could not create $INSTALLATION_PATH/bin."
+        recover_before_start
+        exit 1
+    fi
+    if ! chown -Rh "$SERVICE_USER" "$INSTALLATION_PATH/data" "$INSTALLATION_PATH/bin"; then
+        echo -e "$RED✗ Could not give $SERVICE_USER access to the MySpeed data and binaries."
+        recover_before_start
+        exit 1
+    fi
 else
     echo -e "$YELLOW⚠ Warning: $NORMAL $SERVICE_FALLBACK, so MySpeed will run as root."
     sleep 2

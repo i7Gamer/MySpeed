@@ -108,9 +108,10 @@ const roundOrNull = (value, decimals) => value === null ? null : round(value, de
 // with 0, which the score then read as a flawlessly steady line. Left in place
 // afterwards they were unreachable, and worse, they described a policy the
 // caller had already overruled.
-const standardDeviation = (values) => {
-    const mean = average(values);
-    return Math.sqrt(average(values.map(value => Math.pow(value - mean, 2))));
+const standardDeviation = (values, mean) => {
+    let squaredDistances = 0;
+    for (const value of values) squaredDistances += Math.pow(value - mean, 2);
+    return Math.sqrt(squaredDistances / values.length);
 };
 
 const median = (values) => {
@@ -178,7 +179,7 @@ const consistencyScore = (values) => {
 
     const mean = average(numbers);
     // Once, for both readers below - it walks the whole population each time.
-    const deviation = standardDeviation(numbers);
+    const deviation = standardDeviation(numbers, mean);
     const score = mean > 0 ? PERCENT - (deviation / mean * PERCENT) : PERCENT;
 
     return {
@@ -190,8 +191,8 @@ const consistencyScore = (values) => {
 const buildHourlyAverages = (entries, zone) => {
     const buckets = Array.from({length: HOURS_PER_DAY}, () => ({download: [], upload: [], ping: [], jitter: []}));
 
-    entries.forEach(entry => {
-        const bucket = buckets[localHourAt(zone, new Date(entry.created))];
+    entries.forEach(({entry, time}) => {
+        const bucket = buckets[localHourAt(zone, new Date(time))];
         // Readable at the door, like the two guarded pushes below - and so the
         // count reported beside the hour's figure counts what the figure used,
         // rather than presenting one readable row as an average backed by ten.
@@ -291,18 +292,28 @@ const loadedIncrease = (entry) => {
  * added to defend against, the guarantee it was added to make.
  */
 const loadedLatencyOver = (succeeded, placeable) => {
-    const measuredIn = (rows) => rows
-        .map(entry => ({created: entry.created, increase: loadedIncrease(entry)}))
-        .filter(point => point.increase !== null);
+    const measured = [];
+    for (const entry of succeeded) {
+        const increase = loadedIncrease(entry);
+        if (increase !== null) measured.push(increase);
+    }
 
-    const measured = measuredIn(succeeded);
+    // The trend needs only the latest measured rows, not an allocation and
+    // second latency calculation for the whole placeable history.
+    const trend = [];
+    for (let index = placeable.length - 1; index >= 0 && trend.length < TREND_POINTS; index--) {
+        const {entry} = placeable[index];
+        if (!isSuccessfulTest(entry)) continue;
+        const increase = loadedIncrease(entry);
+        if (increase !== null) trend.push({created: entry.created, increase});
+    }
 
     return {
-        increase: averageOrNull(measured.map(point => point.increase),
+        increase: averageOrNull(measured,
             (value) => round(value, INCREASE_DECIMALS)),
         tests: measured.length,
         // Oldest first, so time reads left to right the way the dots are drawn.
-        trend: measuredIn(placeable).slice(-TREND_POINTS)
+        trend: trend.reverse()
     };
 };
 
@@ -312,26 +323,10 @@ const emptySeries = () => ({
         downloadLatency: [], uploadLatency: []}
 });
 
-/**
- * Whether a row can be placed on a timeline at all.
- *
- * Three separate things index on `created`, and one unparseable value killed
- * each of them differently: toISOString() threw outright in the full series,
- * the bucket index came out NaN - which no bounds check catches - in the
- * downsampled one, and the hour-of-day averages indexed their array with it.
- * Any of the three answered 500 for the whole range on the strength of a single
- * bad row, so this is applied once to everything that reads a timestamp rather
- * than guarded three times over.
- *
- * Such a row still counts and still averages. Its measurements are real; only
- * the instant it claims to have been taken at is not.
- */
-const isPlaceable = (entry) => !Number.isNaN(new Date(entry.created).getTime());
-
 const fullSeries = (sorted) => ({
-    labels: sorted.map(entry => new Date(entry.created).toISOString()),
-    failed: sorted.map(isFailedTest),
-    errors: sorted.map(entry => entry.error),
+    labels: sorted.map(point => new Date(point.time).toISOString()),
+    failed: sorted.map(({entry}) => isFailedTest(entry)),
+    errors: sorted.map(({entry}) => entry.error),
     // Null throughout: this path never buckets more than one test into a
     // point, so there is no bucket-of-failures count to carry - only
     // downsampledSeries's mixed bucket below ever produces one.
@@ -343,12 +338,12 @@ const fullSeries = (sorted) => ({
         // since UNMEASURED_LATENCY was written; the line did not, so a range
         // could report a minimum of 20 ms over a chart that visibly touched
         // nought - the same instance answering one question two ways.
-        ping: sorted.map(entry => isSuccessfulTest(entry) ? measuredPing(entry.ping) : null),
+        ping: sorted.map(({entry}) => isSuccessfulTest(entry) ? measuredPing(entry.ping) : null),
         // Through usableFigure, the same reading the live write gives these
         // columns: a history imported before the import refused negatives can
         // hold -1 placeholders, and passed through they drew a jitter dipping
         // below zero on a chart whose summary skipped the same row.
-        jitter: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
+        jitter: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
         // usableFigure like the downsampled branch beside this one, not raw:
         // a corrupt stored string shipped here reached the client as JSON
         // text, where the chart's own average reducer concatenated it - the
@@ -356,16 +351,16 @@ const fullSeries = (sorted) => ({
         // the browser on every range small enough not to bucket - and an
         // imported -1 placeholder drew a chart point below zero. Unreadable
         // is a null, which the line already draws as a gap.
-        download: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
-        upload: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
+        download: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
+        upload: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
         // usableFigure, matching the measuredOnly("time") read the downsampled
         // branch gives the same column.
-        time: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
+        time: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
         // Null where unmeasured - a gap in the line, like jitter. usableFigure
         // answers null for the absent key of a row from before the columns
         // existed, and for an imported negative alike.
-        downloadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.downloadLatency) : null),
-        uploadLatency: sorted.map(entry => isSuccessfulTest(entry) ? usableFigure(entry.uploadLatency) : null)
+        downloadLatency: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.downloadLatency) : null),
+        uploadLatency: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.uploadLatency) : null)
     }
 });
 
@@ -380,8 +375,8 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
     const bucketSize = timeSpan / targetPoints;
     const buckets = Array.from({length: targetPoints}, () => ({entries: [], errors: []}));
 
-    sorted.forEach(entry => {
-        const offset = new Date(entry.created).getTime() - from.getTime();
+    sorted.forEach(({entry, time}) => {
+        const offset = time - from.getTime();
         /*
          * Clamped at the top rather than dropped, and that is load-bearing.
          *
@@ -556,15 +551,16 @@ const reliabilityOver = (sorted) => {
      */
     const running = new Map();
 
-    for (const entry of sorted) {
+    for (const point of sorted) {
+        const {entry, time} = point;
         if (previous !== null) {
             const seconds = Math.round(
-                (new Date(entry.created) - new Date(previous.created)) / MS_PER_SECOND);
+                (time - previous.time) / MS_PER_SECOND);
 
             if (largestGap === null || seconds > largestGap.seconds)
-                largestGap = {seconds, from: previous.created, to: entry.created};
+                largestGap = {seconds, from: previous.entry.created, to: entry.created};
         }
-        previous = entry;
+        previous = point;
 
         const line = entry.targetId ?? null;
 
@@ -609,8 +605,32 @@ export const buildStatistics = (entries, {from, to}, options = {}) => {
     // through is where a nonsense parameter earns its 400.
     const bucketZone = zone ?? zoneFromOffset(offsetMinutes).zone ?? serverZone;
     const targetPoints = clampPoints(maxPoints);
-    const succeeded = entries.filter(isSuccessfulTest);
-    const sorted = entries.filter(isPlaceable).sort((a, b) => new Date(a.created) - new Date(b.created));
+    const succeeded = [];
+    const placeableSuccesses = [];
+    // Parse once per row, locally to this aggregation. Sorting used to
+    // parse both operands on every comparison, then each timeline parsed them
+    // again. Keep the original rows and stable tie ordering intact.
+    const sorted = [];
+    let ordered = true;
+    let previousTime = -Infinity;
+    for (const entry of entries) {
+        const successful = isSuccessfulTest(entry);
+        if (successful) succeeded.push(entry);
+        const time = new Date(entry.created).getTime();
+        // Undateable rows still count in aggregates, but have no position on
+        // charts, hourly averages or the reliability timeline.
+        if (Number.isNaN(time)) continue;
+        if (time < previousTime) ordered = false;
+        previousTime = time;
+        const point = {entry, time};
+        sorted.push(point);
+        // Retain input order for the hourly sums, just as for every aggregate.
+        if (successful) placeableSuccesses.push(point);
+    }
+    // Database readers already order by created, and grouping retains that
+    // order. Check the actual instants so legacy timestamp spellings and pure
+    // callers with unsorted inputs still take the stable numeric sort.
+    if (!ordered) sorted.sort((a, b) => a.time - b.time);
 
     const series = sorted.length <= targetPoints
         ? fullSeries(sorted)
@@ -669,7 +689,7 @@ export const buildStatistics = (entries, {from, to}, options = {}) => {
         // apart from "this point has none" - Statistics.jsx's own
         // askedCompare === undefined check is the same cross-version idiom.
         failedCounts: series.failedCounts,
-        hourlyAverages: buildHourlyAverages(succeeded.filter(isPlaceable), bucketZone),
+        hourlyAverages: buildHourlyAverages(placeableSuccesses, bucketZone),
         consistency: {
             download: consistencyScore(succeeded.map(entry => usableFigure(entry.download))),
             upload: consistencyScore(succeeded.map(entry => usableFigure(entry.upload))),
@@ -683,7 +703,7 @@ export const buildStatistics = (entries, {from, to}, options = {}) => {
             },
             // The aggregate over every success, the trend over the ones that
             // can be placed on a timeline - already sorted, above.
-            loadedLatency: loadedLatencyOver(succeeded, sorted.filter(isSuccessfulTest))
+            loadedLatency: loadedLatencyOver(succeeded, sorted)
         },
         dataPoints: series.labels.length,
         // The rows the chart could actually draw, which is the same count the

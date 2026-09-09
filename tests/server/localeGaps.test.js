@@ -127,9 +127,49 @@ describe("localeGaps", () => {
     it("still reports a stale key that merely ends in ago", () => {
         assert.deepEqual(localeGaps({a: "One"}, {a: "Eins", "status.long_ago": "Lange her"}).extra, ["status.long_ago"]);
     });
+
+    for (const remaining of ["few", "many", "other"]) {
+        it(`requires every ago category when only ${remaining} survives`, () => {
+            const source = {time: {minutes_one: "{{minutes}} minute", minutes_other: "{{minutes}} minutes"}};
+            const target = {time: {minutes_one: "{{minutes}} минута", minutes_few: "{{minutes}} минуты",
+                minutes_many: "{{minutes}} минут", minutes_other: "{{minutes}} минуты",
+                [`minutes_ago_${remaining}`]: "{{minutes}} минут"}};
+            assert.deepEqual(localeGaps(source, target, new Set(), "ru").missing.sort(),
+                ["one", "few", "many", "other"].filter(category => category !== remaining)
+                    .map(category => `time.minutes_ago_${category}`).sort());
+        });
+    }
+
+    it("reports English left in locale-specific count and context categories", () => {
+        const source = {time: {minutes_one: "{{minutes}} minute", minutes_other: "{{minutes}} minutes"}};
+        const target = {time: {minutes_one: "{{minutes}} minuta", minutes_other: "{{minutes}} minuty",
+            minutes_few: "{{minutes}} minutes", minutes_ago_few: "{{minutes}} minutes"}};
+        assert.deepEqual(localeGaps(source, target).untranslated,
+            ["time.minutes_few", "time.minutes_ago_few"]);
+        // A language's genuinely shared English reference also applies to its
+        // derived categories; an exemption for a specific key stays specific.
+        assert.deepEqual(localeGaps(source, target, new Set(["time.minutes_other"])).untranslated, []);
+        assert.deepEqual(localeGaps(source, target, new Set(["time.minutes_few"])).untranslated,
+            ["time.minutes_ago_few"]);
+    });
 });
 
 describe("mergeLocale", () => {
+    it("preserves and patches category/context forms belonging to a real count family", () => {
+        const source = {time: {minutes: "{{minutes}} minutes", minutes_one: "{{minutes}} minute", minutes_other: "{{minutes}} minutes"}};
+        const locale = {time: {minutes: "{{minutes}} minuty", minutes_one: "{{minutes}} minuta", minutes_other: "{{minutes}} minuty", minutes_few: "{{minutes}} minuty", minutes_ago_few: "{{minutes}} minutami"}};
+        assert.deepEqual(mergeLocale(source, locale, {}), locale);
+        assert.equal(mergeLocale(source, locale, {"time.minutes_many": "{{minutes}} minut"}).time.minutes_many, "{{minutes}} minut");
+        assert.deepEqual(localeGaps(source, locale).extra, []);
+        assert.throws(() => mergeLocale(source, locale, {"time.weeks_few": "x"}), /time.weeks_few/);
+        assert.throws(() => mergeLocale(source, locale, {"time.minutes_few": "{{wrong}} minuty"}), /interpolation/);
+        assert.throws(() => mergeLocale(source, locale, {"time.minutes_few": "<b>{{minutes}}</b> minuty"}), /component tag/);
+        assert.throws(() => mergeLocale(source, locale, {"time.minutes_few": " "}), /empty/);
+        assert.throws(() => mergeLocale(source, locale, {"time.minutes_few": null}), /non-text/);
+        assert.throws(() => mergeLocale(source, locale, {"time.minutes_weird": "x"}), /time.minutes_weird/);
+        assert.deepEqual(localeGaps(source, locale, new Set(), "pl").missing.sort(),
+            ["time.minutes_many", "time.minutes_ago_many", "time.minutes_ago_one", "time.minutes_ago_other"].sort());
+    });
     const english = {greeting: {hello: "Hello", bye: "Bye"}, unit: "ms"};
     const locale = {greeting: {bye: "Tschüss"}};
 

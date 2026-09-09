@@ -278,7 +278,39 @@
     "hours": "{{hours}} часов",
     "day": "1 день",
     "days": "{{days}} дней",
-    "days_ago": "{{days}} дней"
+    "days_ago": "{{days}} дней",
+    "seconds_one": "{{seconds}} секунда",
+    "seconds_ago_one": "{{seconds}} секунду",
+    "seconds_other": "{{seconds}} секунды",
+    "seconds_ago_other": "{{seconds}} секунды",
+    "seconds_few": "{{seconds}} секунды",
+    "seconds_ago_few": "{{seconds}} секунды",
+    "seconds_many": "{{seconds}} секунд",
+    "seconds_ago_many": "{{seconds}} секунд",
+    "minutes_one": "{{minutes}} минута",
+    "minutes_ago_one": "{{minutes}} минуту",
+    "minutes_other": "{{minutes}} минуты",
+    "minutes_ago_other": "{{minutes}} минуты",
+    "minutes_few": "{{minutes}} минуты",
+    "minutes_ago_few": "{{minutes}} минуты",
+    "minutes_many": "{{minutes}} минут",
+    "minutes_ago_many": "{{minutes}} минут",
+    "hours_one": "{{hours}} час",
+    "hours_ago_one": "{{hours}} час",
+    "hours_other": "{{hours}} часа",
+    "hours_ago_other": "{{hours}} часа",
+    "hours_few": "{{hours}} часа",
+    "hours_ago_few": "{{hours}} часа",
+    "hours_many": "{{hours}} часов",
+    "hours_ago_many": "{{hours}} часов",
+    "days_one": "{{days}} день",
+    "days_ago_one": "{{days}} день",
+    "days_other": "{{days}} дня",
+    "days_ago_other": "{{days}} дня",
+    "days_few": "{{days}} дня",
+    "days_ago_few": "{{days}} дня",
+    "days_many": "{{days}} дней",
+    "days_ago_many": "{{days}} дней"
   },
   "test": {
     "not_available": "В настоящее время нет доступных тестов",
@@ -333,7 +365,9 @@
       "route_no_reply": "Нет ответа",
       "route_lost_one": "{{count}} потеряно",
       "route_lost_other": "{{count}} потеряно",
-      "route_lost": "{{count}} потеряно"
+      "route_lost": "{{count}} потеряно",
+      "route_lost_few": "{{count}} потеряно",
+      "route_lost_many": "{{count}} потеряно"
     }
   },
   "errors": {
@@ -450,7 +484,11 @@
       "range": "От {{min}} до {{max}}",
       "sample_count": "По {{tests}} тестам"
     },
-    "loaded_latency": "Под нагрузкой"
+    "loaded_latency": "Под нагрузкой",
+    "failed_in_period_one": "{{failed}} неудачный за этот период",
+    "failed_in_period_other": "{{failed}} неудачных за этот период",
+    "failed_in_period_few": "{{failed}} неудачных за этот период",
+    "failed_in_period_many": "{{failed}} неудачных за этот период"
   },
   "calendar": {
     "select_range": "Выберите диапазон дат",
@@ -836,7 +874,13 @@
     "outage_summary_one": "{{count}} тест не удался с {{since}}",
     "recovered_summary_one": "Снова в сети после {{count}} неудачного теста с {{since}}",
     "outage_summary": "{{count}} тестов подряд не удались с {{since}}",
-    "recovered_summary": "Снова в сети после {{count}} неудачных тестов с {{since}}"
+    "recovered_summary": "Снова в сети после {{count}} неудачных тестов с {{since}}",
+    "outage_summary_other": "{{count}} тестов подряд не удались с {{since}}",
+    "recovered_summary_other": "Снова в сети после {{count}} неудачных тестов с {{since}}",
+    "outage_summary_few": "{{count}} теста подряд не удались с {{since}}",
+    "recovered_summary_few": "Снова в сети после {{count}} неудачных тестов с {{since}}",
+    "outage_summary_many": "{{count}} тестов подряд не удались с {{since}}",
+    "recovered_summary_many": "Снова в сети после {{count}} неудачных тестов с {{since}}"
   },
   "tokens": {
     "title": "API-токены",

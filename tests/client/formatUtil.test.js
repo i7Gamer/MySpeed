@@ -1,6 +1,7 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import i18n from "i18next";
+import {readLocale} from "../helpers/source.js";
 import {
     convertSpeed, firstWeekday, formatBytes, formatDateTime, formatDuration, formatLastTest, formatLatency,
     formatLatencyWithUnit, formatPercent, formatShortTime, formatTime, formatHour, formatWhole,
@@ -243,12 +244,7 @@ before(async () => {
             latest: {speed_unit: "Mbps", byte_speed_unit: "MB/s"},
             // Copied from the english locale, so the assertions read as what a
             // user actually sees rather than as key names.
-            time: {
-                now: "Just now", seconds: "{{seconds}} seconds",
-                minute: "1 minute", minutes: "{{minutes}} minutes",
-                hour: "1 hour", hours: "{{hours}} hours",
-                day: "1 day", days: "{{days}} days"
-            },
+            time: readLocale("en").time,
             status: {
                 last_test: "Last test {{time}} ago",
                 last_test_now: "Last test just now",
@@ -798,7 +794,7 @@ describe("a span behind \"ago\"", () => {
         await withLanguage("pl", () => {
             assert.equal(spanInWords(3 * 86400, {context: "ago"}), "3 dniami");
             assert.equal(spanInWords(3 * 86400), "3 dni", "a bare duration was left in the instrumental");
-            assert.equal(spanInWords(5 * 3600), "5 godziny");
+            assert.equal(spanInWords(5 * 3600), "5 godzin");
             assert.equal(spanInWords(5 * 3600, {context: "ago"}), "5 godzinami");
             assert.equal(formatLastTest(new Date(Date.now() - 3 * 86400 * 1000).toISOString()),
                 "Ostatni test przed 3 dniami");
@@ -807,7 +803,7 @@ describe("a span behind \"ago\"", () => {
 
     it("does the same in Czech", async () => {
         await withLanguage("cs", () => {
-            assert.equal(spanInWords(20 * 60), "20 minuty");
+            assert.equal(spanInWords(20 * 60), "20 minut");
             assert.equal(spanInWords(20 * 60, {context: "ago"}), "20 minutami");
             assert.equal(formatLastTest(new Date(Date.now() - 5 * 3600 * 1000).toISOString()),
                 "Poslední test před 5 hodinami");

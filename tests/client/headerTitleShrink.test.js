@@ -1,7 +1,7 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as sass from "sass";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -60,8 +60,7 @@ describe("the header title gives way to the pagination", () => {
 
     // The styled box only exists if the markup actually wraps the title text.
     it("wraps the title text in the styled box", () => {
-        const source = fs.readFileSync(
-            path.join(CLIENT_SRC, "common/components/Header/HeaderComponent.jsx"), "utf8");
+        const source = readSource(path.join(CLIENT_SRC, "common/components/Header/HeaderComponent.jsx"));
         assert.match(source, /className="header-title"/);
     });
 

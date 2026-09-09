@@ -17,13 +17,15 @@ import {integrationPayload, isValidDisplayName, isValidFieldValue} from "@/commo
 import {appendVariable, variableToken} from "@/common/components/IntegrationDialog/templateVariables";
 import {integrationPlaceholder, integrationTitle} from "@/common/utils/InvariantText";
 import {languages} from "@/i18n";
+import {NodeContext} from "@/common/contexts/Node";
+import {useDialogSession} from "@/common/hooks/useDialogSession";
 
 // How long a saved card wears its checkmark, and how long a delete button
 // stays armed waiting for the second press that means it.
 export const SAVE_CONFIRM_MS = 1500;
 export const DELETE_CONFIRM_MS = 3000;
 
-const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config}) => {
+const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config, session}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || integrationTitle(integration.name, t));
     const [fields, setFields] = useState(() => {
         const initial = {};
@@ -61,10 +63,17 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
      */
     const saveTimer = useRef(null);
     const deleteTimer = useRef(null);
+    const draftRevision = useRef(0);
+    const mounted = useRef(true);
+    const current = () => mounted.current && session.active;
 
-    useEffect(() => () => {
-        clearTimeout(saveTimer.current);
-        clearTimeout(deleteTimer.current);
+    useEffect(() => {
+        mounted.current = true;
+        return () => {
+            mounted.current = false;
+            clearTimeout(saveTimer.current);
+            clearTimeout(deleteTimer.current);
+        };
     }, []);
 
     useEffect(() => {
@@ -76,7 +85,9 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
 
     const updateField = (name, value) => {
         setFields(prev => ({...prev, [name]: value}));
+        draftRevision.current++;
         setUnsavedChanges(true);
+        setSaveConfirmed(false);
     };
 
     const isValidInput = (field) => isValidFieldValue(field, fields[field.name]);
@@ -135,6 +146,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         // not wedge the card shut.
         if (saving) return;
         setSaving(true);
+        const submittedRevision = draftRevision.current;
 
         const data = integrationPayload(integrationDef, fields, displayName);
         try {
@@ -142,20 +154,23 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
                 const response = await putRequest(`/integrations/${integration.name}`, data);
                 if (!response.ok) throw new Error();
                 const result = await response.json();
+                if (!current()) return;
                 onUpdate(integration.uuid, {id: result.id, isNew: false});
             } else {
                 const response = await patchRequest(`/integrations/${integration.id}`, data);
                 if (!response.ok) throw new Error();
             }
-            setUnsavedChanges(false);
-            setSaveConfirmed(true);
+            if (!current()) return;
+            const unchanged = draftRevision.current === submittedRevision;
+            setUnsavedChanges(!unchanged);
+            setSaveConfirmed(unchanged);
             setError(false);
             clearTimeout(saveTimer.current);
-            saveTimer.current = setTimeout(() => setSaveConfirmed(false), SAVE_CONFIRM_MS);
+            if (unchanged) saveTimer.current = setTimeout(() => setSaveConfirmed(false), SAVE_CONFIRM_MS);
         } catch {
-            setError(true);
+            if (current()) setError(true);
         } finally {
-            setSaving(false);
+            if (current()) setSaving(false);
         }
     };
 
@@ -173,6 +188,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         // Checked before the card disappears: a refused delete used to vanish
         // from the dialog and be back on the next open, with nothing said.
         const response = await deleteRequest(`/integrations/${integration.id}`).catch(() => null);
+        if (!current()) return;
         if (!response?.ok) {
             setError(true);
             return;
@@ -226,7 +242,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
                 generic error over a field the operator never touched. */}
             <FormField label={t("integrations.display_name")} type="text" value={displayName}
                 error={!isValidDisplayName(displayName)}
-                onChange={(v) => { setDisplayName(v); setUnsavedChanges(true); }} placeholder={t("integrations.display_name")}/>
+                onChange={(v) => { setDisplayName(v); draftRevision.current++; setUnsavedChanges(true); setSaveConfirmed(false); }} placeholder={t("integrations.display_name")}/>
             {integrationDef.fields.map((field) => (
                 <div key={field.name} className="integration-field">
                     <FormField label={getLabel(field.name)}
@@ -259,6 +275,8 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
 
 export const IntegrationDialog = ({open, onClose}) => {
     const [config] = useContext(ConfigContext);
+    const currentNode = useContext(NodeContext)?.[2];
+    const session = useDialogSession(open, currentNode);
     const [integrations, setIntegrations] = useState(null);
     const [active, setActive] = useState(null);
     // Kept, not only logged: the two lists were set on success alone and
@@ -267,18 +285,26 @@ export const IntegrationDialog = ({open, onClose}) => {
     // reason in the console and the retry - closing and reopening - unsaid.
     const [loadError, setLoadError] = useState(null);
     const [attempt, setAttempt] = useState(0);
+    const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         if (!open) return;
+        const generation = ++session.generation;
+        const current = () => session.active && generation === session.generation;
+        setLoading(true);
         setLoadError(null);
         Promise.all([jsonRequest("/integrations"), jsonRequest("/integrations/active")]).then(([intData, activeData]) => {
+            if (!current()) return;
             setIntegrations(intData);
             setActive(activeData.map(item => ({...item, uuid: uuid()})));
         }).catch((error) => {
+            if (!current()) return;
             console.error("Failed to load the integrations:", error);
             setLoadError(error);
+        }).finally(() => {
+            if (current()) setLoading(false);
         });
-    }, [open, attempt]);
+    }, [open, session, attempt]);
 
     // The rows this dialog can actually draw. A stored row whose integration
     // has since been removed has no definition, and IntegrationCard reads
@@ -345,8 +371,6 @@ export const IntegrationDialog = ({open, onClose}) => {
         key: name, label: integrationTitle(name, t), icon: def.icon
     })) : [];
 
-    const loading = !loadError && (!integrations || !active);
-
     return (
         <Dialog open={open} onClose={onClose} className="integration-dialog">
             {({close}) => (
@@ -392,7 +416,7 @@ export const IntegrationDialog = ({open, onClose}) => {
                                         <div className="integrations-list">
                                             {renderable.map(item => (
                                                 <IntegrationCard key={item.uuid} integration={item} integrationDef={integrations[item.name]}
-                                                    onRemove={removeIntegration} onUpdate={updateIntegration} config={config}/>
+                                                    onRemove={removeIntegration} onUpdate={updateIntegration} config={config} session={session}/>
                                             ))}
                                         </div>
                                         <DropdownSelect items={dropdownItems} onSelect={addIntegration} buttonText={t("integrations.create")} disabled={config.previewMode}/>

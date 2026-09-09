@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -24,7 +25,7 @@ const sourceFiles = (dir) => fs.readdirSync(dir, {withFileTypes: true}).flatMap(
 const english = readLocale(SOURCE_LOCALE);
 const knownKeys = new Set(flatten(english));
 
-const sources = sourceFiles(SOURCE_DIR).map((file) => ({file, code: fs.readFileSync(file, "utf8")}));
+const sources = sourceFiles(SOURCE_DIR).map((file) => ({file, code: readSource(file)}));
 
 // Only literal keys can be checked; t(`a.${b}`) and t("a." + b) are resolved at
 // runtime and are deliberately skipped.
@@ -244,7 +245,12 @@ describe("i18n keys", () => {
             // "ago" (FormatUtil.js AGO_CONTEXT): reached as `time.${unit}` plus
             // the context, never spelled out, and carried only by the units a
             // language inflects there.
-            /^time\.[a-z]+_ago$/
+            /^time\.[a-z]+_ago$/,
+            // i18next cardinal/context resolution and retained legacy singular keys.
+            /^time\.(seconds|minutes|hours|days)(?:_ago)?_(one|two|few|many|other)$/,
+            /^time\.(minute|hour|day)$/,
+            /^statistics\.failed_in_period_(single|one|two|few|many|other)$/,
+            /^test\.details\.route_lost_(one|two|few|many|other)$/
         ];
 
         it("are all reachable from the source tree", () => {

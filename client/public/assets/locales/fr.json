@@ -278,7 +278,22 @@
     "hours": "{{hours}} heure(s)",
     "day": "1 jour",
     "days": "{{days}} jours",
-    "days_ago": "{{days}} jours"
+    "days_ago": "{{days}} jours",
+    "seconds_one": "{{seconds}} seconde",
+    "seconds_other": "{{seconds}} secondes",
+    "seconds_many": "{{seconds}} secondes",
+    "minutes_one": "{{minutes}} minute",
+    "minutes_other": "{{minutes}} minutes",
+    "minutes_many": "{{minutes}} minutes",
+    "hours_one": "{{hours}} heure",
+    "hours_other": "{{hours}} heures",
+    "hours_many": "{{hours}} heures",
+    "days_one": "{{days}} jour",
+    "days_ago_one": "{{days}} jour",
+    "days_other": "{{days}} jours",
+    "days_ago_other": "{{days}} jours",
+    "days_many": "{{days}} jours",
+    "days_ago_many": "{{days}} jours"
   },
   "test": {
     "not_available": "Il n'y a actuellement aucun test disponible",
@@ -333,7 +348,8 @@
       "route_no_reply": "Pas de réponse",
       "route_lost_one": "{{count}} perdu",
       "route_lost_other": "{{count}} perdus",
-      "route_lost": "{{count}} perdus"
+      "route_lost": "{{count}} perdus",
+      "route_lost_many": "{{count}} perdus"
     }
   },
   "errors": {
@@ -450,7 +466,10 @@
       "range": "Entre {{min}} et {{max}}",
       "sample_count": "Sur {{tests}} tests"
     },
-    "loaded_latency": "En charge"
+    "loaded_latency": "En charge",
+    "failed_in_period_one": "{{failed}} en échec sur cette période",
+    "failed_in_period_other": "{{failed}} en échec sur cette période",
+    "failed_in_period_many": "{{failed}} en échec sur cette période"
   },
   "calendar": {
     "select_range": "Sélectionnez la plage de dates",
@@ -836,7 +855,11 @@
     "outage_summary_one": "{{count}} test a échoué depuis {{since}}",
     "recovered_summary_one": "De nouveau en ligne après {{count}} test échoué depuis {{since}}",
     "outage_summary": "{{count}} tests d'affilée ont échoué depuis {{since}}",
-    "recovered_summary": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}"
+    "recovered_summary": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}",
+    "outage_summary_other": "{{count}} tests d'affilée ont échoué depuis {{since}}",
+    "recovered_summary_other": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}",
+    "outage_summary_many": "{{count}} tests d'affilée ont échoué depuis {{since}}",
+    "recovered_summary_many": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}"
   },
   "tokens": {
     "title": "Jetons API",

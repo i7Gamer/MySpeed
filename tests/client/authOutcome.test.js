@@ -1,5 +1,5 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
@@ -129,7 +129,7 @@ describe("a refusal because the server is busy", () => {
  */
 describe("the credential prompt's own branches", () => {
     const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-    const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+    const read = (file) => readSource(path.join(root, file));
 
     it("has a dialog for a busy server", () => {
         assert.match(read("client/src/common/contexts/Config/dialog.jsx"), /export const busyDialog/,

@@ -230,7 +230,7 @@ describe("tokens in the backup", () => {
     });
 
     it("are restored inside the same transaction as everything else", () => {
-        const body = bodyOf(readSource("server/controller/config.js"), "export const importConfig = async (obj) => {");
+        const body = bodyOf(readSource("server/controller/config.js"), "export const importConfig");
         const transaction = bodyOf(body, "await db.transaction(async (transaction) => {");
 
         assert.match(transaction, /tokens\.replaceAll\(tokenRows, transaction\)/);

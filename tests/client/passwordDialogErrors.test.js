@@ -1,13 +1,13 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DIALOG = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..",
     "client", "src", "common", "components", "PasswordDialog", "PasswordDialog.jsx");
 
-const source = fs.readFileSync(DIALOG, "utf8");
+const source = readSource(DIALOG);
 
 /**
  * patchRequest hands back the raw Response, so the dialog used to await it and

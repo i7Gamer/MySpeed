@@ -10,6 +10,9 @@ on:
         required: true
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   build-msi:
     name: "Windows MSI Installer (${{ matrix.label }})"
@@ -35,7 +38,7 @@ jobs:
       # Both artifacts carry a MySpeed.exe, so everything below - the WiX
       # source, the service configuration, every GUID - is identical either way.
       - name: Download Windows server binary
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: ${{ matrix.artifact }}
           path: ./installer
@@ -302,19 +305,57 @@ jobs:
           candle -arch x64 -ext WixUtilExtension myspeed.wxs
           light myspeed.wixobj -ext WixUtilExtension -sice:ICE61 -o MySpeed-installer.msi
 
+      - name: Hash installer
+        shell: pwsh
+        run: |
+          $path = 'installer/MySpeed-installer.msi'
+          (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -LiteralPath "$path.sha256" -Encoding ascii
+
+      - name: Upload verified installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-msi-${{ matrix.asset_name }}
+          path: |
+            installer/MySpeed-installer.msi
+            installer/MySpeed-installer.msi.sha256
+          if-no-files-found: error
+
+  publish-msi:
+    name: "Publish installers"
+    runs-on: ubuntu-latest
+    needs: build-msi
+    permissions:
+      contents: write
+    steps:
+      - name: Download installers
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-msi-*
+          path: artifacts
+
       - name: Upload to Release
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RELEASE_ID: ${{ inputs.release_id }}
-          ASSET_NAME: ${{ matrix.asset_name }}
-          ASSET_PATH: installer/MySpeed-installer.msi
         with:
           script: |
             const fs = require('fs');
-            await github.rest.repos.uploadReleaseAsset({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              release_id: parseInt(process.env.RELEASE_ID, 10),
-              name: process.env.ASSET_NAME,
-              data: fs.readFileSync(process.env.ASSET_PATH)
-            });
+            const {createHash} = require('crypto');
+            const names = ['MySpeed-installer.msi', 'MySpeed-installer-baseline.msi'];
+            for (const name of names) {
+              const path = `artifacts/release-msi-${name}/MySpeed-installer.msi`;
+              if (!fs.lstatSync(path).isFile() || fs.statSync(path).size === 0)
+                throw new Error(`Missing or empty release asset: ${name}`);
+              const expected = fs.readFileSync(path + '.sha256', 'utf8').trim();
+              const actual = createHash('sha256').update(fs.readFileSync(path)).digest('hex');
+              if (actual !== expected) throw new Error('SHA256 digest mismatch: ' + name);
+            }
+            for (const name of names) {
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: Number(process.env.RELEASE_ID),
+                name,
+                data: fs.readFileSync(`artifacts/release-msi-${name}/MySpeed-installer.msi`)
+              });
+            }

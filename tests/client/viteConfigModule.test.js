@@ -1,3 +1,4 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -70,7 +71,7 @@ describe("the client's vite config", () => {
      * nothing. One warning replacing another is how that stayed invisible.
      */
     it("reaches for nothing that only exists in CommonJS", () => {
-        const source = fs.readFileSync(path.join(CLIENT, configs[0]), "utf8");
+        const source = readSource(path.join(CLIENT, configs[0]));
 
         for (const global of ["__dirname", "__filename", "require(", "module.exports"])
             assert.ok(!source.includes(global),

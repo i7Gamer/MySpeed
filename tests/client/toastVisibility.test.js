@@ -1,20 +1,19 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
     TOAST_HIDDEN, toastClassName
 } from "../../client/src/common/contexts/ToastNotification/toastState.js";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
 // Comments stripped before anything is asserted against the source, for the
 // reason the shared helper states: an assertion that the code no longer does X
 // otherwise matches the sentence saying it used to.
-const provider = withoutJsComments(fs.readFileSync(path.join(CLIENT_SRC,
-    "common/contexts/ToastNotification/ToastNotificationContext.jsx"), "utf8"));
+const provider = withoutJsComments(readSource(path.join(CLIENT_SRC,
+    "common/contexts/ToastNotification/ToastNotificationContext.jsx")));
 
 const RED_TOAST = {text: "Something failed", color: "red"};
 const GREEN_TOAST = {text: "Saved", color: "green"};

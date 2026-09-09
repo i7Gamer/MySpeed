@@ -278,7 +278,17 @@
     "hours": "{{hours}} timmar",
     "day": "1 dag",
     "days": "{{days}} dagar",
-    "days_ago": "{{days}} dagar"
+    "days_ago": "{{days}} dagar",
+    "seconds_one": "{{seconds}} sekund",
+    "seconds_other": "{{seconds}} sekunder",
+    "minutes_one": "{{minutes}} minut",
+    "minutes_other": "{{minutes}} minuter",
+    "hours_one": "{{hours}} timme",
+    "hours_other": "{{hours}} timmar",
+    "days_one": "{{days}} dag",
+    "days_ago_one": "{{days}} dag",
+    "days_other": "{{days}} dagar",
+    "days_ago_other": "{{days}} dagar"
   },
   "test": {
     "not_available": "Det finns inga tester just nu",
@@ -450,7 +460,9 @@
       "range": "Mellan {{min}} och {{max}}",
       "sample_count": "Över {{tests}} tester"
     },
-    "loaded_latency": "Under belastning"
+    "loaded_latency": "Under belastning",
+    "failed_in_period_one": "{{failed}} misslyckades under denna period",
+    "failed_in_period_other": "{{failed}} misslyckades under denna period"
   },
   "calendar": {
     "select_range": "Välj datumintervall",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{count}} test har misslyckats sedan {{since}}",
     "recovered_summary_one": "Online igen efter {{count}} misslyckat test sedan {{since}}",
     "outage_summary": "{{count}} tester i rad har misslyckats sedan {{since}}",
-    "recovered_summary": "Online igen efter {{count}} misslyckade tester sedan {{since}}"
+    "recovered_summary": "Online igen efter {{count}} misslyckade tester sedan {{since}}",
+    "outage_summary_other": "{{count}} tester i rad har misslyckats sedan {{since}}",
+    "recovered_summary_other": "Online igen efter {{count}} misslyckade tester sedan {{since}}"
   },
   "tokens": {
     "title": "API-tokens",

@@ -278,7 +278,17 @@
     "hours": "{{hours}} saat",
     "day": "1 gün",
     "days": "{{days}} gün",
-    "days_ago": "{{days}} gün"
+    "days_ago": "{{days}} gün",
+    "seconds_one": "{{seconds}} saniye",
+    "seconds_other": "{{seconds}} saniye",
+    "minutes_one": "{{minutes}} dakika",
+    "minutes_other": "{{minutes}} dakika",
+    "hours_one": "{{hours}} saat",
+    "hours_other": "{{hours}} saat",
+    "days_one": "{{days}} gün",
+    "days_ago_one": "{{days}} gün",
+    "days_other": "{{days}} gün",
+    "days_ago_other": "{{days}} gün"
   },
   "test": {
     "not_available": "Şu anda kullanılabilir test yok",
@@ -450,7 +460,9 @@
       "range": "{{min}} ile {{max}} arasında",
       "sample_count": "{{tests}} test boyunca"
     },
-    "loaded_latency": "Yük altında"
+    "loaded_latency": "Yük altında",
+    "failed_in_period_one": "Bu dönemde {{failed}} başarısız",
+    "failed_in_period_other": "Bu dönemde {{failed}} başarısız"
   },
   "calendar": {
     "select_range": "Tarih aralığı seçin",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
     "recovered_summary_one": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi",
     "outage_summary": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
-    "recovered_summary": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi"
+    "recovered_summary": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi",
+    "outage_summary_other": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
+    "recovered_summary_other": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi"
   },
   "tokens": {
     "title": "API belirteçleri",

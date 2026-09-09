@@ -284,7 +284,39 @@
     "day": "1 dzień",
     "day_ago": "1 dniem",
     "days": "{{days}} dni",
-    "days_ago": "{{days}} dniami"
+    "days_ago": "{{days}} dniami",
+    "seconds_one": "{{seconds}} sekunda",
+    "seconds_ago_one": "{{seconds}} sekundą",
+    "seconds_other": "{{seconds}} sekundy",
+    "seconds_ago_other": "{{seconds}} sekundami",
+    "seconds_few": "{{seconds}} sekundy",
+    "seconds_ago_few": "{{seconds}} sekundami",
+    "seconds_many": "{{seconds}} sekund",
+    "seconds_ago_many": "{{seconds}} sekundami",
+    "minutes_one": "{{minutes}} minuta",
+    "minutes_ago_one": "{{minutes}} minutą",
+    "minutes_other": "{{minutes}} minuty",
+    "minutes_ago_other": "{{minutes}} minutami",
+    "minutes_few": "{{minutes}} minuty",
+    "minutes_ago_few": "{{minutes}} minutami",
+    "minutes_many": "{{minutes}} minut",
+    "minutes_ago_many": "{{minutes}} minutami",
+    "hours_one": "{{hours}} godzina",
+    "hours_ago_one": "{{hours}} godziną",
+    "hours_other": "{{hours}} godziny",
+    "hours_ago_other": "{{hours}} godzinami",
+    "hours_few": "{{hours}} godziny",
+    "hours_ago_few": "{{hours}} godzinami",
+    "hours_many": "{{hours}} godzin",
+    "hours_ago_many": "{{hours}} godzinami",
+    "days_one": "{{days}} dzień",
+    "days_ago_one": "{{days}} dniem",
+    "days_other": "{{days}} dnia",
+    "days_ago_other": "{{days}} dniami",
+    "days_few": "{{days}} dni",
+    "days_ago_few": "{{days}} dniami",
+    "days_many": "{{days}} dni",
+    "days_ago_many": "{{days}} dniami"
   },
   "test": {
     "not_available": "Obecnie nie ma dostępnych testów",
@@ -339,7 +371,9 @@
       "route_no_reply": "Brak odpowiedzi",
       "route_lost_one": "{{count}} utracony",
       "route_lost_other": "{{count}} utraconych",
-      "route_lost": "{{count}} utraconych"
+      "route_lost": "{{count}} utraconych",
+      "route_lost_few": "{{count}} utracone",
+      "route_lost_many": "{{count}} utraconych"
     }
   },
   "errors": {
@@ -456,7 +490,11 @@
       "range": "Od {{min}} do {{max}}",
       "sample_count": "Na {{tests}} testach"
     },
-    "loaded_latency": "Pod obciążeniem"
+    "loaded_latency": "Pod obciążeniem",
+    "failed_in_period_one": "{{failed}} nieudany w tym okresie",
+    "failed_in_period_other": "{{failed}} nieudanych w tym okresie",
+    "failed_in_period_few": "{{failed}} nieudane w tym okresie",
+    "failed_in_period_many": "{{failed}} nieudanych w tym okresie"
   },
   "calendar": {
     "select_range": "Wybierz zakres dat",
@@ -842,7 +880,13 @@
     "outage_summary_one": "{{count}} test zakończył się niepowodzeniem od {{since}}",
     "recovered_summary_one": "Ponownie online po {{count}} nieudanym teście od {{since}}",
     "outage_summary": "{{count}} testów z rzędu zakończyło się niepowodzeniem od {{since}}",
-    "recovered_summary": "Ponownie online po {{count}} nieudanych testach od {{since}}"
+    "recovered_summary": "Ponownie online po {{count}} nieudanych testach od {{since}}",
+    "outage_summary_other": "{{count}} testów z rzędu zakończyło się niepowodzeniem od {{since}}",
+    "recovered_summary_other": "Ponownie online po {{count}} nieudanych testach od {{since}}",
+    "outage_summary_few": "{{count}} testy z rzędu zakończyły się niepowodzeniem od {{since}}",
+    "recovered_summary_few": "Ponownie online po {{count}} nieudanych testach od {{since}}",
+    "outage_summary_many": "{{count}} testów z rzędu zakończyło się niepowodzeniem od {{since}}",
+    "recovered_summary_many": "Ponownie online po {{count}} nieudanych testach od {{since}}"
   },
   "tokens": {
     "title": "Tokeny API",

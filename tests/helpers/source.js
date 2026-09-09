@@ -13,8 +13,9 @@ const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
  */
 export const normaliseLineEndings = (text) => text.replace(/\r\n/g, "\n");
 
-/** A source file under the repository root, as text, with LF line endings. */
-export const readSource = (file) => normaliseLineEndings(fs.readFileSync(path.join(root, file), "utf8"));
+/** Source text with LF endings, from a repo-relative path, resolved path or file URL. */
+export const readSource = (file) => normaliseLineEndings(fs.readFileSync(
+    file instanceof URL ? file : path.resolve(root, file), "utf8"));
 
 /**
  * The javascript files in a directory under the repository root.

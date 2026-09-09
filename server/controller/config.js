@@ -24,6 +24,8 @@ import { isKnownTimeZone } from '../util/timezone.js';
 import { withoutUrlCredentials } from '../util/urlCredentials.js';
 import { ALLOWED_PROTOCOLS } from '../util/safeUrl.js';
 import * as tokens from './tokens.js';
+import { mutateAdminEntities } from '../util/adminMutation.js';
+import { advanceAuthPolicy } from '../util/authPolicy.js';
 
 // Exported for the scheduler's fallback: an invalid stored cron at boot is
 // replaced by this default rather than by a silence with no schedule in it.
@@ -339,7 +341,14 @@ export const getValue = async (key) => {
     return (await config.findByPk(key))?.value;
 }
 
-export const updateValue = async (key, newValue) => {
+export const updateValue = (key, newValue) => {
+    const write = () => writeValue(key, newValue);
+    // A security write cannot join an import/reset transaction accidentally and
+    // revoke credentials or advance policy for a transaction that rolls back.
+    return key === "password" || key === "passwordLevel" ? mutateAdminEntities(write) : write();
+};
+
+const writeValue = async (key, newValue) => {
     if ((await getValue(key)) === undefined) return undefined;
 
     /*
@@ -361,6 +370,7 @@ export const updateValue = async (key, newValue) => {
     // alive would quietly undo that: the browser holding it would keep working
     // against a password that no longer exists.
     if (key === "password") destroyAllSessions();
+    if (key === "passwordLevel") advanceAuthPolicy();
 
     // Not awaited - an integration is allowed to be slow, and a caller waiting
     // on a config save should not wait on a webhook - but its rejection is
@@ -672,7 +682,7 @@ const REFUSED = {ok: false};
  * `nodes` key destroyed every node, integration and recommendation with no way
  * back - there is no soft delete and nothing else holds a copy.
  */
-export const importConfig = async (obj) => {
+export const importConfig = (obj) => mutateAdminEntities(async () => {
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) return REFUSED;
 
     const rows = {};
@@ -1078,6 +1088,7 @@ export const importConfig = async (obj) => {
     // would otherwise keep full access for the rest of its seven days - past
     // the point where the old password itself correctly stops working.
     if (updates.some((update) => update.key === "password")) destroyAllSessions();
+    if (updates.some((update) => update.key === "passwordLevel")) advanceAuthPolicy();
 
     // Restarting the scheduler is not something a transaction can roll back, so
     // it only happens once the import has actually committed.
@@ -1096,9 +1107,9 @@ export const importConfig = async (obj) => {
     }
 
     return {ok: true};
-}
+});
 
-export const factoryReset = async () => {
+export const factoryReset = () => mutateAdminEntities(async () => {
     // Cleared and re-seeded rather than updated key by key. The loop read
     // configDefaults[key] for every key the table happened to hold, so a key
     // left behind by an older version - or one written by hand - resolved to
@@ -1136,6 +1147,7 @@ export const factoryReset = async () => {
     // password still stands, and logging everyone out of an instance that did
     // not reset revokes access it still guards.
     destroyAllSessions();
+    advanceAuthPolicy();
 
     // pauseController's state is a module variable the transaction above never
     // touches, so a paused instance came out of "factory fresh" still paused -
@@ -1157,4 +1169,4 @@ export const factoryReset = async () => {
         console.error(`Could not refresh the interfaces after a reset: ${toErrorMessage(error)}`));
 
     return true;
-}
+});

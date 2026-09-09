@@ -284,7 +284,39 @@
     "day": "1 den",
     "day_ago": "1 dnem",
     "days": "{{days}} dny",
-    "days_ago": "{{days}} dny"
+    "days_ago": "{{days}} dny",
+    "seconds_one": "{{seconds}} sekunda",
+    "seconds_ago_one": "{{seconds}} sekundou",
+    "seconds_other": "{{seconds}} sekund",
+    "seconds_ago_other": "{{seconds}} sekundami",
+    "seconds_few": "{{seconds}} sekundy",
+    "seconds_ago_few": "{{seconds}} sekundami",
+    "seconds_many": "{{seconds}} sekundy",
+    "seconds_ago_many": "{{seconds}} sekundami",
+    "minutes_one": "{{minutes}} minuta",
+    "minutes_ago_one": "{{minutes}} minutou",
+    "minutes_other": "{{minutes}} minut",
+    "minutes_ago_other": "{{minutes}} minutami",
+    "minutes_few": "{{minutes}} minuty",
+    "minutes_ago_few": "{{minutes}} minutami",
+    "minutes_many": "{{minutes}} minuty",
+    "minutes_ago_many": "{{minutes}} minutami",
+    "hours_one": "{{hours}} hodina",
+    "hours_ago_one": "{{hours}} hodinou",
+    "hours_other": "{{hours}} hodin",
+    "hours_ago_other": "{{hours}} hodinami",
+    "hours_few": "{{hours}} hodiny",
+    "hours_ago_few": "{{hours}} hodinami",
+    "hours_many": "{{hours}} hodiny",
+    "hours_ago_many": "{{hours}} hodinami",
+    "days_one": "{{days}} den",
+    "days_ago_one": "{{days}} dnem",
+    "days_other": "{{days}} dnů",
+    "days_ago_other": "{{days}} dny",
+    "days_few": "{{days}} dny",
+    "days_ago_few": "{{days}} dny",
+    "days_many": "{{days}} dne",
+    "days_ago_many": "{{days}} dny"
   },
   "test": {
     "not_available": "Momentálně nejsou k dispozici žádné testy",
@@ -339,7 +371,9 @@
       "route_no_reply": "Žádná odpověď",
       "route_lost_one": "{{count}} ztraceno",
       "route_lost_other": "{{count}} ztraceno",
-      "route_lost": "{{count}} ztraceno"
+      "route_lost": "{{count}} ztraceno",
+      "route_lost_few": "{{count}} ztraceno",
+      "route_lost_many": "{{count}} ztraceno"
     }
   },
   "errors": {
@@ -456,7 +490,11 @@
       "range": "Mezi {{min}} a {{max}}",
       "sample_count": "Napříč {{tests}} testy"
     },
-    "loaded_latency": "Při zátěži"
+    "loaded_latency": "Při zátěži",
+    "failed_in_period_one": "{{failed}} neúspěšný v tomto období",
+    "failed_in_period_other": "{{failed}} neúspěšných v tomto období",
+    "failed_in_period_few": "{{failed}} neúspěšné v tomto období",
+    "failed_in_period_many": "{{failed}} neúspěšných v tomto období"
   },
   "calendar": {
     "select_range": "Vyberte časové období",
@@ -842,7 +880,13 @@
     "outage_summary_one": "{{count}} test selhal od {{since}}",
     "recovered_summary_one": "Opět online po {{count}} neúspěšném testu od {{since}}",
     "outage_summary": "{{count}} testů po sobě selhalo od {{since}}",
-    "recovered_summary": "Opět online po {{count}} neúspěšných testech od {{since}}"
+    "recovered_summary": "Opět online po {{count}} neúspěšných testech od {{since}}",
+    "outage_summary_other": "{{count}} testů po sobě selhalo od {{since}}",
+    "recovered_summary_other": "Opět online po {{count}} neúspěšných testech od {{since}}",
+    "outage_summary_few": "{{count}} testy po sobě selhaly od {{since}}",
+    "recovered_summary_few": "Opět online po {{count}} neúspěšných testech od {{since}}",
+    "outage_summary_many": "{{count}} testů po sobě selhalo od {{since}}",
+    "recovered_summary_many": "Opět online po {{count}} neúspěšných testech od {{since}}"
   },
   "tokens": {
     "title": "API tokeny",

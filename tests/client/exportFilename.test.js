@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { exportFilename } from "../../client/src/common/components/ExportButton/filename.js";
 
 /**
@@ -42,7 +42,7 @@ describe("exportFilename", () => {
     });
 
     it("is handed the target the button narrows the request to", () => {
-        const button = fs.readFileSync(new URL("../../client/src/common/components/ExportButton/ExportButton.jsx", import.meta.url), "utf8");
+        const button = readSource(new URL("../../client/src/common/components/ExportButton/ExportButton.jsx", import.meta.url));
 
         assert.match(button, /exportFilename\(\{[^}]*\btarget\b[^}]*\}\)/,
             "the request is narrowed to a target the filename does not name");

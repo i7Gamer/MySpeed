@@ -1,14 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { NOT_MEASURED, printableFigure } from "@/common/utils/FormatUtil.js";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 
 const component = read("common/components/FigureWithUnit/FigureWithUnit.jsx");
 const formatUtil = read("common/utils/FormatUtil.js");

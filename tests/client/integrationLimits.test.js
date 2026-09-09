@@ -1,12 +1,12 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 
-const read = (...parts) => fs.readFileSync(path.join(ROOT, ...parts), "utf8");
+const read = (...parts) => readSource(path.join(ROOT, ...parts));
 
 const serverSource = read("server", "controller", "integrations.js");
 // The client's half moved out of IntegrationDialog.jsx when it was extracted so

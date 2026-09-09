@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { useContext } from "react";
 import { MemoryRouter, useSearchParams } from "react-router-dom";
 import { compile, rules } from "../helpers/sass.mjs";
-import { escapeRegExp } from "../helpers/source.js";
+import { readSource, escapeRegExp } from "../helpers/source.js";
 import { act, cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
 import { AlertProvider } from "@/common/contexts/Alert";
 import { ConfigContext } from "@/common/contexts/Config";
@@ -21,7 +21,7 @@ import TestArea from "@/pages/Home/components/TestArea/TestAreaComponent.jsx";
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const CLIENT_SRC = path.join(ROOT, "client", "src");
 
-const read = (file) => fs.readFileSync(path.join(CLIENT_SRC, file), "utf8");
+const read = (file) => readSource(path.join(CLIENT_SRC, file));
 const english = JSON.parse(
     fs.readFileSync(path.join(ROOT, "client/public/assets/locales/en.json"), "utf8"));
 

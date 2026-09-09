@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { formatLatency, formatLatencyWithUnit } from "@/common/utils/FormatUtil.js";
@@ -8,8 +8,8 @@ import { gradeForIncrease, readableFigure } from "@/common/utils/TestUtil.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const card = fs.readFileSync(path.join(CLIENT_SRC,
-    "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx"), "utf8");
+const card = readSource(path.join(CLIENT_SRC,
+    "pages/Statistics/charts/ConsistencyChart/ConsistencyChart.jsx"));
 
 /**
  * The stability card, and the precision it prints its latencies at.

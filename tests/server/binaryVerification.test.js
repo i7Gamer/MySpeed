@@ -47,7 +47,7 @@ describe("the Linux binaries are proven to boot", () => {
 
     it("verifies before uploading, as the Windows job does", () => {
         const verify = linux.indexOf("verify-binary.ps1");
-        const upload = linux.indexOf("Upload to Release");
+        const upload = linux.indexOf("Upload verified build");
 
         assert.notEqual(verify, -1, "the Linux binaries are uploaded without ever having been run");
         assert.ok(verify < upload,
@@ -99,7 +99,7 @@ describe("the macOS binaries are proven to boot", () => {
 
     it("verifies before uploading, as the Windows and Linux jobs do", () => {
         const verify = macos.indexOf("verify-binary.ps1");
-        const upload = macos.indexOf("Upload to Release");
+        const upload = macos.indexOf("Upload verified build");
 
         assert.notEqual(verify, -1, "the macOS binaries are uploaded without ever having been run");
         assert.ok(verify < upload, "the binary is uploaded before it is verified, so the check gates nothing");

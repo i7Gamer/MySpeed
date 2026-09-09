@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { promptUntilAccepted } from "../../client/src/common/utils/PasswordPrompt.js";
 
@@ -135,8 +135,8 @@ describe("promptUntilAccepted", () => {
  * empty submit is still not one of them: it is a keypress, not a decision.
  */
 describe("the credential prompt cannot be emptied out of existence", () => {
-    const source = fs.readFileSync(fileURLToPath(
-        new URL("../../client/src/common/contexts/Config/ConfigContext.jsx", import.meta.url)), "utf8");
+    const source = readSource(fileURLToPath(
+        new URL("../../client/src/common/contexts/Config/ConfigContext.jsx", import.meta.url)));
 
     const openInput = source.slice(source.indexOf("alert.openInput"));
     const options = openInput.slice(0, openInput.indexOf("});"));
@@ -154,8 +154,8 @@ describe("the credential prompt cannot be emptied out of existence", () => {
 });
 
 describe("the alert renderer honours that request", () => {
-    const renderer = fs.readFileSync(fileURLToPath(
-        new URL("../../client/src/common/contexts/Alert/AlertContext.jsx", import.meta.url)), "utf8");
+    const renderer = readSource(fileURLToPath(
+        new URL("../../client/src/common/contexts/Alert/AlertContext.jsx", import.meta.url)));
 
     it("refuses to submit a required input that is empty", () => {
         assert.match(renderer, /alert\.required && !inputValue/);

@@ -23,13 +23,12 @@
  * its test and must import nothing of the tree.
  */
 
-import { phrase } from './notificationLocale.js';
+import { countedPhrase } from './notificationLocale.js';
 import { localDateTime } from './timezone.js';
 
 /** The two events, in the order they happen. */
 export const OUTAGE_EVENT = "outageStarted";
 export const RECOVERED_EVENT = "connectionRestored";
-const SINGLE_FAILURE = 1;
 
 /** One switch for both - being told a line is down and not that it is back is half a message. */
 export const SEND_OUTAGE_FIELD = "send_outage";
@@ -176,10 +175,8 @@ export const outageSummary = (eventName, payload, language, zone) => {
     const {date, time} = localDateTime(zone, streak.downSince);
     const values = {count: streak[FAILURES_IN_ROW], since: `${date} ${time}`};
 
-    if (eventName === OUTAGE_EVENT) return values.count === SINGLE_FAILURE
-        ? phrase(language, "outage_summary_one", values) : phrase(language, "outage_summary", values);
-    if (eventName === RECOVERED_EVENT) return values.count === SINGLE_FAILURE
-        ? phrase(language, "recovered_summary_one", values) : phrase(language, "recovered_summary", values);
+    if (eventName === OUTAGE_EVENT) return countedPhrase(language, "outage_summary", values);
+    if (eventName === RECOVERED_EVENT) return countedPhrase(language, "recovered_summary", values);
 
     return "";
 };

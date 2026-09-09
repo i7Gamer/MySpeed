@@ -1,6 +1,6 @@
+import { readSource } from "../helpers/source.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,8 +9,8 @@ import {
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const context = fs.readFileSync(path.join(CLIENT_SRC,
-    "common/contexts/Config/ConfigContext.jsx"), "utf8");
+const context = readSource(path.join(CLIENT_SRC,
+    "common/contexts/Config/ConfigContext.jsx"));
 
 const VIEW_CONFIG = {viewMode: true, provider: "ookla"};
 const ADMIN_CONFIG = {viewMode: false, provider: "ookla"};
@@ -180,13 +180,13 @@ describe("the config context", () => {
  */
 describe("the node refusal header", () => {
     const SERVER_ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "server");
-    const read = (file) => fs.readFileSync(path.join(SERVER_ROOT, file), "utf8");
+    const read = (file) => readSource(path.join(SERVER_ROOT, file));
 
     const nameIn = (source) => source.match(/NODE_REFUSAL_HEADER\s*=\s*"([^"]+)"/)?.[1];
 
     it("is spelled the same on both sides", () => {
         const server = nameIn(read("util/authOutcome.js"));
-        const client = nameIn(fs.readFileSync(path.join(CLIENT_SRC, "common/utils/AuthOutcome.js"), "utf8"));
+        const client = nameIn(readSource(path.join(CLIENT_SRC, "common/utils/AuthOutcome.js")));
 
         assert.ok(server, "the server no longer names the header");
         assert.equal(client, server, "the client reads a header the server does not set");
@@ -253,8 +253,8 @@ describe("deniesAdminAccess", () => {
  * And the header asks through it, in that direction.
  */
 describe("the header's admin login", () => {
-    const header = fs.readFileSync(path.join(CLIENT_SRC,
-        "common/components/Header/HeaderComponent.jsx"), "utf8");
+    const header = readSource(path.join(CLIENT_SRC,
+        "common/components/Header/HeaderComponent.jsx"));
 
     it("judges the re-read config through the shared answer", () => {
         assert.match(header, /deniesAdminAccess\(/,

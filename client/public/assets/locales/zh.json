@@ -278,7 +278,17 @@
     "hours": "{{hours}} 小时",
     "day": "1 天",
     "days": "{{days}} 天",
-    "days_ago": "{{days}} 天"
+    "days_ago": "{{days}} 天",
+    "seconds_one": "{{seconds}}秒钟",
+    "seconds_other": "{{seconds}} 秒",
+    "minutes_one": "{{minutes}}分钟",
+    "minutes_other": "{{minutes}} 分钟",
+    "hours_one": "{{hours}}小时",
+    "hours_other": "{{hours}} 小时",
+    "days_one": "{{days}} 天",
+    "days_ago_one": "{{days}} 天",
+    "days_other": "{{days}} 天",
+    "days_ago_other": "{{days}} 天"
   },
   "test": {
     "not_available": "目前没有任何测试",
@@ -450,7 +460,9 @@
       "range": "介于 {{min}} 和 {{max}} 之间",
       "sample_count": "共 {{tests}} 次测速"
     },
-    "loaded_latency": "负载下"
+    "loaded_latency": "负载下",
+    "failed_in_period_one": "此期间有 {{failed}} 次失败",
+    "failed_in_period_other": "此期间有 {{failed}} 次失败"
   },
   "calendar": {
     "select_range": "选择日期范围",
@@ -836,7 +848,9 @@
     "outage_summary_one": "自 {{since}} 起已连续 {{count}} 次测试失败",
     "recovered_summary_one": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线",
     "outage_summary": "自 {{since}} 起已连续 {{count}} 次测试失败",
-    "recovered_summary": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线"
+    "recovered_summary": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线",
+    "outage_summary_other": "自 {{since}} 起已连续 {{count}} 次测试失败",
+    "recovered_summary_other": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线"
   },
   "tokens": {
     "title": "API 令牌",

@@ -14,19 +14,26 @@ const bash = ["C:/Program Files/Git/bin/bash.exe", "bash", "/usr/bin/bash"]
     .find((candidate) => spawnSync(candidate, ["-c", "exit 0"], {timeout: TIMEOUT}).status === 0);
 const posix = (value) => value.replaceAll("\\", "/").replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`);
 
-const upgrade = (t, failure = "", active = true, {fresh = false, attempts = 1, name = "installation"} = {}) => {
+const upgrade = (t, failure = "", active = true, {fresh = false, existingData = false, attempts = 1, name = "installation"} = {}) => {
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-upgrade-")));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const bin = path.join(root, "bin");
     const installation = path.join(root, name);
     fs.mkdirSync(bin);
     fs.mkdirSync(installation);
+    if (existingData) fs.mkdirSync(path.join(installation, "data"));
     if (!fresh) fs.writeFileSync(path.join(installation, "myspeed"), "old binary");
     const unit = path.join(root, "myspeed.service");
     if (!fresh) fs.writeFileSync(unit, "old service");
     if (active) fs.writeFileSync(path.join(root, "active"), "");
     const stub = (name, body) => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
-    for (const name of ["apt-get", "chown", "useradd"]) stub(name, "exit 0");
+    for (const name of ["apt-get", "useradd"]) stub(name, "exit 0");
+    stub("chown", '[ "$FAILURE" != ownership ]');
+    stub("mkdir", `case "$*" in
+  */data) [ "$FAILURE" = data-directory ] && exit 1 ;;
+  */bin) [ "$FAILURE" = binary-directory ] && exit 1 ;;
+esac
+exec /bin/mkdir "$@"`);
     stub("id", "echo 999");
     stub("uname", "echo aarch64");
     stub("curl", `case "$*" in
@@ -45,6 +52,7 @@ esac`);
 echo 'new binary' > "$3"`);
     stub("sha256sum", "echo valid");
     stub("chmod", `[ "$FAILURE" = chmod ] && exit 1
+case "$*" in */data) [ "$FAILURE" = data-mode ] && exit 1 ;; esac
 exit 0`);
     stub("mv", `echo move >> "$SANDBOX/calls"
 [ "$FAILURE" = move ] || [ "$FAILURE" = recovery ] && exit 1
@@ -85,7 +93,7 @@ esac`);
         .replace(/^(\s*)sleep \d+$/gm, "$1:")
         .replace(/^(\s*)clear$/gm, "$1:");
     source = 'export PATH="$SANDBOX/bin:$PATH"\n'
-        + 'for mocked in apt-get chown useradd id uname curl wget sha256sum chmod mv cp cat systemctl; do\n'
+        + 'for mocked in apt-get chown useradd id uname curl wget sha256sum chmod mkdir mv cp cat systemctl; do\n'
         + ` [ "$(command -v "$mocked")" = "$SANDBOX/bin/$mocked" ] || exit ${GUARD_FAILURE}\ndone\n`
         + source;
     const script = path.join(root, "install.sh");
@@ -157,16 +165,36 @@ it("a second failed attempt retains the first known-good recovery artifact", {sk
     assert.ok(result.backups.includes("old binary"));
 });
 
-for (const failure of ["unit", "reload"]) {
-    it(`restores the executable and service definition after pre-execution ${failure} failure`, {skip: !bash}, (t) => {
-        const result = upgrade(t, failure);
-        assert.equal(result.status, 1, result.output);
-        assert.equal(result.binary, "old binary");
-        assert.equal(result.unit, "old service");
-        assert.equal(result.active, true);
-        assert.doesNotMatch(result.calls, /restart myspeed/);
-    });
+for (const failure of ["data-directory", "data-mode", "binary-directory", "ownership", "unit", "reload"]) {
+    for (const active of [true, false]) {
+        it(`restores the executable and service definition after pre-execution ${failure} failure (active=${active})`, {skip: !bash}, (t) => {
+            const result = upgrade(t, failure, active);
+            assert.equal(result.status, 1, result.output);
+            assert.equal(result.binary, "old binary");
+            assert.equal(result.unit, "old service");
+            assert.equal(result.active, active);
+            assert.doesNotMatch(result.calls, /restart myspeed/);
+        });
+    }
 }
+
+it("recovers an upgrade when securing an existing data directory fails", {skip: !bash}, (t) => {
+    const result = upgrade(t, "data-mode", true, {existingData: true});
+    assert.equal(result.status, 1, result.output);
+    assert.equal(result.binary, "old binary");
+    assert.equal(result.unit, "old service");
+    assert.equal(result.active, true);
+    assert.doesNotMatch(result.calls, /restart myspeed/);
+});
+
+it("does not start a failed first installation when its data directory cannot be created", {skip: !bash}, (t) => {
+    const result = upgrade(t, "data-directory", false, {fresh: true});
+    assert.equal(result.status, 1, result.output);
+    assert.equal(result.active, false);
+    assert.equal(result.unit, null);
+    assert.deepEqual(result.backups, []);
+    assert.doesNotMatch(result.calls, /(?:^|\n)(?:re)?start myspeed/);
+});
 
 it("a successful first installation needs no previous executable", {skip: !bash}, (t) => {
     const result = upgrade(t, "", false, {fresh: true});

@@ -278,7 +278,17 @@
     "hours": "{{hours}}시간",
     "day": "1일",
     "days": "{{days}}일",
-    "days_ago": "{{days}}일"
+    "days_ago": "{{days}}일",
+    "seconds_one": "{{seconds}}초",
+    "seconds_other": "{{seconds}}초",
+    "minutes_one": "{{minutes}}분",
+    "minutes_other": "{{minutes}}분",
+    "hours_one": "{{hours}}시간",
+    "hours_other": "{{hours}}시간",
+    "days_one": "{{days}}일",
+    "days_ago_one": "{{days}}일",
+    "days_other": "{{days}}일",
+    "days_ago_other": "{{days}}일"
   },
   "test": {
     "not_available": "현재 이용 가능한 테스트가 없습니다",
@@ -450,7 +460,9 @@
       "range": "{{min}}에서 {{max}} 사이",
       "sample_count": "{{tests}}회 테스트 기준"
     },
-    "loaded_latency": "부하 시"
+    "loaded_latency": "부하 시",
+    "failed_in_period_one": "이 기간에 {{failed}}개 실패",
+    "failed_in_period_other": "이 기간에 {{failed}}개 실패"
   },
   "calendar": {
     "select_range": "날짜 범위 선택",
@@ -836,7 +848,9 @@
     "outage_summary_one": "{{since}} 이후 {{count}}회 연속으로 테스트가 실패했습니다",
     "recovered_summary_one": "{{since}} 이후 {{count}}회 실패한 테스트를 지나 다시 온라인 상태입니다",
     "outage_summary": "{{since}} 이후 {{count}}회 연속으로 테스트가 실패했습니다",
-    "recovered_summary": "{{since}} 이후 {{count}}회 실패한 테스트를 지나 다시 온라인 상태입니다"
+    "recovered_summary": "{{since}} 이후 {{count}}회 실패한 테스트를 지나 다시 온라인 상태입니다",
+    "outage_summary_other": "{{since}} 이후 {{count}}회 연속으로 테스트가 실패했습니다",
+    "recovered_summary_other": "{{since}} 이후 {{count}}회 실패한 테스트를 지나 다시 온라인 상태입니다"
   },
   "tokens": {
     "title": "API 토큰",

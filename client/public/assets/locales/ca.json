@@ -278,7 +278,22 @@
     "hours": "{{hours}} hores",
     "day": "1 dia",
     "days": "{{days}} dies",
-    "days_ago": "{{days}} dies"
+    "days_ago": "{{days}} dies",
+    "seconds_one": "{{seconds}} segon",
+    "seconds_other": "{{seconds}} segons",
+    "seconds_many": "{{seconds}} segons",
+    "minutes_one": "{{minutes}} minut",
+    "minutes_other": "{{minutes}} minuts",
+    "minutes_many": "{{minutes}} minuts",
+    "hours_one": "{{hours}} hora",
+    "hours_other": "{{hours}} hores",
+    "hours_many": "{{hours}} hores",
+    "days_one": "{{days}} dia",
+    "days_ago_one": "{{days}} dia",
+    "days_other": "{{days}} dies",
+    "days_ago_other": "{{days}} dies",
+    "days_many": "{{days}} dies",
+    "days_ago_many": "{{days}} dies"
   },
   "test": {
     "not_available": "Ara mateix no hi ha cap prova disponible",
@@ -333,7 +348,8 @@
       "route_no_reply": "Cap resposta",
       "route_lost_one": "{{count}} perdut",
       "route_lost_other": "{{count}} perduts",
-      "route_lost": "{{count}} perduts"
+      "route_lost": "{{count}} perduts",
+      "route_lost_many": "{{count}} perduts"
     }
   },
   "errors": {
@@ -450,7 +466,10 @@
       "range": "Entre {{min}} i {{max}}",
       "sample_count": "En {{tests}} proves"
     },
-    "loaded_latency": "Sota càrrega"
+    "loaded_latency": "Sota càrrega",
+    "failed_in_period_one": "{{failed}} amb error en aquest període",
+    "failed_in_period_other": "{{failed}} amb error en aquest període",
+    "failed_in_period_many": "{{failed}} amb error en aquest període"
   },
   "calendar": {
     "select_range": "Selecciona un interval de dates",
@@ -836,7 +855,11 @@
     "outage_summary_one": "{{count}} prova ha fallat des de {{since}}",
     "recovered_summary_one": "De nou en línia després de {{count}} prova fallida des de {{since}}",
     "outage_summary": "{{count}} proves seguides han fallat des de {{since}}",
-    "recovered_summary": "De nou en línia després de {{count}} proves fallides des de {{since}}"
+    "recovered_summary": "De nou en línia després de {{count}} proves fallides des de {{since}}",
+    "outage_summary_other": "{{count}} proves seguides han fallat des de {{since}}",
+    "recovered_summary_other": "De nou en línia després de {{count}} proves fallides des de {{since}}",
+    "outage_summary_many": "{{count}} proves seguides han fallat des de {{since}}",
+    "recovered_summary_many": "De nou en línia després de {{count}} proves fallides des de {{since}}"
   },
   "tokens": {
     "title": "Tokens d'API",

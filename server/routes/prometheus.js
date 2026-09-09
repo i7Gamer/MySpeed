@@ -58,6 +58,11 @@ const authorizeMetrics = async (req, res) => {
     const passwordHash = await config.getValue("password");
     const unconfigured = passwordHash === config.NO_PASSWORD;
 
+    if (generation !== sessionGeneration()) {
+        unauthorized(res);
+        return false;
+    }
+
     if (unconfigured && allowsPasswordlessAccess(req)) return true;
 
     const credentials = readBasicAuth(req);

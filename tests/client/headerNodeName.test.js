@@ -1,14 +1,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isLocalNode, nodeTitle } from "../../client/src/common/components/Header/nodeTitle.js";
-import { withoutJsComments } from "../helpers/source.js";
+import { readSource, withoutJsComments } from "../helpers/source.js";
 
 const CLIENT_SRC = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..", "client", "src");
 
-const app = withoutJsComments(fs.readFileSync(path.join(CLIENT_SRC, "App.jsx"), "utf8"));
+const app = withoutJsComments(readSource(path.join(CLIENT_SRC, "App.jsx")));
 
 const NODES = [{id: 1, name: "living-room"}, {id: 2, name: "attic"}];
 const findNode = (id) => NODES.find((node) => node.id === id);
