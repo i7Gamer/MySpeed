@@ -122,7 +122,7 @@
   },
   "pause": {
     "manual": "Pausa indefinita",
-    "manual_desc": "Pausa fino al riavvio manuale",
+    "manual_desc": "In pausa fino alla ripresa manuale",
     "short": "Breve Interruzione",
     "short_desc": "Pausa per 1 ora",
     "medium": "Interruzione Media",
@@ -225,10 +225,10 @@
     "ping_unit": "ms",
     "jitter": "Jitter",
     "jitter_unit": "ms",
-    "down": "Scaricare",
+    "down": "Download",
     "speed_unit": "Mbps",
     "byte_speed_unit": "MB/s",
-    "up": "Caricare",
+    "up": "Upload",
     "latest": "Ultimo test",
     "bufferbloat": "Bufferbloat: aggiunge {{increase}} ms sotto carico",
     "bufferbloat_trend": "Bufferbloat negli ultimi test",
@@ -242,7 +242,7 @@
     "update": "È disponibile un aggiornamento della versione {{version}}. Vedere <Changes>le modifiche</Changes> e <DLLink>scaricare l'aggiornamento</DLLink>.",
     "down": {
       "title": "Velocità di download",
-      "description": "La velocità di download influisce sull'esperienza di navigazione. Maggiore è il numero di download, più veloce è la ricezione dei dati da parte del computer."
+      "description": "La velocità di download influisce sull'esperienza di navigazione. Maggiore è la velocità, più rapidamente il computer può ricevere dati."
     },
     "ping": {
       "title": "Ping",
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Perdita di pacchetti",
-      "description": "La perdita di pacchetti è la quota di dati che non è mai arrivata ed è stata rispedita. Qualsiasi valore sopra lo zero si sente come scatti nelle chiamate e nei giochi molto prima di comparire come velocità inferiore. Solo Ookla la misura, quindi un test di un altro provider la lascia vuota anziché riportare zero."
+      "description": "La perdita di pacchetti è la percentuale di pacchetti di dati inviati che non sono arrivati. Può causare interruzioni nelle chiamate e nei giochi. MySpeed la riporta per i test Ookla e per i test iperf3 in UDP; quando un test non la misura, il campo resta vuoto."
     },
     "up": {
       "title": "Velocità upload",
@@ -427,17 +427,17 @@
       "target_met_title": "Obiettivo raggiunto",
       "target_met_description": "Test con ping, download e upload valutati buoni: {{met}} su {{measured}}",
       "last_failure_title": "Ultimo fallimento",
-      "last_failure_description": "L'ultimo test in questo intervallo non completato"
+      "last_failure_description": "Il test fallito più recente in questo intervallo"
     },
     "targets": {
-      "title": "Confronto degli obiettivi",
+      "title": "Confronto delle destinazioni",
       "chart": {
         "ping": "Ping per destinazione",
-        "download": "Scaricare per destinazione",
-        "upload": "Caricare per destinazione"
+        "download": "Download per destinazione",
+        "upload": "Upload per destinazione"
       },
       "failure_rate": "Tasso di errore",
-      "empty": "Nessun obiettivo ha misurato nulla in questo periodo",
+      "empty": "Nessuna destinazione ha effettuato misurazioni in questo periodo",
       "unavailable": "Impossibile caricare"
     },
     "values": {
@@ -597,7 +597,7 @@
         "error_message": "Messaggio di errore",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Invia messaggi di errore",
-        "send_finished": "Invia messaggi finiti",
+        "send_finished": "Invia messaggi al termine",
         "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -650,13 +650,13 @@
         "title": "Titolo della notifica",
         "title_placeholder": "MySpeed (facoltativo)",
         "tags": "Tag",
-        "tags_placeholder": "avvertimento,satellite (separati da virgola)",
+        "tags_placeholder": "warning,satellite (separati da virgola)",
         "priority": "Priorità predefinita (1-5)",
         "error_priority": "Priorità di errore (1-5)",
         "error_message": "Messaggio di errore",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Errore: %error%",
         "send_failed": "Invia messaggi di errore",
-        "send_finished": "Invia messaggi finiti",
+        "send_finished": "Invia messaggi al termine",
         "finished_message": "Messaggio al termine",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -731,7 +731,7 @@
     "title": "Valori Ottimali",
     "use_recommended": "Usa i valori consigliati",
     "trace_route": "Traccia la rotta dei test degradati",
-    "trace_route_description": "Quando un test fallisce, scende sotto la sua linea di base o manca il ping ottimale, MySpeed traccia la rotta verso il server di test e mostra ogni salto nei dettagli del test."
+    "trace_route_description": "Quando un test fallisce, scende sotto la sua linea di base o il suo ping non è valutato come buono, MySpeed traccia la rotta verso il server di test e mostra ogni salto nei dettagli del test."
   },
   "preferences": {
     "title": "Preferenze",
@@ -771,7 +771,7 @@
     },
     "grade_values": {
       "title": "Colori dei voti",
-      "description": "Fin dove un voto viene portato su una misurazione.",
+      "description": "Scegli se applicare il colore della valutazione solo all'icona o anche al valore misurato.",
       "glyph": "Solo icona",
       "glyph_desc": "L'icona porta il voto",
       "values": "Icona e cifra",
@@ -837,7 +837,7 @@
     "metric_ping": "ping",
     "metric_download": "download",
     "metric_upload": "upload",
-    "crossed_limits": "Limiti superati: {{clauses}}",
+    "crossed_limits": "Limiti non rispettati: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} sopra {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} sotto {{limit}}",
     "not_measured": "{{metric}} (non misurato)",
@@ -889,6 +889,6 @@
     "empty": "Nessuna modifica registrata finora.",
     "ip": "Indirizzo IP",
     "isp": "Operatore",
-    "unknown_target": "Target rimosso"
+    "unknown_target": "Destinazione rimossa"
   }
 }

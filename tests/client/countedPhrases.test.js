@@ -12,7 +12,7 @@ const expected = {
     fr: ["1 test a échoué depuis", "après 1 test échoué depuis", "1 perdu", "2 perdus"],
     es: ["1 prueba ha fallado desde", "tras 1 prueba fallida desde", "1 perdido", "2 perdidos"],
     it: ["1 test è fallito da", "dopo 1 test fallito da", "1 perso", "2 persi"],
-    de: ["1 Test ist seit", "nach 1 fehlgeschlagenen Test seit", "1 verloren", "2 verloren"]
+    de: ["1 Test ist seit", "nach 1 fehlgeschlagenem Test seit", "1 verloren", "2 verloren"]
 };
 
 for (const [language, [outage, recovery, oneLost, twoLost]] of Object.entries(expected)) {

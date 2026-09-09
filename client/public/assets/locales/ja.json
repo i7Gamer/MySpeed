@@ -117,7 +117,7 @@
   },
   "locked": {
     "password_desc": "このインスタンスはパスワードで保護されています。サインインするとデータを閲覧できます。",
-    "token_hint": "サーバーはリクエストを拒否するたびに（最大で 10 分に 1 回）トークンをログに書き直します。そのため、このページを再読み込みすると、ログの末尾に新しいトークンが出力されます。",
+    "token_hint": "サーバーはリクエストを拒否するたびに（最大で 10 分に 1 回）トークンをログに書き直します。そのため、このページを再読み込みすると、ログの末尾に同じトークンのコピーが再度出力されます。",
     "enter_token": "セットアップトークンを入力"
   },
   "pause": {
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "パケットロス",
-      "description": "パケットロスは、届かずに再送が必要になったデータの割合です。ゼロを超えると、速度の低下として現れるよりずっと前に、通話やゲームのカクつきとして体感されます。これを測定するのは Ookla だけなので、他のプロバイダーのテストではゼロと報告される代わりに空欄になります。"
+      "description": "パケットロスは、送信したデータパケットのうち届かなかったものの割合です。通話やゲームが途切れる原因になります。MySpeed は Ookla と iperf3 UDP のテストでこの値を報告します。測定されなかった場合は空欄になります。"
     },
     "up": {
       "title": "アップロード速度",
@@ -421,7 +421,7 @@
       "target_met_title": "目標達成",
       "target_met_description": "Ping・ダウンロード・アップロードがすべて良好なテスト：{{met}}/{{measured}}",
       "last_failure_title": "最後の失敗",
-      "last_failure_description": "この範囲で完了しなかった最新のテスト"
+      "last_failure_description": "この範囲で最後に失敗したテスト"
     },
     "targets": {
       "title": "ターゲットの比較",
@@ -692,7 +692,7 @@
       "digest_monthly": "月次ダイジェストを送信",
       "language": "メッセージの言語",
       "language_placeholder": "英語（既定）",
-      "send_ip_changed": "外部 IP やプロバイダーが変更された際に通知する",
+      "send_ip_changed": "外部 IP やインターネット接続プロバイダーが変更された際に通知する",
       "ip_changed_message": "接続変更メッセージ",
       "ip_changed_message_placeholder": "新しいアドレス：%ip%（以前は %previousIp%）",
       "send_outage": "接続がダウンしたとき、および復旧したときに通知する",
@@ -724,7 +724,7 @@
     "title": "最適値",
     "use_recommended": "推奨値を使用",
     "trace_route": "劣化したテストのルートをトレースする",
-    "trace_route_description": "テストが失敗した場合、ベースラインを下回った場合、または最適な ping に達しなかった場合、MySpeed はテストサーバーへのルートをトレースし、テスト詳細にすべてのホップを表示します。"
+    "trace_route_description": "テストが失敗した場合、速度がベースラインのしきい値を下回った場合、または Ping が設定された最適値に対して良好と評価されない場合、MySpeed はテストサーバーへのルートをトレースし、テスト詳細にすべてのホップを表示します。"
   },
   "preferences": {
     "title": "環境設定",
@@ -830,7 +830,7 @@
     "metric_ping": "Ping",
     "metric_download": "ダウンロード",
     "metric_upload": "アップロード",
-    "crossed_limits": "しきい値を超過: {{clauses}}",
+    "crossed_limits": "基準外: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}}（しきい値 {{limit}} 超過）",
     "limit_under": "{{metric}} {{value}} {{unit}}（しきい値 {{limit}} 未満）",
     "not_measured": "{{metric}}（未計測）",
@@ -840,7 +840,7 @@
     "connection_changed": "接続が変更されました",
     "connection_changed_subject": "MySpeed：接続が変更されました",
     "ip_changed": "IP アドレス {{from}} → {{to}}",
-    "isp_changed": "プロバイダー {{from}} → {{to}}",
+    "isp_changed": "インターネット接続プロバイダー {{from}} → {{to}}",
     "outage": "接続がダウンしています",
     "outage_subject": "MySpeed：接続ダウン",
     "recovered": "接続が復旧しました",
@@ -876,10 +876,10 @@
   },
   "connections": {
     "title": "接続の変更",
-    "description": "外部 IP アドレスまたはプロバイダーが 2 回のテストの間に変わるたびに、テストのプロバイダーから見た内容で記録します。IPv4 と IPv6 は別々に追跡され、アドレスを報告するテストだけが変更に気づけます。",
+    "description": "2 回のテストの間に外部 IP アドレスまたはインターネット接続プロバイダーが変わるたびに、測定サービスが報告した内容を記録します。IPv4 と IPv6 は別々に追跡され、アドレスを報告するテストだけが変更を検出できます。",
     "empty": "まだ記録された変更はありません。",
     "ip": "IP アドレス",
-    "isp": "プロバイダー",
+    "isp": "インターネット接続プロバイダー",
     "unknown_target": "削除されたターゲット"
   }
 }

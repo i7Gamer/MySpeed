@@ -435,7 +435,7 @@ describe("alertSummary", () => {
         it("phrases the crossed limits", () => {
             assert.equal(alertSummary(result({ping: 62, download: 80}),
                 {alert_ping_above: 50, alert_download_below: 100, language: "de"}),
-            "\nGrenzwerte überschritten: Ping 62 ms über 50, Download 80 Mbps unter 100");
+            "\nGrenzwerte nicht eingehalten: Ping 62 ms über 50, Download 80 Mbps unter 100");
         });
 
         it("phrases the baseline crossing with each direction's own number", () => {
@@ -448,7 +448,7 @@ describe("alertSummary", () => {
 
         it("phrases an unmeasured metric", () => {
             assert.equal(alertSummary(result({ping: 0}), {alert_ping_above: 50, language: "de"}),
-                "\nGrenzwerte überschritten: Ping (nicht gemessen)");
+                "\nGrenzwerte nicht eingehalten: Ping (nicht gemessen)");
         });
 
         it("answers English for a language it does not know", () => {

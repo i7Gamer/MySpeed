@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Paketförlust",
-      "description": "Paketförlust är andelen data som aldrig kom fram och måste skickas igen. Allt över noll märks som hack i samtal och spel långt innan det syns som lägre hastighet. Bara Ookla mäter den, så ett test från en annan leverantör lämnar den tom i stället för att rapportera noll."
+      "description": "Paketförlust är den procentandel av de skickade datapaketen som inte kom fram. Det kan orsaka avbrott i samtal och spel. MySpeed visar den för Ookla-tester och för iperf3-tester med UDP. Om ett test inte mäter den lämnas fältet tomt."
     },
     "up": {
       "title": "Uppladdningshastighet",
@@ -324,10 +324,10 @@
       "unchanged": "Oförändrat sedan förra testet",
       "measured_at": "Uppmätt",
       "measured_with": "Uppmätt med",
-      "target": "Mål",
+      "target": "Testmål",
       "seconds": "{{seconds}} s",
       "data_used": "Dataanvändning",
-      "data_used_value": "{{down}} ned / {{up}} upp",
+      "data_used_value": "{{down}} mottaget / {{up}} skickat",
       "trigger": "Startat",
       "server": "Server",
       "result": "Fullständigt resultat",
@@ -421,17 +421,17 @@
       "target_met_title": "Mål uppnått",
       "target_met_description": "Tester med bra ping, nedladdning och uppladdning: {{met}} av {{measured}}",
       "last_failure_title": "Senaste misslyckandet",
-      "last_failure_description": "Det senaste testet i den här perioden som inte slutfördes"
+      "last_failure_description": "Det senaste misslyckade testet under denna period"
     },
     "targets": {
-      "title": "Jämförelse av mål",
+      "title": "Jämförelse av testmål",
       "chart": {
         "ping": "Ping per testmål",
         "download": "Nedladdning per testmål",
         "upload": "Uppladdning per testmål"
       },
       "failure_rate": "Felfrekvens",
-      "empty": "Inget mål har mätt något under denna period",
+      "empty": "Inget testmål har mätt något under denna period",
       "unavailable": "Kunde inte läsas in"
     },
     "values": {
@@ -476,7 +476,7 @@
     "last_7_days": "Senaste 7 dagarna",
     "last_30_days": "Senaste 30 dagarna",
     "last_90_days": "Senaste 90 dagarna",
-    "last_year": "Senaste året",
+    "last_year": "Senaste 365 dagarna",
     "mon": "Mån",
     "tue": "Tis",
     "wed": "Ons",
@@ -724,7 +724,7 @@
     "title": "Optimala värden",
     "use_recommended": "Använd rekommenderade",
     "trace_route": "Spåra rutten för försämrade tester",
-    "trace_route_description": "När ett test misslyckas, hamnar under sin baslinje eller missar det optimala pinget, spårar MySpeed rutten till testservern och visar varje hopp i testdetaljerna."
+    "trace_route_description": "När ett test misslyckas, hastigheten hamnar under baslinjen eller ping inte bedöms som bra, spårar MySpeed rutten till testservern och visar varje hopp i testdetaljerna."
   },
   "preferences": {
     "title": "Preferenser",
@@ -764,9 +764,9 @@
     },
     "grade_values": {
       "title": "Betygsfärger",
-      "description": "Hur långt ett omdöme bärs över ett mätvärde.",
+      "description": "Välj om kvalitetsbetyget bara färgar ikonerna eller även mätvärdena.",
       "glyph": "Endast symbol",
-      "glyph_desc": "Symbolen bär omdömet",
+      "glyph_desc": "Bara symbolen visar färgen för kvalitetsbetyget",
       "values": "Symbol och siffra",
       "values_desc": "Färglägg även siffran"
     }
@@ -830,7 +830,7 @@
     "metric_ping": "ping",
     "metric_download": "nedladdning",
     "metric_upload": "uppladdning",
-    "crossed_limits": "Överskridna gränser: {{clauses}}",
+    "crossed_limits": "Gränsvärden som inte uppfyllts: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} över gränsen {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} under gränsen {{limit}}",
     "not_measured": "{{metric}} (inte uppmätt)",
@@ -854,7 +854,7 @@
   },
   "tokens": {
     "title": "API-tokens",
-    "description": "En token låter ett skript, en routerkrok eller en hemautomationsplattform starta ett test utan ditt lösenord. Den kan starta ett test och läsa körningens livestatus, inget annat. Återkalla den här när du vill.",
+    "description": "Med en token kan ett skript, en automatisering i routern eller en hemautomationsplattform starta ett test utan ditt lösenord. Den ger bara behörighet att starta tester och läsa deras livestatus. Du kan återkalla den här när du vill.",
     "name": "Namn",
     "name_placeholder": "t.ex. Home Assistant",
     "create": "Skapa token",
@@ -880,6 +880,6 @@
     "empty": "Inga ändringar registrerade än.",
     "ip": "IP-adress",
     "isp": "Leverantör",
-    "unknown_target": "Borttaget mål"
+    "unknown_target": "Borttaget testmål"
   }
 }

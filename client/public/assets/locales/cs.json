@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Ztráta paketů",
-      "description": "Ztráta paketů je podíl dat, která nikdy nedorazila a musela být odeslána znovu. Cokoli nad nulou je znát jako zadrhávání hovorů a her dávno předtím, než se projeví nižší rychlostí. Měří ji pouze Ookla, takže test od jiného poskytovatele ji ponechá prázdnou, místo aby hlásil nulu."
+      "description": "Ztráta paketů je procento odeslaných datových paketů, které nedorazily k příjemci. Může způsobovat výpadky v hovorech a hrách. MySpeed ji uvádí u testů Ookla a u testů iperf3 v režimu UDP; pokud ji test neměří, pole zůstává prázdné."
     },
     "up": {
       "title": "Rychlost nahrávání",
@@ -345,10 +345,10 @@
     "details": {
       "show": "Zobrazit podrobnosti",
       "hide": "Skrýt podrobnosti",
-      "of_target": "{{percent}} % vašeho cíle",
-      "over_target": "{{amount}} {{unit}} nad vaším cílem",
-      "under_target": "{{amount}} {{unit}} pod vaším cílem",
-      "on_target": "Přesně na vašem cíli",
+      "of_target": "{{percent}} % cílové hodnoty",
+      "over_target": "{{amount}} {{unit}} nad cílovou hodnotou",
+      "under_target": "{{amount}} {{unit}} pod cílovou hodnotou",
+      "on_target": "Přesně odpovídá cílové hodnotě",
       "unchanged": "Beze změny od posledního testu",
       "measured_at": "Změřeno",
       "measured_with": "Změřeno pomocí",
@@ -439,7 +439,7 @@
       "peak_latency_title": "Latence ve špičce",
       "peak_latency_description": "Stoupá z {{best}} kolem {{bestHour}} na {{worst}} kolem {{worstHour}}",
       "ping_description": "Průměrná odezva, mezi {{min}} a {{max}}, medián {{median}}",
-      "span_title": "Rozptyl doby trvání",
+      "span_title": "Rozsah doby trvání",
       "span_description": "Nejkratší a nejdelší test v tomto rozsahu",
       "density_title": "Testů za den",
       "density_description": "Za období {{days}} dní",
@@ -451,7 +451,7 @@
       "target_met_title": "Cíl splněn",
       "target_met_description": "Testy s dobrým pingem, stahováním i nahráváním: {{met}} z {{measured}}",
       "last_failure_title": "Poslední selhání",
-      "last_failure_description": "Nejnovější test v tomto rozsahu, který nebyl dokončen"
+      "last_failure_description": "Poslední neúspěšný test v tomto rozsahu"
     },
     "targets": {
       "title": "Porovnání cílů",
@@ -470,7 +470,7 @@
       "avg": "Průměr",
       "down": "Hodnoty stahování",
       "up": "Hodnoty nahrávání",
-      "target": "Cíl: {{target}}",
+      "target": "Cílová hodnota: {{target}}",
       "consistency": "Konzistence",
       "samples": "Změřené testy",
       "median": "Medián"
@@ -756,7 +756,7 @@
     "title": "Optimální hodnoty",
     "use_recommended": "Použít doporučené",
     "trace_route": "Sledovat trasu u zhoršených testů",
-    "trace_route_description": "Když test selže, klesne pod svou základní hodnotu nebo nedosáhne optimálního pingu, MySpeed sleduje trasu k testovacímu serveru a zobrazí každý skok v detailech testu."
+    "trace_route_description": "Když test selže, jeho rychlost klesne pod základní hodnotu nebo jeho ping není hodnocen jako dobrý, MySpeed sleduje trasu k testovacímu serveru a zobrazí každý skok v detailech testu."
   },
   "preferences": {
     "title": "Předvolby",
@@ -862,7 +862,7 @@
     "metric_ping": "ping",
     "metric_download": "stahování",
     "metric_upload": "nahrávání",
-    "crossed_limits": "Překročené limity: {{clauses}}",
+    "crossed_limits": "Nedodržené limity: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} nad {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} pod {{limit}}",
     "not_measured": "{{metric}} (neměřeno)",

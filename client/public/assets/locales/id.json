@@ -254,15 +254,15 @@
     },
     "loaded_latency": {
       "title": "Latensi saat terbebani",
-      "description": "Ping yang diukur ketika arah tersebut sedang penuh, bukan ketika jalur sedang menganggur. Inilah angka yang menentukan apakah sebuah panggilan bertahan saat orang lain mulai mengunduh — sebuah koneksi bisa cepat di kedua arah namun tak terpakai selama ada transfer."
+      "description": "Ping yang diukur ketika arah tersebut sedang penuh, bukan ketika jalur sedang menganggur. Inilah angka yang menentukan apakah sebuah panggilan bertahan saat orang lain mulai mengunduh — sebuah koneksi bisa cepat di kedua arah namun tidak dapat digunakan selama ada transfer."
     },
     "bufferbloat": {
       "title": "Bufferbloat",
-      "description": "Seberapa besar latensi yang bertambah begitu jalur sibuk: yang terburuk dari kedua latensi saat terbebani, dikurangi ping saat menganggur. Di bawah 5 ms sangat baik; di atas 200 ms membuat panggilan dan permainan tak terpakai selama ada hal lain yang ditransfer. Penilaian mengikuti arah yang terburuk, karena jalur yang bersih saat mengunduh namun buruk penyanggaannya saat mengunggah tetaplah jalur dengan penyanggaan yang buruk."
+      "description": "Seberapa besar latensi yang bertambah begitu jalur sibuk: yang terburuk dari kedua latensi saat terbebani, dikurangi ping saat menganggur. Di bawah 5 ms sangat baik; di atas 200 ms membuat panggilan dan permainan tidak dapat digunakan selama ada hal lain yang ditransfer. Penilaian mengikuti arah yang terburuk, karena jalur yang bersih saat mengunduh namun buruk penyanggaannya saat mengunggah tetaplah jalur dengan penyanggaan yang buruk."
     },
     "packet_loss": {
       "title": "Kehilangan paket",
-      "description": "Kehilangan paket adalah bagian data yang tidak pernah sampai dan harus dikirim ulang. Nilai apa pun di atas nol terasa sebagai patah-patah pada panggilan dan permainan, jauh sebelum tampak sebagai kecepatan yang lebih rendah. Hanya Ookla yang mengukurnya, jadi pengujian dari penyedia lain membiarkannya kosong alih-alih melaporkan nol."
+      "description": "Kehilangan paket adalah persentase paket data terkirim yang tidak sampai. Hal ini dapat menyebabkan gangguan pada panggilan dan permainan. MySpeed melaporkannya untuk pengujian Ookla dan iperf3 UDP; jika suatu pengujian tidak mengukurnya, kolom tersebut dibiarkan kosong."
     },
     "up": {
       "title": "Kecepatan unggah",
@@ -421,17 +421,17 @@
       "target_met_title": "Target tercapai",
       "target_met_description": "Tes dengan ping, unduh, dan unggah yang dinilai baik: {{met}} dari {{measured}}",
       "last_failure_title": "Gagal terakhir",
-      "last_failure_description": "Tes terbaru dalam rentang ini yang tidak selesai"
+      "last_failure_description": "Pengujian gagal terbaru dalam rentang ini"
     },
     "targets": {
-      "title": "Perbandingan target",
+      "title": "Perbandingan tujuan pengujian",
       "chart": {
         "ping": "Ping per tujuan",
         "download": "Unduh per tujuan",
         "upload": "Unggah per tujuan"
       },
       "failure_rate": "Tingkat kegagalan",
-      "empty": "Tidak ada target yang mengukur apa pun dalam rentang ini",
+      "empty": "Tidak ada tujuan pengujian yang diukur dalam rentang ini",
       "unavailable": "Gagal memuat"
     },
     "values": {
@@ -476,7 +476,7 @@
     "last_7_days": "7 hari terakhir",
     "last_30_days": "30 hari terakhir",
     "last_90_days": "90 hari terakhir",
-    "last_year": "Tahun lalu",
+    "last_year": "365 hari terakhir",
     "mon": "Sen",
     "tue": "Sel",
     "wed": "Rab",
@@ -692,10 +692,10 @@
       "digest_monthly": "Kirim ringkasan bulanan",
       "language": "Bahasa pesan",
       "language_placeholder": "Inggris (bawaan)",
-      "send_ip_changed": "Beritahu saat IP eksternal atau penyedia layanan berubah",
+      "send_ip_changed": "Beritahu saat IP eksternal atau penyedia layanan internet berubah",
       "ip_changed_message": "Pesan perubahan koneksi",
       "ip_changed_message_placeholder": "Alamat baru: %ip% (sebelumnya %previousIp%)",
-      "send_outage": "Beri tahu ketika koneksi terputus dan ketika kembali normal",
+      "send_outage": "Beri tahu ketika koneksi terputus dan ketika tersambung kembali",
       "outage_after": "Anggap terputus setelah sebanyak ini tes gagal berturut-turut",
       "outage_after_placeholder": "mis. 2",
       "outage_message": "Pesan gangguan",
@@ -724,7 +724,7 @@
     "title": "Nilai optimal",
     "use_recommended": "Gunakan yang disarankan",
     "trace_route": "Lacak rute pada tes yang menurun",
-    "trace_route_description": "Ketika sebuah tes gagal, berada di bawah baseline-nya, atau tidak mencapai ping optimal, MySpeed melacak rute ke server tes dan menampilkan setiap lompatan dalam detail tes."
+    "trace_route_description": "Ketika pengujian gagal, kecepatannya berada di bawah ambang baseline, atau ping tidak dinilai baik terhadap nilai optimal yang ditetapkan, MySpeed melacak rute ke server pengujian dan menampilkan setiap lompatan dalam detail pengujian."
   },
   "preferences": {
     "title": "Preferensi",
@@ -764,9 +764,9 @@
     },
     "grade_values": {
       "title": "Warna nilai",
-      "description": "Seberapa jauh sebuah penilaian dibawa ke suatu bacaan.",
+      "description": "Pilih apakah warna penilaian hanya diterapkan pada ikon atau juga pada angka.",
       "glyph": "Hanya ikon",
-      "glyph_desc": "Ikon yang membawa penilaian",
+      "glyph_desc": "Ikon menunjukkan penilaian",
       "values": "Ikon dan angka",
       "values_desc": "Warnai angkanya juga"
     }
@@ -804,7 +804,7 @@
     "own_optimals": "Nilai optimal sendiri",
     "baseline_alerts": "Peringatan di bawah kecepatan biasa",
     "baseline_percent": "Porsi (%)",
-    "baseline_desc": "Memperingatkan saat pengujian turun di bawah bagian ini dari median 30 hari target.",
+    "baseline_desc": "Memperingatkan saat kecepatan pengujian turun di bawah persentase ini dari median 30 hari tujuan pengujian tersebut.",
     "all": "Semua tujuan",
     "saved": "Tujuan telah disimpan.",
     "removed": "Tujuan telah dihapus.",
@@ -830,7 +830,7 @@
     "metric_ping": "ping",
     "metric_download": "unduh",
     "metric_upload": "unggah",
-    "crossed_limits": "Batas terlampaui: {{clauses}}",
+    "crossed_limits": "Batas dilanggar: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} di atas {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} di bawah {{limit}}",
     "not_measured": "{{metric}} (tidak terukur)",
@@ -840,10 +840,10 @@
     "connection_changed": "Koneksi telah berubah",
     "connection_changed_subject": "MySpeed: koneksi berubah",
     "ip_changed": "Alamat IP {{from}} → {{to}}",
-    "isp_changed": "Penyedia layanan {{from}} → {{to}}",
+    "isp_changed": "Penyedia layanan internet {{from}} → {{to}}",
     "outage": "Koneksi terputus",
     "outage_subject": "MySpeed: koneksi terputus",
-    "recovered": "Koneksi kembali normal",
+    "recovered": "Koneksi tersambung kembali",
     "recovered_subject": "MySpeed: koneksi dipulihkan",
     "outage_summary_one": "{{count}} tes berturut-turut gagal sejak {{since}}",
     "recovered_summary_one": "Kembali online setelah {{count}} tes gagal sejak {{since}}",
@@ -876,10 +876,10 @@
   },
   "connections": {
     "title": "Perubahan koneksi",
-    "description": "Setiap kali alamat IP eksternal atau penyedia layanan berubah antara dua tes, sebagaimana dilihat oleh penyedia layanan tes tersebut. IPv4 dan IPv6 ditelusuri secara terpisah, dan hanya tes yang melaporkan alamat dapat mendeteksi perubahan.",
+    "description": "Setiap perubahan alamat IP eksternal atau penyedia layanan internet antara dua pengujian dicatat berdasarkan laporan penyedia pengujian. IPv4 dan IPv6 dilacak secara terpisah, dan hanya pengujian yang melaporkan alamat yang dapat mendeteksi perubahan.",
     "empty": "Belum ada perubahan yang dicatat.",
     "ip": "Alamat IP",
-    "isp": "Penyedia layanan",
-    "unknown_target": "Target dihapus"
+    "isp": "Penyedia layanan internet",
+    "unknown_target": "Tujuan pengujian dihapus"
   }
 }

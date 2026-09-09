@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Caillteanas paicéad",
-      "description": "Is é caillteanas paicéad an sciar de na sonraí nár tháinig riamh agus ab éigean a sheoladh arís. Braitear aon rud os cionn náid mar stadanna i nglaonna agus i gcluichí i bhfad sula léirítear é mar luas níos ísle. Ní thomhaiseann ach Ookla é, mar sin fágann tástáil ó sholáthraí eile bán é seachas náid a thuairisciú."
+      "description": "Is é caillteanas paicéad an céatadán de na paicéid sonraí a seoladh ach nár shroich an faighteoir. Is féidir leis cur isteach ar ghlaonna agus ar chluichí. Tuairiscíonn MySpeed é i dtástálacha Ookla agus i dtástálacha iperf3 i mód UDP; nuair nach dtomhaiseann tástáil é, fágtar an réimse bán."
     },
     "up": {
       "title": "Luas uaslódála",
@@ -439,7 +439,7 @@
       "target_met_title": "Sprioc bainte amach",
       "target_met_description": "Tástálacha a fuair ping, íoslódáil agus uaslódáil maith: {{met}} as {{measured}}",
       "last_failure_title": "An teip is déanaí",
-      "last_failure_description": "An tástáil is nuaí sa raon seo nár chríochnaigh"
+      "last_failure_description": "An tástáil is déanaí sa raon seo ar theip uirthi"
     },
     "targets": {
       "title": "Comparáid spriocanna",
@@ -497,7 +497,7 @@
     "last_7_days": "7 lá anuas",
     "last_30_days": "30 lá anuas",
     "last_90_days": "90 lá anuas",
-    "last_year": "Anuraidh",
+    "last_year": "365 lá anuas",
     "mon": "Luan",
     "tue": "Máirt",
     "wed": "Céad",
@@ -664,7 +664,7 @@
         "title": "Teideal an fhógra",
         "title_placeholder": "MySpeed (roghnach)",
         "tags": "Clibeanna",
-        "tags_placeholder": "rabhadh, satailít (scartha le camóga)",
+        "tags_placeholder": "warning,satellite (scartha le camóga)",
         "priority": "Tosaíocht réamhshocraithe (1-5)",
         "error_priority": "Tosaíocht earráide (1-5)",
         "error_message": "Teachtaireacht earráide",
@@ -745,7 +745,7 @@
     "title": "Luachanna Optamacha",
     "use_recommended": "Úsáid molta",
     "trace_route": "Rianaigh bealach na dtástálacha lagaithe",
-    "trace_route_description": "Nuair a theipeann ar thástáil, nuair a thiteann sí faoina bunlíne nó nuair nach mbaineann sí an ping optamach amach, rianaíonn MySpeed an bealach chuig an bhfreastalaí tástála agus taispeánann sé gach léim i sonraí na tástála."
+    "trace_route_description": "Nuair a theipeann ar thástáil, nuair a thiteann a luas faoina bhunlíne nó nuair nach meastar go bhfuil an ping go maith, rianaíonn MySpeed an bealach chuig an bhfreastalaí tástála agus taispeánann sé gach léim i sonraí na tástála."
   },
   "preferences": {
     "title": "Roghanna",
@@ -825,7 +825,7 @@
     "own_optimals": "A luachanna is fearr féin",
     "baseline_alerts": "Foláireamh faoi bhun an ghnáthluais",
     "baseline_percent": "Sciar (%)",
-    "baseline_desc": "Tugann foláireamh nuair a thiteann tástáil faoi bhun an sciar seo de mheán 30 lá an sprice.",
+    "baseline_desc": "Tugann foláireamh nuair a thiteann tástáil faoi bhun an sciar seo d'airmheán 30 lá na sprice.",
     "all": "Gach sprioc",
     "saved": "Tá an sprioc sábháilte.",
     "removed": "Tá an sprioc bainte.",

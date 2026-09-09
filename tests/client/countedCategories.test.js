@@ -92,7 +92,7 @@ it("resolves Traditional Chinese variants to its shipped file using production o
     await i18next.changeLanguage("de-DE");
     assert.equal(i18next.t("test.details.route_lost", {count: 2}), "2 verloren");
     await i18next.changeLanguage("zh-CN");
-    assert.equal(i18next.t("test.details.route_lost", {count: 2}), "2 丢失");
+    assert.equal(i18next.t("test.details.route_lost", {count: 2}), "2 个丢失");
 });
 
 it("selects the counted Polish route-loss adjective and preserves invariant wording", async () => {

@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "丢包率",
-      "description": "丢包率是指从未送达、必须重发的数据所占的比例。只要高于零，在表现为速度下降之前很久，就已经能在通话和游戏中感觉到卡顿。只有 Ookla 会测量它，因此其他提供商的测速会留空，而不是报告为零。"
+      "description": "丢包率是已发送的数据包中未能送达的比例，可能导致通话和游戏中断。MySpeed 会在 Ookla 和 iperf3 UDP 测试中报告此值；如果测试未测量丢包率，则该字段留空。"
     },
     "up": {
       "title": "上传速度",
@@ -341,9 +341,9 @@
       "route_address": "地址",
       "route_latency": "延迟",
       "route_no_reply": "无响应",
-      "route_lost_one": "{{count}} 丢失",
-      "route_lost_other": "{{count}} 丢失",
-      "route_lost": "{{count}} 丢失"
+      "route_lost_one": "{{count}} 个丢失",
+      "route_lost_other": "{{count}} 个丢失",
+      "route_lost": "{{count}} 个丢失"
     }
   },
   "errors": {
@@ -421,17 +421,17 @@
       "target_met_title": "目标达成",
       "target_met_description": "ping 延迟、下载和上传均为良好的测试：{{met}}/{{measured}}",
       "last_failure_title": "上次失败",
-      "last_failure_description": "此区间内未完成的最新测试"
+      "last_failure_description": "此区间内最近一次失败的测试"
     },
     "targets": {
-      "title": "目标对比",
+      "title": "测速点对比",
       "chart": {
         "ping": "各测速点 ping 延迟",
         "download": "各测速点下载",
         "upload": "各测速点上传"
       },
       "failure_rate": "失败率",
-      "empty": "此时间段内没有任何目标进行过测量",
+      "empty": "此时间段内没有任何测速点进行过测量",
       "unavailable": "无法加载"
     },
     "values": {
@@ -724,7 +724,7 @@
     "title": "最佳值",
     "use_recommended": "使用推荐值",
     "trace_route": "为降级的测试追踪路由",
-    "trace_route_description": "当测试失败、低于基准线或未达到最佳 ping 时，MySpeed 会追踪到测试服务器的路由，并在测试详情中显示每一跳。"
+    "trace_route_description": "当测试失败、速度低于基准阈值，或 ping 相对于所设最佳值的评级不再为良好时，MySpeed 会追踪到测试服务器的路由，并在测试详情中显示每一跳。"
   },
   "preferences": {
     "title": "偏好设置",
@@ -764,7 +764,7 @@
     },
     "grade_values": {
       "title": "评级颜色",
-      "description": "评级在一项读数上体现到什么程度。",
+      "description": "选择仅为图标着色，还是同时为数值应用评级颜色。",
       "glyph": "仅图标",
       "glyph_desc": "由图标体现评级",
       "values": "图标和数字",
@@ -804,7 +804,7 @@
     "own_optimals": "单独的最佳值",
     "baseline_alerts": "低于平常速度时提醒",
     "baseline_percent": "比例 (%)",
-    "baseline_desc": "当测试低于该目标自身 30 天中位数的此占比时发出提醒。",
+    "baseline_desc": "当测速速度低于该测速点自身 30 天中位数的此占比时发出提醒。",
     "all": "全部测速点",
     "saved": "测速点已保存。",
     "removed": "测速点已删除。",
@@ -876,10 +876,10 @@
   },
   "connections": {
     "title": "连接变更",
-    "description": "每次外部 IP 地址或运营商在两次测试之间发生变化时都会记录，以测试所见的运营商为准。IPv4 和 IPv6 分别跟踪，只有报告了地址的测试才能注意到变化。",
+    "description": "记录两次测试之间外部 IP 地址或运营商的变化，以测速服务报告的数据为准。IPv4 和 IPv6 分别跟踪，只有报告了地址的测试才能检测到变化。",
     "empty": "尚未记录任何变更。",
     "ip": "IP 地址",
     "isp": "运营商",
-    "unknown_target": "已移除的目标"
+    "unknown_target": "已移除的测速点"
   }
 }

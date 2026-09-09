@@ -6,12 +6,12 @@
     "subtext": "Laten we MySpeed voor de eerste keer instellen. Maak je geen zorgen, het duurt niet lang.",
     "provider_title": "Kies een aanbieder",
     "provider_subtext": "Selecteer hier de provider die je wilt gebruiken. Deze provider zal dan je tests uitvoeren.",
-    "data_title": "Stel optimale gegevens in",
+    "data_title": "Optimale waarden instellen",
     "data_subtext": "Selecteer je contractueel overeengekomen snelheden in deze stap",
     "ms": "(in ms)",
     "mbps": "(in Mbit/s)",
     "accept_title": "Accepteer de voorwaarden",
-    "accept_subtext": "In deze stap willen we je informeren over de Ookla licentie. Lees het en bevestig dat je het gelezen en geaccepteerd hebt door op \"Gereed\" te klikken."
+    "accept_subtext": "In deze stap informeren we je over de Ookla-licentie. Lees deze en bevestig dat je de licentie hebt gelezen en accepteert door op ‘Klaar’ te klikken."
   },
   "dialog": {
     "okay": "Oké",
@@ -202,9 +202,9 @@
     "confirm_reset": "Ja, opnieuw instellen",
     "settings_exported": "De instellingen zijn geëxporteerd",
     "settings_imported": "De instellingen zijn geïmporteerd",
-    "retention": "Behoud van gegevens",
+    "retention": "Bewaartermijn",
     "retention_desc": "Hoe lang de snelheidstest resultaten worden bewaard voordat ze automatisch worden verwijderd.",
-    "retention_saved": "Behoud periode bijgewerkt",
+    "retention_saved": "Bewaartermijn bijgewerkt",
     "retention_days_suffix": "dagen",
     "retention_back": "Terug naar voorinstellingen",
     "retention_options": {
@@ -242,7 +242,7 @@
     "update": "Er is een update voor versie {{version}} beschikbaar. Zie <Changes>de wijzigingen</Changes> en <DLLink>download de update</DLLink>.",
     "down": {
       "title": "Downloadsnelheid",
-      "description": "Downloadsnelheid beïnvloedt je surfervaring. Hoe meer je downloadt, hoe sneller je computer gegevens kan ontvangen."
+      "description": "De downloadsnelheid bepaalt hoe snel je computer gegevens kan ontvangen. Een hogere snelheid betekent snellere downloads."
     },
     "ping": {
       "title": "Ping",
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Pakketverlies",
-      "description": "Pakketverlies is het deel van de gegevens dat nooit is aangekomen en opnieuw verstuurd moest worden. Alles boven nul voel je als haperingen in gesprekken en games, lang voordat het als een lagere snelheid zichtbaar wordt. Alleen Ookla meet het, dus een test van een andere provider laat het leeg in plaats van nul te melden."
+      "description": "Pakketverlies is het percentage verzonden datapakketten dat niet is aangekomen. Dit kan onderbrekingen in gesprekken en games veroorzaken. MySpeed toont het bij Ookla-tests en bij iperf3-tests met UDP. Als een test het niet meet, blijft het veld leeg."
     },
     "up": {
       "title": "Uploadsnelheid",
@@ -324,10 +324,10 @@
       "unchanged": "Onveranderd sinds de vorige test",
       "measured_at": "Gemeten op",
       "measured_with": "Gemeten met",
-      "target": "Doel",
+      "target": "Testdoel",
       "seconds": "{{seconds}} s",
       "data_used": "Gebruikte data",
-      "data_used_value": "{{down}} omlaag / {{up}} omhoog",
+      "data_used_value": "{{down}} ontvangen / {{up}} verzonden",
       "trigger": "Gestart",
       "server": "Server",
       "result": "Volledig resultaat",
@@ -421,17 +421,17 @@
       "target_met_title": "Doel bereikt",
       "target_met_description": "Tests met een goede ping, download en upload: {{met}} van {{measured}}",
       "last_failure_title": "Laatste mislukking",
-      "last_failure_description": "De nieuwste test in dit bereik die niet is afgerond"
+      "last_failure_description": "De meest recente mislukte test in deze periode"
     },
     "targets": {
-      "title": "Vergelijking van doelen",
+      "title": "Testdoelen vergelijken",
       "chart": {
-        "ping": "Ping per doel",
-        "download": "Download per doel",
-        "upload": "Upload per doel"
+        "ping": "Ping per testdoel",
+        "download": "Download per testdoel",
+        "upload": "Upload per testdoel"
       },
       "failure_rate": "Foutpercentage",
-      "empty": "Geen enkel doel heeft iets gemeten in deze periode",
+      "empty": "Geen enkel testdoel heeft iets gemeten in deze periode",
       "unavailable": "Kon niet laden"
     },
     "values": {
@@ -476,7 +476,7 @@
     "last_7_days": "Afgelopen 7 dagen",
     "last_30_days": "Laatste 30 dagen",
     "last_90_days": "Laatste 90 dagen",
-    "last_year": "Vorig jaar",
+    "last_year": "Afgelopen 365 dagen",
     "mon": "ma",
     "tue": "di",
     "wed": "woe",
@@ -543,8 +543,8 @@
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Voltooide berichten verzenden",
-        "finished_message": "Voltooid bericht",
+        "send_finished": "Melden wanneer tests zijn voltooid",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -563,10 +563,10 @@
         "error_subject_placeholder": "MySpeed: snelheidstest mislukt",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
-        "send_finished": "Voltooide berichten verzenden",
+        "send_finished": "Melden wanneer tests zijn voltooid",
         "finished_subject": "Onderwerp bij voltooiing",
         "finished_subject_placeholder": "MySpeed: snelheidstest voltooid",
-        "finished_message": "Voltooid bericht",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -578,8 +578,8 @@
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Voltooide berichten verzenden",
-        "finished_message": "Voltooid bericht",
+        "send_finished": "Melden wanneer tests zijn voltooid",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -590,8 +590,8 @@
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutmeldingen verzenden",
-        "send_finished": "Voltooide berichten verzenden",
-        "finished_message": "Voltooid bericht",
+        "send_finished": "Melden wanneer tests zijn voltooid",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -643,14 +643,14 @@
         "title": "Notificatie titel",
         "title_placeholder": "MySpeed (optioneel)",
         "tags": "Tags",
-        "tags_placeholder": "waarschuwing, satelliet (komma gescheiden)",
+        "tags_placeholder": "warning,satellite (kommagescheiden)",
         "priority": "Standaard prioriteit (1-5)",
         "error_priority": "Foutprioriteit (1-5)",
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutmeldingen verzenden",
-        "send_finished": "Verstuur voltooide berichten",
-        "finished_message": "Voltooid bericht",
+        "send_finished": "Melden wanneer tests zijn voltooid",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -662,8 +662,8 @@
         "error_message": "Foutmelding",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] fout: %error%",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Voltooide berichten verzenden",
-        "finished_message": "Voltooid bericht",
+        "send_finished": "Melden wanneer tests zijn voltooid",
+        "finished_message": "Bericht bij testvoltooiing",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -673,7 +673,7 @@
         "url_placeholder": "https://uw-server.nl/hook",
         "send_started": "Startberichten verzenden",
         "send_failed": "Foutberichten verzenden",
-        "send_finished": "Voltooide berichten verzenden",
+        "send_finished": "Melden wanneer tests zijn voltooid",
         "send_alive": "Keep-Alive-berichten verzenden",
         "send_recommendations": "Stuur aanbevelingen",
         "send_config_updates": "Configuratie-updates verzenden",
@@ -724,7 +724,7 @@
     "title": "Optimale waarden",
     "use_recommended": "Gebruik aanbevolen",
     "trace_route": "Route van verslechterde tests traceren",
-    "trace_route_description": "Wanneer een test mislukt, onder zijn basislijn valt of de optimale ping mist, traceert MySpeed de route naar de testserver en toont elke hop in de testdetails."
+    "trace_route_description": "Wanneer een test mislukt, de snelheid onder de basislijn zakt of de ping niet als goed wordt beoordeeld, traceert MySpeed de route naar de testserver en toont elke hop in de testdetails."
   },
   "preferences": {
     "title": "Voorkeuren",
@@ -764,9 +764,9 @@
     },
     "grade_values": {
       "title": "Beoordelingskleuren",
-      "description": "Hoe ver een oordeel over een meting wordt doorgetrokken.",
+      "description": "Kies of de kwaliteitsbeoordeling alleen de pictogrammen of ook de meetwaarden kleurt.",
       "glyph": "Alleen pictogram",
-      "glyph_desc": "Het pictogram draagt het oordeel",
+      "glyph_desc": "Alleen het pictogram toont de kleur van de kwaliteitsbeoordeling",
       "values": "Pictogram en getal",
       "values_desc": "Kleur het getal ook"
     }
@@ -830,7 +830,7 @@
     "metric_ping": "ping",
     "metric_download": "download",
     "metric_upload": "upload",
-    "crossed_limits": "Overschreden limieten: {{clauses}}",
+    "crossed_limits": "Grenswaarden niet gehaald: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} boven {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} onder {{limit}}",
     "not_measured": "{{metric}} (niet gemeten)",
@@ -880,6 +880,6 @@
     "empty": "Nog geen wijzigingen geregistreerd.",
     "ip": "IP-adres",
     "isp": "Provider",
-    "unknown_target": "Verwijderd doel"
+    "unknown_target": "Verwijderd testdoel"
   }
 }

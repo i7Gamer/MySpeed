@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "패킷 손실",
-      "description": "패킷 손실은 도착하지 못해 다시 전송해야 했던 데이터의 비율입니다. 0보다 크면 속도 저하로 나타나기 훨씬 전에 통화와 게임에서 끊김으로 느껴집니다. Ookla만 이를 측정하므로 다른 제공업체의 테스트에서는 0으로 표시하는 대신 비워 둡니다."
+      "description": "패킷 손실은 전송한 데이터 패킷 중 도착하지 못한 패킷의 비율입니다. 통화나 게임이 끊기는 원인이 될 수 있습니다. MySpeed는 Ookla와 iperf3 UDP 테스트에서 이 값을 보고하며, 측정하지 않은 테스트에서는 해당 필드를 비워 둡니다."
     },
     "up": {
       "title": "업로드 속도",
@@ -421,7 +421,7 @@
       "target_met_title": "목표 달성",
       "target_met_description": "핑, 다운로드, 업로드가 모두 양호한 테스트: {{met}}개 / {{measured}}개",
       "last_failure_title": "마지막 실패",
-      "last_failure_description": "이 범위에서 완료되지 않은 최신 테스트"
+      "last_failure_description": "이 범위에서 가장 최근에 실패한 테스트"
     },
     "targets": {
       "title": "대상 비교",
@@ -692,7 +692,7 @@
       "digest_monthly": "월간 요약 보내기",
       "language": "메시지 언어",
       "language_placeholder": "영어 (기본값)",
-      "send_ip_changed": "외부 IP 나 제공자가 변경될 때 알림",
+      "send_ip_changed": "외부 IP나 인터넷 서비스 제공업체가 변경될 때 알림",
       "ip_changed_message": "연결 변경 메시지",
       "ip_changed_message_placeholder": "새 주소: %ip% (이전: %previousIp%)",
       "send_outage": "연결이 끊겼을 때와 복구되었을 때 알림",
@@ -724,7 +724,7 @@
     "title": "최적 값",
     "use_recommended": "권장값 사용",
     "trace_route": "저하된 테스트의 경로 추적",
-    "trace_route_description": "테스트가 실패하거나 기준선 아래로 떨어지거나 최적의 핑을 놓친 경우, MySpeed는 테스트 서버까지의 경로를 추적하여 테스트 세부 정보에 모든 홉을 표시합니다."
+    "trace_route_description": "테스트가 실패하거나 속도가 기준선 임계값 아래로 떨어지거나 핑이 설정된 최적 값에 비해 양호하지 않은 것으로 평가되면, MySpeed는 테스트 서버까지의 경로를 추적하여 테스트 세부 정보에 모든 홉을 표시합니다."
   },
   "preferences": {
     "title": "환경 설정",
@@ -804,7 +804,7 @@
     "own_optimals": "자체 최적 값",
     "baseline_alerts": "평소보다 느릴 때 알림",
     "baseline_percent": "비율 (%)",
-    "baseline_desc": "테스트가 대상의 30일 중앙값에서 이 비율 아래로 떨어지면 알립니다.",
+    "baseline_desc": "테스트 속도가 측정 대상의 30일 중앙값에 이 비율을 곱한 값보다 낮아지면 알립니다.",
     "all": "전체 측정 대상",
     "saved": "측정 대상이 저장되었습니다.",
     "removed": "측정 대상이 삭제되었습니다.",
@@ -830,7 +830,7 @@
     "metric_ping": "핑",
     "metric_download": "다운로드",
     "metric_upload": "업로드",
-    "crossed_limits": "한계 초과: {{clauses}}",
+    "crossed_limits": "기준 이탈: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} (기준 {{limit}} 초과)",
     "limit_under": "{{metric}} {{value}} {{unit}} (기준 {{limit}} 미만)",
     "not_measured": "{{metric}} (측정되지 않음)",
@@ -840,7 +840,7 @@
     "connection_changed": "연결이 변경되었습니다",
     "connection_changed_subject": "MySpeed: 연결 변경",
     "ip_changed": "IP 주소 {{from}} → {{to}}",
-    "isp_changed": "제공자 {{from}} → {{to}}",
+    "isp_changed": "인터넷 서비스 제공업체 {{from}} → {{to}}",
     "outage": "연결이 끊겼습니다",
     "outage_subject": "MySpeed: 연결 끊김",
     "recovered": "연결이 복구되었습니다",
@@ -876,10 +876,10 @@
   },
   "connections": {
     "title": "연결 변경",
-    "description": "두 테스트 사이에 외부 IP 주소나 제공자가 바뀔 때마다, 테스트의 제공자가 본 대로 기록합니다. IPv4와 IPv6는 따로 추적하며, 주소를 보고하는 테스트만 변경을 알아챌 수 있습니다.",
+    "description": "두 테스트 사이에 외부 IP 주소나 인터넷 서비스 제공업체가 바뀔 때마다, 속도 측정 서비스가 보고한 내용을 기록합니다. IPv4와 IPv6는 따로 추적하며, 주소를 보고하는 테스트만 변경을 감지할 수 있습니다.",
     "empty": "아직 변경 사항이 없습니다.",
     "ip": "IP 주소",
-    "isp": "제공자",
+    "isp": "인터넷 서비스 제공업체",
     "unknown_target": "대상 제거됨"
   }
 }

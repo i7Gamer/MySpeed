@@ -6,7 +6,7 @@
     "subtext": "Let's set up MySpeed for the first time. Don't worry, it won't take long.",
     "provider_title": "Choose a provider",
     "provider_subtext": "Select the provider you want to use here. This provider will then perform your tests.",
-    "data_title": "Set optimal data",
+    "data_title": "Set optimal values",
     "data_subtext": "Select your contractually agreed speeds in this step",
     "ms": "(in ms)",
     "mbps": "(in Mbps)",
@@ -242,7 +242,7 @@
     "update": "An update to version {{version}} is available. See <Changes>the changes</Changes> and <DLLink>download the update</DLLink>.",
     "down": {
       "title": "Download speed",
-      "description": "Download speed affects your browsing experience. The more you get, the faster your computer can receive data."
+      "description": "Download speed determines how quickly your computer can receive data. A higher speed means faster downloads."
     },
     "ping": {
       "title": "Ping",
@@ -262,11 +262,11 @@
     },
     "packet_loss": {
       "title": "Packet loss",
-      "description": "Packet loss is the share of data that never arrived and had to be sent again. Anything above zero is felt as stutter in calls and games long before it shows as a lower speed. Only Ookla measures it, so a test from another provider leaves it blank rather than reporting zero."
+      "description": "Packet loss is the percentage of sent data packets that did not arrive. It can cause interruptions in calls and games. MySpeed reports it for Ookla and iperf3 UDP tests; when a test does not measure it, the field is left blank."
     },
     "up": {
       "title": "Upload speed",
-      "description": "Upload speed affects your browsing experience. The more you get, the faster your computer can send data."
+      "description": "Upload speed determines how quickly your computer can send data. A higher speed means faster uploads."
     }
   },
   "time": {
@@ -421,7 +421,7 @@
       "target_met_title": "Target met",
       "target_met_description": "Tests rated good on ping, download and upload: {{met}} of {{measured}}",
       "last_failure_title": "Last failure",
-      "last_failure_description": "The newest test in this range that did not finish"
+      "last_failure_description": "The most recent failed test in this range"
     },
     "targets": {
       "title": "Target comparison",
@@ -476,7 +476,7 @@
     "last_7_days": "Last 7 days",
     "last_30_days": "Last 30 days",
     "last_90_days": "Last 90 days",
-    "last_year": "Last year",
+    "last_year": "Last 365 days",
     "mon": "Mon",
     "tue": "Tue",
     "wed": "Wed",
@@ -543,8 +543,8 @@
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "send_finished": "Notify when tests finish",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -563,10 +563,10 @@
         "error_subject_placeholder": "MySpeed: speedtest failed",
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
-        "send_finished": "Send finished messages",
+        "send_finished": "Notify when tests finish",
         "finished_subject": "Finished subject",
         "finished_subject_placeholder": "MySpeed: speedtest finished",
-        "finished_message": "Finished message",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -578,8 +578,8 @@
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "send_finished": "Notify when tests finish",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -590,8 +590,8 @@
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "send_finished": "Notify when tests finish",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -649,8 +649,8 @@
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "send_finished": "Notify when tests finish",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -662,8 +662,8 @@
         "error_message": "Error message",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
-        "finished_message": "Finished message",
+        "send_finished": "Notify when tests finish",
+        "finished_message": "Test completion message",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -673,7 +673,7 @@
         "url_placeholder": "https://your-server.com/hook",
         "send_started": "Send started",
         "send_failed": "Send error messages",
-        "send_finished": "Send finished messages",
+        "send_finished": "Notify when tests finish",
         "send_alive": "Send Keep-Alive messages",
         "send_recommendations": "Send recommendations",
         "send_config_updates": "Send configuration updates",
@@ -724,7 +724,7 @@
     "title": "Optimal Values",
     "use_recommended": "Use recommended",
     "trace_route": "Trace the route of degraded tests",
-    "trace_route_description": "When a test fails, falls under its baseline or misses the optimal ping, MySpeed traces the route to the test server and shows every hop in the test details."
+    "trace_route_description": "When a test fails, falls below its speed baseline or its ping is not rated good, MySpeed traces the route to the test server and shows each hop in the test details."
   },
   "preferences": {
     "title": "Preferences",
@@ -764,10 +764,10 @@
     },
     "grade_values": {
       "title": "Grade colours",
-      "description": "How far a verdict is carried across a reading.",
-      "glyph": "Glyph only",
-      "glyph_desc": "The icon carries the verdict",
-      "values": "Glyph and figure",
+      "description": "Choose whether quality ratings colour only the icons or also the measured values.",
+      "glyph": "Icon only",
+      "glyph_desc": "Only the icon shows the quality rating colour",
+      "values": "Icon and value",
       "values_desc": "Colour the number too"
     }
   },

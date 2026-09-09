@@ -246,7 +246,7 @@
     },
     "ping": {
       "title": "Latence",
-      "description": "Le ping vous montre la durée entre votre ordinateur et votre FAI. Plus le temps est court, mieux c'est."
+      "description": "Le ping mesure le temps de réponse du serveur de test. Plus ce temps est court, mieux c'est."
     },
     "jitter": {
       "title": "Jitter",
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Perte de paquets",
-      "description": "La perte de paquets est la part des données qui ne sont jamais arrivées et ont dû être renvoyées. Tout ce qui dépasse zéro se ressent comme des saccades dans les appels et les jeux bien avant d'apparaître comme un débit plus faible. Seul Ookla la mesure, donc un test effectué par un autre fournisseur la laisse vide plutôt que d'indiquer zéro."
+      "description": "La perte de paquets est le pourcentage de paquets de données envoyés qui ne sont pas arrivés. Elle peut provoquer des interruptions dans les appels et les jeux. MySpeed l'indique pour les tests Ookla et les tests iperf3 en UDP ; lorsqu'un test ne la mesure pas, le champ reste vide."
     },
     "up": {
       "title": "Vitesse de téléversement",
@@ -427,7 +427,7 @@
       "target_met_title": "Objectif atteint",
       "target_met_description": "Tests jugés bons en ping, téléchargement et téléversement : {{met}} sur {{measured}}",
       "last_failure_title": "Dernier échec",
-      "last_failure_description": "Le test le plus récent de cette plage qui ne s'est pas terminé"
+      "last_failure_description": "Le test le plus récent ayant échoué dans cette plage"
     },
     "targets": {
       "title": "Comparaison des cibles",
@@ -483,7 +483,7 @@
     "last_7_days": "Les 7 derniers jours",
     "last_30_days": "Les 30 derniers jours",
     "last_90_days": "Les 90 derniers jours",
-    "last_year": "L'année dernière",
+    "last_year": "365 derniers jours",
     "mon": "Lun",
     "tue": "Mar",
     "wed": "Mer",
@@ -550,7 +550,7 @@
         "error_message": "Message d'erreur",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer les messages d'erreur",
-        "send_finished": "Envoyer les messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
@@ -585,7 +585,7 @@
         "error_message": "Message d'erreur",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
-        "send_finished": "Envoyer les messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
@@ -597,7 +597,7 @@
         "error_message": "Message d'erreur",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
-        "send_finished": "Envoyer des messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
@@ -650,13 +650,13 @@
         "title": "Titre de la notification",
         "title_placeholder": "MySpeed (optionnel)",
         "tags": "Tags",
-        "tags_placeholder": "avertissement,satellite (séparés par des virgules)",
+        "tags_placeholder": "warning,satellite (séparés par des virgules)",
         "priority": "Priorité par défaut (1-5)",
         "error_priority": "Priorité d'erreur (1-5)",
         "error_message": "Message d'erreur",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
-        "send_finished": "Envoyer les messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
@@ -669,7 +669,7 @@
         "error_message": "Message d'erreur",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Erreur : %error%",
         "send_failed": "Envoyer des messages d'erreur",
-        "send_finished": "Envoyer les messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "finished_message": "Message de fin",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% - %ping% ms, %download% Mbps %upload% Mbps"
       }
@@ -680,7 +680,7 @@
         "url_placeholder": "https://votre-serveur.com/hook",
         "send_started": "Envoyer les messages de début",
         "send_failed": "Envoyer des messages d'erreur",
-        "send_finished": "Envoyer les messages terminés",
+        "send_finished": "Envoyer les messages de fin de test",
         "send_alive": "Envoyer des messages Keep-Alive",
         "send_recommendations": "Envoyez des recommandations",
         "send_config_updates": "Envoyer les mises à jour de configuration",
@@ -731,7 +731,7 @@
     "title": "Valeurs optimales",
     "use_recommended": "Utiliser les recommandations",
     "trace_route": "Tracer la route des tests dégradés",
-    "trace_route_description": "Lorsqu'un test échoue, passe sous sa valeur de référence ou n'atteint pas le ping optimal, MySpeed trace la route jusqu'au serveur de test et affiche chaque saut dans les détails du test."
+    "trace_route_description": "Si un test échoue ou passe sous sa valeur de référence, ou si son ping n'est pas jugé bon, MySpeed trace la route jusqu'au serveur de test et affiche chaque saut dans les détails du test."
   },
   "preferences": {
     "title": "Préférences",
@@ -771,7 +771,7 @@
     },
     "grade_values": {
       "title": "Couleurs des notes",
-      "description": "Jusqu'où une note est portée sur une mesure.",
+      "description": "Choisissez si la couleur de la note s'applique uniquement à l'icône ou aussi au nombre mesuré.",
       "glyph": "Icône seule",
       "glyph_desc": "L'icône porte la note",
       "values": "Icône et chiffre",
@@ -837,7 +837,7 @@
     "metric_ping": "ping",
     "metric_download": "téléchargement",
     "metric_upload": "téléversement",
-    "crossed_limits": "Limites dépassées : {{clauses}}",
+    "crossed_limits": "Seuils non respectés : {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} au-dessus de {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} en dessous de {{limit}}",
     "not_measured": "{{metric}} (non mesuré)",

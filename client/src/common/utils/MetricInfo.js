@@ -21,8 +21,7 @@ export const jitterInfo = () => ({title: t("info.jitter.title"), description: t(
 
 export const uploadInfo = () => ({title: t("info.up.title"), description: t("info.up.description"), buttonText: t("dialog.okay")});
 
-// Only the detail pane shows one, and only Ookla measures one - which is why it
-// is the figure most in need of a sentence saying what it is.
+// Available for Ookla and iperf3 UDP; missing measurements stay blank.
 export const packetLossInfo = () => ({title: t("info.packet_loss.title"), description: t("info.packet_loss.description"), buttonText: t("dialog.okay")});
 
 // The two halves of what the line does while it is busy: the latency each

@@ -6,7 +6,7 @@
     "subtext": "Lad os konfigurere MySpeed for første gang. Bare rolig, det tager ikke lang tid.",
     "provider_title": "Vælg en udbyder",
     "provider_subtext": "Vælg her den udbyder, du vil bruge. Denne udbyder vil derefter udføre dine tests.",
-    "data_title": "Indstil optimale data",
+    "data_title": "Indstil optimale værdier",
     "data_subtext": "Vælg dine kontraktligt aftalte hastigheder i dette trin",
     "ms": "(i ms)",
     "mbps": "(i Mbps)",
@@ -58,7 +58,7 @@
       "choose_automatically": "Vælg automatisk",
       "ookla_license": "Jeg har læst og accepterer <Eula>EULA</Eula>, <GDPR>privatlivspolitik</GDPR> og <TOS>servicevilkår</TOS> fra Ookla.",
       "ookla_desc": "Populær udbyder med globalt servernetværk",
-      "libre_desc": "Open-source, selv-hostable speedtest",
+      "libre_desc": "Hastighedstest med åben kildekode, som du selv kan hoste",
       "cloudflare_desc": "Hurtig CDN-baseret test",
       "iperf3_desc": "Din egen iperf3-server, på dit netværk",
       "iperf_advanced": "Kørselsindstillinger",
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Pakketab",
-      "description": "Pakketab er den andel af data, der aldrig nåede frem og måtte sendes igen. Alt over nul mærkes som hakken i opkald og spil længe før det viser sig som lavere hastighed. Kun Ookla måler det, så en test fra en anden udbyder lader feltet stå tomt frem for at melde nul."
+      "description": "Pakketab er den procentdel af de sendte datapakker, der ikke nåede frem. Det kan give afbrydelser i opkald og spil. MySpeed viser det for Ookla-tests og for iperf3-tests med UDP. Hvis en test ikke måler det, er feltet tomt."
     },
     "up": {
       "title": "Upload-hastighed",
@@ -324,10 +324,10 @@
       "unchanged": "Uændret siden sidste test",
       "measured_at": "Målt den",
       "measured_with": "Målt med",
-      "target": "Mål",
+      "target": "Testmål",
       "seconds": "{{seconds}} s",
       "data_used": "Forbrugte data",
-      "data_used_value": "{{down}} ned / {{up}} op",
+      "data_used_value": "{{down}} modtaget / {{up}} sendt",
       "trigger": "Startet",
       "server": "Server",
       "result": "Fuldt resultat",
@@ -421,17 +421,17 @@
       "target_met_title": "Mål opfyldt",
       "target_met_description": "Tests med god ping, download og upload: {{met}} af {{measured}}",
       "last_failure_title": "Sidste fejl",
-      "last_failure_description": "Den nyeste test i dette interval, der ikke blev afsluttet"
+      "last_failure_description": "Den seneste mislykkede test i dette interval"
     },
     "targets": {
-      "title": "Sammenligning af mål",
+      "title": "Sammenligning af testmål",
       "chart": {
-        "ping": "Ping pr. mål",
-        "download": "Download pr. mål",
-        "upload": "Upload pr. mål"
+        "ping": "Ping pr. testmål",
+        "download": "Download pr. testmål",
+        "upload": "Upload pr. testmål"
       },
       "failure_rate": "Fejlrate",
-      "empty": "Intet mål har målt noget i denne periode",
+      "empty": "Intet testmål har målt noget i denne periode",
       "unavailable": "Kunne ikke indlæses"
     },
     "values": {
@@ -476,7 +476,7 @@
     "last_7_days": "Seneste 7 dage",
     "last_30_days": "Seneste 30 dage",
     "last_90_days": "Seneste 90 dage",
-    "last_year": "Sidste år",
+    "last_year": "Seneste 365 dage",
     "mon": "Man",
     "tue": "Tir",
     "wed": "Ons",
@@ -543,8 +543,8 @@
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdig-meddelelser",
-        "finished_message": "Færdig-meddelelse",
+        "send_finished": "Giv besked, når tests er afsluttet",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -563,10 +563,10 @@
         "error_subject_placeholder": "MySpeed: hastighedstesten mislykkedes",
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
-        "send_finished": "Send beskeder ved afslutning",
+        "send_finished": "Giv besked, når tests er afsluttet",
         "finished_subject": "Emne ved afslutning",
         "finished_subject_placeholder": "MySpeed: hastighedstesten er færdig",
-        "finished_message": "Besked ved afslutning",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -578,8 +578,8 @@
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdig-meddelelser",
-        "finished_message": "Færdig-meddelelse",
+        "send_finished": "Giv besked, når tests er afsluttet",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -590,8 +590,8 @@
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdig-meddelelser",
-        "finished_message": "Færdig-meddelelse",
+        "send_finished": "Giv besked, når tests er afsluttet",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -643,14 +643,14 @@
         "title": "Notifikations titel",
         "title_placeholder": "MySpeed (valgfrit)",
         "tags": "Tags",
-        "tags_placeholder": "advarsel,satellit (kommasepareret)",
+        "tags_placeholder": "warning,satellite (kommasepareret)",
         "priority": "Standard prioritet (1-5)",
         "error_priority": "Fejl prioritet (1-5)",
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdige beskeder",
-        "finished_message": "Afsluttet besked",
+        "send_finished": "Giv besked, når tests er afsluttet",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -662,8 +662,8 @@
         "error_message": "Fejlmeddelelse",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Fejl: %error%",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdig-meddelelser",
-        "finished_message": "Færdig-meddelelse",
+        "send_finished": "Giv besked, når tests er afsluttet",
+        "finished_message": "Besked ved afsluttet test",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
     },
@@ -673,7 +673,7 @@
         "url_placeholder": "https://din-server.dk/hook",
         "send_started": "Send start-notifikation",
         "send_failed": "Send fejlmeddelelser",
-        "send_finished": "Send færdig-meddelelser",
+        "send_finished": "Giv besked, når tests er afsluttet",
         "send_alive": "Send Keep-Alive-beskeder",
         "send_recommendations": "Send anbefalinger",
         "send_config_updates": "Send konfigurationsopdateringer",
@@ -724,7 +724,7 @@
     "title": "Optimale Værdier",
     "use_recommended": "Brug anbefalet",
     "trace_route": "Spor ruten ved forringede tests",
-    "trace_route_description": "Når en test fejler, falder under sin basislinje eller ikke rammer det optimale ping, sporer MySpeed ruten til testserveren og viser hvert hop i testdetaljerne."
+    "trace_route_description": "Når en test mislykkes, hastigheden falder under basislinjen, eller ping ikke vurderes som god, sporer MySpeed ruten til testserveren og viser hvert hop i testdetaljerne."
   },
   "preferences": {
     "title": "Præferencer",
@@ -764,9 +764,9 @@
     },
     "grade_values": {
       "title": "Karakterfarver",
-      "description": "Hvor langt en bedømmelse bæres hen over en måling.",
+      "description": "Vælg, om kvalitetsvurderingen kun farver ikonerne eller også måleværdierne.",
       "glyph": "Kun ikonet",
-      "glyph_desc": "Ikonet bærer bedømmelsen",
+      "glyph_desc": "Kun ikonet viser farven for kvalitetsvurderingen",
       "values": "Ikon og tal",
       "values_desc": "Farv også tallet"
     }
@@ -830,7 +830,7 @@
     "metric_ping": "ping",
     "metric_download": "download",
     "metric_upload": "upload",
-    "crossed_limits": "Overskredne grænser: {{clauses}}",
+    "crossed_limits": "Grænseværdier ikke overholdt: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} over grænsen {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} under grænsen {{limit}}",
     "not_measured": "{{metric}} (ikke målt)",
@@ -880,6 +880,6 @@
     "empty": "Ingen ændringer registreret endnu.",
     "ip": "IP-adresse",
     "isp": "Udbyder",
-    "unknown_target": "Fjernet mål"
+    "unknown_target": "Fjernet testmål"
   }
 }

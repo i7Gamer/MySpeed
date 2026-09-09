@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Pérdida de paquetes",
-      "description": "La pérdida de paquetes es la parte de los datos que nunca llegó y hubo que reenviar. Cualquier valor por encima de cero se nota como cortes en llamadas y juegos mucho antes de reflejarse en una velocidad menor. Solo Ookla la mide, así que un test de otro proveedor la deja en blanco en lugar de informar de cero."
+      "description": "La pérdida de paquetes es el porcentaje de paquetes de datos enviados que no llegaron. Puede causar interrupciones en llamadas y juegos. MySpeed la indica en los tests de Ookla y en los tests de iperf3 con UDP; cuando un test no la mide, el campo queda en blanco."
     },
     "up": {
       "title": "Velocidad de subida",
@@ -427,17 +427,17 @@
       "target_met_title": "Objetivo cumplido",
       "target_met_description": "Pruebas con ping, descarga y subida valorados como buenos: {{met}} de {{measured}}",
       "last_failure_title": "Último fallo",
-      "last_failure_description": "La prueba más reciente en este rango que no se completó"
+      "last_failure_description": "La prueba fallida más reciente en este rango"
     },
     "targets": {
-      "title": "Comparación de objetivos",
+      "title": "Comparación de destinos",
       "chart": {
         "ping": "Ping por destino",
         "download": "Descarga por destino",
         "upload": "Subida por destino"
       },
       "failure_rate": "Tasa de fallos",
-      "empty": "Ningún objetivo midió nada en este periodo",
+      "empty": "Ningún destino realizó mediciones en este periodo",
       "unavailable": "No se pudo cargar"
     },
     "values": {
@@ -483,7 +483,7 @@
     "last_7_days": "Últimos 7 días",
     "last_30_days": "Últimos 30 días",
     "last_90_days": "Últimos 90 días",
-    "last_year": "Año pasado",
+    "last_year": "Últimos 365 días",
     "mon": "Lun",
     "tue": "Mar",
     "wed": "Mié",
@@ -550,7 +550,7 @@
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar completado",
+        "send_finished": "Enviar mensajes al terminar",
         "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -585,7 +585,7 @@
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar completados",
+        "send_finished": "Enviar mensajes al terminar",
         "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -597,7 +597,7 @@
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar completados",
+        "send_finished": "Enviar mensajes al terminar",
         "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -650,13 +650,13 @@
         "title": "Título de notificación",
         "title_placeholder": "MySpeed (opcional)",
         "tags": "Etiquetas",
-        "tags_placeholder": "aviso, satélite (separado por comas)",
+        "tags_placeholder": "warning,satellite (separados por comas)",
         "priority": "Prioridad por defecto (1-5)",
         "error_priority": "Prioridad de error (1-5)",
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar mensajes terminados",
+        "send_finished": "Enviar mensajes al terminar",
         "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -669,7 +669,7 @@
         "error_message": "Mensaje de error",
         "error_message_placeholder": "[%year%-%month%-%day% %hour%:%minute%] Error: %error%",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar completados",
+        "send_finished": "Enviar mensajes al terminar",
         "finished_message": "Mensaje al terminar",
         "finished_message_placeholder": "%year%-%month%-%day% %hour%:%minute% — %ping% ms, %download% Mbps, %upload% Mbps"
       }
@@ -678,9 +678,9 @@
       "fields": {
         "url": "URL del webhook",
         "url_placeholder": "https://su-servidor.es/hook",
-        "send_started": "Enviar iniciados",
+        "send_started": "Enviar mensajes al iniciar",
         "send_failed": "Enviar mensajes de error",
-        "send_finished": "Enviar completados",
+        "send_finished": "Enviar mensajes al terminar",
         "send_alive": "Enviar mensaje de estado",
         "send_recommendations": "Enviar recomendaciones",
         "send_config_updates": "Enviar actualizaciones de configuración",
@@ -731,7 +731,7 @@
     "title": "Valores óptimos",
     "use_recommended": "Usar recomendado",
     "trace_route": "Rastrear la ruta de las pruebas degradadas",
-    "trace_route_description": "Cuando una prueba falla, cae por debajo de su línea base o no alcanza el ping óptimo, MySpeed rastrea la ruta al servidor de prueba y muestra cada salto en los detalles de la prueba."
+    "trace_route_description": "Cuando una prueba falla, cae por debajo de su línea base o su ping no se considera bueno, MySpeed rastrea la ruta al servidor de prueba y muestra cada salto en los detalles de la prueba."
   },
   "preferences": {
     "title": "Preferencias",
@@ -771,7 +771,7 @@
     },
     "grade_values": {
       "title": "Colores de calificación",
-      "description": "Hasta dónde se lleva una calificación en una medición.",
+      "description": "Elige si el color de la calificación se aplica solo al icono o también al valor medido.",
       "glyph": "Solo el icono",
       "glyph_desc": "El icono lleva la calificación",
       "values": "Icono y cifra",
@@ -837,7 +837,7 @@
     "metric_ping": "ping",
     "metric_download": "descarga",
     "metric_upload": "subida",
-    "crossed_limits": "Límites superados: {{clauses}}",
+    "crossed_limits": "Límites incumplidos: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} por encima de {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} por debajo de {{limit}}",
     "not_measured": "{{metric}} (sin medir)",
@@ -889,6 +889,6 @@
     "empty": "No hay cambios registrados aún.",
     "ip": "Dirección IP",
     "isp": "Proveedor",
-    "unknown_target": "Objetivo eliminado"
+    "unknown_target": "Destino eliminado"
   }
 }

@@ -214,6 +214,8 @@ export const LANGUAGE_SHARED = {
         ...TEMPLATES("discord", "email", "gotify", "pushover", "ntfy", "telegram")
     ],
     it: [
+        // Metric nouns, also used by Italian notification labels.
+        "latest.down", "latest.up",
         "notification.ping", "notification.download", "notification.upload", "notification.metric_ping", "notification.metric_download", "notification.metric_upload", "notification.shortfall",
         "dialog.provider.iperf_bitrate",
         "integrations.influxdb.fields.bucket",

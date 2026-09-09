@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Pèrdua de paquets",
-      "description": "La pèrdua de paquets és la part de les dades que no ha arribat mai i s'ha hagut de tornar a enviar. Qualsevol valor per sobre de zero es nota com a talls en trucades i jocs molt abans de reflectir-se en una velocitat més baixa. Només Ookla la mesura, així que una prova d'un altre proveïdor la deixa en blanc en lloc d'informar de zero."
+      "description": "La pèrdua de paquets és el percentatge de paquets de dades enviats que no han arribat. Pot causar interrupcions en trucades i jocs. MySpeed la indica en les proves d'Ookla i en les proves d'iperf3 amb UDP; quan una prova no la mesura, el camp queda en blanc."
     },
     "up": {
       "title": "Velocitat de pujada",
@@ -427,17 +427,17 @@
       "target_met_title": "Objectiu assolit",
       "target_met_description": "Proves amb ping, baixada i pujada valorats com a bons: {{met}} de {{measured}}",
       "last_failure_title": "Darrera fallada",
-      "last_failure_description": "La prova més recent d'aquest interval que no s'ha acabat"
+      "last_failure_description": "La prova fallida més recent d'aquest interval"
     },
     "targets": {
-      "title": "Comparació d'objectius",
+      "title": "Comparació de destinacions",
       "chart": {
         "ping": "Ping per destinació",
         "download": "Baixada per destinació",
         "upload": "Pujada per destinació"
       },
       "failure_rate": "Taxa d'errors",
-      "empty": "Cap objectiu no ha mesurat res en aquest període",
+      "empty": "Cap destinació no ha fet cap mesura en aquest període",
       "unavailable": "No s'ha pogut carregar"
     },
     "values": {
@@ -731,7 +731,7 @@
     "title": "Valors òptims",
     "use_recommended": "Utilitza els recomanats",
     "trace_route": "Traçar la ruta de les proves degradades",
-    "trace_route_description": "Quan una prova falla, queda per sota de la seva línia base o no assoleix el ping òptim, MySpeed traça la ruta fins al servidor de prova i mostra cada salt als detalls de la prova."
+    "trace_route_description": "Quan una prova falla, queda per sota de la seva línia base o el seu ping no es considera bo, MySpeed traça la ruta fins al servidor de prova i mostra cada salt als detalls de la prova."
   },
   "preferences": {
     "title": "Preferències",
@@ -771,7 +771,7 @@
     },
     "grade_values": {
       "title": "Colors de les qualificacions",
-      "description": "Fins a on s'estén el veredicte en una lectura.",
+      "description": "Tria si el color de la qualificació s'aplica només a la icona o també al valor mesurat.",
       "glyph": "Només la icona",
       "glyph_desc": "La icona porta el veredicte",
       "values": "Icona i xifra",
@@ -811,7 +811,7 @@
     "own_optimals": "Valors òptims propis",
     "baseline_alerts": "Avisa per sota de la velocitat habitual",
     "baseline_percent": "Part (%)",
-    "baseline_desc": "Avisa quan una prova baixa d'aquesta part de la mediana de 30 dies de l'objectiu.",
+    "baseline_desc": "Avisa quan una prova baixa d'aquesta part de la mediana de 30 dies de la destinació.",
     "all": "Totes les destinacions",
     "saved": "S'ha desat la destinació.",
     "removed": "S'ha eliminat la destinació.",
@@ -837,7 +837,7 @@
     "metric_ping": "ping",
     "metric_download": "baixada",
     "metric_upload": "pujada",
-    "crossed_limits": "Límits superats: {{clauses}}",
+    "crossed_limits": "Límits incomplerts: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} per sobre de {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} per sota de {{limit}}",
     "not_measured": "{{metric}} (no mesurat)",
@@ -886,9 +886,9 @@
   "connections": {
     "title": "Canvis de connexió",
     "description": "Cada vegada que l'adreça IP externa o el proveïdor canviïn entre dos tests, tal com el del test els va veure. IPv4 i IPv6 es segueixen separatament, i només un test que reporta una adreça pot notar un canvi.",
-    "empty": "Encara no s'han registrat cap canvi.",
+    "empty": "Encara no s'ha registrat cap canvi.",
     "ip": "Adreça IP",
     "isp": "Proveïdor",
-    "unknown_target": "Objectiu eliminat"
+    "unknown_target": "Destinació eliminada"
   }
 }

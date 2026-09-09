@@ -202,7 +202,7 @@
     "confirm_reset": "Tak, resetuj",
     "settings_exported": "Ustawienia zostały wyeksportowane",
     "settings_imported": "Ustawienia zostały zaimportowane",
-    "retention": "Zatrzymanie danych",
+    "retention": "Przechowywanie danych",
     "retention_desc": "Jak długo wyniki badania prędkości są utrzymywane przed automatycznym usunięciem.",
     "retention_saved": "Okres przechowywania zaktualizowany",
     "retention_days_suffix": "dni",
@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Utrata pakietów",
-      "description": "Utrata pakietów to część danych, która nigdy nie dotarła i musiała zostać wysłana ponownie. Wszystko powyżej zera czuć jako przerywanie w rozmowach i grach na długo przedtem, nim ujawni się jako niższa prędkość. Mierzy to tylko Ookla, więc test u innego dostawcy zostawia to pole puste, zamiast pokazywać zero."
+      "description": "Utrata pakietów to odsetek wysłanych pakietów danych, które nie dotarły do odbiorcy. Może powodować przerwy w rozmowach i grach. MySpeed pokazuje ją dla testów Ookla oraz testów iperf3 w trybie UDP; jeśli test jej nie mierzy, pole pozostaje puste."
     },
     "up": {
       "title": "Prędkość wysyłania",
@@ -345,10 +345,10 @@
     "details": {
       "show": "Pokaż szczegóły",
       "hide": "Ukryj szczegóły",
-      "of_target": "{{percent}}% Twojego celu",
-      "over_target": "{{amount}} {{unit}} powyżej Twojego celu",
-      "under_target": "{{amount}} {{unit}} poniżej Twojego celu",
-      "on_target": "Dokładnie na Twoim celu",
+      "of_target": "{{percent}}% wartości docelowej",
+      "over_target": "{{amount}} {{unit}} powyżej wartości docelowej",
+      "under_target": "{{amount}} {{unit}} poniżej wartości docelowej",
+      "on_target": "Dokładnie na poziomie wartości docelowej",
       "unchanged": "Bez zmian od poprzedniego testu",
       "measured_at": "Zmierzono",
       "measured_with": "Zmierzono za pomocą",
@@ -451,7 +451,7 @@
       "target_met_title": "Cel osiągnięty",
       "target_met_description": "Testy z dobrym pingiem, pobieraniem i wysyłaniem: {{met}} z {{measured}}",
       "last_failure_title": "Ostatnie niepowodzenie",
-      "last_failure_description": "Najnowszy test w tym zakresie, który nie został zakończony"
+      "last_failure_description": "Ostatni nieudany test w tym zakresie"
     },
     "targets": {
       "title": "Porównanie celów",
@@ -470,8 +470,8 @@
       "avg": "Średnia",
       "down": "Wartości pobierania",
       "up": "Wartości wysyłania",
-      "target": "Cel: {{target}}",
-      "consistency": "Regularność",
+      "target": "Wartość docelowa: {{target}}",
+      "consistency": "Stabilność",
       "samples": "Zmierzone testy",
       "median": "Mediana"
     },
@@ -675,7 +675,7 @@
         "title": "Tytuł powiadomienia",
         "title_placeholder": "MySpeed (opcjonalnie)",
         "tags": "Tagi",
-        "tags_placeholder": "ostrzeżenie,satelity (oddzielone przecinkami)",
+        "tags_placeholder": "warning,satellite (oddzielone przecinkami)",
         "priority": "Domyślny priorytet (1-5)",
         "error_priority": "Priorytet błędu (1-5)",
         "error_message": "Komunikat o błędzie",
@@ -756,7 +756,7 @@
     "title": "Optymalne wartości",
     "use_recommended": "Użyj rekomendowanych",
     "trace_route": "Śledź trasę testów o obniżonej jakości",
-    "trace_route_description": "Gdy test się nie powiedzie, spadnie poniżej swojej linii bazowej lub nie osiągnie optymalnego pingu, MySpeed śledzi trasę do serwera testowego i pokazuje każdy skok w szczegółach testu."
+    "trace_route_description": "Gdy test się nie powiedzie, jego prędkość spadnie poniżej wartości bazowej lub jego ping nie zostanie oceniony jako dobry, MySpeed śledzi trasę do serwera testowego i pokazuje każdy skok w szczegółach testu."
   },
   "preferences": {
     "title": "Preferencje",
@@ -862,7 +862,7 @@
     "metric_ping": "ping",
     "metric_download": "pobieranie",
     "metric_upload": "wysyłanie",
-    "crossed_limits": "Przekroczone limity: {{clauses}}",
+    "crossed_limits": "Naruszone progi: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}} powyżej {{limit}}",
     "limit_under": "{{metric}} {{value}} {{unit}} poniżej {{limit}}",
     "not_measured": "{{metric}} (nie zmierzono)",

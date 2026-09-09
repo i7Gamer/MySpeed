@@ -262,7 +262,7 @@
     },
     "packet_loss": {
       "title": "Paket kaybı",
-      "description": "Paket kaybı, hiç ulaşmayan ve yeniden gönderilmesi gereken verinin oranıdır. Sıfırın üzerindeki her değer, hız düşüşü olarak görünmeden çok önce görüşmelerde ve oyunlarda takılma olarak hissedilir. Bunu yalnızca Ookla ölçer, bu yüzden başka bir sağlayıcının testi sıfır bildirmek yerine alanı boş bırakır."
+      "description": "Paket kaybı, gönderilen veri paketlerinin ulaşmayan kısmının yüzdesidir. Görüşmelerde ve oyunlarda kesintilere neden olabilir. MySpeed bunu Ookla ve iperf3 UDP testlerinde bildirir; test paket kaybını ölçmüyorsa alan boş bırakılır."
     },
     "up": {
       "title": "Yükleme hızı",
@@ -421,17 +421,17 @@
       "target_met_title": "Hedefe ulaşıldı",
       "target_met_description": "Ping, indirme ve yükleme değerleri iyi olan testler: {{met}} / {{measured}}",
       "last_failure_title": "Son hata",
-      "last_failure_description": "Bu aralıktaki tamamlanmayan en yeni test"
+      "last_failure_description": "Bu aralıktaki en son başarısız test"
     },
     "targets": {
-      "title": "Hedef karşılaştırması",
+      "title": "Test noktalarının karşılaştırması",
       "chart": {
         "ping": "Noktaya göre ping",
         "download": "Noktaya göre indirme",
         "upload": "Noktaya göre yükleme"
       },
       "failure_rate": "Hata oranı",
-      "empty": "Bu aralıkta hiçbir hedef bir şey ölçmedi",
+      "empty": "Bu aralıkta hiçbir test noktasında ölçüm yapılmadı",
       "unavailable": "Yüklenemedi"
     },
     "values": {
@@ -476,7 +476,7 @@
     "last_7_days": "Son 7 gün",
     "last_30_days": "Son 30 gün",
     "last_90_days": "Son 90 gün",
-    "last_year": "Geçen yıl",
+    "last_year": "Son 365 gün",
     "mon": "Pzt",
     "tue": "Sal",
     "wed": "Çar",
@@ -692,7 +692,7 @@
       "digest_monthly": "Aylık özet gönder",
       "language": "Mesaj dili",
       "language_placeholder": "İngilizce (varsayılan)",
-      "send_ip_changed": "Dış IP veya sağlayıcı değiştiğinde bildirim gönder",
+      "send_ip_changed": "Dış IP veya internet servis sağlayıcısı değiştiğinde bildirim gönder",
       "ip_changed_message": "Bağlantı değişikliği mesajı",
       "ip_changed_message_placeholder": "Yeni adres: %ip% (önceki %previousIp%)",
       "send_outage": "Bağlantı kesildiğinde ve geri geldiğinde bildir",
@@ -724,7 +724,7 @@
     "title": "Optimum değerler",
     "use_recommended": "Önerileni kullan",
     "trace_route": "Bozulan testlerin rotasını izle",
-    "trace_route_description": "Bir test başarısız olduğunda, temel değerinin altına düştüğünde veya en uygun ping'i kaçırdığında MySpeed test sunucusuna giden rotayı izler ve her adımı test ayrıntılarında gösterir."
+    "trace_route_description": "Test başarısız olduğunda, hızı temel değer eşiğinin altına düştüğünde veya ping ayarlanan optimum değere göre iyi olarak değerlendirilmediğinde MySpeed test sunucusuna giden rotayı izler ve her adımı test ayrıntılarında gösterir."
   },
   "preferences": {
     "title": "Tercihler",
@@ -764,9 +764,9 @@
     },
     "grade_values": {
       "title": "Derece renkleri",
-      "description": "Bir derecenin ölçüm üzerinde ne kadar ileri taşındığı.",
+      "description": "Değerlendirme renginin yalnızca simgeye mi yoksa sayıya da mı uygulanacağını seçin.",
       "glyph": "Yalnızca simge",
-      "glyph_desc": "Dereceyi simge taşır",
+      "glyph_desc": "Değerlendirmeyi simge gösterir",
       "values": "Simge ve sayı",
       "values_desc": "Sayıyı da renklendir"
     }
@@ -804,7 +804,7 @@
     "own_optimals": "Kendi optimum değerleri",
     "baseline_alerts": "Olağan hızın altında uyar",
     "baseline_percent": "Oran (%)",
-    "baseline_desc": "Bir test, hedefin kendi 30 günlük ortancasının bu payının altına düştüğünde uyarır.",
+    "baseline_desc": "Test hızı, test noktasının kendi 30 günlük ortancasının bu oranının altına düştüğünde uyarır.",
     "all": "Tüm test noktaları",
     "saved": "Test noktası kaydedildi.",
     "removed": "Test noktası silindi.",
@@ -830,7 +830,7 @@
     "metric_ping": "ping",
     "metric_download": "indirme",
     "metric_upload": "yükleme",
-    "crossed_limits": "Aşılan sınırlar: {{clauses}}",
+    "crossed_limits": "Sınır ihlali: {{clauses}}",
     "limit_over": "{{metric}} {{value}} {{unit}}, sınır {{limit}} üzerinde",
     "limit_under": "{{metric}} {{value}} {{unit}}, sınır {{limit}} altında",
     "not_measured": "{{metric}} (ölçülmedi)",
@@ -840,7 +840,7 @@
     "connection_changed": "Bağlantı değişti",
     "connection_changed_subject": "MySpeed: bağlantı değişti",
     "ip_changed": "IP adresi {{from}} → {{to}}",
-    "isp_changed": "Sağlayıcı {{from}} → {{to}}",
+    "isp_changed": "İnternet servis sağlayıcısı {{from}} → {{to}}",
     "outage": "Bağlantı kesildi",
     "outage_subject": "MySpeed: bağlantı kesildi",
     "recovered": "Bağlantı geri geldi",
@@ -876,10 +876,10 @@
   },
   "connections": {
     "title": "Bağlantı değişiklikleri",
-    "description": "İki test arasında dış IP adresi veya sağlayıcı her değiştiğinde, testin sağlayıcısının gördüğü şekilde kaydedilir. IPv4 ve IPv6 ayrı ayrı takip edilir ve bir değişikliği yalnızca adres bildiren bir test fark edebilir.",
+    "description": "İki test arasında dış IP adresi veya internet servis sağlayıcısı her değiştiğinde, testi gerçekleştiren sağlayıcının bildirdiği şekilde kaydedilir. IPv4 ve IPv6 ayrı ayrı takip edilir ve bir değişikliği yalnızca adres bildiren bir test fark edebilir.",
     "empty": "Henüz kaydedilen değişiklik yok.",
     "ip": "IP adresi",
-    "isp": "Sağlayıcı",
-    "unknown_target": "Kaldırılmış hedef"
+    "isp": "İnternet servis sağlayıcısı",
+    "unknown_target": "Kaldırılmış test noktası"
   }
 }
