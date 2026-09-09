@@ -316,9 +316,12 @@
     gap: 0.5rem
 
   .provider-input,
-  .provider-input-wrap
+  .provider-input-wrap,
+  .provider-dialog-wrapper .provider-input,
+  .provider-dialog-wrapper .provider-input-wrap
     // The row stacks here, so the main axis is vertical and the basis above
     // would be read as a height - a 14rem-tall select, stretched by the grow.
+    // Match the editor's desktop specificity so its 18rem basis resets too.
     // The field takes the full width of the column instead.
     flex: none
     width: 100%
