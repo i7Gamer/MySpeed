@@ -1,6 +1,6 @@
 # Speedtest CLI maintenance
 
-The release maintainer reviews the Cloudflare CLI monthly and before each MySpeed release. Dependabot watches the Docker base images but does not update the `CFSPEEDTEST_VERSION` build argument or downloaded CLI manifests.
+The release maintainer reviews the Cloudflare CLI before each MySpeed release. Dependabot watches the Docker base images but does not update the `CFSPEEDTEST_VERSION` build argument or downloaded CLI manifests.
 
 | CLI | Deployed version | Last release check | Result |
 | --- | --- | --- | --- |
