@@ -6,15 +6,21 @@ import setupNtfy from "../../server/integrations/ntfy.js";
 let receiver;
 let baseUrl;
 let received = [];
+const ATTACHMENT_THRESHOLD_BYTES = 4096;
 
 /** Stands in for an ntfy server, so the real outbound request can be observed. */
 before(async () => {
     receiver = http.createServer((req, res) => {
         let body = "";
+        req.setEncoding("utf8");
         req.on("data", (chunk) => { body += chunk; });
         req.on("end", () => {
             received.push({url: req.url, method: req.method, headers: req.headers, body});
-            res.writeHead(200).end("ok");
+            // ntfy 2.28.0 treats a body reaching its default 4 KiB peek limit
+            // as an attachment, even at exactly 4096 bytes. Its default server
+            // rejects attachments; exercise the delivery outcome as well.
+            const attachment = Buffer.byteLength(body) >= ATTACHMENT_THRESHOLD_BYTES;
+            res.writeHead(attachment ? 400 : 200).end(attachment ? "attachments not allowed" : "ok");
         });
     });
 
@@ -36,10 +42,10 @@ const load = () => {
 const RESULT = {ping: 10, jitter: 2, download: 100, upload: 50};
 
 describe("ntfy integration", () => {
-    const MESSAGE_BYTES = 4096;
+    const MESSAGE_BYTES = ATTACHMENT_THRESHOLD_BYTES - 1;
 
-    for (const message of ["a".repeat(MESSAGE_BYTES), "é".repeat(MESSAGE_BYTES / 2)]) {
-        it("keeps a message exactly at the UTF-8 byte limit", async () => {
+    for (const message of ["a".repeat(MESSAGE_BYTES), "é".repeat(Math.floor(MESSAGE_BYTES / 2)) + "x"]) {
+        it("keeps a message just below the attachment threshold", async () => {
             const {events} = load();
             await events.testFinished({data: {url: baseUrl, topic: "alerts",
                 send_finished: true, finished_message: message}}, RESULT, () => {});
@@ -47,11 +53,19 @@ describe("ntfy integration", () => {
         });
     }
 
-    for (const message of ["é".repeat(MESSAGE_BYTES), "x".repeat(MESSAGE_BYTES - 1) + "🚀"] ) {
-        it("truncates oversized text without splitting a Unicode character", async () => {
+    for (const [message, expected] of [
+        ["a".repeat(ATTACHMENT_THRESHOLD_BYTES), "a".repeat(MESSAGE_BYTES)],
+        ["é".repeat(ATTACHMENT_THRESHOLD_BYTES / 2), "é".repeat(Math.floor(MESSAGE_BYTES / 2))],
+        ["é".repeat(ATTACHMENT_THRESHOLD_BYTES), "é".repeat(Math.floor(MESSAGE_BYTES / 2))],
+        ["x".repeat(MESSAGE_BYTES) + "🚀", "x".repeat(MESSAGE_BYTES)]
+    ]) {
+        it("delivers text at or above the attachment threshold without splitting Unicode", async () => {
             const {events} = load();
+            const activity = [];
             await events.testFailed({data: {url: baseUrl, topic: "alerts", send_failed: true,
-                error_message: "%error%"}}, {error: message}, () => {});
+                error_message: "%error%"}}, {error: message}, (failed) => activity.push(failed));
+            assert.deepEqual(activity, [undefined], "the server must accept a text notification");
+            assert.equal(received[0].body, expected);
             assert.ok(Buffer.byteLength(received[0].body) <= MESSAGE_BYTES);
             assert.ok(received[0].body.length > 0);
             assert.ok(!received[0].body.includes("\uFFFD"));

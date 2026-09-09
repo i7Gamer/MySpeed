@@ -17,10 +17,12 @@ const defaults = plainDefaults;
 const NTFY_PRIORITY_MIN = 1;
 const NTFY_PRIORITY_MAX = 5;
 
-const NTFY_MESSAGE_BYTES = 4096;
+const NTFY_ATTACHMENT_THRESHOLD_BYTES = 4096;
+const NTFY_MESSAGE_BYTES = NTFY_ATTACHMENT_THRESHOLD_BYTES - 1;
 
-// ntfy treats a larger body as an attachment. Count UTF-8 bytes, and keep
-// whole code points so truncation cannot create an invalid UTF-8 body.
+// ntfy treats a body reaching its default 4 KiB peek limit as an attachment,
+// including exactly 4096 bytes (verified against ntfy 2.28.0). Stay below that
+// threshold, count UTF-8 bytes, and preserve whole code points.
 const messageBody = (message) => {
     if (Buffer.byteLength(message, "utf8") <= NTFY_MESSAGE_BYTES) return message;
 
