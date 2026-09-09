@@ -14,7 +14,7 @@ const bash = ["C:/Program Files/Git/bin/bash.exe", "bash", "/usr/bin/bash"]
     .find((candidate) => spawnSync(candidate, ["-c", "exit 0"], {timeout: TIMEOUT}).status === 0);
 const posix = (value) => value.replaceAll("\\", "/").replace(/^([A-Za-z]):/, (_, drive) => `/${drive.toLowerCase()}`);
 
-const upgrade = (t, failure = "", active = true, {fresh = false, existingData = false, attempts = 1, name = "installation"} = {}) => {
+const upgrade = (t, failure = "", active = true, {fresh = false, existingData = false, reachable = true, attempts = 1, name = "installation"} = {}) => {
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-upgrade-")));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
     const bin = path.join(root, "bin");
@@ -35,6 +35,12 @@ const upgrade = (t, failure = "", active = true, {fresh = false, existingData = 
 esac
 exec /bin/mkdir "$@"`);
     stub("id", "echo 999");
+    // Linux mkdtemp creates a private directory; Git Bash reports different
+    // permissions. Control this host input so failure injection reaches the
+    // intended account branch. Real traversal is tested in installPortability
+    // and installScripts, without changing any ancestor's permissions here.
+    stub("find", `[ "$2 $3 $4 $5" = "-maxdepth 0 -perm -o=x" ] || exit ${GUARD_FAILURE}
+[ "$DIRECTORY_REACHABLE" = true ] && echo "$1"`);
     stub("uname", "echo aarch64");
     stub("curl", `case "$*" in
   *api.github.com*)
@@ -93,7 +99,7 @@ esac`);
         .replace(/^(\s*)sleep \d+$/gm, "$1:")
         .replace(/^(\s*)clear$/gm, "$1:");
     source = 'export PATH="$SANDBOX/bin:$PATH"\n'
-        + 'for mocked in apt-get chown useradd id uname curl wget sha256sum chmod mkdir mv cp cat systemctl; do\n'
+        + 'for mocked in apt-get chown useradd id find uname curl wget sha256sum chmod mkdir mv cp cat systemctl; do\n'
         + ` [ "$(command -v "$mocked")" = "$SANDBOX/bin/$mocked" ] || exit ${GUARD_FAILURE}\ndone\n`
         + source;
     const script = path.join(root, "install.sh");
@@ -101,7 +107,7 @@ esac`);
     let result;
     for (let attempt = 0; attempt < attempts; attempt++) {
         result = spawnSync(bash, [script, "-d", posix(installation)], {
-            env: {...process.env, SANDBOX: posix(root), FAILURE: failure}, encoding: "utf8", timeout: TIMEOUT
+            env: {...process.env, SANDBOX: posix(root), FAILURE: failure, DIRECTORY_REACHABLE: String(reachable)}, encoding: "utf8", timeout: TIMEOUT
         });
         assert.ifError(result.error);
     }
@@ -202,6 +208,24 @@ it("a successful first installation needs no previous executable", {skip: !bash}
     assert.equal(result.binary, "new binary");
     assert.deepEqual(result.backups, []);
 });
+
+it("uses the service account for a traversable installation fixture", {skip: !bash}, (t) => {
+    const result = upgrade(t);
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.unit, /^User=myspeed$/m);
+    assert.doesNotMatch(result.output, /cannot be reached/);
+});
+
+for (const failure of ["", "binary-directory", "ownership"]) {
+    it(`preserves the root fallback for an inaccessible installation (${failure || "success"})`, {skip: !bash}, (t) => {
+        const result = upgrade(t, failure, true, {reachable: false});
+        assert.equal(result.status, 0, result.output);
+        assert.match(result.unit, /^User=root$/m);
+        assert.match(result.output, /cannot be reached by an unprivileged account/);
+        assert.equal(result.binary, "new binary");
+        assert.equal(result.active, true);
+    });
+}
 
 it("uses each systemd directive's path syntax and preserves percent and dollar literals", {skip: !bash}, (t) => {
     const result = upgrade(t, "", true, {name: "my speed %test $box"});
