@@ -4,7 +4,7 @@ import i18n from "i18next";
 import {MemoryRouter} from "react-router-dom";
 import {useTranslation} from "react-i18next";
 import {act, cleanup, click, createElement, render, settle, window} from "../helpers/renderHarness.js";
-import chinese from "../../client/public/assets/locales/zh-TW.json" with {type: "json"};
+import chinese from "../../client/public/assets/locales/zh-tw.json" with {type: "json"};
 import Home from "@/pages/Home/Home.jsx";
 import Header from "@/common/components/Header/HeaderComponent.jsx";
 import {Nodes} from "@/pages/Nodes/Nodes.jsx";
