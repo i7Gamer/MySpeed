@@ -249,7 +249,7 @@ A single failed test already reaches every notifier that asked for failures, and
 
 #### A status badge
 
-`GET /api/badge` answers a small SVG in the shields.io style, for a README or a status page: the label on the left, and on the right what the headline line last measured - `↓ 250 ↑ 40 Mbps · 12 ms` - or `down` in red when its newest test failed. `?metric=download`, `upload` or `ping` prints one reading; `?label=Home%20line` replaces the label. It is served behind the same door as the social preview image: open when the instance has no password or lets strangers read, and a grey `private` badge otherwise, so an `<img>` never gets a JSON refusal. The reply may be cached for five minutes.
+`GET /api/badge` answers a small SVG in the shields.io style, for a README or a status page: the label on the left, and on the right what the headline line last measured - `↓ 250 ↑ 40 Mbps · 12 ms` - or `down` in red when its newest test failed. `?metric=download`, `upload` or `ping` prints one reading; `?label=Home%20line` replaces the label. It uses the same access rules as the social preview image: admitted readers see the readings, and other callers receive a grey `private` badge, so an `<img>` never gets a JSON refusal. The setup rules above still apply to remote requests when no password is set. The reply may be cached for five minutes.
 
 ```markdown
 ![MySpeed](https://myspeed.example.org/api/badge?label=Home%20line)
@@ -312,9 +312,10 @@ cap outside the two import endpoints, CSP and anti-framing headers, node URLs
 blocked from reaching loopback and cloud metadata addresses, and a config export
 that redacts credentials unless you add `?includeSecrets=true`.
 
-Still worth knowing: the password is held in the browser's `localStorage` and sent
-on every request, so anyone with access to the browser profile has it. There is a
-single shared password rather than per-user accounts. Secrets are stored
+Still worth knowing: after sign-in the browser uses an HttpOnly session cookie.
+The password is not retained in `localStorage`; a password left there by an older
+version is removed during migration. There is a single shared password rather
+than per-user accounts. Secrets are stored
 unencrypted in `data/storage.db` — back that file up as carefully as you would a
 password manager export.
 

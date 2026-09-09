@@ -29,6 +29,10 @@ MySpeed ist eine Speedtest-Analyse-Software, welche die Geschwindigkeit deines I
 - 🗳️ Wähle zwischen Ookla, LibreSpeed, Cloudflare und deinem eigenen iperf3-Server
 - 🎯 Miss mehrere Ziele in einem Durchlauf - das Internet und dein eigenes LAN nebeneinander
 - 📉 Lass dich benachrichtigen, wenn ein Ziel unter das fällt, was es sonst liefert - gemessen am eigenen gleitenden Median
+- 🛰️ Verfolge bei fehlgeschlagenen oder langsamen Tests die Route zum Testserver und untersuche die Antworten der einzelnen Hops
+- 🔑 Starte Tests per Skript oder Home Assistant mit einem widerrufbaren API-Token statt dem Passwort
+- 🔀 Verfolge Änderungen deiner externen IP-Adresse oder deines Internetanbieters und lass dich darüber benachrichtigen
+
 ### ⬇️ Installation
 
 Die nativen Builds binden den Speedtest an deine echte Netzwerkkarte. Docker tut das nur
@@ -126,6 +130,8 @@ MySpeed lauscht weiterhin auf Port 5216, jetzt direkt auf dem Host. Unter Docker
 Desktop für Windows und macOS bringt das nichts, dort läuft der Verkehr ohnehin durch
 eine VM.
 
+Die Routenverfolgung wird unter *Optimale Werte* eingeschaltet und verwendet das Werkzeug des Betriebssystems: `tracert` unter Windows und `traceroute` unter macOS und Linux. Das Docker-Image enthält stattdessen `tracepath`, weil `traceroute` einen Raw Socket benötigt und der Container ohne Root-Rechte läuft. Auf einer nativen Linux-Installation wird auch `tracepath` verwendet, wenn `traceroute` nicht verfügbar ist. Einzelne fehlende Antworten beweisen keinen Ausfall: Ein Router kann die Probes auch absichtlich verwerfen.
+
 #### 🔧 Aus dem Quellcode
 
 <details>
@@ -216,6 +222,51 @@ den Fall, dass etwas anderes mitliest:
 | `113` | Die Datenbank wurde geöffnet und enthält keine MySpeed-Konfiguration. | Es wurde nichts geändert. Die Daten liegen woanders – den Befehl im Verzeichnis des Servers ausführen. |
 | `114` | Die Konfiguration ist da, der Schreibvorgang ging nicht durch. | **Das Passwort ist unverändert, der Zugang bleibt gesperrt.** Der Pfad stimmt; prüfen, ob die Datenbank von einem anderen Prozess gesperrt und das Verzeichnis beschreibbar ist. |
 
+#### Einen Test von außen starten
+
+Ein Skript, ein Router-Hook oder Home Assistant kann einen Test starten, ohne das Admin-Passwort zu kennen. Erstelle unter *Einstellungen → API-Tokens* ein Token. Es wird nur einmal angezeigt und als Bearer-Header übermittelt:
+
+```bash
+curl -X POST -H "Authorization: Bearer msp_..." https://myspeed.example.org/api/speedtests/run
+```
+
+Das Token darf einen Test starten und dessen Fortschritt über `GET /api/speedtests/status/live` abfragen. Andere Zugriffe erlaubt es nicht. Im selben Dialog lässt es sich widerrufen. Für Home Assistant genügt ein `rest_command`:
+
+```yaml
+rest_command:
+  myspeed_test:
+    url: https://myspeed.example.org/api/speedtests/run
+    method: POST
+    headers:
+      Authorization: "Bearer msp_..."
+```
+
+API-Tokens werden nur mit exportiert, wenn der Konfigurationsexport die Zugangsdaten enthält. Ein bereinigter Export lässt sie aus; beim Wiederherstellen eines solchen Exports bleiben vorhandene Tokens erhalten.
+
+#### Verbindungsänderungen
+
+Tests mit Ookla, LibreSpeed und Cloudflare speichern die externe IP-Adresse, die der jeweilige Anbieter sieht. Ookla und LibreSpeed liefern außerdem den Namen des Internetanbieters. Ändert sich einer dieser Werte, erscheint der Wechsel unter *Einstellungen → Verbindungsänderungen*. Discord, Telegram, E-Mail, Gotify, ntfy, Pushover und Webhooks können darüber benachrichtigen; der Webhook sendet das Ereignis `IP_CHANGED`.
+
+Jedes Ziel wird nur mit seinen eigenen früheren Tests verglichen. IPv4 und IPv6 werden getrennt verfolgt; ein Wechsel zwischen den Adressfamilien zählt nicht als neue Adresse. Der Anbietername wird nur mit Angaben desselben Testanbieters verglichen. Mehrere Ziele auf derselben Leitung können deshalb denselben Wechsel jeweils protokollieren und melden. Die Vorlage kann `%ip%`, `%previousIp%`, `%isp%`, `%previousIsp%` und `%connectionChanges%` verwenden; Letzteres beschreibt nur die tatsächlich geänderten Werte.
+
+Das Protokoll liegt getrennt von den Testergebnissen und wird durch deren Aufbewahrungsfrist ebenfalls gekürzt. Das Löschen des Verlaufs oder ein Zurücksetzen auf Werkseinstellungen löscht es mit. Es ist nicht Teil des Konfigurationsexports.
+
+#### Ausfälle
+
+Zusätzlich zur Meldung einzelner fehlgeschlagener Tests bieten die Benachrichtigungsdienste einen Schalter für Ausfälle und Wiederherstellungen. Standardmäßig erfolgt eine Ausfallmeldung nach zwei fehlgeschlagenen Tests in Folge; die Anzahl ist einstellbar. Gemeldet wird genau der Fehler, der diese Anzahl erreicht, und anschließend der erste erfolgreiche Test nach einer mindestens so langen Fehlerfolge. Bei einer Grenze von drei löst eine Folge von zwei Fehlern daher keine dieser Meldungen aus.
+
+Wird die Funktion erst während eines Ausfalls eingeschaltet, kann nur noch die Wiederherstellung gemeldet werden. Die Fehlerfolge wird aus den gespeicherten Tests ermittelt, sodass ein Neustart keine zweite Ausfallmeldung verursacht. Webhooks senden `OUTAGE_STARTED` und `CONNECTION_RESTORED`. Vorlagen können `%failuresInRow%`, `%downSince%`, `%downtimeMinutes%` und `%outageSummary%` verwenden; die Zusammenfassung nennt die Anzahl und den Beginn nach der Zeitzone der Instanz. Ziele mit ausgeschalteter Alarmierung bleiben auch hierbei stumm.
+
+#### Ein Status-Badge
+
+`GET /api/badge` liefert ein kleines SVG im Stil von shields.io für eine README oder Statusseite. Rechts steht die letzte Messung des Hauptziels, etwa `↓ 250 ↑ 40 Mbps · 12 ms`, oder bei einem fehlgeschlagenen neuesten Test ein rotes `down`. `?metric=download`, `upload` oder `ping` zeigt einen einzelnen Messwert; `?label=Home%20line` ersetzt die Beschriftung.
+
+Es gelten dieselben Zugriffsregeln wie für das Vorschaubild: Zugelassene Leser sehen die Messwerte, andere erhalten ein graues `private`-Badge statt einer JSON-Fehlermeldung. Auch bei einer passwortlosen Instanz gelten die oben beschriebenen Setup-Regeln für entfernte Zugriffe. Die Antwort darf fünf Minuten zwischengespeichert werden.
+
+```markdown
+![MySpeed](https://myspeed.example.org/api/badge?label=Home%20line)
+```
+
 #### Einen Reverse Proxy davorsetzen
 
 Das ist der unterstützte Weg. Der Proxy übernimmt TLS und idealerweise auch die
@@ -274,9 +325,10 @@ Node-URLs ohne Zugriff auf Loopback- und Cloud-Metadaten-Adressen sowie ein
 Konfigurations-Export, der Zugangsdaten entfernt, solange nicht `?includeSecrets=true`
 angehängt wird.
 
-Trotzdem wissenswert: Das Passwort liegt im `localStorage` des Browsers und wird bei
-jeder Anfrage mitgeschickt – wer Zugriff auf das Browserprofil hat, hat es auch. Es
-gibt ein gemeinsames Passwort statt einzelner Benutzerkonten. Zugangsdaten liegen
+Trotzdem wissenswert: Nach der Anmeldung verwendet der Browser ein HttpOnly-Sitzungscookie.
+Das Passwort wird nicht dauerhaft im `localStorage` gespeichert; ein dort aus einer älteren
+Version verbliebenes Passwort wird beim Umstieg entfernt. Es gibt ein gemeinsames Passwort
+statt einzelner Benutzerkonten. Zugangsdaten liegen
 unverschlüsselt in `data/storage.db`; sichere diese Datei so sorgfältig wie einen
 Passwort-Manager-Export.
 
