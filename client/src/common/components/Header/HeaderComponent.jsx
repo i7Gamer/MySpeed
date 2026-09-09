@@ -14,13 +14,12 @@ import { jsonRequest, login } from "@/common/utils/RequestUtil";
 import { promptUntilAccepted } from "@/common/utils/PasswordPrompt";
 import { refusalDescriptionKey } from "@/common/utils/AuthOutcome";
 import { updateInfo } from "@/common/components/Header/utils/infos";
-import { t } from "i18next";
 import { ConfigContext } from "@/common/contexts/Config";
 import { deniesAdminAccess } from "@/common/contexts/Config/configOutcome";
 import { NodeContext } from "@/common/contexts/Node";
 import { INSTALL_URL, RELEASES_URL } from "@/common/utils/InvariantText";
 import { nodeTitle } from "@/common/components/Header/nodeTitle";
-import { Trans } from "react-i18next";
+import { Trans, useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import Pagination from "./components/Pagination";
 import AboutDialog from "@/common/components/AboutDialog";
@@ -29,6 +28,7 @@ import {withBasePath} from "@/common/utils/BasePath";
 import {PRODUCT_NAME} from "@/common/utils/InvariantText";
 
 const HeaderComponent = () => {
+    const {t} = useTranslation();
     const findNode = useContext(NodeContext)[4];
     const currentNode = useContext(NodeContext)[2];
     const navigate = useNavigate();

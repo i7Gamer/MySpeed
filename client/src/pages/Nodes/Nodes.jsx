@@ -3,7 +3,7 @@ import NodeHeader from "@/pages/Nodes/components/NodeHeader";
 import NodeContainer from "@/pages/Nodes/components/NodeContainer";
 import {useContext, useEffect, useState} from "react";
 import {NodeContext} from "@/common/contexts/Node";
-import {t} from "i18next";
+import {useTranslation} from "react-i18next";
 import CreateNodeDialog from "@/pages/Nodes/components/CreateNodeDialog";
 import {ConfigContext} from "@/common/contexts/Config";
 import {useAlert} from "@/common/contexts/Alert";
@@ -12,6 +12,7 @@ import {faPlus} from "@fortawesome/free-solid-svg-icons";
 import {clickable} from "@/common/utils/Clickable";
 
 export const Nodes = () => {
+    const {t} = useTranslation();
     const [config] = useContext(ConfigContext);
     const [nodes, updateNodes] = useContext(NodeContext);
     const alert = useAlert();

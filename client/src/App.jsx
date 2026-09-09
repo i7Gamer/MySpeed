@@ -42,13 +42,9 @@ library.add(faBell, faBellConcierge, faDatabase, faEnvelope, faGlobe, faHeartPul
 library.add(PushOverIcon);
 
 const Providers = ({children}) => {
-    // The one language subscription for the whole layout. Nearly every
-    // component renders its strings with the global `t`, which reads the
-    // current language but subscribes to nothing - so switching languages
-    // only translated whatever re-rendered for its own reasons, and the
-    // header kept its old words until a reload. This hook re-renders the
-    // shell on languageChanged, and the render sweeps every global-t call
-    // below it. (The memoised pagination subscribes for itself.)
+    // Refresh content owned by these providers when the language changes.
+    // The header and route elements below are created once by the router and
+    // subscribe themselves: unchanged children do not inherit this render.
     useTranslation();
 
     return (

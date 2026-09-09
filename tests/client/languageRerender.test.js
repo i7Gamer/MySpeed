@@ -16,12 +16,12 @@ const read = (file) => readSource(path.join(CLIENT_SRC, file));
  * languageChanged - while the header kept its old words until a reload or a
  * navigation forced it through a render.
  *
- * The cure is one subscription at the layout root: useTranslation() re-renders
- * the shell on languageChanged, and since none of the chrome below memoises,
- * the render sweeps through every global-t call in the tree.
+ * The providers and stable router elements need their own subscriptions.
+ * The rendered regression in languageRefreshBehaviour.test.js covers unchanged
+ * children, which this source-level presence check cannot establish.
  */
 describe("switching the language", () => {
-    it("re-renders the whole layout through one subscription at the root", () => {
+    it("subscribes the provider-owned content to language changes", () => {
         const app = read("App.jsx");
 
         assert.match(app, /useTranslation/, "the layout root does not subscribe to language changes");
