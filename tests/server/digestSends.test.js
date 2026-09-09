@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupDiscord from "../../server/integrations/discord.js";
@@ -41,7 +42,7 @@ import { wantsDigest } from "../../server/controller/integrations.js";
  * fires every module across the whole matrix of stored flags and cadences and
  * holds each answer to wantsDigest's own.
  */
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 let sent = [];
 let sentMail = [];
@@ -57,7 +58,7 @@ const recordingTransport = () => ({
 beforeEach(() => {
     sent = [];
     sentMail = [];
-    globalThis.fetch = async (url, init = {}) => {
+    outboundHttp.send = async (url, init = {}) => {
         let body = init.body;
         try {
             body = JSON.parse(init.body);
@@ -72,7 +73,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 /**

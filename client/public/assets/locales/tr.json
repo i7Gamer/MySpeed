@@ -527,6 +527,14 @@
     "description": "Şu anda demo modundasınız. Bazı özellikler devre dışıdır ve bazı ayarlar değiştirilemez. Tüm özellikleri kullanmak istiyorsanız <Link>MySpeed'i</Link> kendi sunucunuza kurabilirsiniz."
   },
   "integrations": {
+    "errors": {
+      "save": "Entegrasyon kaydedilemedi.",
+      "delete": "Entegrasyon silinemedi.",
+      "invalid": "Entegrasyon ayarlarını kontrol edin.",
+      "unauthorized": "Tekrar giriş yapıp deneyin.",
+      "forbidden": "Bu değişikliği yapma izniniz yok.",
+      "preview": "Değişiklikler demo modunda devre dışı."
+    },
     "none_added": "Henüz kurulmuş bir entegrasyon yok.",
     "preview_active": "Demo modundayken entegrasyonlar devre dışıdır.",
     "display_name": "Entegrasyon adı",
@@ -793,6 +801,7 @@
     "target_of": "Test noktası {{index}}/{{count}}"
   },
   "targets": {
+    "server_list_error": "Sunucu listesi yüklenemedi.",
     "title": "Test noktaları",
     "description": "Planlanmış her test, plandaki her test noktasını sırayla birer kez ölçer. Planın dışındaki test noktaları yalnızca buradan çalıştırılır.",
     "add": "Test noktası ekle",

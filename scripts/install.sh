@@ -9,11 +9,51 @@ PURPLE='\033[0;35m'
 
 INSTALLATION_PATH="/opt/myspeed"
 
-while getopts "d:" o > /dev/null 2>&1; do
-    # shellcheck disable=SC2220
-    case "${o}" in
-        d) INSTALLATION_PATH=${OPTARG} ;;
-    esac
+usage() {
+  echo -e "$NORMAL Usage: install.sh [-d /path/to/installation]"
+  echo -e "$NORMAL   -d          installation directory (default: /opt/myspeed)"
+  echo -e "$NORMAL   -h, --help  show this help without installing"
+}
+
+# Refuse malformed arguments before dependency checks or installation work.
+# Keep getopts' attached -d/path spelling and last-directory-wins behavior.
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -d)
+      if [ $# -lt 2 ] || [ -z "$2" ] || [ "${2#-}" != "$2" ]; then
+        echo -e "$RED✗ Installation Error:$NORMAL -d needs a nonempty directory path."
+        usage
+        exit 1
+      fi
+      INSTALLATION_PATH="$2"
+      shift
+      ;;
+    -d*)
+      INSTALLATION_PATH="${1#-d}"
+      if [ "${INSTALLATION_PATH#-}" != "$INSTALLATION_PATH" ]; then
+        echo -e "$RED✗ Installation Error:$NORMAL -d needs a directory path, not another flag."
+        usage
+        exit 1
+      fi
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      if [ $# -eq 0 ]; then break; fi
+      echo -e "$RED✗ Installation Error:$NORMAL Unexpected positional argument: $1"
+      usage
+      exit 1
+      ;;
+    *)
+      echo -e "$RED✗ Installation Error:$NORMAL Unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+  shift
 done
 
 # An empty -d is not a relative path, and must not be made into one. Called as

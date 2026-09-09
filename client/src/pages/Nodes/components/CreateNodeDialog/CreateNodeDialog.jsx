@@ -1,6 +1,6 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {useAlert} from "@/common/contexts/Alert";
-import React, {useContext, useEffect, useState} from "react";
+import React, {useContext, useEffect, useState, useId} from "react";
 import "./styles.sass";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
@@ -14,6 +14,7 @@ import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
 import {NodeContext} from "@/common/contexts/Node";
 
 export const CreateNodeDialog = ({open, onClose}) => {
+    const labelId = useId();
     const alert = useAlert();
     const updateNodes = useContext(NodeContext)[1];
     const updateToast = useContext(ToastNotificationContext);
@@ -138,17 +139,17 @@ export const CreateNodeDialog = ({open, onClose}) => {
                             <div className="server-group">
                                 <div className="server-label">
                                     <FontAwesomeIcon icon={faCircleInfo}/>
-                                    <h3>{t("nodes.group.name")}</h3>
+                                    <h3 id={`${labelId}-name`}>{t("nodes.group.name")}</h3>
                                 </div>
-                                <input type="text" className="dialog-input server-input" placeholder={t("nodes.placeholder.name")} value={serverName}
+                                <input type="text" className="dialog-input server-input" aria-labelledby={`${labelId}-name`} placeholder={t("nodes.placeholder.name")} value={serverName}
                                        onChange={(e) => setServerName(e.target.value)}/>
                             </div>
                             <div className={"server-group" + (urlError ? " server-error" : "")}>
                                 <div className="server-label">
                                     <FontAwesomeIcon icon={faServer}/>
-                                    <h3>{t("nodes.group.url")}</h3>
+                                    <h3 id={`${labelId}-url`}>{t("nodes.group.url")}</h3>
                                 </div>
-                                <input type="text" className="dialog-input server-input" placeholder={t("nodes.placeholder.url")} value={serverUrl}
+                                <input type="text" className="dialog-input server-input" aria-labelledby={`${labelId}-url`} placeholder={t("nodes.placeholder.url")} value={serverUrl}
                                        onChange={(e) => { setServerUrl(e.target.value); setUrlError(null); }}/>
                                 {/* The server's own words: which rule refused
                                     the URL is the difference between fixing a

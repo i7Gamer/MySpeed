@@ -1,0 +1,1 @@
+This self-signed certificate and public test-only private key are used exclusively by isolated localhost transport tests. The certificate names `outbound-fixture.invalid`; fixtures explicitly trust this certificate and verify the original hostname. These are synthetic test credentials, never production keys.

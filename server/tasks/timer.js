@@ -450,6 +450,10 @@ export const runTask = async (options = undefined) => {
         console.log(`Schedule offset enabled. Delaying speedtest by ${Math.round(delay / 1000)} seconds...`);
         await delayRun(delay);
 
+        // stopTimer releases pending delays during shutdown/rescheduling. Do
+        // not start fresh configuration reads for the retired generation.
+        if (scheduleChangedSince(startedIn)) return;
+
         // Checked again on the far side for the same reason the pause is: the
         // offset sleeps for up to five minutes, which is long enough for a run
         // that started just before the quiet hours to wake up inside them.

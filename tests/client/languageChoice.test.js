@@ -53,7 +53,7 @@ describe("where the stored language comes from and goes", () => {
     it("is what i18n.js seeds a first visit with", () => {
         const source = readSource("client/src/i18n.js");
 
-        assert.match(source, /supportedLanguage\(/,
+        assert.match(source, /browserLanguage\(/,
             "the browser's own language is stored whether or not MySpeed offers it");
         assert.doesNotMatch(source, /writeStored\('language',\s*navigator\.language\.split\('-'\)\[0\]\)/,
             "the raw browser language is still written straight through");

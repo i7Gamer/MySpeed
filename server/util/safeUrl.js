@@ -375,12 +375,13 @@ export const safeLookup = (hostname, options, callback) => {
  * may be *nodes*; applying it here would refuse discord on any instance that set
  * it.
  *
- * The residual gap, named rather than hidden: a hostname that resolves to a
- * link-local or metadata address still passes, because the global fetch
- * accepts no `lookup` to pin the resolution (redirects are no longer part of
- * it: http.js refuses every one). Closing it needs the node path's node:http
- * client. What this buys is that a webhook cannot be *pointed* at the metadata
- * service in the first place, which is the shape the field's regex allowed.
+ * HTTP integration sends additionally use outboundLookup inside node:http's
+ * connection path, so hostname resolution cannot bypass this literal policy.
+ * SMTP/MQTT still apply the literal-host check only: a hostname resolving to a
+ * forbidden address can deliver credentials/payloads there. Their transports
+ * need separate guarded-connection verification before claiming DNS coverage.
+ * Project-defined getJson URLs also retain their existing fetch transport;
+ * revisit that boundary if its callers gain configurable destinations.
  *
  * @returns {{safe: true}|{safe: false, reason: string}}
  */
@@ -423,6 +424,17 @@ export const checkOutboundHost = (value) => {
         return {safe: false, reason: "That address is the cloud metadata service"};
 
     return {safe: true};
+};
+
+/** Connection-time integration policy, deliberately allowing local services. */
+export const outboundLookup = (hostname, options, callback) => {
+    dnsCallback.lookup(hostname, {...options, all: true}, (error, addresses) => {
+        if (error) return callback(error);
+        const allowed = addresses.filter(({address}) => checkOutboundHost(address).safe);
+        if (allowed.length === 0) return callback(new BlockedAddressError(hostname));
+        if (options.all) return callback(null, allowed);
+        return callback(null, allowed[0].address, allowed[0].family);
+    });
 };
 
 export const checkOutboundTarget = (value) => {

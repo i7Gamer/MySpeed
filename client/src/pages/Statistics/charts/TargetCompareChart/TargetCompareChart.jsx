@@ -1,5 +1,6 @@
 import {useContext, useMemo} from "react";
 import {t} from "i18next";
+import {useTranslation} from "react-i18next";
 import ChartWrapper from "@/common/components/ChartWrapper";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {
@@ -94,6 +95,7 @@ Interaction.modes[COMPARE_HOVER_MODE] = (chart, event, options, useFinalPosition
  * @param fresh  whether statsById answers for the range on screen
  */
 export const TargetCompareChart = ({targets, statsById, fresh, metric, compact = false, onClick}) => {
+    useTranslation();
     const [preferences] = useContext(PreferencesContext);
     const themeColors = useChartTheme();
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
@@ -238,7 +240,7 @@ export const TargetCompareChart = ({targets, statsById, fresh, metric, compact =
         if (outcome.state === "empty")
             return <p className="target-compare-hint">{t("statistics.targets.empty")}</p>;
 
-        return <ChartWrapper type="line" data={chartData} options={chartOptions}/>;
+        return <ChartWrapper type="line" data={chartData} options={chartOptions} accessibleName={t(METRIC_TITLES[metric])}/>;
     };
 
     return (

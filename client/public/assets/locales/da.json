@@ -527,6 +527,14 @@
     "description": "Du er i øjeblikket i demo-tilstand. Nogle funktioner er deaktiveret, og visse indstillinger kan ikke ændres. Hvis du vil bruge alle funktioner, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
+    "errors": {
+      "save": "Kunne ikke gemme integrationen.",
+      "delete": "Kunne ikke slette integrationen.",
+      "invalid": "Tjek integrationsindstillingerne.",
+      "unauthorized": "Log på igen og prøv igen.",
+      "forbidden": "Du har ikke tilladelse til at foretage denne ændring.",
+      "preview": "Ændringer er deaktiveret i demo-tilstand."
+    },
     "none_added": "Der er endnu ikke opsat nogen integrationer.",
     "preview_active": "Integrationer er deaktiveret i demo-tilstand.",
     "display_name": "Integrationsnavn",
@@ -793,6 +801,7 @@
     "target_of": "Mål {{index}} af {{count}}"
   },
   "targets": {
+    "server_list_error": "Kunne ikke indlæse serverlisten.",
     "title": "Testmål",
     "description": "Hver planlagt test måler hvert planlagt mål én gang, ét efter ét. Mål uden for tidsplanen kører kun herfra.",
     "add": "Tilføj mål",

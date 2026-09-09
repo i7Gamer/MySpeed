@@ -151,7 +151,13 @@ export const checkStatus = async (url, password) => {
 // instead turns into a request-smuggling primitive.
 const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization",
     "accept-encoding", "content-encoding",
+    "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port",
+    "x-real-ip", "x-client-ip",
     "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "proxy-connection"]);
+
+// Match clientAddress's relay evidence, without preserving an identity that
+// the caller can choose. Host/protocol-only assertions never implied a relay.
+const RELAY_HEADERS = new Set(["forwarded", "x-forwarded-for", "x-real-ip", "x-client-ip"]);
 
 // Enough for the caller to interpret the body it is handed. Everything else the
 // child sends is the child's business and is dropped.
@@ -207,6 +213,11 @@ export const proxyRequest = async (url, req, res) => {
     const headers = Object.fromEntries(
         Object.entries(req.headers).filter(([k]) => !SKIP_HEADERS.has(k.toLowerCase()))
     );
+    // Stripping alone would make a relayed loopback request appear local to a
+    // passwordless child. Keep that evidence without spoofing its req.ip, Host
+    // or protocol. Headerless loopback requests retain their existing waiver.
+    if (Object.keys(req.headers).some((name) => RELAY_HEADERS.has(name.toLowerCase())))
+        headers.forwarded = "for=unknown";
 
     // Undefined is what Express 5 leaves on a request that carried no body,
     // and it is relayed as none: serialised as `{}` it went out with a

@@ -3,7 +3,7 @@ import { Op } from 'sequelize';
 import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
 import { resolveLimits } from '../util/targetLimits.js';
 import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
-import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement } from '../util/testOutcome.js';
+import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement, REQUIRED_MEASUREMENTS } from '../util/testOutcome.js';
 import { BASELINE_METRICS } from '../util/baselineAlert.js';
 import { getValue, MAX_RETENTION_DAYS } from './config.js';
 import * as targetsController from './targets.js';
@@ -29,9 +29,9 @@ const MAX_TEST_LIMIT = 1000;
 // "the latest there is" quote it forever.
 const IMPORT_FUTURE_SKEW_DAYS = 2;
 
-// Columns an import has to supply as numbers. `jitter` and the three quality
-// figures are absent on providers that do not measure them, and a failed row
-// carries -1 placeholders, so null and negative values are both legitimate.
+// Numeric columns checked on import. Optional figures such as jitter may be
+// null, and a failed row carries numeric -1 placeholders in the required
+// measurements. Their separate presence check runs before batching below.
 //
 // The byte counts are in here for the same reason the speeds are: sqlite stores
 // whatever it is handed, so an imported "fast" survives the write and then sits
@@ -591,6 +591,10 @@ export const importTests = async (data) => {
         // and chart built on top of it.
         if (!NUMERIC_COLUMNS.every((column) => isImportableNumber(entry[column]))) { skipped++; continue; }
 
+        // These columns are NOT NULL even for failed runs. Refuse missing
+        // values before they roll back a valid batch into per-row retries.
+        if (!REQUIRED_MEASUREMENTS.every((column) => Number.isFinite(entry[column]))) { skipped++; continue; }
+
         // A negative required measurement beside good figures is a row that is
         // neither a failure nor a measurement - isFailedTest asks for all
         // three placeholders at once, so this shape walked past it and was
@@ -1131,12 +1135,18 @@ export const listStatisticsByTarget = async (range, ids, options = {}) => {
 };
 
 export const deleteOne = async (id) => {
-    if (await getOne(id) === null) return false;
-    await tests.destroy({where: {id: id}});
-    // And the address change that test saw, for the reason deleteTests and
-    // removeOld take the log with the history.
-    await connectionChanges.removeForTest(id);
-    return true;
+    if (id == null) return false;
+    // Preserve findByPk's single-key contract: arrays and operator objects
+    // must never become conditions that can select more than one row.
+    if (!["number", "bigint", "string"].includes(typeof id) && !Buffer.isBuffer(id))
+        throw new Error("Argument passed to deleteOne is not a primary key");
+
+    return db.transaction(async (transaction) => {
+        if (await tests.destroy({where: {id}, transaction}) === 0) return false;
+        // A failure of either delete must leave both rows available to retry.
+        await connectionChanges.removeForTest(id, transaction);
+        return true;
+    });
 }
 
 // Said once per process rather than per sweep: the prune runs every minute,

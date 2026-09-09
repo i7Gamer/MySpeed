@@ -120,8 +120,8 @@ export const removeAll = async (transaction = undefined) => {
  * kept apart from the tests but forgotten with them, and deleting the two
  * runs that showed a rotation one at a time left both addresses in it.
  */
-export const removeForTest = async (testId) => {
-    await model.destroy({where: {testId}});
+export const removeForTest = async (testId, transaction = undefined) => {
+    await model.destroy({where: {testId}, transaction});
 };
 
 /**

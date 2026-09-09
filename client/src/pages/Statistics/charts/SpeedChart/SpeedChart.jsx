@@ -1,6 +1,7 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
+import {useTranslation} from "react-i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { convertSpeed, getSpeedUnit, TIME_FORMAT_12H } from "@/common/utils/FormatUtil";
 import DownsampleNote from "@/pages/Statistics/components/DownsampleNote";
@@ -21,6 +22,7 @@ const AVERAGE_ORDER = 3;
 const SPEED_TICK_STEP = 100;
 
 export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, failed, errors, failedCounts, compact = false, downsampled, dataPoints, rawDataPoints }) => {
+    useTranslation();
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
@@ -107,7 +109,7 @@ export const SpeedChart = memo(({ labels, data, dataKey, titleKey, onClick, fail
                 <h3 className="chart-title">{t(titleKey)} ({speedUnit})</h3>
             </div>
             <div className="chart-body">
-                <ChartWrapper type="line" data={chartData} options={chartOptions} />
+                <ChartWrapper type="line" data={chartData} options={chartOptions} accessibleName={t(titleKey)} />
             </div>
             <DownsampleNote downsampled={downsampled} shown={dataPoints} total={rawDataPoints} />
         </div>

@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -379,12 +380,12 @@ describe("suppressesEvent on an outage", () => {
  * one was written.
  */
 describe("the notifiers on an outage", () => {
-    const realFetch = globalThis.fetch;
+    const realSend = outboundHttp.send;
     let sent = [];
 
     beforeEach(() => {
         sent = [];
-        globalThis.fetch = async (url, init = {}) => {
+        outboundHttp.send = async (url, init = {}) => {
             let body = init.body;
             try {
                 body = JSON.parse(init.body);
@@ -397,7 +398,7 @@ describe("the notifiers on an outage", () => {
     });
 
     afterEach(() => {
-        globalThis.fetch = realFetch;
+        outboundHttp.send = realSend;
     });
 
     const load = (setup, ...rest) => {

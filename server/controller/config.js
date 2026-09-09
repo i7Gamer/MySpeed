@@ -1,4 +1,5 @@
 import config from '../models/Config.js';
+import { Op } from 'sequelize';
 import node from '../models/Node.js';
 import targetsModel from '../models/Targets.js';
 import { listAll as listAllTargets, targetProblem } from './targets.js';
@@ -662,6 +663,10 @@ const asRows = (value) => Array.isArray(value) ? value : null;
  */
 const MAX_IMPORTED_ROWS = 10000;
 
+// Keep candidate predicates comfortably below SQLite's traditional parameter
+// limit, and deduplicate in SQL so repeated history never expands the result.
+const TARGET_HISTORY_CHUNK_ROWS = 500;
+
 /**
  * What a refused import answers with when no single value is to blame - a
  * payload that is not a backup, or a write the database turned down.
@@ -705,6 +710,10 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
     if (rows.recommendations.some((row) => recommendationProblem(row) !== null))
         return {ok: false, key: "recommendations"};
 
+    if (rows.integrations.some((entry) => !entry || typeof entry !== "object" || Array.isArray(entry)
+        || typeof entry.name !== "string" || entry.name.trim() === ""))
+        return {ok: false, key: "integrations"};
+
     try {
         rows.integrations = rows.integrations.map((entry) => ({
             ...entry,
@@ -713,7 +722,7 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
             data: typeof entry?.data === "string" ? JSON.parse(entry.data) : entry?.data
         }));
     } catch {
-        return REFUSED;
+        return {ok: false, key: "integrations"};
     }
 
     /*
@@ -843,6 +852,24 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
     const fileIds = targetRows.map((row) => row.id).filter((id) => Number.isInteger(id));
     if (new Set(fileIds).size !== fileIds.length) return {ok: false, key: "targets"};
 
+    const occupiedIds = new Set();
+    for (let offset = 0; offset < fileIds.length; offset += TARGET_HISTORY_CHUNK_ROWS) {
+        const candidates = fileIds.slice(offset, offset + TARGET_HISTORY_CHUNK_ROWS);
+        const candidateIds = new Set(candidates);
+        const history = await test.findAll({
+            attributes: ["targetId"], group: ["targetId"], raw: true,
+            where: {targetId: {[Op.in]: candidates}}
+        });
+        for (const {targetId} of history) {
+            if (targetId === null) continue;
+            const id = typeof targetId === "number" || (typeof targetId === "string" && targetId.trim() !== "")
+                ? Number(targetId) : NaN;
+            if (!Number.isSafeInteger(id) || !candidateIds.has(id))
+                throw new Error("Unreadable historical target ID during restore");
+            occupiedIds.add(id);
+        }
+    }
+
     const live = await listAllTargets();
     const liveNames = new Map(live.map((row) => [row.id, String(row.name).trim()]));
 
@@ -878,7 +905,7 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
 
         // No live name claims it, so the id is this file's word against the
         // local history filed under it.
-        if (await test.count({where: {targetId: own}}) === 0) return own;
+        if (!occupiedIds.has(own)) return own;
 
         stripped.add(own);
 

@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api } from "./helpers/boot.js";
@@ -16,7 +17,7 @@ import { bootServer, api } from "./helpers/boot.js";
 let server;
 let controller;
 
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 const RESULT = {ping: 12, jitter: 2, download: 500, upload: 200, time: 30};
 
@@ -26,7 +27,7 @@ before(async () => {
 });
 
 after(async () => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     await server?.close();
 });
 
@@ -35,7 +36,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 const createTelegram = async (name) => {
@@ -64,8 +65,7 @@ describe("fanning one event out to several integrations", () => {
         let releaseFirst;
         const firstHeld = new Promise((resolve) => { releaseFirst = resolve; });
 
-        globalThis.fetch = async (url, init = {}) => {
-            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+        outboundHttp.send = async () => {
 
             outboundCalls += 1;
 
@@ -102,8 +102,7 @@ describe("fanning one event out to several integrations", () => {
 
         const sent = [];
 
-        globalThis.fetch = async (url, init = {}) => {
-            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+        outboundHttp.send = async (url) => {
 
             sent.push(String(url));
             if (sent.length === 1) throw new Error("ECONNREFUSED");
@@ -128,8 +127,7 @@ describe("fanning one event out to several integrations", () => {
 
         const sent = [];
 
-        globalThis.fetch = async (url, init = {}) => {
-            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+        outboundHttp.send = async (url) => {
 
             sent.push(String(url));
             return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
@@ -155,8 +153,7 @@ describe("fanning one event out to several integrations", () => {
     it("does not stamp activity for a member that opted out of alerting", async () => {
         const id = await createTelegram("first");
 
-        globalThis.fetch = async (url, init = {}) => {
-            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+        outboundHttp.send = async () => {
             return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
         };
 

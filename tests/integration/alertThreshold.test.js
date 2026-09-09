@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api } from "./helpers/boot.js";
@@ -7,7 +8,7 @@ let triggerEvent;
 let getActive;
 let IntegrationData;
 
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 let sent = [];
 
 before(async () => {
@@ -23,22 +24,19 @@ before(async () => {
 });
 
 after(async () => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     await server?.close();
 });
 
 /**
  * Records what the integrations send, and only that.
  *
- * The test drives the server through its own HTTP API, so a stub over every
- * fetch would swallow the calls setting the scenario up as well - and answer
- * them with an empty body, which is how the created integration's id went
- * missing rather than the assertion failing on what it meant to check.
+ * The separate outbound transport leaves the HTTP API available to set up
+ * each scenario, without returning stub bodies in place of stored rows.
  */
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
-        if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+    outboundHttp.send = async (url, init = {}) => {
 
         sent.push({url: String(url), body: init.body});
         return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
@@ -46,7 +44,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 /**
@@ -204,8 +202,7 @@ describe("only notifying when a limit is missed", () => {
         const id = await createTelegram({alert_only: true, alert_download_below: 100});
         try {
             // A breach that cannot be delivered: everything outbound answers 500.
-            globalThis.fetch = async (url, init = {}) => {
-                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+            outboundHttp.send = async () => {
                 return new Response("nope", {status: 500});
             };
 
@@ -226,15 +223,13 @@ describe("only notifying when a limit is missed", () => {
     it("clears a recorded failure once a send succeeds", async () => {
         const id = await createTelegram({alert_only: true, alert_download_below: 100});
         try {
-            globalThis.fetch = async (url, init = {}) => {
-                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+            outboundHttp.send = async () => {
                 return new Response("nope", {status: 500});
             };
             await triggerEvent("testFinished", SLOW);
             assert.ok((await rowOf(id)).activityFailed);
 
-            globalThis.fetch = async (url, init = {}) => {
-                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+            outboundHttp.send = async () => {
                 return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
             };
             await triggerEvent("testFinished", SLOW);

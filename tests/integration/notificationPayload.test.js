@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api } from "./helpers/boot.js";
@@ -7,7 +8,7 @@ import { DATE_VARIABLES } from "../../server/util/helpers.js";
 let server;
 let runSpeedtest;
 
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 let sent = [];
 
 before(async () => {
@@ -18,15 +19,14 @@ before(async () => {
 });
 
 after(async () => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     delete process.env.PREVIEW_MODE;
     await server?.close();
 });
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
-        if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+    outboundHttp.send = async (url, init = {}) => {
 
         let body = init.body;
         try {
@@ -42,7 +42,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     delete process.env.PREVIEW_MODE;
 });
 

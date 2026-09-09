@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api } from "./helpers/boot.js";
@@ -5,7 +6,7 @@ import { bootServer, api } from "./helpers/boot.js";
 let server;
 let controller;
 
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 const RESULT = {ping: 12, jitter: 2, download: 500, upload: 200, time: 30};
 
@@ -15,7 +16,7 @@ before(async () => {
 });
 
 after(async () => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     await server?.close();
 });
 
@@ -45,7 +46,7 @@ describe("loading the integrations twice", () => {
     const sent = [];
 
     const withStubbedFetch = async (run) => {
-        globalThis.fetch = async (url, options) => {
+        outboundHttp.send = async (url, options) => {
             sent.push({url, options});
             return {ok: true, status: 200, text: async () => "", json: async () => ({})};
         };
@@ -53,7 +54,7 @@ describe("loading the integrations twice", () => {
         try {
             await run();
         } finally {
-            globalThis.fetch = realFetch;
+            outboundHttp.send = realSend;
         }
     };
 

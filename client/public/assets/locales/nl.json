@@ -527,6 +527,14 @@
     "description": "U bent momenteel in demo-modus. Sommige functies zijn uitgeschakeld en sommige instellingen kunnen niet worden gewijzigd. Als u alle functies wilt gebruiken, kunt u <Link>MySpeed</Link> installeren op uw eigen server."
   },
   "integrations": {
+    "errors": {
+      "save": "Kon de integratie niet opslaan.",
+      "delete": "Kon de integratie niet verwijderen.",
+      "invalid": "Controleer de instellingen voor de integratie.",
+      "unauthorized": "Log opnieuw in en probeer het opnieuw.",
+      "forbidden": "Je hebt geen toestemming om deze wijziging aan te brengen.",
+      "preview": "Wijzigingen zijn uitgeschakeld in demomodus."
+    },
     "none_added": "Nog geen integraties ingesteld.",
     "preview_active": "Integraties zijn uitgeschakeld in demomodus.",
     "display_name": "Naam integratie",
@@ -793,6 +801,7 @@
     "target_of": "Doel {{index}} van {{count}}"
   },
   "targets": {
+    "server_list_error": "Kon de serverlijst niet laden.",
     "title": "Testdoelen",
     "description": "Elke geplande test meet elk ingepland doel één keer, achter elkaar. Doelen buiten het schema lopen alleen vanaf hier.",
     "add": "Doel toevoegen",

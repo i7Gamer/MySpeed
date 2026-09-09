@@ -527,6 +527,14 @@
     "description": "Du är just nu i demoläge. Vissa funktioner är inaktiverade och vissa inställningar kan inte ändras. Om du vill använda alla funktioner kan du <Link>installera MySpeed</Link> på din egen server."
   },
   "integrations": {
+    "errors": {
+      "save": "Kunde inte spara integrationen.",
+      "delete": "Kunde inte ta bort integrationen.",
+      "invalid": "Kontrollera integrationsinställningarna.",
+      "unauthorized": "Logga in igen och försök på nytt.",
+      "forbidden": "Du har inte behörighet att göra denna ändring.",
+      "preview": "Ändringar är inaktiverade i demoläget."
+    },
     "none_added": "Inga integrationer har konfigurerats än.",
     "preview_active": "Integrationer är inaktiverade i demoläget.",
     "display_name": "Integrationsnamn",
@@ -793,6 +801,7 @@
     "target_of": "Mål {{index}} av {{count}}"
   },
   "targets": {
+    "server_list_error": "Kunde inte ladda serverlistan.",
     "title": "Testmål",
     "description": "Varje schemalagt test mäter varje schemalagt mål en gång, ett efter ett. Mål utanför schemat körs bara härifrån.",
     "add": "Lägg till mål",

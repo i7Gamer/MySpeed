@@ -548,6 +548,14 @@
     "description": "Tá tú i mód taispeána faoi láthair. Tá roinnt gnéithe díchumasaithe agus ní féidir roinnt socruithe a athrú. Más mian leat gach gné a úsáid, is féidir leat <Link>MySpeed</Link> a shuiteáil ar do fhreastalaí féin."
   },
   "integrations": {
+    "errors": {
+      "save": "Níorbh fhéidir an comhtháthúchán a shábháil.",
+      "delete": "Níorbh fhéidir an comhtháthúchán a scriosadh.",
+      "invalid": "Seiceáil socruithe an chomhtháthúcháin.",
+      "unauthorized": "Sínigh isteach arís agus bain triail eile as.",
+      "forbidden": "Níl cead agat an t-athrú seo a dhéanamh.",
+      "preview": "Tá athruithe díchumasaithe sa mhód taispeána."
+    },
     "none_added": "Níl aon chomhtháthú socraithe fós.",
     "preview_active": "Tá comhtháthú díchumasaithe le linn mód taispeána.",
     "display_name": "Ainm an chomhtháthaithe",
@@ -814,6 +822,7 @@
     "target_of": "Sprioc {{index}} as {{count}}"
   },
   "targets": {
+    "server_list_error": "Níorbh fhéidir liosta na bhfreastalaithe a luchtú.",
     "title": "Spriocanna tástála",
     "description": "Tomhaiseann gach tástáil sceidealta gach sprioc sceidealta uair amháin, ceann i ndiaidh a chéile. Ní ritheann spriocanna lasmuigh den sceideal ach ón áit seo.",
     "add": "Cuir sprioc leis",

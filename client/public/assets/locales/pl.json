@@ -559,6 +559,14 @@
     "description": "Aktualnie jesteś w trybie demo. Niektóre funkcje są wyłączone, a niektóre ustawienia nie mogą być zmienione. Jeśli chcesz korzystać ze wszystkich funkcji, możesz <Link>zainstalować MySpeed</Link> na własnym serwerze."
   },
   "integrations": {
+    "errors": {
+      "save": "Nie udało się zapisać integracji.",
+      "delete": "Nie udało się usunąć integracji.",
+      "invalid": "Sprawdź ustawienia integracji.",
+      "unauthorized": "Zaloguj się ponownie i spróbuj jeszcze raz.",
+      "forbidden": "Brak uprawnień do wprowadzenia tej zmiany.",
+      "preview": "Zmiany są wyłączone w trybie demonstracyjnym."
+    },
     "none_added": "Nie skonfigurowano jeszcze żadnych integracji.",
     "preview_active": "Integracje są wyłączone w trybie demo.",
     "display_name": "Nazwa integracji",
@@ -825,6 +833,7 @@
     "target_of": "Cel {{index}} z {{count}}"
   },
   "targets": {
+    "server_list_error": "Nie udało się załadować listy serwerów.",
     "title": "Cele testów",
     "description": "Każdy zaplanowany test mierzy każdy zaplanowany cel raz, jeden po drugim. Cele spoza harmonogramu można uruchomić tylko stąd.",
     "add": "Dodaj cel",

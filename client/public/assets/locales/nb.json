@@ -527,6 +527,14 @@
     "description": "Du er for øyeblikket i demomodus. Noen funksjoner er deaktivert, og enkelte innstillinger kan ikke endres. Hvis du vil bruke alle funksjonene, kan du <Link>installere MySpeed</Link> på din egen server."
   },
   "integrations": {
+    "errors": {
+      "save": "Kunne ikke lagre integrasjonen.",
+      "delete": "Kunne ikke slette integrasjonen.",
+      "invalid": "Sjekk innstillingene for integrasjonen.",
+      "unauthorized": "Logg på igjen og prøv på nytt.",
+      "forbidden": "Du har ikke tillatelse til å gjøre denne endringen.",
+      "preview": "Endringer er deaktivert i demomodus."
+    },
     "none_added": "Ingen integrasjoner er satt opp ennå.",
     "preview_active": "Integrasjoner er deaktivert i demomodus.",
     "display_name": "Integrasjonsnavn",
@@ -793,6 +801,7 @@
     "target_of": "Mål {{index}} av {{count}}"
   },
   "targets": {
+    "server_list_error": "Kunne ikke laste serverlisten.",
     "title": "Testmål",
     "description": "Hver planlagt test måler hvert planlagt mål én gang, ett etter ett. Mål utenfor tidsplanen kjører bare herfra.",
     "add": "Legg til mål",

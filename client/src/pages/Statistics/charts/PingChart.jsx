@@ -1,4 +1,5 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
+import {useTranslation} from "react-i18next";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
@@ -21,6 +22,7 @@ const JITTER_PEAK_ALPHA = 0.15;
 const AVERAGE_ORDER = 4;
 
 const PingChart = memo(({ compact = false, ...props }) => {
+    useTranslation();
     const [preferences] = useContext(PreferencesContext);
     const use12h = preferences?.timeFormat === TIME_FORMAT_12H;
 
@@ -148,7 +150,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
                 <h3 className="chart-title">{t("latest.ping")} ({t("latest.ping_unit")})</h3>
             </div>
             <div className="chart-body">
-                <ChartWrapper type="line" data={chartData} options={chartOptions} />
+                <ChartWrapper type="line" data={chartData} options={chartOptions} accessibleName={t("latest.ping")} />
             </div>
             <DownsampleNote downsampled={props.downsampled} shown={props.dataPoints} total={props.rawDataPoints} />
         </div>

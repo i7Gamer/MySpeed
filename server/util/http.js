@@ -1,5 +1,6 @@
 import { checkOutboundTarget } from "./safeUrl.js";
 import { authorityWithoutCredentials } from "./urlCredentials.js";
+import { outboundHttp } from "./outboundHttp.js";
 // The deadline and the activity note both live beside each other now, because
 // the SMTP integration needs both and neither is HTTP's to own alone.
 // integrationActivity.js carries the reasoning for each.
@@ -128,7 +129,7 @@ export const postJson = async (url, json, {headers, activity} = {}) => {
     if (refuseBlocked(url, activity)) return null;
 
     try {
-        const res = await fetch(url, jsonInit("POST", json, headers));
+        const res = await outboundHttp.send(url, jsonInit("POST", json, headers));
         note(activity, res.ok ? undefined : true);
         if (!res.ok) report(url, `HTTP ${res.status}`);
         drain(res);
@@ -144,7 +145,7 @@ export const postText = async (url, body, {headers, activity} = {}) => {
     if (refuseBlocked(url, activity)) return null;
 
     try {
-        const res = await fetch(url, {
+        const res = await outboundHttp.send(url, {
             method: "POST",
             headers: {"content-type": "text/plain; charset=utf-8", ...headers},
             body,

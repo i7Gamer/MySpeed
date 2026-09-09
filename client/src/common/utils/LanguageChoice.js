@@ -20,3 +20,11 @@
  */
 export const supportedLanguage = (stored, languages, fallback = "en") =>
     languages.some((language) => language.code === stored) ? stored : fallback;
+
+// Normalize only the browser seed; saved choices keep their exact-match contract.
+export const browserLanguage = (browser, languages, fallback = "en") => {
+    if (typeof browser !== "string") return fallback;
+    const normalized = browser.toLowerCase();
+    return supportedLanguage(normalized, languages,
+        supportedLanguage(normalized.split("-")[0], languages, fallback));
+};

@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -521,9 +522,9 @@ describe("the round and its healthchecks check", () => {
     const POLL_MS = 150;
 
     const pingsOf = async (round) => {
-        const realFetch = globalThis.fetch;
+        const realSend = outboundHttp.send;
         const sent = [];
-        globalThis.fetch = async (url) => {
+        outboundHttp.send = async (url) => {
             sent.push(String(url));
             return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
         };
@@ -541,7 +542,7 @@ describe("the round and its healthchecks check", () => {
                 quiet = sent.length === before ? quiet + 1 : 0;
             }
         } finally {
-            globalThis.fetch = realFetch;
+            outboundHttp.send = realSend;
         }
 
         return pings();

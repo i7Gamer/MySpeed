@@ -527,6 +527,14 @@
     "description": "您目前处于演示模式。部分功能与设置受限。如果您想使用所有功能，可以 <Link>在自己的服务器上安装 MySpeed</Link>。"
   },
   "integrations": {
+    "errors": {
+      "save": "无法保存集成。",
+      "delete": "无法删除集成。",
+      "invalid": "请检查集成设置。",
+      "unauthorized": "请重新登录再试。",
+      "forbidden": "您没有权限进行此更改。",
+      "preview": "演示模式下已禁用更改。"
+    },
     "none_added": "尚未设置任何集成。",
     "preview_active": "在演示模式下，集成将被禁用。",
     "display_name": "集成名称",
@@ -793,6 +801,7 @@
     "target_of": "第 {{index}}/{{count}} 个测速点"
   },
   "targets": {
+    "server_list_error": "无法加载服务器列表。",
     "title": "测速点",
     "description": "每次计划测速都会依次对每个列入计划的测速点各测一次。计划之外的测速点只能从这里启动。",
     "add": "添加测速点",

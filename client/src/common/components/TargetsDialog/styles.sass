@@ -47,6 +47,22 @@
 .target-name-setting
   margin-bottom: 1.25rem
 
+.target-server-feedback
+  display: flex
+  flex-wrap: wrap
+  align-items: center
+  gap: 0.5rem 1rem
+  color: $subtext
+  font-size: $dialog-hint
+  overflow-wrap: anywhere
+
+  &[role="alert"]
+    color: $accent-danger
+
+  .dialog-btn
+    flex: none
+    white-space: normal
+
 .provider-settings
   margin-top: 1.25rem
   padding-top: 1.25rem

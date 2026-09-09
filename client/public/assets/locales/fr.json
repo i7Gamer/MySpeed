@@ -534,6 +534,14 @@
     "description": "Tu es actuellement en mode démo. Certaines fonctions sont désactivées et certains paramètres ne peuvent pas être modifiés. Si tu veux utiliser toutes les fonctions, tu peux <Link>installer MySpeed</Link> sur ton propre serveur."
   },
   "integrations": {
+    "errors": {
+      "save": "Impossible d'enregistrer l'intégration.",
+      "delete": "Impossible de supprimer l'intégration.",
+      "invalid": "Vérifie les paramètres de l'intégration.",
+      "unauthorized": "Connecte-toi à nouveau et réessaie.",
+      "forbidden": "Tu n'as pas l'autorisation d'effectuer cette modification.",
+      "preview": "Les modifications sont désactivées en mode démo."
+    },
     "none_added": "Aucune intégration configurée pour le moment.",
     "preview_active": "Les intégrations sont désactivées pendant le mode démo.",
     "display_name": "Nom de l'intégration",
@@ -800,6 +808,7 @@
     "target_of": "Cible {{index}} sur {{count}}"
   },
   "targets": {
+    "server_list_error": "Impossible de charger la liste des serveurs.",
     "title": "Cibles de test",
     "description": "Chaque test planifié mesure une fois toutes les cibles planifiées, l'une après l'autre. Les cibles hors planification ne se lancent qu'à partir d'ici.",
     "add": "Ajouter une cible",

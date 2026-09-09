@@ -4,12 +4,13 @@ import { isPreviewInstance } from "../util/previewMode.js";
 const SAFE_METHODS = ["GET", "HEAD", "OPTIONS"];
 
 const DEFAULT_MESSAGE = "You can't change anything on this instance in preview mode";
+export const PREVIEW_READ_ONLY = "PREVIEW_READ_ONLY";
 
 const refuses = (message, {allowReads = true} = {}) => (req, res, next) => {
     if (!isPreviewInstance()) return next();
     if (allowReads && SAFE_METHODS.includes(req.method)) return next();
 
-    return res.status(403).json({message});
+    return res.status(403).json({message, type: PREVIEW_READ_ONLY});
 };
 
 /**

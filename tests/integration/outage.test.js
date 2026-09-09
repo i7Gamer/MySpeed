@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTarget, seedTests } from "./helpers/boot.js";
@@ -24,7 +25,7 @@ let failureStreak;
 let streakKeys;
 let triggerEvent;
 
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 let sent = [];
 
 before(async () => {
@@ -36,14 +37,13 @@ before(async () => {
 });
 
 after(async () => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
     await server?.close();
 });
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
-        if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+    outboundHttp.send = async (url, init = {}) => {
 
         sent.push({url: String(url), body: JSON.parse(init.body)});
         return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
@@ -51,7 +51,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 const MS_PER_HOUR = 3_600_000;

@@ -241,6 +241,38 @@ describe("node proxy", () => {
         assert.doesNotMatch(JSON.stringify(proxied.headers), /the-callers-own-password/);
     });
 
+    it("strips forwarding identities while preserving only fixed relay evidence", async () => {
+        received = [];
+        const headers = {Forwarded: "for=198.51.100.1;proto=https", "X-Forwarded-For": "198.51.100.2",
+            "X-Forwarded-Host": "attacker.test", "X-Forwarded-Proto": "https", "X-Forwarded-Port": "443",
+            "X-Real-IP": "198.51.100.3", "X-Client-IP": "198.51.100.4", "X-Application-Trace": "preserved"};
+        const allowNoPassword = process.env.ALLOW_NO_PASSWORD;
+        process.env.ALLOW_NO_PASSWORD = "true";
+        try {
+            const result = await api(server.baseUrl, `/nodes/${nodeId}/speedtests/status`, {headers});
+            assert.equal(result.status, 200);
+        } finally {
+            if (allowNoPassword === undefined) delete process.env.ALLOW_NO_PASSWORD;
+            else process.env.ALLOW_NO_PASSWORD = allowNoPassword;
+        }
+        const proxied = received.at(-1).headers;
+        assert.equal(proxied.forwarded, "for=unknown");
+        for (const name of Object.keys(headers).filter((name) => name !== "Forwarded" && name !== "X-Application-Trace"))
+            assert.equal(proxied[name.toLowerCase()], undefined, name);
+        assert.equal(proxied["x-application-trace"], "preserved");
+        assert.equal(proxied["x-password"], encodeURIComponent(NODE_PASSWORD));
+    });
+
+    it("does not invent relay evidence from host/protocol assertions alone", async () => {
+        received = [];
+        await api(server.baseUrl, `/nodes/${nodeId}/speedtests/status`, {
+            headers: {"X-Forwarded-Host": "attacker.test", "X-Forwarded-Proto": "https"}
+        });
+        const proxied = received.at(-1).headers;
+        for (const name of ["forwarded", "x-forwarded-host", "x-forwarded-proto"])
+            assert.equal(proxied[name], undefined, name);
+    });
+
     /**
      * Clearing the parent's stored credential for a node is not a password
      * change and needs no proof the node still accepts one.

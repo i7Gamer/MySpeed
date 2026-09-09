@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import {after, before, describe, it} from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -39,9 +40,7 @@ describe("the task's outbound ping", () => {
         it(`stores the provider reading and sends ${ping === null ? "null for missing latency" : "measured latency unchanged"}`, async (t) => {
             let spawned = 0;
             const sent = [];
-            const realFetch = globalThis.fetch;
-            t.mock.method(globalThis, "fetch", async (url, init) => {
-                if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+            t.mock.method(outboundHttp, "send", async (url, init) => {
                 sent.push(JSON.parse(init.body));
                 return new Response("{}", {status: 200});
             });

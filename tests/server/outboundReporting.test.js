@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { postJson, postText } from "../../server/util/http.js";
@@ -127,13 +128,13 @@ describe("an outbound call to an unparseable URL", () => {
  * process down.
  */
 describe("what an outbound call leaves behind", () => {
-    const realFetch = globalThis.fetch;
+    const realSend = outboundHttp.send;
     let drains = [];
 
     afterEach(async () => {
         await Promise.all(drains);
         drains = [];
-        globalThis.fetch = realFetch;
+        outboundHttp.send = realSend;
     });
 
     const answering = (props = {}, onRead) => async () => {
@@ -162,7 +163,7 @@ describe("what an outbound call leaves behind", () => {
      */
     it("reads the response body to the end", async () => {
         let read = false;
-        globalThis.fetch = answering({}, () => { read = true; });
+        outboundHttp.send = answering({}, () => { read = true; });
 
         await postJson("https://example.test/hook", {});
         await Promise.all(drains);
@@ -171,7 +172,7 @@ describe("what an outbound call leaves behind", () => {
 
     it("reads it on a refusal too", async () => {
         let read = false;
-        globalThis.fetch = answering({ok: false, status: 429}, () => { read = true; });
+        outboundHttp.send = answering({ok: false, status: 429}, () => { read = true; });
 
         await postText("https://example.test/hook", "hello");
         await Promise.all(drains);
@@ -187,7 +188,7 @@ describe("what an outbound call leaves behind", () => {
      * not looking at. The outcome is what callers actually use.
      */
     it("answers with the outcome rather than a spent Response", async () => {
-        globalThis.fetch = answering({});
+        outboundHttp.send = answering({});
 
         const result = await postJson("https://example.test/hook", {});
 
@@ -196,7 +197,7 @@ describe("what an outbound call leaves behind", () => {
     });
 
     it("still reports a refusal by status", async () => {
-        globalThis.fetch = answering({ok: false, status: 429});
+        outboundHttp.send = answering({ok: false, status: 429});
 
         assert.deepEqual(await postText("https://example.test/hook", "hi"), {ok: false, status: 429});
     });
@@ -204,7 +205,7 @@ describe("what an outbound call leaves behind", () => {
     // A 204 has no body at all, and neither does a response some runtimes
     // build for a HEAD - so the drain has to tolerate its absence.
     it("copes with a response that has no body", async () => {
-        globalThis.fetch = async () => ({ok: true, status: 204});
+        outboundHttp.send = async () => ({ok: true, status: 204});
 
         assert.deepEqual(await postJson("https://example.test/hook", {}), {ok: true, status: 204});
     });
@@ -217,7 +218,7 @@ describe("what an outbound call leaves behind", () => {
      * path did not.
      */
     it("does not let a failing activity note escape", async () => {
-        globalThis.fetch = answering({});
+        outboundHttp.send = answering({});
 
         const rejects = () => Promise.reject(new Error("SQLITE_BUSY"));
 
@@ -226,7 +227,7 @@ describe("what an outbound call leaves behind", () => {
     });
 
     it("does not let a throwing activity note fail the send", async () => {
-        globalThis.fetch = answering({});
+        outboundHttp.send = answering({});
 
         const throws = () => { throw new Error("no such integration"); };
 

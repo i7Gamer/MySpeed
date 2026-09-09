@@ -527,6 +527,14 @@
     "description": "您目前處於示範模式。部分功能已停用，部分設定無法變更。若要使用所有功能，您可以在自己的伺服器上<Link>安裝 MySpeed</Link>。"
   },
   "integrations": {
+    "errors": {
+      "save": "無法儲存整合。",
+      "delete": "無法刪除整合。",
+      "invalid": "請檢查整合設定。",
+      "unauthorized": "請重新登入再試一次。",
+      "forbidden": "您沒有權限進行此變更。",
+      "preview": "示範模式下無法進行變更。"
+    },
     "none_added": "尚未設定任何整合。",
     "preview_active": "示範模式下整合功能已停用。",
     "display_name": "整合名稱",
@@ -793,6 +801,7 @@
     "target_of": "第 {{index}}/{{count}} 個測速點"
   },
   "targets": {
+    "server_list_error": "無法載入伺服器清單。",
     "title": "測速點",
     "description": "每次排程測試都會依序對每個列入排程的測速點各測一次。排程之外的測速點只能從這裡執行。",
     "add": "新增測速點",

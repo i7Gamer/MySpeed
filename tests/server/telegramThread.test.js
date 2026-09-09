@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupTelegram from "../../server/integrations/telegram.js";
@@ -14,20 +15,20 @@ import setupTelegram from "../../server/integrations/telegram.js";
  * at all and Telegram answers a `message_thread_id` they cannot honour with a
  * 400 - which would drop the notification entirely rather than misfile it.
  */
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 let sent = [];
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
+    outboundHttp.send = async (url, init = {}) => {
         sent.push({url: String(url), body: JSON.parse(init.body)});
         return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
     };
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 const load = () => {

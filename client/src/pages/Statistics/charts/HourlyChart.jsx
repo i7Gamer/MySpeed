@@ -1,4 +1,5 @@
 import ChartWrapper from "@/common/components/ChartWrapper";
+import {useTranslation} from "react-i18next";
 import { useMemo, useContext, memo } from "react";
 import { t } from "i18next";
 import { PreferencesContext } from "@/common/contexts/Preferences";
@@ -13,6 +14,7 @@ import "./SpeedChart/styles.sass";
 const BAR_FILL_ALPHA = 0.75;
 
 const HourlyChart = memo((props) => {
+    useTranslation();
     const [preferences] = useContext(PreferencesContext);
     const speedUnit = getSpeedUnit(preferences);
     const themeColors = useChartTheme();
@@ -126,7 +128,7 @@ const HourlyChart = memo((props) => {
                 <h3 className="chart-title">{t("statistics.hourly.title")}</h3>
             </div>
             <div className="chart-body">
-                <ChartWrapper type="bar" data={chartData} options={chartOptions} />
+                <ChartWrapper type="bar" data={chartData} options={chartOptions} accessibleName={t("statistics.hourly.title")} />
             </div>
         </div>
     );

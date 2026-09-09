@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
@@ -44,7 +45,7 @@ const responseProbe = (response) => {
         });
         return promise;
     };
-    const arrayBuffer = response.arrayBuffer.bind(response);
+    const arrayBuffer = response.arrayBuffer?.bind(response);
     response.arrayBuffer = () => {
         state.aggregateReads++;
         return observe(arrayBuffer());
@@ -55,6 +56,11 @@ const responseProbe = (response) => {
         return observe(pipeTo(...args));
     };
     return state;
+};
+
+const mockTransport = (t, implementation) => {
+    t.mock.method(globalThis, "fetch", implementation);
+    t.mock.method(outboundHttp, "send", implementation);
 };
 
 const HELPERS = [
@@ -96,7 +102,7 @@ describe("discarded HTTP response streams", () => {
                     headers: declared ? {"content-length": String(CHUNK_BYTES * LARGE_CHUNKS)} : {}
                 });
                 const probe = responseProbe(response);
-                t.mock.method(globalThis, "fetch", async () => response);
+                mockTransport(t, async () => response);
                 t.mock.method(console, "error", () => undefined);
 
                 await outcomeOf(helper);
@@ -117,7 +123,7 @@ describe("discarded HTTP response streams", () => {
                 requestedTimeout = milliseconds;
                 return realTimeout(TEST_DEADLINE_MS);
             });
-            t.mock.method(globalThis, "fetch", async (_url, init) => {
+            mockTransport(t, async (_url, init) => {
                 signal = init.signal;
                 const response = new Response(new ReadableStream({
                     start(controller) {
@@ -146,7 +152,7 @@ describe("discarded HTTP response streams", () => {
                 pull(controller) { controller.error(fault); }
             }), {status: helper.status});
             const probe = responseProbe(response);
-            t.mock.method(globalThis, "fetch", async () => response);
+            mockTransport(t, async () => response);
             t.mock.method(console, "error", () => undefined);
 
             await outcomeOf(helper);
@@ -158,7 +164,7 @@ describe("discarded HTTP response streams", () => {
 
     for (const body of [null, undefined]) {
         it(`tolerates a ${String(body)} body on POST and GET refusal`, async (t) => {
-            t.mock.method(globalThis, "fetch", async () => ({ok: false, status: ERROR_STATUS, body}));
+            mockTransport(t, async () => ({ok: false, status: ERROR_STATUS, body}));
             t.mock.method(console, "error", () => undefined);
 
             assert.deepEqual(await postJson(URL, {}), {ok: false, status: ERROR_STATUS});
@@ -168,7 +174,7 @@ describe("discarded HTTP response streams", () => {
 
     it("catches a synchronous stream-pipe failure", async (t) => {
         let attempted = false;
-        t.mock.method(globalThis, "fetch", async () => ({
+        mockTransport(t, async () => ({
             ok: true,
             status: SUCCESS_STATUS,
             body: {pipeTo() {
@@ -198,9 +204,9 @@ describe("discarded HTTP response streams", () => {
             server.closeAllConnections();
             await new Promise((resolve) => server.close(resolve));
         });
-        const fetch = globalThis.fetch.bind(globalThis);
+        const fetch = outboundHttp.send.bind(outboundHttp);
         let probe;
-        t.mock.method(globalThis, "fetch", async (...args) => {
+        mockTransport(t, async (...args) => {
             const response = await fetch(...args);
             probe = responseProbe(response);
             return response;

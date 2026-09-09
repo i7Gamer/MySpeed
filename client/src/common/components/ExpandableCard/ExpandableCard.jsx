@@ -10,6 +10,7 @@ export const ExpandableCard = ({
     subtitle,
     statusDot,
     actions,
+    feedback,
     children,
     defaultExpanded = false,
     error = false,
@@ -56,6 +57,7 @@ export const ExpandableCard = ({
                 </div>
             </div>
 
+            {feedback}
             {expanded && (
                 <div className="expandable-card-body">
                     {children}

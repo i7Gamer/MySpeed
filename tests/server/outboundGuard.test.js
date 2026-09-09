@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { checkOutboundTarget } from "../../server/util/safeUrl.js";
@@ -120,19 +121,19 @@ describe("checkOutboundTarget", () => {
 });
 
 describe("an integration pointed at an address it may not reach", () => {
-    const realFetch = globalThis.fetch;
+    const realSend = outboundHttp.send;
     let attempted;
 
     beforeEach(() => {
         attempted = [];
-        globalThis.fetch = async (url) => {
+        outboundHttp.send = async (url) => {
             attempted.push(String(url));
             return new Response("{}", {status: 200});
         };
     });
 
     afterEach(() => {
-        globalThis.fetch = realFetch;
+        outboundHttp.send = realSend;
     });
 
     it("is not sent by postJson", async () => {

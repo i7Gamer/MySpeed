@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupDiscord, { DISCORD_DESCRIPTION_LIMIT, DISCORD_USERNAME_LIMIT } from "../../server/integrations/discord.js";
@@ -18,16 +19,16 @@ import { readSource } from "../helpers/source.js";
 /**
  * These modules are what actually reaches the user when a speedtest finishes or
  * fails, and none of them had a test. Several post to a fixed provider URL, so
- * fetch is stubbed rather than pointed at a local server: nothing here may make
+ * the outbound transport is stubbed: nothing here may make
  * a real request, and the stub records exactly what would have gone out.
  */
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 let sent = [];
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
+    outboundHttp.send = async (url, init = {}) => {
         let body = init.body;
         try {
             body = JSON.parse(init.body);
@@ -42,7 +43,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 /** Registers a module and hands back the event callbacks it declared. */

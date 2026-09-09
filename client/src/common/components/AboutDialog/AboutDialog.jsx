@@ -23,9 +23,18 @@ export const AboutDialog = ({ open, onClose }) => {
     // The version endpoint is admin-gated, the same policy as the header's
     // update check - a read-only visitor would be refused anyway, so the
     // dialog does not ask and the badge simply stays off.
-    if (config.viewMode) return setVersion(null);
+    if (config.viewMode) {
+      setVersion(null);
+      return;
+    }
 
-    jsonRequest("/info/version").then((data) => setVersion(data.local)).catch(() => setVersion(null));
+    let current = true;
+    jsonRequest("/info/version").then((data) => {
+      if (current) setVersion(data.local);
+    }).catch(() => {
+      if (current) setVersion(null);
+    });
+    return () => { current = false; };
   }, [open, config.viewMode]);
 
   const links = [

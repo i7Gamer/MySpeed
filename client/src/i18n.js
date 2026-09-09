@@ -3,7 +3,7 @@ import {initReactI18next} from "react-i18next";
 import LanguageDetector from 'i18next-browser-languagedetector';
 import HttpApi from 'i18next-http-backend';
 import {readStored, writeStored} from "@/common/utils/Storage";
-import {supportedLanguage} from "@/common/utils/LanguageChoice";
+import {browserLanguage} from "@/common/utils/LanguageChoice";
 import {withBasePath} from "@/common/utils/BasePath";
 import {followLanguage} from "@/common/utils/DocumentLanguage";
 /*
@@ -81,8 +81,8 @@ export const languages = [
      * lowercase so the tests' lowercase code checks keep holding - and this
      * comment must never name that character class literally, because the
      * inventory test reads this list up to the first closing bracket. The
-     * detector seeds from navigator.language's first segment, so a zh-TW
-     * browser arrives at Simplified and picks Traditional by hand.
+     * detector prefers an exact supported tag before its base language, so
+     * a zh-TW browser starts in Traditional Chinese.
      */
     {name: 'Čeština', code: 'cs', flag: flag('cz')},
     {name: 'Norsk', code: 'nb', flag: flag('no')},
@@ -107,7 +107,7 @@ export const languages = [
  * selected and no sign of what was in use.
  */
 if (readStored('language') === null)
-    writeStored('language', supportedLanguage(navigator.language.split('-')[0], languages));
+    writeStored('language', browserLanguage(globalThis.navigator?.language, languages));
 
 i18n.use(initReactI18next).use(LanguageDetector).use(HttpApi).init({
     supportedLngs: languages.map(lang => lang.code),

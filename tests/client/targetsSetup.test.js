@@ -502,7 +502,8 @@ describe("the editor's own guard", () => {
     });
 
     it("draws the server pickers only where they mean something", () => {
-        assert.equal((editor.match(/takesServerId\(provider\) && !isUsingCustomUrl/g) ?? []).length, 2,
+        // Count the two field blocks, not their adjacent load-status feedback.
+        assert.equal((editor.match(/takesServerId\(provider\) && !isUsingCustomUrl && \(\s*<div className="provider-setting"/g) ?? []).length, 2,
             "the server select and the free-text id no longer agree about who has a list");
     });
 });

@@ -534,6 +534,14 @@
     "description": "Ara mateix ets en mode de demostració. Algunes funcions estan desactivades i alguns paràmetres no es poden canviar. Si vols utilitzar totes les funcions, pots <Link>instal·lar MySpeed</Link> al teu propi servidor."
   },
   "integrations": {
+    "errors": {
+      "save": "No s'ha pogut desar la integració.",
+      "delete": "No s'ha pogut eliminar la integració.",
+      "invalid": "Comprova la configuració de la integració.",
+      "unauthorized": "Inicia sessió de nou i torna-ho a provar.",
+      "forbidden": "No tens permís per fer aquest canvi.",
+      "preview": "Els canvis estan desactivats en el mode de demostració."
+    },
     "none_added": "Encara no hi ha cap integració configurada.",
     "preview_active": "Les integracions estan desactivades durant el mode de demostració.",
     "display_name": "Nom de la integració",
@@ -800,6 +808,7 @@
     "target_of": "Destinació {{index}} de {{count}}"
   },
   "targets": {
+    "server_list_error": "No s'ha pogut carregar la llista de servidors.",
     "title": "Destinacions de prova",
     "description": "Cada prova programada mesura un cop totes les destinacions programades, l'una darrere l'altra. Les destinacions fora de la programació només s'executen des d'aquí.",
     "add": "Afegeix una destinació",

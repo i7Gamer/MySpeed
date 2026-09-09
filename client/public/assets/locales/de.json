@@ -527,6 +527,14 @@
     "description": "Du befindest dich derzeit im Demo-Modus. Einige Funktionen sind deaktiviert und einige Einstellungen können nicht geändert werden. Wenn du alle Funktionen nutzen möchtest, kannst du <Link>MySpeed</Link> auf deinem eigenen Server installieren."
   },
   "integrations": {
+    "errors": {
+      "save": "Die Integration konnte nicht gespeichert werden.",
+      "delete": "Die Integration konnte nicht gelöscht werden.",
+      "invalid": "Überprüfe die Integrationseinstellungen.",
+      "unauthorized": "Melde dich erneut an und versuche es noch einmal.",
+      "forbidden": "Du hast keine Berechtigung für diese Änderung.",
+      "preview": "Änderungen sind im Demomodus deaktiviert."
+    },
     "none_added": "Noch keine Integrationen eingerichtet.",
     "preview_active": "Im Demomodus sind die Integrationen deaktiviert.",
     "display_name": "Integrations-Name",
@@ -793,6 +801,7 @@
     "target_of": "Ziel {{index}} von {{count}}"
   },
   "targets": {
+    "server_list_error": "Die Serverliste konnte nicht geladen werden.",
     "title": "Test-Ziele",
     "description": "Jeder geplante Test misst jedes eingeplante Ziel einmal, eines nach dem anderen. Ziele außerhalb des Zeitplans laufen nur von hier aus.",
     "add": "Ziel hinzufügen",

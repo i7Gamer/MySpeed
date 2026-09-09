@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests } from "./helpers/boot.js";
@@ -23,10 +24,10 @@ const SUCCEEDED = {ping: 12, download: 100, upload: 50, error: null};
  * test's own requests instead of the integration's.
  */
 const keepAlivePing = async () => {
-    const realFetch = globalThis.fetch;
+    const realSend = outboundHttp.send;
     const sent = [];
 
-    globalThis.fetch = async (url) => {
+    outboundHttp.send = async (url) => {
         sent.push(String(url));
         return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
     };
@@ -34,7 +35,7 @@ const keepAlivePing = async () => {
     try {
         await sendCurrent();
     } finally {
-        globalThis.fetch = realFetch;
+        outboundHttp.send = realSend;
     }
 
     return sent;

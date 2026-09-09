@@ -527,6 +527,14 @@
     "description": "Anda saat ini dalam mode demo. Beberapa fitur dinonaktifkan dan beberapa pengaturan tidak dapat diubah. Jika Anda ingin menggunakan semua fitur, Anda dapat <Link>menginstal MySpeed</Link> di server Anda sendiri."
   },
   "integrations": {
+    "errors": {
+      "save": "Tidak dapat menyimpan integrasi.",
+      "delete": "Tidak dapat menghapus integrasi.",
+      "invalid": "Periksa pengaturan integrasi.",
+      "unauthorized": "Masuk kembali dan coba lagi.",
+      "forbidden": "Anda tidak memiliki izin untuk melakukan perubahan ini.",
+      "preview": "Perubahan dinonaktifkan dalam mode demo."
+    },
     "none_added": "Belum ada integrasi yang disiapkan.",
     "preview_active": "Integrasi dinonaktifkan selama mode demo.",
     "display_name": "Nama integrasi",
@@ -793,6 +801,7 @@
     "target_of": "Tujuan {{index}} dari {{count}}"
   },
   "targets": {
+    "server_list_error": "Tidak dapat memuat daftar server.",
     "title": "Tujuan pengujian",
     "description": "Setiap pengujian terjadwal mengukur setiap tujuan terjadwal satu kali, satu per satu. Tujuan di luar jadwal hanya dijalankan dari sini.",
     "add": "Tambah tujuan",

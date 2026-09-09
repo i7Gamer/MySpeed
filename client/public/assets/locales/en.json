@@ -527,6 +527,14 @@
     "description": "You are currently in demo mode. Some features are disabled and some settings cannot be changed. If you want to use all features, you can <Link>install MySpeed</Link> on your own server."
   },
   "integrations": {
+    "errors": {
+      "save": "Couldn't save the integration.",
+      "delete": "Couldn't delete the integration.",
+      "invalid": "Check the integration settings.",
+      "unauthorized": "Sign in again and retry.",
+      "forbidden": "You don't have permission to make this change.",
+      "preview": "Changes are disabled in demo mode."
+    },
     "none_added": "No integrations set up yet.",
     "preview_active": "Integrations are disabled during demo mode.",
     "display_name": "Integration name",
@@ -793,6 +801,7 @@
     "target_of": "Target {{index}} of {{count}}"
   },
   "targets": {
+    "server_list_error": "Couldn't load the server list.",
     "title": "Test targets",
     "description": "Each scheduled test measures every scheduled target once, one after another. Targets outside the schedule only run from here.",
     "add": "Add target",

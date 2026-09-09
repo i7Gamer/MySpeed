@@ -534,6 +534,14 @@
     "description": "No momento, você está no modo de demonstração. Alguns recursos estão desativados e algumas configurações não podem ser alteradas. Se quiser usar todos os recursos, você pode <Link>instalar o MySpeed</Link> em seu próprio servidor."
   },
   "integrations": {
+    "errors": {
+      "save": "Não foi possível salvar a integração.",
+      "delete": "Não foi possível excluir a integração.",
+      "invalid": "Verifique as configurações da integração.",
+      "unauthorized": "Faça login novamente e tente de novo.",
+      "forbidden": "Você não tem permissão para fazer esta alteração.",
+      "preview": "As alterações estão desabilitadas no modo de demonstração."
+    },
     "none_added": "Nenhuma integração configurada ainda.",
     "preview_active": "As integrações são desativadas durante o modo de demonstração.",
     "display_name": "Nome da integração",
@@ -800,6 +808,7 @@
     "target_of": "Destino {{index}} de {{count}}"
   },
   "targets": {
+    "server_list_error": "Não foi possível carregar a lista de servidores.",
     "title": "Destinos de teste",
     "description": "Cada teste agendado mede todos os destinos agendados uma vez, um após o outro. Os destinos fora do agendamento só são executados a partir daqui.",
     "add": "Adicionar destino",

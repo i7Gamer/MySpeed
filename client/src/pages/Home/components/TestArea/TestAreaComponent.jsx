@@ -105,6 +105,7 @@ const TestArea = () => {
 
     useEffect(() => {
         let ticking = false;
+        let pendingFrame = null;
 
         /**
          * The date pill is a scrolling indicator, so it leaves with the
@@ -124,7 +125,8 @@ const TestArea = () => {
             keepPillUp();
 
             if (!ticking) {
-                requestAnimationFrame(() => {
+                pendingFrame = requestAnimationFrame(() => {
+                    pendingFrame = null;
                     handleScroll();
                     ticking = false;
                 });
@@ -148,6 +150,7 @@ const TestArea = () => {
         }, 100);
 
         return () => {
+            if (pendingFrame !== null) cancelAnimationFrame(pendingFrame);
             clearTimeout(initialCheck);
             clearTimeout(pillTimer.current);
             window.removeEventListener('scroll', throttledScrollHandler);

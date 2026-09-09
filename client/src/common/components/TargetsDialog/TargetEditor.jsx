@@ -28,6 +28,29 @@ import {optimalAccepted, optimalsAccepted, targetBody, uniqueTargetName} from ".
 // server/controller/targets.js: an id is digits and nothing else.
 const SERVER_ID_DIGITS = /^\d+$/;
 
+// Each provider owns its load/retry and retires responses when the editor closes.
+const useServerList = (open, provider) => {
+    const [servers, setServers] = useState({});
+    const [status, setStatus] = useState("loading");
+    const [attempt, setAttempt] = useState(0);
+    useEffect(() => {
+        if (!open) return;
+        let current = true;
+        setStatus("loading");
+        jsonRequest(`/info/server/${provider}`).then(data => {
+            if (!current) return;
+            setServers(data);
+            setStatus("success");
+        }).catch(() => {
+            if (current) setStatus("error");
+        });
+        return () => { current = false; };
+    }, [open, provider, attempt]);
+    return {servers, status, retry: () => {
+        if (status !== "loading") setAttempt(value => value + 1);
+    }};
+};
+
 /**
  * One target's whole shape: its name, its provider, where it measures, whether
  * it alerts, and what it is graded against. The successor of the provider
@@ -87,8 +110,11 @@ export const TargetEditor = ({open, onClose, target}) => {
     const [optimalPing, setOptimalPing] = useState("");
     const [optimalDownload, setOptimalDownload] = useState("");
     const [optimalUpload, setOptimalUpload] = useState("");
-    const [ooklaServers, setOoklaServers] = useState({});
-    const [libreServers, setLibreServers] = useState({});
+    const ooklaList = useServerList(open, "ookla");
+    const libreList = useServerList(open, "libre");
+    const serverList = provider === "ookla" ? ooklaList : libreList;
+    const ooklaServers = ooklaList.servers;
+    const libreServers = libreList.servers;
     const [acceptedOokla, setAcceptedOokla] = useState(false);
     // One run at a time - a second click on a slow link must not save twice.
     const [saving, setSaving] = useState(false);
@@ -122,12 +148,6 @@ export const TargetEditor = ({open, onClose, target}) => {
         // An existing Ookla target was consented to when it was created.
         setAcceptedOokla(target?.provider === "ookla");
     });
-
-    useEffect(() => {
-        if (!open) return;
-        jsonRequest("/info/server/ookla").then(setOoklaServers).catch(() => setOoklaServers([]));
-        jsonRequest("/info/server/libre").then(setLibreServers).catch(() => setLibreServers([]));
-    }, [open]);
 
     /**
      * Switching provider inside the dialog re-reads that provider's stored
@@ -333,6 +353,9 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                     aria-label={t("dialog.provider.server")}
                                                     onChange={(e) => handleServerIdChange(e.target.value)}>
                                                 <option value="none">{t("dialog.provider.choose_automatically")}</option>
+                                                {serverId !== "none" && !Object.hasOwn(serverList.servers, serverId) && (
+                                                    <option value={serverId}>{serverId}</option>
+                                                )}
                                                 {provider === "ookla" && Object.keys(ooklaServers).map((current, index) => (
                                                     <option key={index} value={current}>{formatServerLabel(ooklaServers[current])}</option>
                                                 ))}
@@ -341,6 +364,14 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                 ))}
                                             </select>
                                         </span>
+                                    </div>
+                                )}
+
+                                {takesServerId(provider) && !isUsingCustomUrl && serverList.status !== "success" && (
+                                    <div className="target-server-feedback" role={serverList.status === "error" ? "alert" : "status"}>
+                                        <span>{t(serverList.status === "error" ? "targets.server_list_error" : "statistics.detail.loading")}</span>
+                                        <button type="button" className="dialog-btn" disabled={serverList.status === "loading"}
+                                                onClick={serverList.retry}>{t("dialog.retry")}</button>
                                     </div>
                                 )}
 

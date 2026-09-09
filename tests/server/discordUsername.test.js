@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupDiscord from "../../server/integrations/discord.js";
@@ -17,20 +18,20 @@ import setupDiscord from "../../server/integrations/discord.js";
  * per-integration catch, and the notification would vanish while the
  * integration was marked failed.
  */
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 let sent = [];
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
+    outboundHttp.send = async (url, init = {}) => {
         sent.push(JSON.parse(init.body));
         return new Response("{}", {status: 204});
     };
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 const load = () => {

@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupHealthChecks from "../../server/integrations/healthChecks.js";
@@ -18,13 +19,13 @@ import setupNtfy from "../../server/integrations/ntfy.js";
  * it, logs it and returns null, so the ping was silently dropped with the
  * integration still showing as configured.
  */
-const realFetch = globalThis.fetch;
+const realSend = outboundHttp.send;
 
 let sent = [];
 
 beforeEach(() => {
     sent = [];
-    globalThis.fetch = async (url, init = {}) => {
+    outboundHttp.send = async (url, init = {}) => {
         // Node builds real Headers from this before the request goes out, and
         // that is where an illegal value is rejected. Doing it here means the
         // stub fails the same way the real client would.
@@ -36,7 +37,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    globalThis.fetch = realFetch;
+    outboundHttp.send = realSend;
 });
 
 const load = (setup) => {

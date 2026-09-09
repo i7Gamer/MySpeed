@@ -559,6 +559,14 @@
     "description": "Momentálně jste v demo režimu. Některé funkce jsou zakázány a některá nastavení nelze měnit. Pokud chcete využívat všechny funkce, můžete si <Link>nainstalovat MySpeed</Link> na vlastní server."
   },
   "integrations": {
+    "errors": {
+      "save": "Nepodařilo se uložit integraci.",
+      "delete": "Nepodařilo se odstranit integraci.",
+      "invalid": "Zkontrolujte nastavení integrace.",
+      "unauthorized": "Přihlaste se znovu a zkuste to znovu.",
+      "forbidden": "Nemáte oprávnění k provedení této změny.",
+      "preview": "Změny jsou v demo režimu zakázány."
+    },
     "none_added": "Zatím nejsou nastavené žádné integrace.",
     "preview_active": "Integrace jsou v demo režimu zakázány.",
     "display_name": "Název integrace",
@@ -825,6 +833,7 @@
     "target_of": "Cíl {{index}} z {{count}}"
   },
   "targets": {
+    "server_list_error": "Nepodařilo se načíst seznam serverů.",
     "title": "Testovací cíle",
     "description": "Každý plánovaný test změří každý plánovaný cíl jednou, jeden po druhém. Cíle mimo plán lze spustit pouze odsud.",
     "add": "Přidat cíl",

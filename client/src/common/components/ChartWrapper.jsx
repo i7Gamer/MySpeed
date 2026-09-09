@@ -1,8 +1,14 @@
 import {useRef, useEffect, useState} from "react";
 import {Chart} from "chart.js";
+import {useTranslation} from "react-i18next";
 import "../utils/chartConfig";
 
-export default function ChartWrapper({type, data, options}) {
+// Callers supply their translated chart title. The fallback protects an
+// invalid caller without crashing chart drawing or exposing an unnamed image.
+export default function ChartWrapper({type, data, options, accessibleName}) {
+    const {t} = useTranslation();
+    const name = typeof accessibleName === "string" && accessibleName.trim()
+        ? accessibleName : t("page.statistics");
     const canvasRef = useRef(null);
     const chartRef = useRef(null);
     const [ready, setReady] = useState(false);
@@ -28,5 +34,5 @@ export default function ChartWrapper({type, data, options}) {
         chartRef.current = null;
     }, []);
 
-    return <canvas ref={canvasRef}/>;
+    return <canvas ref={canvasRef} role="img" aria-label={name}/>;
 }

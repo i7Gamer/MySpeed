@@ -25,6 +25,25 @@ import {useDialogSession} from "@/common/hooks/useDialogSession";
 export const SAVE_CONFIRM_MS = 1500;
 export const DELETE_CONFIRM_MS = 3000;
 
+const HTTP_BAD_REQUEST = 400;
+const HTTP_UNAUTHORIZED = 401;
+const HTTP_FORBIDDEN = 403;
+const PREVIEW_READ_ONLY = "PREVIEW_READ_ONLY";
+
+// Keep arbitrary response text (and potentially submitted secrets) out of the UI.
+const mutationError = async (response) => {
+    const error = new Error();
+    if (response?.status === HTTP_BAD_REQUEST) error.reason = "integrations.errors.invalid";
+    if (response?.status === HTTP_UNAUTHORIZED) error.reason = "integrations.errors.unauthorized";
+    if (response?.status === HTTP_FORBIDDEN) {
+        let body;
+        try { body = await response.json(); } catch { /* Older nodes/proxies may answer without JSON. */ }
+        error.reason = body?.type === PREVIEW_READ_ONLY
+            ? "integrations.errors.preview" : "integrations.errors.forbidden";
+    }
+    return error;
+};
+
 const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, config, session}) => {
     const [displayName, setDisplayName] = useState(integration.displayName || integrationTitle(integration.name, t));
     const [fields, setFields] = useState(() => {
@@ -47,7 +66,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     const [saving, setSaving] = useState(false);
     const [saveConfirmed, setSaveConfirmed] = useState(false);
     const [deleteConfirmed, setDeleteConfirmed] = useState(false);
-    const [error, setError] = useState(false);
+    const [error, setError] = useState(null);
     const [lastActivity, setLastActivity] = useState(generateRelativeTime(integration.lastActivity));
 
     /*
@@ -64,6 +83,7 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
     const saveTimer = useRef(null);
     const deleteTimer = useRef(null);
     const draftRevision = useRef(0);
+    const feedbackRevision = useRef(0);
     const mounted = useRef(true);
     const current = () => mounted.current && session.active;
 
@@ -147,28 +167,31 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         if (saving) return;
         setSaving(true);
         const submittedRevision = draftRevision.current;
+        const submittedFeedback = ++feedbackRevision.current;
 
         const data = integrationPayload(integrationDef, fields, displayName);
         try {
             if (!integration.id) {
                 const response = await putRequest(`/integrations/${integration.name}`, data);
-                if (!response.ok) throw new Error();
+                if (!response.ok) throw await mutationError(response);
                 const result = await response.json();
                 if (!current()) return;
                 onUpdate(integration.uuid, {id: result.id, isNew: false});
             } else {
                 const response = await patchRequest(`/integrations/${integration.id}`, data);
-                if (!response.ok) throw new Error();
+                if (!response.ok) throw await mutationError(response);
             }
             if (!current()) return;
             const unchanged = draftRevision.current === submittedRevision;
             setUnsavedChanges(!unchanged);
             setSaveConfirmed(unchanged);
-            setError(false);
+            if (feedbackRevision.current === submittedFeedback) setError(null);
             clearTimeout(saveTimer.current);
             if (unchanged) saveTimer.current = setTimeout(() => setSaveConfirmed(false), SAVE_CONFIRM_MS);
-        } catch {
-            if (current()) setError(true);
+        } catch (failure) {
+            if (current() && feedbackRevision.current === submittedFeedback
+                && draftRevision.current === submittedRevision)
+                setError({operation: "save", reason: failure?.reason});
         } finally {
             if (current()) setSaving(false);
         }
@@ -187,10 +210,13 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
         }
         // Checked before the card disappears: a refused delete used to vanish
         // from the dialog and be back on the next open, with nothing said.
+        const submittedFeedback = ++feedbackRevision.current;
         const response = await deleteRequest(`/integrations/${integration.id}`).catch(() => null);
         if (!current()) return;
         if (!response?.ok) {
-            setError(true);
+            const failure = await mutationError(response);
+            if (current() && feedbackRevision.current === submittedFeedback)
+                setError({operation: "delete", reason: failure.reason});
             return;
         }
         onRemove(integration.uuid);
@@ -234,7 +260,11 @@ const IntegrationCard = ({integration, integrationDef, onRemove, onUpdate, confi
                     </button>
                 )}
             </>}
-            defaultExpanded={integration.isNew || false} error={error} success={saveConfirmed}>
+            defaultExpanded={integration.isNew || false} error={Boolean(error)} success={saveConfirmed}
+            feedback={error && <p role="alert" className="integration-mutation-error">
+                {t(error.operation === "delete" ? "integrations.errors.delete" : "integrations.errors.save")}
+                {error.reason && <> {t(error.reason)}</>}
+            </p>}>
             {/* Marked like every declared field. Without this the one value on
                 the form that no module declares was also the one nothing could
                 point at: the card resends it on every save, so an over-long

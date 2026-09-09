@@ -5,6 +5,10 @@ on: pull_request
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.repository }}-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   # The suite has to pass before anything merges.
   #
@@ -42,12 +46,29 @@ jobs:
       # build-docker.yml only runs from a release - so the first build of a
       # new tag would be the release's own, the one job whose failure tears
       # down a tag and a draft.
-      - name: Enable auto-merge
+      - name: Merge the tested revision
         if: steps.metadata.outputs.update-type != 'version-update:semver-major' && steps.metadata.outputs.package-ecosystem != 'docker'
-        run: gh pr merge --auto --merge "$PR_URL"
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const pull = {...context.repo, pull_number: Number(process.env.PR_NUMBER)};
+            const sha = process.env.TESTED_HEAD;
+            const {data: current} = await github.rest.pulls.get(pull);
+            if (current.merged) {
+              core.info('This pull request is already merged.');
+              return;
+            }
+            if (current.head.sha !== sha) {
+              core.info('This test run was superseded by a newer pull request head.');
+              return;
+            }
+            // The API checks sha atomically at merge time, including a head
+            // change after the read above. A race or API failure fails this job.
+            const {data: result} = await github.rest.pulls.merge({...pull, sha, merge_method: 'merge'});
+            if (!result.merged) throw new Error('GitHub refused to merge the tested revision.');
 
       - name: Flag the major update for review
         if: steps.metadata.outputs.update-type == 'version-update:semver-major'

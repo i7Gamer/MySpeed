@@ -1,3 +1,4 @@
+import {outboundHttp} from "../../server/util/outboundHttp.js";
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { bootServer, api, seedTests, setConfig } from "./helpers/boot.js";
@@ -301,15 +302,13 @@ describe("the route", () => {
  * alert summary.
  */
 describe("telling the integrations", () => {
-    const realFetch = globalThis.fetch;
+    const realSend = outboundHttp.send;
     let sent;
 
     beforeEach(async () => {
         sent = [];
-        // The server's own API is reached through the same fetch: only the
-        // outbound send is recorded.
-        globalThis.fetch = async (url, init = {}) => {
-            if (String(url).startsWith(server.baseUrl)) return realFetch(url, init);
+        // The outbound transport is recorded; API requests still use fetch.
+        outboundHttp.send = async (url, init = {}) => {
             sent.push({url: String(url), body: JSON.parse(init.body)});
             return new Response("{}", {status: 200, headers: {"content-type": "application/json"}});
         };
@@ -317,7 +316,7 @@ describe("telling the integrations", () => {
     });
 
     afterEach(async () => {
-        globalThis.fetch = realFetch;
+        outboundHttp.send = realSend;
         for (const row of await integrations.getActive()) await integrations.deleteIntegration(row.id);
     });
 

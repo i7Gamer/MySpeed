@@ -13,6 +13,74 @@ const uses = (job, action) => job.steps?.filter((step) => step.uses?.startsWith(
 const buildNames = ["build-windows", "build-linux", "build-macos", "build-zip"];
 const dockerSecrets = ["DOCKERHUB_TOKEN", "DOCKERHUB_USERNAME"];
 
+const dependabotMerge = () => uses(workflow("merge-dependabot").jobs.merge, "actions/github-script")[0];
+const TESTED_HEAD = "a".repeat(40);
+const PR_NUMBER = 42;
+const runDependabotMerge = async ({head = TESTED_HEAD, merged = false, readError, mergeError,
+    mergeResult = true} = {}) => {
+    const calls = [];
+    const logs = [];
+    const execute = () => vm.runInNewContext("(async () => {" + dependabotMerge()?.with.script + "})()", {
+        process: {env: {TESTED_HEAD, PR_NUMBER: String(PR_NUMBER)}},
+        context: {repo: {owner: "test", repo: "myspeed"}},
+        core: {info: (message) => logs.push(message)},
+        github: {rest: {pulls: {
+            get: async (request) => {
+                calls.push(["get", {...request}]);
+                if (readError) throw readError;
+                return {data: {head: {sha: head}, merged}};
+            },
+            merge: async (request) => {
+                calls.push(["merge", {...request}]);
+                if (mergeError) throw mergeError;
+                return {data: {merged: mergeResult}};
+            }
+        }}}
+    });
+    return {calls, logs, execute};
+};
+
+it("Dependabot merges only the tested head with scoped cancellation and safe bindings", () => {
+    const config = workflow("merge-dependabot");
+    assert.equal(config.concurrency?.["cancel-in-progress"], true);
+    for (const value of ["github.repository", "github.workflow", "github.event.pull_request.number"])
+        assert.ok(config.concurrency.group.includes(value));
+    const step = dependabotMerge();
+    assert.ok(step, "merge must run as a portable github-script action");
+    assert.equal(step.env.TESTED_HEAD, "${{ github.event.pull_request.head.sha }}");
+    assert.equal(step.env.PR_NUMBER, "${{ github.event.pull_request.number }}");
+    assert.doesNotMatch(step.with.script, /\$\{\{|enablePullRequestAutoMerge|--auto/);
+    assert.match(step.if, /semver-major/);
+    assert.match(step.if, /docker/);
+});
+
+it("Dependabot sends the tested SHA on the actual merge request", async () => {
+    const {calls, execute} = await runDependabotMerge();
+    await execute();
+    assert.deepEqual(calls, [
+        ["get", {owner: "test", repo: "myspeed", pull_number: PR_NUMBER}],
+        ["merge", {owner: "test", repo: "myspeed", pull_number: PR_NUMBER, sha: TESTED_HEAD, merge_method: "merge"}]
+    ]);
+});
+
+for (const state of [{head: "b".repeat(40)}, {merged: true}]) {
+    it("Dependabot skips an explicitly superseded or already merged revision " + JSON.stringify(state), async () => {
+        const {calls, logs, execute} = await runDependabotMerge(state);
+        await execute();
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0][0], "get");
+        assert.equal(logs.length, 1);
+    });
+}
+
+for (const state of [{readError: new Error("read failed")},
+    {mergeError: Object.assign(new Error("head changed during merge"), {status: 409})}, {mergeResult: false}]) {
+    it("Dependabot reports read, merge-race and unsuccessful-result failures " + JSON.stringify(state), async () => {
+        const {execute} = await runDependabotMerge(state);
+        await assert.rejects(execute);
+    });
+}
+
 it("pins every external action and never persists checkout credentials", () => {
     for (const [file, config] of all()) {
         for (const job of Object.values(config.jobs)) {
