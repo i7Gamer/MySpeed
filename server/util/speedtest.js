@@ -207,6 +207,7 @@ export const waitForActiveProcessExit = (timeoutMs = SHUTDOWN_EXIT_WAIT) =>
  * can act on.
  */
 export const WINDOWS_DLL_NOT_FOUND = 3221225781;
+export const STATUS_CONTROL_C_EXIT = 3221225786;
 
 /**
  * What a bare exit code means, for the run that produced nothing else.
@@ -215,11 +216,15 @@ export const WINDOWS_DLL_NOT_FOUND = 3221225781;
  * gate below into a nest of ternaries: that answers whether the code is all we
  * have, this answers what it says.
  */
-const exitCodeReason = (code) => code === WINDOWS_DLL_NOT_FOUND
-    ? `The speedtest CLI exited with code ${code} before it ran: Windows could not load a library `
-        + 'it needs, so its install in bin/ is incomplete. Delete the CLI from bin/ and MySpeed '
-        + 'downloads the whole of it again on the next test'
-    : `The speedtest CLI exited with code ${code} without producing a result`;
+const exitCodeReason = (code, stopping) => {
+    if (code === STATUS_CONTROL_C_EXIT && stopping) return SHUTDOWN_STOP_MESSAGE;
+
+    return code === WINDOWS_DLL_NOT_FOUND
+        ? `The speedtest CLI exited with code ${code} before it ran: Windows could not load a library `
+            + 'it needs, so its install in bin/ is incomplete. Delete the CLI from bin/ and MySpeed '
+            + 'downloads the whole of it again on the next test'
+        : `The speedtest CLI exited with code ${code} without producing a result`;
+};
 
 /**
  * What the row says when the server's own shutdown killed the run.
@@ -271,7 +276,7 @@ const signalReason = (signal, stopping) => stopping
  */
 export const exitError = (code, result, signal = null, stopping = false) =>
     code !== 0 && !result.error && Object.keys(result).length === 0
-        ? (signal ? signalReason(signal, stopping) : exitCodeReason(code))
+        ? (signal ? signalReason(signal, stopping) : exitCodeReason(code, stopping))
         : null;
 
 /**

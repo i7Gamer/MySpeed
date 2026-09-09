@@ -244,7 +244,20 @@ const embeddedIpv4 = (address) => {
     // embeds IPv4 the same way, and the bare `::` form is the deprecated
     // IPv4-compatible address - no current stack routes that one to the
     // embedded address, but recognising it costs nothing.
-    const hex = /^(?:::ffff:|64:ff9b::|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(normalised);
+    const embeddedHex = /^(?:::ffff:|64:ff9b::|::)([0-9a-f]{1,4}):([0-9a-f]{1,4})$/;
+    let hex = embeddedHex.exec(normalised);
+
+    // Bare MQTT/SMTP hosts have not been through URL parsing. Canonicalize
+    // expanded literals too, while retaining the existing readable forms
+    // above (compression can remove a zero IPv4 group from those).
+    if (!hex && normalised.includes(":")) {
+        try {
+            const canonical = new URL(`http://[${normalised}]/`).hostname.slice(1, -1);
+            hex = embeddedHex.exec(canonical);
+        } catch {
+            return null;
+        }
+    }
     if (!hex) return null;
 
     const high = parseInt(hex[1], 16);

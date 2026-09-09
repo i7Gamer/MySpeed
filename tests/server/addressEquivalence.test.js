@@ -44,11 +44,11 @@ describe("full-address equality in connection changes", () => {
             });
         });
     }
-    it("retains the server and UI's existing cross-family rules", () => {
+    it("uses the same cross-family rule on the server and UI", () => {
         const current = {externalIp: "2001:db8::1"};
         const previous = {externalIp: "192.0.2.1"};
         assert.equal(describeChange(current, previous), null);
-        assert.deepEqual(connectionChange(current, previous), {isp: false, externalIp: true});
+        assert.equal(connectionChange(current, previous), null);
     });
     it("retains the server and UI's existing ISP spelling rules", () => {
         const current = {externalIp: "2001:db8::1", isp: "NET"};

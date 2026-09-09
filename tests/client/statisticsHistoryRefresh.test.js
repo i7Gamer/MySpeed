@@ -49,7 +49,7 @@ afterEach(async () => {
 });
 
 const mount = ({hold = [], selectedTarget = null, storage = false, mutationOk = true,
-    stats = EMPTY_STATS, list = []} = {}) => {
+    stats = EMPTY_STATS, list = [], recent = [], viewMode = false} = {}) => {
     // Layout is outside this regression. Chart.js reports jsdom's missing
     // canvas context; retain every other error so component failures remain visible.
     console.error = (...args) => {
@@ -74,7 +74,7 @@ const mount = ({hold = [], selectedTarget = null, storage = false, mutationOk = 
             ? query.has("targets") ? "comparison" : query.has("points") ? "detail" : "main"
             : query.get("limit") === String(RECENT_PAGE_SIZE) ? "recent" : "list";
         const body = kind === "main" || kind === "detail" ? stats
-            : kind === "comparison" ? {byTarget: {1: EMPTY_STATS, 2: EMPTY_STATS}} : kind === "list" ? list : [];
+            : kind === "comparison" ? {byTarget: {1: EMPTY_STATS, 2: EMPTY_STATS}} : kind === "list" ? list : recent;
         const record = {url: parsed, kind};
         requests.push(record);
         if (kind === "list" && listFailure) return Promise.reject(new Error("list unavailable"));
@@ -95,11 +95,20 @@ const mount = ({hold = [], selectedTarget = null, storage = false, mutationOk = 
         controls.setStatus = setStatus;
         return createElement(StatusContext.Provider, {value: [status, noop, noop]}, children);
     };
+    const Scope = ({children}) => {
+        const [target, setTarget] = useState(selectedTarget);
+        const [permission, setPermission] = useState(viewMode);
+        controls.setTarget = setTarget;
+        controls.setPermission = setPermission;
+        return createElement(ConfigContext.Provider, {value: [{viewMode: permission, previewMode: false}, noop, noop]},
+            createElement(TargetsContext.Provider, {value: {targets: TARGETS, reloadTargets: noop,
+                pageTargetFor: () => null, selectedTarget: target, selectionFor: () => ({})}}, children));
+    };
     const view = render(createElement(MemoryRouter, {initialEntries: ["/statistics?range=7d&compare=1y"]},
-        nest(createElement(Status, null, createElement(SpeedtestProvider, null,
+        nest(createElement(Scope, null, createElement(Status, null, createElement(SpeedtestProvider, null,
             createElement(AlertProvider, null, createElement(Driver), createElement(Statistics),
                 storage && createElement("section", {"data-storage": true},
-                    createElement(HistoryStorage, {tests: 1, close: noop}))))),
+                    createElement(HistoryStorage, {tests: 1, close: noop})))))),
         [ConfigContext.Provider, [{viewMode: false, previewMode: false}, noop, noop]],
         [NodeContext.Provider, [[], noop, 0, noop, () => undefined]],
         [PreferencesContext.Provider, [{fullChartDetail: true}, noop]],
@@ -130,6 +139,82 @@ const assertRefreshed = (rig, before) => {
 };
 
 describe("Statistics follows the shared history's actual invalidation events", () => {
+    it("shows a same-target recent result while its aggregate refresh is pending", async () => {
+        const test = {id: 1, targetId: 1, download: 111, upload: 22, ping: 3};
+        const rig = mount({selectedTarget: 1, stats: POPULATED_STATS, recent: [test]});
+        await ready();
+        rig.holdKind("main");
+        rig.holdKind("recent");
+        await complete(rig);
+        rig.ofKind("recent").at(-1).answer([{...test, id: 2, download: 777}]);
+        await settle();
+        assert.match(rig.container.textContent, /777/);
+        assert.ok(rig.container.querySelector(".statistic-stale"));
+    });
+
+    for (const first of ["recent", "main"]) {
+        it(`does not mix target scopes when ${first} responds first`, async () => {
+            const oldTest = {id: 1, targetId: 1, download: 111, upload: 22, ping: 3};
+            const newTest = {...oldTest, id: 2, targetId: 2, download: 777};
+            const rig = mount({selectedTarget: 1, stats: POPULATED_STATS, recent: [oldTest]});
+            await ready();
+            rig.holdKind("main");
+            rig.holdKind("recent");
+            act(() => rig.controls.setTarget(2));
+            await settle();
+            const reply = kind => rig.ofKind(kind).at(-1).answer(kind === "main" ? POPULATED_STATS : [newTest]);
+            reply(first);
+            await settle();
+            const card = [...rig.container.querySelectorAll(".stats-container")]
+                .find(element => element.querySelector(".stats-header")?.textContent === "Last test");
+            assert.ok(!card, "latest card must wait for the aggregate belonging to the same target");
+            assert.ok(rig.container.querySelector(".statistic-stale"), "pending scope must be marked stale");
+            reply(first === "main" ? "recent" : "main");
+            await settle();
+            assert.match(rig.container.textContent, /777/);
+            assert.ok(!rig.container.querySelector(".statistic-stale"));
+        });
+    }
+
+    it("refreshes the page's recent tests on permission changes and rejects old responses", async () => {
+        const rig = mount({stats: POPULATED_STATS, hold: ["recent"], viewMode: true});
+        await ready();
+        assert.equal(rig.ofKind("recent").length, 1);
+        act(() => rig.controls.setPermission(false));
+        await settle();
+        assert.equal(rig.ofKind("recent").length, 2, "sign-in must refetch Statistics' own rows");
+        const test = {id: 1, targetId: 1, download: 777, upload: 22, ping: 3};
+        rig.ofKind("recent")[1].answer([test]);
+        await settle();
+        rig.ofKind("recent")[0].answer([{...test, download: 111}]);
+        await settle();
+        assert.match(rig.container.textContent, /777/);
+        act(() => rig.controls.setPermission(true));
+        await settle();
+        assert.equal(rig.ofKind("recent").length, 3, "sign-out must refetch as well");
+        assert.doesNotMatch(rig.container.textContent, /777/, "privileged previous rows must be hidden while reloading");
+    });
+
+    it("refreshes for a global newest test while the alert-scoped latest row is unchanged", async () => {
+        const rig = mount();
+        await ready();
+        await rig.status({running: false, lastTest: {id: 1}, latestTestId: 1});
+        const before = rig.count();
+        const revision = rig.controls.history.historyRevision;
+        await rig.status({running: false, lastTest: {id: 1}, latestTestId: 2});
+        assertRefreshed(rig, before);
+        assert.equal(rig.controls.history.historyRevision, revision + 1);
+    });
+
+    it("treats an explicitly empty global history as reset without using the scoped row", async () => {
+        const rig = mount();
+        await ready();
+        await rig.status({running: false, lastTest: {id: 1}, latestTestId: 2});
+        const before = rig.count();
+        await rig.status({running: false, lastTest: {id: 1}, latestTestId: null});
+        assertRefreshed(rig, before);
+    });
+
     for (const listMode of ["successful", "rejected", "pending"]) {
         it(`refreshes all page requests after a completed run with a ${listMode} list refresh`, async () => {
             const rig = mount();

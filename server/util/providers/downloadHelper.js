@@ -87,81 +87,117 @@ export const MAX_DOWNLOAD_REDIRECTS = 10;
  */
 export const DOWNLOAD_IDLE_TIMEOUT = 60000;
 
+// A peer can keep an idle timer alive indefinitely by sending occasional bytes.
+// The whole redirect chain shares this budget, so boot and first-use retries
+// eventually get an answer even from a transfer that never completes.
+export const DOWNLOAD_TIMEOUT = 10 * DOWNLOAD_IDLE_TIMEOUT;
+
 // `client` is injectable so the redirect handling is testable without the
 // network; callers pass nothing and get node:https.
-export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDIRECTS, client = get} = {}) =>
+export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDIRECTS,
+    client = get, timeoutMs = DOWNLOAD_TIMEOUT} = {}) =>
     new Promise((resolve, reject) => {
-        const request = client(url, (res) => {
-            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                res.resume();
-                if (redirectsLeft <= 0)
-                    return reject(new Error(`Download failed: ${url} redirected more than ${MAX_DOWNLOAD_REDIRECTS} times`));
+        let settled = false;
+        let response;
+        let writeStream;
+        const requests = new Set();
 
-                // Resolved against the URL that sent it. A Location header need
-                // not be absolute - RFC 9110 allows a relative reference, and a
-                // CDN answering `Location: /bin/cli.tgz` reached https.get as a
-                // path and died on ERR_INVALID_URL, naming neither the download
-                // nor the redirect.
-                let next;
-                try {
-                    next = new URL(res.headers.location, url);
-                } catch {
-                    return reject(new Error(
-                        `Download failed: ${url} redirected to "${res.headers.location}", which is not a URL`));
+        const fail = (error) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(deadline);
+
+            for (const request of requests) request.destroy?.();
+            response?.destroy?.();
+            // Wait for the descriptor to close before unlinking on Windows.
+            // A newly-created stream may still be opening its file when the
+            // deadline fires; removing it earlier can leave a late partial file.
+            const closed = writeStream && !writeStream.closed
+                ? new Promise((done) => writeStream.once("close", done)) : Promise.resolve();
+            writeStream?.destroy();
+            closed.then(() => writeStream ? fs.promises.unlink(destPath).catch(() => undefined) : undefined)
+                .then(() => reject(error));
+        };
+
+        const deadline = setTimeout(() => fail(new Error(
+            `Download failed: ${url} exceeded the ${timeoutMs}ms overall deadline`)), timeoutMs);
+
+        const visit = (currentUrl, remaining) => {
+            let discarded = false;
+            const onError = (error) => { if (!discarded) fail(error); };
+            const request = client(currentUrl, (res) => {
+                if (settled) return res.destroy?.();
+                response = res;
+                res.on('error', onError);
+                if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                    if (remaining <= 0)
+                        return fail(new Error(`Download failed: ${url} redirected more than ${MAX_DOWNLOAD_REDIRECTS} times`));
+
+                    // Resolved against the URL that sent it. A Location header need
+                    // not be absolute - RFC 9110 allows a relative reference, and a
+                    // CDN answering `Location: /bin/cli.tgz` reached https.get as a
+                    // path and died on ERR_INVALID_URL, naming neither the download
+                    // nor the redirect.
+                    let next;
+                    try {
+                        next = new URL(res.headers.location, currentUrl);
+                    } catch {
+                        return fail(new Error(
+                            `Download failed: ${url} redirected to "${res.headers.location}", which is not a URL`));
+                    }
+
+                    // This fetches an executable the server then runs, so a
+                    // redirect onto plain HTTP is a downgrade that hands anyone on
+                    // the path its contents. Refused with a reason: an http:// URL
+                    // handed to https.get failed on ERR_INVALID_PROTOCOL instead,
+                    // which says nothing about a redirect having happened.
+                    if (next.protocol !== "https:")
+                        return fail(new Error(
+                            `Download failed: ${url} redirected to ${next.protocol}//, and only https is followed`));
+
+                    try {
+                        // The redirect body is unused. Close it now rather than
+                        // letting it outlive a successful final download, and
+                        // ignore errors caused by closing that discarded hop.
+                        discarded = true;
+                        res.destroy?.();
+                        return visit(next.href, remaining - 1);
+                    } catch (error) {
+                        return fail(error);
+                    }
                 }
+                if (res.statusCode !== 200) {
+                    res.resume();
+                    return fail(new Error(`Download failed: ${url} returned ${res.statusCode}`));
+                }
+                writeStream = fs.createWriteStream(destPath);
+                writeStream.on('finish', () => {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(deadline);
+                    resolve();
+                });
+                writeStream.on('error', fail);
+                res.pipe(writeStream);
+            });
 
-                // This fetches an executable the server then runs, so a
-                // redirect onto plain HTTP is a downgrade that hands anyone on
-                // the path its contents. Refused with a reason: an http:// URL
-                // handed to https.get failed on ERR_INVALID_PROTOCOL instead,
-                // which says nothing about a redirect having happened.
-                if (next.protocol !== "https:")
-                    return reject(new Error(
-                        `Download failed: ${url} redirected to ${next.protocol}//, and only https is followed`));
+            requests.add(request);
+            request.on('error', onError);
+            if (settled) return;
 
-                return resolve(downloadToFile(next.href, destPath,
-                    {redirectsLeft: redirectsLeft - 1, client}));
-            }
-            if (res.statusCode !== 200) {
-                res.resume();
-                return reject(new Error(`Download failed: ${url} returned ${res.statusCode}`));
-            }
-            const writeStream = fs.createWriteStream(destPath);
+            // Optional so the scripted clients the tests inject stay two-line
+            // stubs; a real ClientRequest always has it.
+            request.setTimeout?.(DOWNLOAD_IDLE_TIMEOUT, () => {
+                onError(new Error(
+                    `Download failed: ${url} sent nothing for ${DOWNLOAD_IDLE_TIMEOUT}ms`));
+            });
+        };
 
-            // A stream that errors mid-transfer used to be left open, with
-            // however much of the archive had arrived still on disk - so the
-            // descriptor leaked and the next attempt could find a truncated
-            // file sitting where its archive goes.
-            // The partial file is gone before the caller hears about the
-            // failure, so a retry cannot find one where its archive goes.
-            //
-            // The response is destroyed too, not just the write side. When the
-            // failure starts on the write side, pipe() only unpipes - the
-            // response stops being read but stays checked out of the agent with
-            // its socket open and its body buffered, until the peer eventually
-            // times out. Settling once is enough: destroy() on an already
-            // destroyed stream is a no-op, and reject after the first call is
-            // ignored.
-            const fail = (error) => {
-                res.destroy();
-                writeStream.destroy();
-                fs.promises.unlink(destPath).catch(() => undefined).then(() => reject(error));
-            };
-
-            res.pipe(writeStream);
-            writeStream.on('finish', () => resolve());
-            writeStream.on('error', fail);
-            res.on('error', fail);
-        });
-
-        request.on('error', reject);
-
-        // Optional so the scripted clients the tests inject stay two-line
-        // stubs; a real ClientRequest always has it.
-        request.setTimeout?.(DOWNLOAD_IDLE_TIMEOUT, () => {
-            request.destroy(new Error(
-                `Download failed: ${url} sent nothing for ${DOWNLOAD_IDLE_TIMEOUT}ms`));
-        });
+        try {
+            visit(url, redirectsLeft);
+        } catch (error) {
+            fail(error);
+        }
     });
 
 /**

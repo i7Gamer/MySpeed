@@ -331,6 +331,8 @@
       "route_address": "Adresse",
       "route_latency": "Latens",
       "route_no_reply": "Ingen svar",
+      "route_lost_one": "{{count}} mistet",
+      "route_lost_other": "{{count}} mistet",
       "route_lost": "{{count}} mistet"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: tilkoblingen er nede",
     "recovered": "Tilkoblingen er tilbake",
     "recovered_subject": "MySpeed: tilkoblingen er gjenopprettet",
+    "outage_summary_one": "{{count}} test har mislyktes siden {{since}}",
+    "recovered_summary_one": "Tilbake på nett etter {{count}} mislykket test siden {{since}}",
     "outage_summary": "{{count}} tester på rad har mislyktes siden {{since}}",
     "recovered_summary": "Tilbake på nett etter {{count}} mislykkede tester siden {{since}}"
   },

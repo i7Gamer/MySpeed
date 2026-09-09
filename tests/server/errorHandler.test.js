@@ -35,6 +35,17 @@ const runHandler = (options, thrown = 'new Error("boom")') => new Promise((resol
 const logContents = () => fs.readFileSync(path.join(workingDir, "data", "logs", "error.log"), "utf8");
 
 describe("errorHandler", () => {
+    it("does not disclose ORM parameters when writing the error log fails", async () => {
+        const log = path.join(workingDir, 'data', 'logs', 'error.log');
+        fs.mkdirSync(log);
+        try {
+            const {stderr} = await runHandler('{fatal: false}',
+                'Object.assign(new Error("database unavailable"), {name: "SequelizeDatabaseError", parameters: {secret: "do-not-print-this-token"}, sql: "secret-query"})');
+            assert.match(stderr, /Could not save error log file/);
+            assert.match(stderr, /database unavailable/);
+            assert.doesNotMatch(stderr, /do-not-print-this-token|secret-query/);
+        } finally { fs.rmdirSync(log); }
+    });
     it("logs the message either way", async () => {
         const {stderr} = await runHandler("{fatal: false}");
         assert.match(stderr, /An error occurred: boom/);

@@ -331,6 +331,8 @@
       "route_address": "Adresse",
       "route_latency": "Latence",
       "route_no_reply": "Pas de réponse",
+      "route_lost_one": "{{count}} perdu",
+      "route_lost_other": "{{count}} perdus",
       "route_lost": "{{count}} perdus"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed : connexion coupée",
     "recovered": "La connexion est rétablie",
     "recovered_subject": "MySpeed : connexion rétablie",
+    "outage_summary_one": "{{count}} test a échoué depuis {{since}}",
+    "recovered_summary_one": "De nouveau en ligne après {{count}} test échoué depuis {{since}}",
     "outage_summary": "{{count}} tests d'affilée ont échoué depuis {{since}}",
     "recovered_summary": "De nouveau en ligne après {{count}} tests échoués depuis {{since}}"
   },

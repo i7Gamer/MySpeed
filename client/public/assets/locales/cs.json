@@ -337,6 +337,8 @@
       "route_address": "Adresa",
       "route_latency": "Latence",
       "route_no_reply": "Žádná odpověď",
+      "route_lost_one": "{{count}} ztraceno",
+      "route_lost_other": "{{count}} ztraceno",
       "route_lost": "{{count}} ztraceno"
     }
   },
@@ -837,6 +839,8 @@
     "outage_subject": "MySpeed: připojení nedostupné",
     "recovered": "Připojení je opět dostupné",
     "recovered_subject": "MySpeed: připojení obnoveno",
+    "outage_summary_one": "{{count}} test selhal od {{since}}",
+    "recovered_summary_one": "Opět online po {{count}} neúspěšném testu od {{since}}",
     "outage_summary": "{{count}} testů po sobě selhalo od {{since}}",
     "recovered_summary": "Opět online po {{count}} neúspěšných testech od {{since}}"
   },

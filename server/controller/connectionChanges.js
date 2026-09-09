@@ -111,8 +111,8 @@ export const listChanges = async (limit = MAX_LISTED) =>
     await model.findAll({raw: true, order: NEWEST_FIRST, limit});
 
 /** Gone with the history - see the model's header. */
-export const removeAll = async () => {
-    await model.destroy({where: {}});
+export const removeAll = async (transaction = undefined) => {
+    await model.destroy({where: {}, transaction});
 };
 
 /**

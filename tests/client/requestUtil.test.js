@@ -224,7 +224,7 @@ describe("the boot password migration", () => {
 
             mock.timers.tick(REQUEST_TIMEOUT_MS);
 
-            assert.equal(await settled, "rejected",
+            assert.equal(await settled, "resolved",
                 "the migration never settled, so the top-level await below it never returns");
             assert.equal(store.get("password"), undefined,
                 "the stored password survived, so every later load repeats the same stall");

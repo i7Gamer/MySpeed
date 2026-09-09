@@ -69,11 +69,16 @@ const timedFetch = async (url, init = {}) => {
  * can read it either - which is the point.
  */
 export const login = async (password) => {
-    const response = await timedFetch(withBasePath("/api/session"), {
-        method: "POST",
-        headers: {"content-type": "application/json"},
-        body: JSON.stringify({password})
-    });
+    let response;
+    try {
+        response = await timedFetch(withBasePath("/api/session"), {
+            method: "POST",
+            headers: {"content-type": "application/json"},
+            body: JSON.stringify({password})
+        });
+    } catch {
+        return {ok: false, unreachable: true};
+    }
 
     if (response.ok) return {ok: true};
 

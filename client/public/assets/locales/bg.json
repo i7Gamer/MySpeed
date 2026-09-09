@@ -331,6 +331,8 @@
       "route_address": "Адрес",
       "route_latency": "Забавяне",
       "route_no_reply": "Няма отговор",
+      "route_lost_one": "{{count}} загубен",
+      "route_lost_other": "{{count}} загубени",
       "route_lost": "{{count}} загубени"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: връзката е прекъсната",
     "recovered": "Връзката е възстановена",
     "recovered_subject": "MySpeed: връзката е възстановена",
+    "outage_summary_one": "{{count}} тест е неуспешен от {{since}}",
+    "recovered_summary_one": "Отново онлайн след {{count}} неуспешен тест от {{since}}",
     "outage_summary": "{{count}} теста подред са неуспешни от {{since}}",
     "recovered_summary": "Отново онлайн след {{count}} неуспешни теста от {{since}}"
   },

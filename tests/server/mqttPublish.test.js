@@ -417,6 +417,41 @@ describe("the handshake a connection waits for", () => {
 
     const CONNACK_ACCEPTED = Buffer.from([0x20, 0x02, 0x00, 0x00]);
 
+    const RECEIVE_LIMIT = 64 * 1024;
+    const FRAME_OVERHEAD = 4;
+
+    it("refuses an oversized advertised packet before buffering its body", async () => {
+        const socket = socketDouble();
+        let destroyed = false;
+        socket.destroy = () => { destroyed = true; };
+        const sent = sendThrough(socket, false);
+        socket.emit("data", Buffer.from([CONNACK << 4]));
+        socket.emit("data", encodeLength(RECEIVE_LIMIT + 1));
+        await assert.rejects(sent, /too large|limit/i);
+        assert.equal(destroyed, true);
+    });
+
+    it("refuses an unterminated remaining-length field", async () => {
+        const socket = socketDouble();
+        const sent = sendThrough(socket, false);
+        socket.emit("data", Buffer.from([CONNACK << 4, 0x80, 0x80, 0x80, 0x80]));
+        await assert.rejects(sent, /malformed|length/i);
+    });
+
+    it("accepts a bounded frame in fragments followed by many coalesced acknowledgments", async () => {
+        const socket = socketDouble();
+        const messageCount = RECEIVE_LIMIT / FRAME_OVERHEAD + 1;
+        const sent = publishAll({host: "broker.example", port: 1883, qos: 1, timeout: TIMEOUT,
+            messages: Array.from({length: messageCount}, () => ({topic: "test", payload: "x"})),
+            connect: () => socket});
+        socket.emit("data", CONNACK_ACCEPTED.subarray(0, 1));
+        socket.emit("data", CONNACK_ACCEPTED.subarray(1));
+        const acknowledgments = Buffer.concat(Array.from({length: messageCount}, (_, index) => puback(index + 1)));
+        assert.ok(acknowledgments.length > RECEIVE_LIMIT);
+        socket.emit("data", acknowledgments);
+        await sent;
+    });
+
     const sendThrough = (socket, secure) => publishAll({
         host: "broker.example", port: secure ? 8883 : 1883, secure, qos: 0, timeout: 1000,
         messages: [{topic: "myspeed/result", payload: "x"}],

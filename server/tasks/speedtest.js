@@ -1261,7 +1261,9 @@ const executeTarget = async (target, type, retried = false) => {
         // still pages nobody.
         // testResult is the plain {id, created} the controller's create
         // answers, built by hand so the timestamp travels back with the id.
-        const measured = finishedPayload({...testResult, provider, ping, jitter, download, upload, time,
+        // The row keeps the unmeasured-latency sentinel; outbound consumers
+        // need null rather than a fabricated zero-millisecond measurement.
+        const measured = finishedPayload({...testResult, provider, ping: measuredPing(ping), jitter, download, upload, time,
             packetLoss, downloadLatency, uploadLatency, serverId, serverName, serverHost, serverLocation,
             isp, externalIp, resultId, bytesDownloaded, bytesUploaded,
             targetId: target.id, targetName: target.name,

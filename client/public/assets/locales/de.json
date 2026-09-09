@@ -331,6 +331,8 @@
       "route_address": "Adresse",
       "route_latency": "Latenz",
       "route_no_reply": "Keine Antwort",
+      "route_lost_one": "{{count}} verloren",
+      "route_lost_other": "{{count}} verloren",
       "route_lost": "{{count}} verloren"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: Verbindung ausgefallen",
     "recovered": "Die Verbindung ist wieder da",
     "recovered_subject": "MySpeed: Verbindung wiederhergestellt",
+    "outage_summary_one": "{{count}} Test ist seit {{since}} fehlgeschlagen",
+    "recovered_summary_one": "Wieder online nach {{count}} fehlgeschlagenen Test seit {{since}}",
     "outage_summary": "{{count}} Tests in Folge sind seit {{since}} fehlgeschlagen",
     "recovered_summary": "Wieder online nach {{count}} fehlgeschlagenen Tests seit {{since}}"
   },

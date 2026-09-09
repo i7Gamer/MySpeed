@@ -249,62 +249,70 @@ let missingRounds = 0;
 /** Forgets the run of absences. Exists so tests do not carry one between them. */
 export const resetMissingRounds = () => { missingRounds = 0; };
 
-export const requestInterfaces = async () => {
-    const interfacesNode = os.networkInterfaces();
+let inFlight = null;
 
-    console.log("Looking for network interfaces...");
-    const interfacesResult = await probeAll(interfacesNode);
+export const requestInterfaces = () => {
+    if (inFlight) return inFlight;
 
-    const resolved = resolveInterfaces(interfaces, interfacesResult, interfacesNode);
+    inFlight = (async () => {
+        const interfacesNode = os.networkInterfaces();
 
-    // Admit a current address when none answered and the cached one disappeared.
-    // An unchanged unprobed address persists, avoiding a warning every round.
-    for (const [name, address] of Object.entries(externalAddresses(interfacesNode))) {
-        if (resolved[name]) continue;
+        console.log("Looking for network interfaces...");
+        const interfacesResult = await probeAll(interfacesNode);
 
-        resolved[name] = address;
-        console.warn(`Interface ${name} did not answer the connectivity probe; listed anyway with IP ${address}`);
-    }
+        const resolved = resolveInterfaces(interfaces, interfacesResult, interfacesNode);
 
-    // Mutated rather than reassigned: the exported binding is read through a
-    // namespace import in several places, and replacing the object would leave
-    // any of them that happened to hold it looking at the old map.
-    for (const name of Object.keys(interfaces)) delete interfaces[name];
-    Object.assign(interfaces, resolved);
+        // Admit a current address when none answered and the cached one disappeared.
+        // An unchanged unprobed address persists, avoiding a warning every round.
+        for (const [name, address] of Object.entries(externalAddresses(interfacesNode))) {
+            if (resolved[name]) continue;
 
-    for (let i in interfaces) {
-        console.log(`Found interface ${i} with IP ${interfaces[i]}`);
-    }
+            resolved[name] = address;
+            console.warn(`Interface ${name} did not answer the connectivity probe; listed anyway with IP ${address}`);
+        }
 
-    const currentInterface = await config.getValue("interface");
+        // Mutated rather than reassigned: the exported binding is read through a
+        // namespace import in several places, and replacing the object would leave
+        // any of them that happened to hold it looking at the old map.
+        for (const name of Object.keys(interfaces)) delete interfaces[name];
+        Object.assign(interfaces, resolved);
 
-    const decision = resolveFallback(currentInterface,
-        preferAnswered(Object.keys(interfacesResult), Object.keys(interfaces)), missingRounds);
-    missingRounds = decision.missingRounds;
+        for (let i in interfaces) {
+            console.log(`Found interface ${i} with IP ${interfaces[i]}`);
+        }
 
-    if (decision.write === null) {
-        if (!interfaces[currentInterface] && currentInterface)
-            // Two different states, and the count tells them apart: still inside
-            // the wait, or past it with nothing usable to move to. One reads as
-            // progress towards a decision, the other as a decision that cannot
-            // be made - and printing the first as "(4/3)" describes neither.
-            console.warn(missingRounds >= ROUNDS_BEFORE_FALLBACK
-                ? `Interface ${currentInterface} has been missing for ${missingRounds} rounds and `
-                    + `nothing usable was found to move to. Keeping it.`
-                : `Interface ${currentInterface} was not found this round ` +
-                    `(${missingRounds}/${ROUNDS_BEFORE_FALLBACK}). Keeping it for now.`);
-        else if (!currentInterface)
-            console.warn("No usable network interface was found; keeping the configured one.");
+        const currentInterface = await config.getValue("interface");
 
-        return;
-    }
+        const decision = resolveFallback(currentInterface,
+            preferAnswered(Object.keys(interfacesResult), Object.keys(interfaces)), missingRounds);
+        missingRounds = decision.missingRounds;
 
-    // The old value is named, because this is the one place the operator's own
-    // choice is overwritten by the server and nothing records what it was.
-    console.warn(currentInterface
-        ? `Interface ${currentInterface} has been missing for ${ROUNDS_BEFORE_FALLBACK} rounds. ` +
-          `Falling back to ${decision.write}.`
-        : `No interface set. Falling back to ${decision.write}.`);
+        if (decision.write === null) {
+            if (!interfaces[currentInterface] && currentInterface)
+                // Two different states, and the count tells them apart: still inside
+                // the wait, or past it with nothing usable to move to. One reads as
+                // progress towards a decision, the other as a decision that cannot
+                // be made - and printing the first as "(4/3)" describes neither.
+                console.warn(missingRounds >= ROUNDS_BEFORE_FALLBACK
+                    ? `Interface ${currentInterface} has been missing for ${missingRounds} rounds and `
+                        + `nothing usable was found to move to. Keeping it.`
+                    : `Interface ${currentInterface} was not found this round ` +
+                        `(${missingRounds}/${ROUNDS_BEFORE_FALLBACK}). Keeping it for now.`);
+            else if (!currentInterface)
+                console.warn("No usable network interface was found; keeping the configured one.");
 
-    await config.updateValue("interface", decision.write);
+            return;
+        }
+
+        // The old value is named, because this is the one place the operator's own
+        // choice is overwritten by the server and nothing records what it was.
+        console.warn(currentInterface
+            ? `Interface ${currentInterface} has been missing for ${ROUNDS_BEFORE_FALLBACK} rounds. ` +
+              `Falling back to ${decision.write}.`
+            : `No interface set. Falling back to ${decision.write}.`);
+
+        await config.updateValue("interface", decision.write);
+    })().finally(() => { inFlight = null; });
+
+    return inFlight;
 };

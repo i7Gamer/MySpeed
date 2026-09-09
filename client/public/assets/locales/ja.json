@@ -331,6 +331,8 @@
       "route_address": "アドレス",
       "route_latency": "遅延",
       "route_no_reply": "応答なし",
+      "route_lost_one": "{{count}} 件損失",
+      "route_lost_other": "{{count}} 件損失",
       "route_lost": "{{count}} 件損失"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed：接続ダウン",
     "recovered": "接続が復旧しました",
     "recovered_subject": "MySpeed：接続復旧",
+    "outage_summary_one": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
+    "recovered_summary_one": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました",
     "outage_summary": "{{since}} 以降、{{count}} 回連続でテストが失敗しました",
     "recovered_summary": "{{since}} 以降 {{count}} 回のテスト失敗を経てオンラインに復帰しました"
   },

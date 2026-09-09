@@ -580,19 +580,19 @@ export const NodeContainer = (node) => {
                             <div className="speed-item" data-grade={nodeData.pingIcon}>
                                 <FontAwesomeIcon icon={faTableTennisPaddleBall}
                                                  className={"icon-" + nodeData.pingIcon}/>
-                                <h1>{formatWithUnit(nodeData.ping, t("latest.ping_unit"))}</h1>
+                                <h1 aria-label={`${t("latest.ping")}: ${formatWithUnit(nodeData.ping, t("latest.ping_unit"))}`}>{formatWithUnit(nodeData.ping, t("latest.ping_unit"))}</h1>
                             </div>
 
                             <div className="speed-item" data-grade={nodeData.downloadIcon}>
                                 <FontAwesomeIcon icon={faArrowDown}
                                                  className={"icon-" + nodeData.downloadIcon}/>
-                                <h1>{speedText(nodeData.download)}</h1>
+                                <h1 aria-label={`${t("latest.down")}: ${speedText(nodeData.download)}`}>{speedText(nodeData.download)}</h1>
                             </div>
 
                             <div className="speed-item" data-grade={nodeData.uploadIcon}>
                                 <FontAwesomeIcon icon={faArrowUp}
                                                  className={"icon-" + nodeData.uploadIcon}/>
-                                <h1>{speedText(nodeData.upload)}</h1>
+                                <h1 aria-label={`${t("latest.up")}: ${speedText(nodeData.upload)}`}>{speedText(nodeData.upload)}</h1>
                             </div>
                         </>
                     )}

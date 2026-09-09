@@ -37,6 +37,18 @@ case "$INSTALLATION_PATH" in
     *) INSTALLATION_PATH="$(pwd)/$INSTALLATION_PATH" ;;
 esac
 
+# ExecStart rejects these characters even after quoted-word decoding. A raw
+# WorkingDirectory also loses trailing whitespace in the unit parser.
+if command -v systemctl &> /dev/null; then
+    case "$INSTALLATION_PATH" in
+        *[[:cntrl:]]*|*\\*|*\"*|*\'*|*[[:space:]])
+            echo -e "$RED✗ The installation path cannot be represented by systemd."
+            echo -e "$NORMAL Use a path without quotes, backslashes, control characters or trailing whitespace."
+            exit 1
+            ;;
+    esac
+fi
+
 if [ $EUID -ne 0 ]; then
   echo -e "$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-$RED-$NORMAL-"
   echo -e "$RED✗ ABORTED"
@@ -420,10 +432,55 @@ fi
 # Preparation can fail without interrupting the working service. Stop only
 # for the sibling rename, and restore its prior running state if that fails.
 SERVICE_WAS_ACTIVE=false
+PREVIOUS_BINARY=""
+PREVIOUS_UNIT=""
+SERVICE_FILE="/etc/systemd/system/myspeed.service"
+
+# Unique names preserve recovery artifacts from earlier failed attempts.
+# Refuse before stopping anything if the previous installation cannot be saved.
+if [ -f myspeed ]; then
+    PREVIOUS_BINARY=$(mktemp "$INSTALLATION_PATH/myspeed.previous.XXXXXX") || exit 1
+    if ! cp -p myspeed "$PREVIOUS_BINARY"; then
+        rm -f "$PREVIOUS_BINARY" "$DOWNLOAD_TMP"
+        echo -e "$RED✗ Could not preserve the previous MySpeed binary."
+        exit 1
+    fi
+fi
+if [ -f "$SERVICE_FILE" ]; then
+    PREVIOUS_UNIT=$(mktemp "$INSTALLATION_PATH/myspeed.service.previous.XXXXXX") || exit 1
+    if ! cp -p "$SERVICE_FILE" "$PREVIOUS_UNIT"; then
+        rm -f "$PREVIOUS_UNIT" "$DOWNLOAD_TMP"
+        echo -e "$RED✗ Could not preserve the previous MySpeed service definition."
+        exit 1
+    fi
+fi
+
 recover_service() {
     if [ "$SERVICE_WAS_ACTIVE" = true ] && ! systemctl start myspeed; then
         echo -e "$RED✗ Could not restart the previous MySpeed service. See: journalctl -u myspeed -n 50 --no-pager"
     fi
+}
+
+# Only called before a restart could execute the new binary or its migrations.
+recover_before_start() {
+    if [ -n "$PREVIOUS_BINARY" ] && ! cp -p "$PREVIOUS_BINARY" myspeed; then
+        echo -e "$RED✗ Could not restore the previous binary at $PREVIOUS_BINARY."
+        return 1
+    fi
+    if [ -n "$PREVIOUS_UNIT" ]; then
+        if ! cp -p "$PREVIOUS_UNIT" "$SERVICE_FILE"; then
+            echo -e "$RED✗ Could not restore the previous service definition at $PREVIOUS_UNIT."
+            return 1
+        fi
+    elif ! rm -f "$SERVICE_FILE"; then
+        echo -e "$RED✗ Could not remove the incomplete MySpeed service definition."
+        return 1
+    fi
+    if ! systemctl daemon-reload; then
+        echo -e "$RED✗ Could not reload the restored MySpeed service definition."
+        return 1
+    fi
+    recover_service
 }
 
 if command -v systemctl &> /dev/null && systemctl --all --type service | grep -qE '(^|[[:space:]])myspeed\.service([[:space:]]|$)'; then
@@ -652,22 +709,37 @@ else
     sleep 2
 fi
 
+# ExecStart and ReadWritePaths split quoted words; WorkingDirectory does not.
+# Unsupported executable characters have already been refused by preflight.
+systemd_path() {
+    local value="${1//%/%%}"
+    printf '"%s"' "$value"
+}
+
 if command -v systemctl &> /dev/null; then
-  cat << EOF > /etc/systemd/system/myspeed.service
+  UNIT_DIRECTORY=$(systemd_path "$INSTALLATION_PATH")
+  UNIT_WORKING_DIRECTORY="${INSTALLATION_PATH//%/%%}"
+  UNIT_EXECUTABLE=$(systemd_path "$INSTALLATION_PATH/myspeed")
+  # The executable path is literal; disable environment expansion of argv[0]
+  # too when the path contains a dollar, instead of changing the executable.
+  case "$INSTALLATION_PATH" in
+      *'$'*) UNIT_EXECUTABLE=":$UNIT_EXECUTABLE" ;;
+  esac
+  if ! cat << EOF > "$SERVICE_FILE"
 [Unit]
 Description=MySpeed
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=$INSTALLATION_PATH/myspeed
+ExecStart=$UNIT_EXECUTABLE
 Restart=always
 User=$SERVICE_ACCOUNT
-WorkingDirectory=$INSTALLATION_PATH
+WorkingDirectory=$UNIT_WORKING_DIRECTORY
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
-ReadWritePaths=$INSTALLATION_PATH
+ReadWritePaths=$UNIT_DIRECTORY
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
@@ -676,7 +748,16 @@ RestrictSUIDSGID=true
 [Install]
 WantedBy=multi-user.target
 EOF
-  systemctl daemon-reload
+  then
+    echo -e "$RED✗ Could not write the MySpeed service definition."
+    recover_before_start
+    exit 1
+  fi
+  if ! systemctl daemon-reload; then
+    echo -e "$RED✗ Could not reload the MySpeed service definition."
+    recover_before_start
+    exit 1
+  fi
 
   if ! systemctl is-enabled myspeed &> /dev/null; then
     echo -e "$NORMALℹ MySpeed will be added to autostart..."
@@ -686,7 +767,8 @@ EOF
 
   echo -e "$NORMALℹ MySpeed service is starting..."
   sleep 1
-  systemctl restart myspeed
+  RESTART_SUCCEEDED=true
+  systemctl restart myspeed || RESTART_SUCCEEDED=false
 
   # The one step nothing checked. Every other failure in this script is caught
   # and named, on the grounds that a permanent crash loop announced as a
@@ -696,13 +778,26 @@ EOF
   # not when the service is up.
   sleep 2
 
-  if ! systemctl is-active --quiet myspeed; then
+  if [ "$RESTART_SUCCEEDED" != true ] || ! systemctl is-active --quiet myspeed; then
     echo -e "$RED✗ The MySpeed service did not start."
-    echo -e "$NORMAL The files are installed under $INSTALLATION_PATH; it is the service that failed to come up."
+    if ! systemctl stop myspeed; then
+      echo -e "$RED✗ Could not stop the failed MySpeed service; check its state before manual recovery."
+    fi
+    if [ -n "$PREVIOUS_BINARY" ]; then
+      echo -e "$NORMAL Previous executable retained at $PREVIOUS_BINARY."
+      echo -e "$NORMAL Check database migration compatibility before manually restoring it; no database has been rolled back."
+    fi
+    if [ -n "$PREVIOUS_UNIT" ]; then
+      echo -e "$NORMAL Previous service definition retained at $PREVIOUS_UNIT."
+    fi
     echo -e "$NORMALℹ See what it said with: journalctl -u myspeed -n 50 --no-pager"
     exit 1
   fi
 fi
+
+# Only this successful attempt's backups are disposable.
+if [ -n "$PREVIOUS_BINARY" ]; then rm -f "$PREVIOUS_BINARY"; fi
+if [ -n "$PREVIOUS_UNIT" ]; then rm -f "$PREVIOUS_UNIT"; fi
 
 clear
 

@@ -201,6 +201,8 @@ describe("i18n keys", () => {
      */
     describe("keys the source locale defines", () => {
         const DYNAMIC_KEY_FAMILIES = [
+            // i18next selects these from RouteTable's count option.
+            /^test\.details\.route_lost_(one|other)$/,
             // statistics.delta.${delta.direction} - Delta.jsx
             /^statistics\.delta\.(up|down)$/,
             // statistics.compare.choice.${choice} over COMPARE_CHOICES -

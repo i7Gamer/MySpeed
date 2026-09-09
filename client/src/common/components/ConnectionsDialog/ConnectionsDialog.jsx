@@ -1,14 +1,13 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
 import {t} from "i18next";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faArrowRight, faExclamationTriangle} from "@fortawesome/free-solid-svg-icons";
+import {faArrowRight} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import React, {useContext, useState} from "react";
 import {PreferencesContext} from "@/common/contexts/Preferences";
 import {TargetsContext} from "@/common/contexts/Targets";
 import {formatDateTime} from "@/common/utils/FormatUtil";
-import {jsonRequest, RequestError} from "@/common/utils/RequestUtil";
-import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {jsonRequest} from "@/common/utils/RequestUtil";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 /**
@@ -34,16 +33,21 @@ const Change = ({label, from, to}) => (
 export const ConnectionsDialog = ({open, onClose}) => {
     const preferences = useContext(PreferencesContext)?.[0];
     const {byId} = useContext(TargetsContext);
-    const updateToast = useContext(ToastNotificationContext);
 
     const [changes, setChanges] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
 
     const load = async () => {
+        setLoading(true);
+        setLoadError(null);
         try {
             setChanges(await jsonRequest("/speedtests/connections"));
         } catch (e) {
-            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
-                "red", faExclamationTriangle);
+            console.error("Failed to load the connection changes:", e);
+            setLoadError(e);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -65,10 +69,17 @@ export const ConnectionsDialog = ({open, onClose}) => {
                             <p className="connections-description">{t("connections.description")}</p>
 
                             <div className="connections-list">
-                                {changes.length === 0 && (
+                                {loadError ? (
+                                    <div role="alert">
+                                        <p className="icon-red">{loadError.message}</p>
+                                        <button type="button" className="dialog-btn" onClick={load}>{t("dialog.retry")}</button>
+                                    </div>
+                                ) : loading ? (
+                                    <div className="lds-ellipsis"><div/><div/><div/></div>
+                                ) : changes.length === 0 && (
                                     <p className="connections-empty">{t("connections.empty")}</p>
                                 )}
-                                {changes.map((row) => (
+                                {!loadError && !loading && changes.map((row) => (
                                     <div className="connection-row" key={row.id}>
                                         <p className="connection-row-when">
                                             {formatDateTime(row.created, preferences)}

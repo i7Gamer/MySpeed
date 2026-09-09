@@ -1287,7 +1287,7 @@ describe("install.sh registers a service that is not root", () => {
      * saying the install completed.
      */
     it("leaves the installation writable inside the sandbox", () => {
-        assert.ok(unit.includes("ReadWritePaths=$INSTALLATION_PATH"),
+        assert.ok(unit.includes("ReadWritePaths=$UNIT_DIRECTORY"),
             "ProtectSystem is applied with no exception for the directory the service writes");
     });
 

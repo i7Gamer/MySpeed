@@ -337,6 +337,8 @@
       "route_address": "Adres",
       "route_latency": "Opóźnienie",
       "route_no_reply": "Brak odpowiedzi",
+      "route_lost_one": "{{count}} utracony",
+      "route_lost_other": "{{count}} utraconych",
       "route_lost": "{{count}} utraconych"
     }
   },
@@ -837,6 +839,8 @@
     "outage_subject": "MySpeed: połączenie nieaktywne",
     "recovered": "Połączenie zostało przywrócone",
     "recovered_subject": "MySpeed: połączenie przywrócone",
+    "outage_summary_one": "{{count}} test zakończył się niepowodzeniem od {{since}}",
+    "recovered_summary_one": "Ponownie online po {{count}} nieudanym teście od {{since}}",
     "outage_summary": "{{count}} testów z rzędu zakończyło się niepowodzeniem od {{since}}",
     "recovered_summary": "Ponownie online po {{count}} nieudanych testach od {{since}}"
   },

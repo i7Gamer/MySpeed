@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState, useCallback} from "react";
+import React, {useEffect, useRef, useState, useCallback, useId} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {useClickOutside} from "@/common/hooks/useClickOutside";
 import {hasOpenOverlay} from "@/common/contexts/Dialog";
@@ -23,6 +23,7 @@ export const VIEWPORT_MARGIN = 10;
 
 export const ContextMenu = ({items, position, onClose, label, trigger}) => {
     const menuRef = useRef(null);
+    const menuId = useId();
     const [focusedIndex, setFocusedIndex] = useState(-1);
     const [adjustedPosition, setAdjustedPosition] = useState(position);
 
@@ -161,6 +162,8 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
             style={{left: adjustedPosition.x, top: adjustedPosition.y}}
             role="menu"
             aria-label={label}
+            aria-activedescendant={actionableItems[focusedIndex]
+                ? `${menuId}-${actionableItems[focusedIndex].originalIndex}` : undefined}
             tabIndex={-1}
         >
             {items.map((item, index) => {
@@ -174,6 +177,7 @@ export const ContextMenu = ({items, position, onClose, label, trigger}) => {
                 return (
                     <div
                         key={index}
+                        id={`${menuId}-${index}`}
                         className={`context-menu-item${item.danger ? " context-menu-danger" : ""}${isFocused ? " context-menu-focused" : ""}`}
                         onClick={() => handleItemClick(item)}
                         onMouseEnter={() => setFocusedIndex(actionableIndex)}

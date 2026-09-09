@@ -65,10 +65,10 @@ const scripted = (rows = ROWS) => {
     return {writes};
 };
 
-const mount = async () => {
+const mount = async (toast = noop) => {
     render(createElement(AlertProvider, null,
         createElement(ConfigContext.Provider, {value: [{viewMode: false, previewMode: false}, noop, noop]},
-            createElement(ToastNotificationContext.Provider, {value: noop},
+            createElement(ToastNotificationContext.Provider, {value: toast},
                 createElement(PreferencesContext.Provider, {value: [{}, noop]},
                     createElement(TokensDialog, {open: true, onClose: noop}))))));
     await settle();
@@ -102,6 +102,59 @@ const typeName = async (document, name) => {
 };
 
 describe("the API tokens dialog", () => {
+    it("shows a failed load and retries without claiming the list is empty", async (context) => {
+        const errors = context.mock.method(console, "error", noop);
+        globalThis.fetch = async () => {throw new Error("Token list unavailable");};
+        const document = await mount();
+        assert.ok(document.querySelector(".tokens-empty") === null, "failed load must not say no tokens");
+        assert.match(document.querySelector(".tokens-content").textContent, /Token list unavailable/);
+        assert.equal(errors.mock.calls.length, 1);
+        scripted();
+        const retry = document.querySelector('[role="alert"] button');
+        assert.ok(retry);
+        click(retry);
+        await settle();
+        assert.equal(rowsOf(document).length, ROWS.length);
+        assert.doesNotMatch(document.querySelector(".tokens-content").textContent, /Token list unavailable/);
+    });
+
+    it("reports a refused creation without displaying a secret or adding a row", async () => {
+        scripted();
+        const fetchList = globalThis.fetch;
+        globalThis.fetch = (url, init) => init?.method === "POST"
+            ? Promise.resolve(answer({message: "Creation refused"}, 400)) : fetchList(url, init);
+        const toasts = [];
+        const document = await mount((...toast) => toasts.push(toast));
+        await typeName(document, "New token");
+        click(document.querySelector("#api-token-create"));
+        await settle();
+        assert.equal(toasts.at(-1)[0], "Creation refused");
+        assert.equal(toasts.at(-1)[1], "red");
+        assert.equal(document.querySelector(".token-secret"), null);
+        assert.equal(rowsOf(document).length, ROWS.length);
+        assert.equal(document.querySelector("#api-token-create").disabled, false);
+    });
+
+    it("reports a refused revoke and keeps the existing row", async () => {
+        scripted();
+        const fetchList = globalThis.fetch;
+        globalThis.fetch = (url, init) => init?.method === "DELETE"
+            ? Promise.resolve(answer({message: "Revoke refused"}, 400)) : fetchList(url, init);
+        const toasts = [];
+        const document = await mount((...toast) => toasts.push(toast));
+        click(rowsOf(document)[0].querySelector(".token-delete"));
+        await settle();
+        const confirm = [...document.querySelectorAll("button")]
+            .find(button => /^Revoke$/.test(button.textContent.trim()) && !button.classList.contains("token-delete"));
+        click(confirm);
+        await settle();
+        await animationEnd(document.querySelector(".dialog.dialog-hidden"), "fadeOut");
+        await settle();
+        assert.equal(toasts.at(-1)[0], "Revoke refused");
+        assert.equal(toasts.at(-1)[1], "red");
+        assert.equal(rowsOf(document).length, ROWS.length);
+    });
+
     it("lists what the server holds, with when each was last used", async () => {
         scripted();
         const document = await mount();

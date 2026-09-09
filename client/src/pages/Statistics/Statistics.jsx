@@ -187,7 +187,7 @@ ChartJS.defaults.plugins.legend.labels.boxHeight = 8;
 
 export const Statistics = () => {
     const [statistics, setStatistics] = useState(null);
-    const [recentTests, setRecentTests] = useState([]);
+    const [recentResult, setRecentResult] = useState(null);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState(null);
     const [expandedChart, setExpandedChart] = useState(null);
@@ -254,7 +254,12 @@ export const Statistics = () => {
         ? null
         : { from: selection.from, to: selection.to }, [selection]);
 
+    const scopeKey = JSON.stringify([currentNode, targetFilter, config?.viewMode]);
     const deferredStatistics = useDeferredValue(statistics);
+    // Same-scope refreshes can still show the newest test immediately. A
+    // different node, target or permission must not mix it with old aggregates.
+    const recentTests = recentResult?.scopeKey === scopeKey && deferredStatistics?.scopeKey === scopeKey
+        ? recentResult.tests : [];
 
     /*
      * The gate in front of every delta: a previous window nobody tested in has
@@ -292,7 +297,8 @@ export const Statistics = () => {
         to: formatDay(previousWindow.dateRange.to)
     };
 
-    const isStale = deferredStatistics !== statistics;
+    const isStale = loading || deferredStatistics !== statistics || deferredStatistics?.scopeKey !== scopeKey
+        || recentResult?.scopeKey !== scopeKey;
 
     /*
      * What the cards and charts grade against: the optima of the target the
@@ -352,7 +358,8 @@ export const Statistics = () => {
             setLoading(true);
         });
         /*
-         * Two reads, and each one drawn the moment it lands.
+         * Two reads, and same-scope refreshes draw each as it lands. A new
+         * scope's latest card waits for an aggregate tagged with that scope.
          *
          * These are independent: the aggregation the page is made of, and the
          * ten most recent tests behind the latest-test card and its deltas.
@@ -394,7 +401,7 @@ export const Statistics = () => {
                  * updateStats is rebuilt per range, so the tag belongs to the
                  * request rather than to the moment it finished.
                  */
-                setStatistics(payload && {...payload, askedCompare: Boolean(dateRange)});
+                setStatistics(payload && {...payload, askedCompare: Boolean(dateRange), scopeKey});
                 setLoading(false);
             });
         }).catch(error => {
@@ -418,7 +425,7 @@ export const Statistics = () => {
             + (targetFilter != null ? `&target=${targetFilter}` : "")).then(tests => {
             if (!isCurrent()) return;
 
-            startTransition(() => setRecentTests(Array.isArray(tests) ? tests : []));
+            startTransition(() => setRecentResult({scopeKey, tests: Array.isArray(tests) ? tests : []}));
         }).catch(error => {
             // Logged and emptied, never setLoadError: a card that cannot draw
             // is not a page that cannot load. Emptied rather than left alone,
@@ -427,7 +434,7 @@ export const Statistics = () => {
             if (!isCurrent()) return;
 
             console.error("Failed to load the recent tests:", error);
-            startTransition(() => setRecentTests([]));
+            startTransition(() => setRecentResult({scopeKey, tests: []}));
         });
         // currentNode: see its destructure above - a page whose requests have
         // been re-aimed under it has to re-ask. The rule cannot see that
@@ -435,7 +442,7 @@ export const Statistics = () => {
         // points rather than anything named in this callback, and reads it as
         // one to drop.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [dateRange, currentNode, targetFilter, compare, historyRevision]);
+    }, [dateRange, currentNode, targetFilter, compare, historyRevision, scopeKey]);
 
     const handleTimeframeChange = useCallback((timeframe) => {
         setSearchParams(serializeRange(timeframe), { replace: true });

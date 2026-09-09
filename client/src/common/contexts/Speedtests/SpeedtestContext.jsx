@@ -483,10 +483,12 @@ export const SpeedtestProvider = (props) => {
      * been answered.
      *
      * The placeholder this provider starts on - and the one StatusContext puts
-     * back when the node changes - carries no lastTest key at all, where every
-     * answer carries one: an object, or null for an instance with no tests.
+     * back when the node changes - carries neither identity key. Older nodes
+     * expose only lastTest, so retain that fallback until they are upgraded.
      */
-    const newestTest = status.lastTest === undefined
+    const newestTest = status.latestTestId !== undefined
+        ? status.latestTestId
+        : status.lastTest === undefined
         ? NO_STATUS_ANSWERED
         : status.lastTest?.id ?? null;
 
@@ -508,9 +510,9 @@ export const SpeedtestProvider = (props) => {
      * which the history of a live instance has several of, against successful
      * runs of eight to thirty seconds that no five-second poll can miss.
      *
-     * lastTest is a fact rather than a moment - a poll that missed the whole
-     * round still carries it - and it costs nothing, since /status has always
-     * sent it and this provider has always read this context.
+     * latestTestId is a fact rather than a moment - a poll that missed the whole
+     * round still carries it. It includes alerts-disabled targets; lastTest
+     * remains scoped to the targets whose health the operator is watching.
      *
      * One effect for the two signals, and so one refresh between them: a run
      * that ends the ordinary way reports both in the same answer, and two

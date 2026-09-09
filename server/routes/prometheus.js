@@ -14,6 +14,7 @@ import { measuredPing, metricValue, usableFigure } from '../util/metricValue.js'
 import { ownsUnlabelledSeries } from '../util/unlabelledSeries.js';
 import { createQueue } from '../util/serialiseQueue.js';
 import { clientGone } from '../util/clientGone.js';
+import { sessionGeneration } from '../util/session.js';
 
 const app = express.Router();
 
@@ -53,6 +54,7 @@ const readBasicAuth = (req) => {
  * password was configured.
  */
 const authorizeMetrics = async (req, res) => {
+    const generation = sessionGeneration();
     const passwordHash = await config.getValue("password");
     const unconfigured = passwordHash === config.NO_PASSWORD;
 
@@ -101,6 +103,12 @@ const authorizeMetrics = async (req, res) => {
     }
 
     if (!valid) {
+        unauthorized(res);
+        return false;
+    }
+
+    const currentHash = await config.getValue("password");
+    if (currentHash !== passwordHash || generation !== sessionGeneration()) {
         unauthorized(res);
         return false;
     }

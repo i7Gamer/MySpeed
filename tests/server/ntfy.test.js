@@ -36,6 +36,28 @@ const load = () => {
 const RESULT = {ping: 10, jitter: 2, download: 100, upload: 50};
 
 describe("ntfy integration", () => {
+    const MESSAGE_BYTES = 4096;
+
+    for (const message of ["a".repeat(MESSAGE_BYTES), "é".repeat(MESSAGE_BYTES / 2)]) {
+        it("keeps a message exactly at the UTF-8 byte limit", async () => {
+            const {events} = load();
+            await events.testFinished({data: {url: baseUrl, topic: "alerts",
+                send_finished: true, finished_message: message}}, RESULT, () => {});
+            assert.equal(received[0].body, message);
+        });
+    }
+
+    for (const message of ["é".repeat(MESSAGE_BYTES), "x".repeat(MESSAGE_BYTES - 1) + "🚀"] ) {
+        it("truncates oversized text without splitting a Unicode character", async () => {
+            const {events} = load();
+            await events.testFailed({data: {url: baseUrl, topic: "alerts", send_failed: true,
+                error_message: "%error%"}}, {error: message}, () => {});
+            assert.ok(Buffer.byteLength(received[0].body) <= MESSAGE_BYTES);
+            assert.ok(received[0].body.length > 0);
+            assert.ok(!received[0].body.includes("\uFFFD"));
+        });
+    }
+
     /**
      * Regression: send() called stripTrailingSlashes without importing it. Every
      * notification threw a ReferenceError, which escaped the integration

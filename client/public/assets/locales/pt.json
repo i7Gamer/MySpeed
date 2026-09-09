@@ -331,6 +331,8 @@
       "route_address": "Endereço",
       "route_latency": "Latência",
       "route_no_reply": "Sem resposta",
+      "route_lost_one": "{{count}} perdido",
+      "route_lost_other": "{{count}} perdidos",
       "route_lost": "{{count}} perdidos"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: conexão caída",
     "recovered": "A conexão voltou",
     "recovered_subject": "MySpeed: conexão restabelecida",
+    "outage_summary_one": "{{count}} teste falhou desde {{since}}",
+    "recovered_summary_one": "De volta online após {{count}} teste falhado desde {{since}}",
     "outage_summary": "{{count}} testes seguidos falharam desde {{since}}",
     "recovered_summary": "De volta online após {{count}} testes falhados desde {{since}}"
   },

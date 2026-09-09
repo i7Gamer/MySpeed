@@ -17,6 +17,24 @@ const defaults = plainDefaults;
 const NTFY_PRIORITY_MIN = 1;
 const NTFY_PRIORITY_MAX = 5;
 
+const NTFY_MESSAGE_BYTES = 4096;
+
+// ntfy treats a larger body as an attachment. Count UTF-8 bytes, and keep
+// whole code points so truncation cannot create an invalid UTF-8 body.
+const messageBody = (message) => {
+    if (Buffer.byteLength(message, "utf8") <= NTFY_MESSAGE_BYTES) return message;
+
+    let bytes = 0;
+    let text = "";
+    for (const character of message) {
+        const size = Buffer.byteLength(character, "utf8");
+        if (bytes + size > NTFY_MESSAGE_BYTES) break;
+        text += character;
+        bytes += size;
+    }
+    return text;
+};
+
 const buildHeaders = ({token, title, tags}, priority) => {
     const headers = {};
     // A priority ntfy would refuse is dropped rather than sent - both one that
@@ -45,7 +63,7 @@ const buildHeaders = ({token, title, tags}, priority) => {
 
 const send = (config, message, priority, activity) => {
     const url = stripTrailingSlashes(config.url);
-    return postText(`${url}/${config.topic}`, message,
+    return postText(`${url}/${config.topic}`, messageBody(message),
         {headers: buildHeaders(config, priority), activity});
 };
 

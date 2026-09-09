@@ -331,6 +331,8 @@
       "route_address": "Адрес",
       "route_latency": "Задержка",
       "route_no_reply": "Нет ответа",
+      "route_lost_one": "{{count}} потеряно",
+      "route_lost_other": "{{count}} потеряно",
       "route_lost": "{{count}} потеряно"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: соединение потеряно",
     "recovered": "Соединение восстановлено",
     "recovered_subject": "MySpeed: соединение восстановлено",
+    "outage_summary_one": "{{count}} тест не удался с {{since}}",
+    "recovered_summary_one": "Снова в сети после {{count}} неудачного теста с {{since}}",
     "outage_summary": "{{count}} тестов подряд не удались с {{since}}",
     "recovered_summary": "Снова в сети после {{count}} неудачных тестов с {{since}}"
   },

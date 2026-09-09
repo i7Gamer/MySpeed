@@ -331,6 +331,8 @@
       "route_address": "Adres",
       "route_latency": "Latentie",
       "route_no_reply": "Geen antwoord",
+      "route_lost_one": "{{count}} verloren",
+      "route_lost_other": "{{count}} verloren",
       "route_lost": "{{count}} verloren"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: verbinding verbroken",
     "recovered": "De verbinding is terug",
     "recovered_subject": "MySpeed: verbinding hersteld",
+    "outage_summary_one": "{{count}} test is mislukt sinds {{since}}",
+    "recovered_summary_one": "Weer online na {{count}} mislukte test sinds {{since}}",
     "outage_summary": "{{count}} tests op rij zijn mislukt sinds {{since}}",
     "recovered_summary": "Weer online na {{count}} mislukte tests sinds {{since}}"
   },

@@ -331,6 +331,8 @@
       "route_address": "Adreça",
       "route_latency": "Latència",
       "route_no_reply": "Cap resposta",
+      "route_lost_one": "{{count}} perdut",
+      "route_lost_other": "{{count}} perduts",
       "route_lost": "{{count}} perduts"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: connexió caiguda",
     "recovered": "La connexió ha tornat",
     "recovered_subject": "MySpeed: connexió restablerta",
+    "outage_summary_one": "{{count}} prova ha fallat des de {{since}}",
+    "recovered_summary_one": "De nou en línia després de {{count}} prova fallida des de {{since}}",
     "outage_summary": "{{count}} proves seguides han fallat des de {{since}}",
     "recovered_summary": "De nou en línia després de {{count}} proves fallides des de {{since}}"
   },

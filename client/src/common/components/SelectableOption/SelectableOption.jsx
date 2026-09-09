@@ -1,6 +1,7 @@
-import React from "react";
+import React, {useLayoutEffect, useRef} from "react";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {activateOnKey} from "./keyActivation";
+import {ARROW_STEPS} from "@/common/components/SegmentedControl/radioNavigation";
 import "./styles.sass";
 
 /**
@@ -9,11 +10,35 @@ import "./styles.sass";
  * Every list this holds is single-select: each option binds
  * active={value === option.id} against one value.
  */
-export const SelectableList = ({children, className = "", ...rest}) => (
-    <div className={`selectable-list ${className}`.trim()} role="radiogroup" {...rest}>
+export const SelectableList = ({children, className = "", ...rest}) => {
+    const group = useRef(null);
+    const radios = () => [...group.current.querySelectorAll('[role="radio"]')]
+        .filter(option => option.closest('[role="radiogroup"]') === group.current);
+
+    useLayoutEffect(() => {
+        const options = radios();
+        const selected = options.find(option => option.getAttribute("aria-checked") === "true") ?? options[0];
+        for (const option of options) option.tabIndex = option === selected ? 0 : -1;
+    });
+
+    const navigate = (event) => {
+        const step = ARROW_STEPS[event.key];
+        if (step === undefined && event.key !== "Home" && event.key !== "End") return;
+        const options = radios();
+        const current = options.indexOf(event.target.closest('[role="radio"]'));
+        if (current === -1) return;
+        event.preventDefault();
+        const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1
+            : (current + step + options.length) % options.length;
+        options[next].focus();
+        options[next].click();
+    };
+
+    return <div className={`selectable-list ${className}`.trim()} role="radiogroup" {...rest}
+                ref={group} onKeyDown={navigate}>
         {children}
-    </div>
-);
+    </div>;
+};
 
 
 export const SelectableOption = ({

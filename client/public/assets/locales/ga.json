@@ -331,6 +331,8 @@
       "route_address": "Seoladh",
       "route_latency": "Moill",
       "route_no_reply": "Gan freagra",
+      "route_lost_one": "{{count}} caillte",
+      "route_lost_other": "{{count}} caillte",
       "route_lost": "{{count}} caillte"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: nasc thíos",
     "recovered": "Tá an nasc ar ais",
     "recovered_subject": "MySpeed: nasc athchóirithe",
+    "outage_summary_one": "Theip ar {{count}} tástáil ó {{since}}",
+    "recovered_summary_one": "Ar líne arís tar éis {{count}} tástáil a theip ó {{since}}",
     "outage_summary": "Theip ar {{count}} thástáil as a chéile ó {{since}}",
     "recovered_summary": "Ar líne arís tar éis {{count}} thástáil a theip ó {{since}}"
   },

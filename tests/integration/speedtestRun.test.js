@@ -1,5 +1,7 @@
-import { describe, it, before, after, beforeEach, afterEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach, mock } from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { bootServer, api, seedTarget, seedTests, setConfig, waitFor } from "./helpers/boot.js";
 
 let server;
@@ -73,8 +75,29 @@ describe("a round the schedule starts with nothing to run", () => {
 });
 
 describe("a speedtest that cannot start", () => {
+    const HARNESS_INTERFACE = 'test-loopback';
+    const HARNESS_IP = '127.0.0.1';
+    let interfaceMap;
+    let savedInterfaces;
+    let savedInterface;
     beforeEach(async () => {
+        interfaceMap = (await import('../../server/util/loadInterfaces.js')).interfaces;
+        savedInterfaces = {...interfaceMap};
+        savedInterface = await server.config.getValue('interface');
+        interfaceMap[HARNESS_INTERFACE] = HARNESS_IP;
+        await server.config.updateValue('interface', HARNESS_INTERFACE);
+        // Bypass download only: the real spawn must still see an absent CLI.
+        const exists = fs.existsSync;
+        mock.method(fs, 'existsSync', file => path.dirname(String(file)) === path.join(server.dataDir, 'bin')
+            ? true : exists(file));
         await seedTarget({provider: "ookla"});
+    });
+
+    afterEach(async () => {
+        mock.restoreAll();
+        for (const key of Object.keys(interfaceMap)) delete interfaceMap[key];
+        Object.assign(interfaceMap, savedInterfaces);
+        await server.config.updateValue('interface', savedInterface);
     });
 
     after(async () => {
@@ -104,6 +127,8 @@ describe("a speedtest that cannot start", () => {
         assert.notEqual(test.error, "");
         assert.notEqual(test.error, "[object Object]");
         assert.doesNotMatch(test.error, /^undefined$/);
+        assert.match(test.error, /CLI .* is not there\. It is downloaded/,
+            'the test must reach the real ENOENT spawn error handler');
     });
 
     /**

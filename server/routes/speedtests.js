@@ -19,6 +19,9 @@ import { isFailedTest } from '../util/testOutcome.js';
 import * as timer from '../tasks/timer.js';
 
 const app = express.Router();
+// Preserve the database's existing id aliases and missing-row responses; NUL
+// alone breaks SQLite's SQL string literal parser instead of finding no row.
+const INVALID_ID_CHARACTER = /\0/;
 
 // How far back the status counts failures. A day is long enough that a run of
 // failures is visible on the overview without opening the statistics, and short
@@ -490,6 +493,7 @@ app.get("/status", password(true), async (req, res) => {
      */
     const scope = statusScope(targets.alertingScope(await targets.listAll()));
     const latest = scope === null ? await tests.getLatest() : await tests.latestOfTargets(scope);
+    const newest = scope === null ? latest : await tests.getLatest();
     const progress = testTask.getProgress();
 
     /**
@@ -540,6 +544,8 @@ app.get("/status", password(true), async (req, res) => {
         running: testTask.isRunning(),
         ...progress,
         lastTest,
+        // The completion watch includes targets whose alerts are off.
+        latestTestId: newest?.id ?? null,
         // The same scope as the last test: the count sits beside it in the
         // body, and the two disagreeing about whose failures matter is the
         // exact confusion the scoping exists to end.
@@ -612,6 +618,8 @@ app.get("/connections", password(false), previewReadOnly.blocking(CONNECTIONS_DE
 });
 
 app.get("/:id", password(true), async (req, res) => {
+    if (INVALID_ID_CHARACTER.test(req.params.id))
+        return res.status(400).json({message: "The speedtest id must not contain a NUL character"});
     let test = await tests.getOne(req.params.id);
     if (test === null) return res.status(404).json({message: "Speedtest not found"});
 
@@ -624,6 +632,8 @@ app.get("/:id", password(true), async (req, res) => {
 // tasks/speedtest.js that answers with a plausible result - but deleting the
 // history a visitor arrived to look at is not.
 app.delete("/:id", password(false), previewReadOnly, async (req, res) => {
+    if (INVALID_ID_CHARACTER.test(req.params.id))
+        return res.status(400).json({message: "The speedtest id must not contain a NUL character"});
     let test = await tests.deleteOne(req.params.id);
     if (!test) return res.status(404).json({message: "Speedtest not found"});
     res.json({message: "Successfully deleted the provided speedtest"});

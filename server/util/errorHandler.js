@@ -100,7 +100,7 @@ export default (error, {fatal = true, code = GENERIC_FAILURE_EXIT, context = nul
 
     fs.writeFile(filePath, lineStarter + "## " + date + "\n" + (context ? context + "\n" : "") + recorded,
         {flag: 'a+'}, err => {
-            if (err) console.error("Could not save error log file.", reported);
+            if (err) console.error("Could not save error log file.", stack);
 
             if (fatal) process.exit(code);
         });

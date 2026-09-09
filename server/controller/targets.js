@@ -336,15 +336,18 @@ export const targetProblem = (target) => {
     // joined to every scheduled round, and failing each run against a binary
     // called ./bin/undefined, because descriptor()'s `if (!entry)` reads that
     // inherited function as a provider that exists.
-    if (!Object.hasOwn(REGISTRY, target.provider)) return "The provider does not exist";
+    if (typeof target.provider !== "string" || !Object.hasOwn(REGISTRY, target.provider))
+        return "The provider does not exist";
 
     if (target.serverId !== undefined && target.serverId !== null) {
         if (!takesServerId(target.provider)) return "This provider has no servers to pin";
-        if (!DIGITS.test(target.serverId)) return "The server id must be digits";
+        if (!["string", "number"].includes(typeof target.serverId) || !DIGITS.test(target.serverId))
+            return "The server id must be digits";
     }
 
     if (target.endpoint !== undefined && target.endpoint !== null) {
         if (!takesEndpoint(target.provider)) return "This provider takes no endpoint";
+        if (typeof target.endpoint !== "string") return "The endpoint must be text";
 
         if (target.provider === "iperf3") {
             const problem = iperfEndpointProblem(target.endpoint);

@@ -265,6 +265,8 @@ export const ENGLISH_PHRASES = Object.freeze({
     outage_subject: "MySpeed: connection down",
     recovered: "The connection is back",
     recovered_subject: "MySpeed: connection restored",
+    outage_summary_one: "{{count}} test has failed since {{since}}",
+    recovered_summary_one: "Back online after {{count}} failed test since {{since}}",
     outage_summary: "{{count}} tests in a row have failed since {{since}}",
     recovered_summary: "Back online after {{count}} failed tests since {{since}}"
 });

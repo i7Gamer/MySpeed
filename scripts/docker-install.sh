@@ -26,7 +26,11 @@ if ! command -v docker &> /dev/null; then
         rm -f "$installer"
         exit 1
     fi
-    sh "$installer"
+    if ! sh "$installer"; then
+        rm -f "$installer"
+        echo -e "${RED}✗ The Docker installer failed. Check its output above and retry.${NORMAL}"
+        exit 1
+    fi
     rm -f "$installer"
 fi
 

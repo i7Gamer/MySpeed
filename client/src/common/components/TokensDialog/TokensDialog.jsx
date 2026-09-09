@@ -47,13 +47,19 @@ export const TokensDialog = ({open, onClose}) => {
     // that created it.
     const [issued, setIssued] = useState(null);
     const [saving, setSaving] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(null);
 
     const load = async () => {
+        setLoading(true);
+        setLoadError(null);
         try {
             setTokens(await localJsonRequest("/tokens"));
         } catch (e) {
-            updateToast(e instanceof RequestError ? e.message : t("dropdown.changes_unsaved"),
-                "red", faExclamationTriangle);
+            console.error("Failed to load the API tokens:", e);
+            setLoadError(e);
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -145,10 +151,17 @@ export const TokensDialog = ({open, onClose}) => {
                             )}
 
                             <div className="tokens-list">
-                                {tokens.length === 0 && (
+                                {loadError ? (
+                                    <div role="alert">
+                                        <p className="icon-red">{loadError.message}</p>
+                                        <button type="button" className="dialog-btn" onClick={load}>{t("dialog.retry")}</button>
+                                    </div>
+                                ) : loading ? (
+                                    <div className="lds-ellipsis"><div/><div/><div/></div>
+                                ) : tokens.length === 0 && (
                                     <p className="tokens-empty">{t("tokens.empty")}</p>
                                 )}
-                                {tokens.map((row) => (
+                                {!loadError && !loading && tokens.map((row) => (
                                     <div className="token-row" key={row.id}>
                                         <div className="token-row-text">
                                             <h3>{row.name}</h3>

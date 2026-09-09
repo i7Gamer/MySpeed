@@ -197,8 +197,9 @@ describe("the installation path", () => {
         return `${source.slice(start, end)}\necho "$INSTALLATION_PATH"`;
     };
 
-    const resolve = (args) => execFileSync(bash, ["-c", `${prologue()}\n`, "install.sh", ...args],
-        {encoding: "utf8", cwd: os.tmpdir(), timeout: WALK_TIMEOUT, stdio: ["pipe", "pipe", "ignore"]}).trim();
+    const resolve = (args) => execFileSync(bash, ["-s", "--", ...args],
+        {input: `${prologue()}\n`, encoding: "utf8", cwd: os.tmpdir(), timeout: WALK_TIMEOUT,
+            stdio: ["pipe", "pipe", "ignore"]}).trim();
 
     describe("as the prologue resolves it", {skip: bash ? false : "No bash available"}, () => {
         it("keeps an absolute path exactly as given", () => {

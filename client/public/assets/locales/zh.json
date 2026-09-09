@@ -331,6 +331,8 @@
       "route_address": "地址",
       "route_latency": "延迟",
       "route_no_reply": "无响应",
+      "route_lost_one": "{{count}} 丢失",
+      "route_lost_other": "{{count}} 丢失",
       "route_lost": "{{count}} 丢失"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed：连接中断",
     "recovered": "连接已恢复",
     "recovered_subject": "MySpeed：连接已恢复",
+    "outage_summary_one": "自 {{since}} 起已连续 {{count}} 次测试失败",
+    "recovered_summary_one": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线",
     "outage_summary": "自 {{since}} 起已连续 {{count}} 次测试失败",
     "recovered_summary": "自 {{since}} 起 {{count}} 次测试失败后已恢复在线"
   },

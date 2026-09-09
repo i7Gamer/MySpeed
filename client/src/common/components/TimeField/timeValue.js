@@ -125,7 +125,7 @@ export const maskTime = (raw, use12h = false) => {
     if (after === null) {
         const all = digits(text).slice(0, DIGITS_IN_TIME);
 
-        return all.length > 2 ? `${all.slice(0, 2)}${SEPARATOR}${all.slice(2)}${suffix}` : all;
+        return all.length > 2 ? `${all.slice(0, 2)}${SEPARATOR}${all.slice(2)}${suffix}` : `${all}${all ? suffix : ""}`;
     }
 
     const hour = digits(before).slice(0, 2);

@@ -423,9 +423,11 @@ export const countFailuresSince = async (since, targetIds = undefined) => {
 };
 
 export const deleteTests = async () => {
-    await tests.destroy({where: {}});
-    // The log of address changes describes the history and goes with it.
-    await connectionChanges.removeAll();
+    await db.transaction(async transaction => {
+        await tests.destroy({where: {}, transaction});
+        // The log describes this history, so both deletes commit together.
+        await connectionChanges.removeAll(transaction);
+    });
     return true;
 }
 

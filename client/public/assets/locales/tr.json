@@ -331,6 +331,8 @@
       "route_address": "Adres",
       "route_latency": "Gecikme",
       "route_no_reply": "Yanıt yok",
+      "route_lost_one": "{{count}} kayıp",
+      "route_lost_other": "{{count}} kayıp",
       "route_lost": "{{count}} kayıp"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: bağlantı kesildi",
     "recovered": "Bağlantı geri geldi",
     "recovered_subject": "MySpeed: bağlantı yeniden kuruldu",
+    "outage_summary_one": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
+    "recovered_summary_one": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi",
     "outage_summary": "{{since}} tarihinden beri art arda {{count}} test başarısız oldu",
     "recovered_summary": "{{since}} tarihinden beri {{count}} başarısız testin ardından tekrar çevrimiçi"
   },

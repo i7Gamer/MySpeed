@@ -391,7 +391,7 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                         </div>
                     )}
 
-                    <div className="calendar-selecting">
+                    <div className="calendar-selecting" aria-live="polite" aria-atomic="true">
                         {t(selecting === "from" ? "calendar.select_start" : "calendar.select_end")}
                     </div>
 
@@ -457,6 +457,8 @@ export const DateRangePicker = ({ from, to, onChange, minDate, maxDate, timefram
                                     // whole date, in the app's language, is what
                                     // tells the three "14"s on screen apart.
                                     aria-label={formatDay(item.date)}
+                                    aria-pressed={Boolean(isSelected(item.date))}
+                                    aria-current={isToday(item.date) ? "date" : undefined}
                                     className={`day-btn ${!item.isCurrentMonth ? "other-month" : ""} ${isInRange(item.date) ? "in-range" : ""} ${isRangeStart(item.date) ? "range-start" : ""} ${isRangeEnd(item.date) ? "range-end" : ""} ${isSelected(item.date) ? "selected" : ""} ${isToday(item.date) ? "today" : ""} ${isDisabled(item.date) ? "disabled" : ""}`}
                                     onClick={() => !isDisabled(item.date) && handleDayClick(item.date)}
                                     onMouseEnter={() => selecting === "to" && !isDisabled(item.date) && setHoverDate(item.date)}

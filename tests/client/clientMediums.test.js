@@ -56,7 +56,7 @@ describe("the schedule offset switch", () => {
  * them finished. That is the latest-test card: a test that had just run was
  * already in the header and in the history list, and this page went on showing
  * the one before it for as long as the aggregation took. Each request applies
- * its own answer now, and nothing waits for the other.
+ * its own answer now; a same-scope refresh does not wait for the other.
  */
 describe("loading the statistics page", () => {
     // Without the comments, the way the sibling suites read a source: the
@@ -68,7 +68,7 @@ describe("loading the statistics page", () => {
     // fetch or the comparison effect below it - both of which are also a
     // jsonRequest with a .then and a .catch.
     const start = page.indexOf("const updateStats = useCallback(");
-    const end = page.indexOf("}, [dateRange, currentNode, targetFilter, compare, historyRevision]);");
+    const end = page.indexOf("}, [dateRange, currentNode, targetFilter, compare, historyRevision, scopeKey]);");
     assert.ok(start !== -1 && end > start, "re-anchor this lift: updateStats or its dependency list moved");
     const load = page.slice(start, end);
 
@@ -87,10 +87,10 @@ describe("loading the statistics page", () => {
     });
 
     // The card the second read feeds is the whole point of splitting them: it
-    // is drawn from recentTests and from nothing the aggregation carries.
-    it("draws the recent tests without waiting for the aggregation", () => {
-        assert.match(recent, /setRecentTests\(/, "the recent tests are fetched and never applied");
-        assert.doesNotMatch(statistics, /setRecentTests\(/,
+    // is drawn from the independent recent result after the scope matches.
+    it("applies recent results independently of the aggregation", () => {
+        assert.match(recent, /setRecentResult\(/, "the recent tests are fetched and never applied");
+        assert.doesNotMatch(statistics, /setRecentResult\(/,
             "the recent tests are still applied from the aggregation's answer");
     });
 
@@ -126,7 +126,7 @@ describe("loading the statistics page", () => {
     it("keeps the page when only the recent tests fail", () => {
         assert.doesNotMatch(recent, /setLoadError\(/,
             "a failed recent-tests fetch still blanks the page");
-        assert.match(recent, /\.catch\([\s\S]{0,300}setRecentTests\(\[\]\)/,
+        assert.match(recent, /\.catch\([\s\S]{0,300}setRecentResult\(\{scopeKey, tests: \[\]\}\)/,
             "a failed recent-tests fetch leaves the previous range's test in the card");
     });
 });

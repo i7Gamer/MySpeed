@@ -331,6 +331,8 @@
       "route_address": "Indirizzo",
       "route_latency": "Latenza",
       "route_no_reply": "Nessuna risposta",
+      "route_lost_one": "{{count}} perso",
+      "route_lost_other": "{{count}} persi",
       "route_lost": "{{count}} persi"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: connessione interrotta",
     "recovered": "La connessione è tornata",
     "recovered_subject": "MySpeed: connessione ripristinata",
+    "outage_summary_one": "{{count}} test è fallito da {{since}}",
+    "recovered_summary_one": "Di nuovo online dopo {{count}} test fallito da {{since}}",
     "outage_summary": "{{count}} test consecutivi sono falliti da {{since}}",
     "recovered_summary": "Di nuovo online dopo {{count}} test falliti da {{since}}"
   },

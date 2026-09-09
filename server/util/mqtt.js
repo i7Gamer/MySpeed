@@ -46,6 +46,10 @@ const USERNAME_FLAG = 0x80;
  */
 export const MAX_PAYLOAD_LENGTH = 268435455;
 
+// This client subscribes to nothing and only expects small acknowledgments.
+// Bound each unparsed packet, without limiting the number of valid replies.
+export const MAX_BROKER_PACKET_BYTES = 64 * 1024;
+
 const CONTINUATION = 0x80;
 const SEVEN_BITS = 0x7f;
 const VARINT_SHIFT = 128;
@@ -151,7 +155,7 @@ export const DISCONNECT_PACKET = Buffer.from([DISCONNECT << 4, 0x00]);
  * reads, or trailing something else in one. The caller keeps the tail and asks
  * again.
  */
-export const readPacket = (buffer) => {
+export const readPacket = (buffer, maxBytes = Infinity) => {
     if (buffer.length < 2) return null;
 
     let length = 0;
@@ -167,8 +171,14 @@ export const readPacket = (buffer) => {
 
         if ((byte & CONTINUATION) === 0) break;
 
+        if (index > MAX_LENGTH_BYTES)
+            throw new Error("The broker sent a malformed MQTT remaining length");
+
         multiplier *= VARINT_SHIFT;
     }
+
+    if (index + length > maxBytes)
+        throw new Error(`The broker packet exceeds the ${maxBytes}-byte receive limit`);
 
     if (buffer.length < index + length) return null;
 
@@ -369,13 +379,27 @@ export const publishAll = ({host: configuredHost, port, secure, username, passwo
     })));
 
     socket.on("data", (chunk) => {
-        received = Buffer.concat([received, chunk]);
+        if (settled) return;
+        try {
+            // Consume large TCP chunks in bounded pieces. A chunk can contain
+            // thousands of valid PUBACKs and must not be rejected for its total
+            // size, while an incomplete advertised body cannot grow the buffer.
+            for (let offset = 0; offset < chunk.length;) {
+                const count = Math.min(chunk.length - offset, MAX_BROKER_PACKET_BYTES - received.length);
+                if (count === 0)
+                    throw new Error(`The broker packet exceeds the ${MAX_BROKER_PACKET_BYTES}-byte receive limit`);
+                received = Buffer.concat([received, chunk.subarray(offset, offset + count)]);
+                offset += count;
 
-        for (let next = readPacket(received); next !== null; next = readPacket(received)) {
-            received = received.subarray(next.consumed);
-            handle(next);
-
-            if (settled) return;
+                for (let next = readPacket(received, MAX_BROKER_PACKET_BYTES); next !== null;
+                    next = readPacket(received, MAX_BROKER_PACKET_BYTES)) {
+                    received = received.subarray(next.consumed);
+                    handle(next);
+                    if (settled) return;
+                }
+            }
+        } catch (error) {
+            fail(error);
         }
     });
 

@@ -4,7 +4,7 @@ import { readPasswords } from '../util/passwordHeader.js';
 import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
 import { isLoopbackRequest, namesLoopbackHost } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
-import { isValidSession, SESSION_COOKIE } from '../util/session.js';
+import { isValidSession, sessionGeneration, SESSION_COOKIE } from '../util/session.js';
 import { trustedProxyUser } from '../util/trustedProxyAuth.js';
 import { readCookies } from '../util/cookies.js';
 import { PASSWORD_REQUIRED, SERVER_BUSY, SETUP_TOKEN_REQUIRED, TOO_MANY_ATTEMPTS } from '../util/authOutcome.js';
@@ -431,6 +431,7 @@ export default (allowViewAccess) => async (req, res, next) => {
         return next();
     }
 
+    const generation = sessionGeneration();
     const passwordHash = await config.getValue("password");
     const passwordLevel = await config.getValue("passwordLevel");
 
@@ -475,6 +476,11 @@ export default (allowViewAccess) => async (req, res, next) => {
         }
 
         if (matched) {
+            const currentHash = await config.getValue("password");
+            // No await after this guard: a password replaced during comparison
+            // cannot authorize a request, even if restored to the same hash.
+            if (currentHash !== passwordHash || generation !== sessionGeneration())
+                return res.status(401).json({message: "Authentication changed. Please try again", type: PASSWORD_REQUIRED});
             clearFailedAttempts(req);
             req.viewMode = false;
             return next();

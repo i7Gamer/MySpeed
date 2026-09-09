@@ -331,6 +331,8 @@
       "route_address": "Alamat",
       "route_latency": "Latensi",
       "route_no_reply": "Tidak ada balasan",
+      "route_lost_one": "{{count}} hilang",
+      "route_lost_other": "{{count}} hilang",
       "route_lost": "{{count}} hilang"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed: koneksi terputus",
     "recovered": "Koneksi kembali normal",
     "recovered_subject": "MySpeed: koneksi dipulihkan",
+    "outage_summary_one": "{{count}} tes berturut-turut gagal sejak {{since}}",
+    "recovered_summary_one": "Kembali online setelah {{count}} tes gagal sejak {{since}}",
     "outage_summary": "{{count}} tes berturut-turut gagal sejak {{since}}",
     "recovered_summary": "Kembali online setelah {{count}} tes gagal sejak {{since}}"
   },

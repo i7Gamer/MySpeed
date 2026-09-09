@@ -1,7 +1,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, withoutJsComments } from "../helpers/source.js";
-import { cleanup, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import { cleanup, click, createElement, render, settle, window } from "../helpers/renderHarness.js";
 import { AlertProvider } from "@/common/contexts/Alert";
 import { ConfigContext } from "@/common/contexts/Config";
 import { ToastNotificationContext } from "@/common/contexts/ToastNotification";
@@ -61,6 +61,22 @@ const mount = async () => {
 const rowsOf = (document) => [...document.querySelectorAll(".connection-row")];
 
 describe("the connection changes dialog", () => {
+    it("shows a failed load and retries without claiming the log is empty", async (context) => {
+        const errors = context.mock.method(console, "error", noop);
+        globalThis.fetch = async () => {throw new Error("Connection log unavailable");};
+        const document = await mount();
+        assert.ok(document.querySelector(".connections-empty") === null, "failed load must not say no changes");
+        assert.match(document.querySelector(".connections-content").textContent, /Connection log unavailable/);
+        assert.equal(errors.mock.calls.length, 1);
+        scripted();
+        const retry = document.querySelector('[role="alert"] button');
+        assert.ok(retry);
+        click(retry);
+        await settle();
+        assert.equal(rowsOf(document).length, ROWS.length);
+        assert.doesNotMatch(document.querySelector(".connections-content").textContent, /Connection log unavailable/);
+    });
+
     it("asks the server once when opened", async () => {
         const {requests} = scripted();
         await mount();

@@ -44,6 +44,44 @@ const network = (t, adapters, answered = []) => {
 };
 
 describe("refreshing an adapter's current binding", () => {
+    it("shares concurrent probes and takes a new snapshot after settlement", async (t) => {
+        let snapshots = 0;
+        let answer;
+        t.mock.method(os, "networkInterfaces", () => {
+            snapshots++;
+            return {[PINNED]: [entry(snapshots === 1 ? OLD_IP : NEW_IP)]};
+        });
+        t.mock.method(https, "request", (options, onResponse) => {
+            const req = new EventEmitter();
+            req.destroy = () => {};
+            req.end = () => { answer = () => onResponse({}); };
+            return req;
+        });
+        const first = loader.requestInterfaces();
+        const second = loader.requestInterfaces();
+        answer();
+        // On the broken implementation, the second call replaced the only
+        // callback. Check before awaiting the first request, which is stranded.
+        assert.equal(snapshots, 1);
+        await Promise.all([first, second]);
+        assert.equal(loader.interfaces[PINNED], OLD_IP);
+        const next = loader.requestInterfaces();
+        answer();
+        await next;
+        assert.equal(snapshots, 2);
+        assert.equal(loader.interfaces[PINNED], NEW_IP);
+    });
+
+    it("allows another refresh after a snapshot fails", async (t) => {
+        const failure = new Error("snapshot unavailable");
+        const read = t.mock.method(os, "networkInterfaces", () => { throw failure; });
+        await assert.rejects(loader.requestInterfaces(), failure);
+        read.mock.restore();
+        network(t, {[PINNED]: [entry(NEW_IP)]});
+        await loader.requestInterfaces();
+        assert.equal(loader.interfaces[PINNED], NEW_IP);
+    });
+
     for (const [name, previous, current, answered, expected] of [
         ["keeps an unchanged address when its probe fails", OLD_IP, [OLD_IP], [], OLD_IP],
         ["replaces an expired IPv4 lease when probes fail", OLD_IP, [NEW_IP], [], NEW_IP],

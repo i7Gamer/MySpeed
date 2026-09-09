@@ -181,7 +181,7 @@ describe("where the log is forgotten", () => {
     it("is cleared with the history", () => {
         const body = bodyOf(controller, "export const deleteTests = async () => {");
 
-        assert.match(body, /connectionChanges\.removeAll\(\)/);
+        assert.match(body, /connectionChanges\.removeAll\(transaction\)/);
     });
 
     it("is cleared by the factory reset, inside its transaction", () => {

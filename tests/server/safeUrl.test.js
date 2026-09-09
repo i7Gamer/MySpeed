@@ -1,6 +1,31 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { checkNodeTarget, isBlockedAddress, isMetadataAddress } from "../../server/util/safeUrl.js";
+import { checkNodeTarget, checkOutboundHost, isBlockedAddress, isMetadataAddress } from "../../server/util/safeUrl.js";
+
+describe("expanded embedded IPv4 addresses", () => {
+    for (const host of ["::0:100", "::0.0.1.0"]) {
+        it(`keeps the existing embedded zero-network block for ${host}`, () => {
+            assert.equal(isBlockedAddress(host), true);
+        });
+    }
+
+    for (const host of ["0:0:0:0:0:ffff:169.254.169.254", "0:0:0:0:0:ffff:a9fe:a9fe",
+        "0:0:0:0:0:0:169.254.169.254", "64:ff9b:0:0:0:0:169.254.169.254",
+        "64:ff9b:0:0:0:0:a9fe:a9fe"]) {
+        it(`blocks metadata through ${host}`, () => {
+            assert.equal(checkOutboundHost(host).safe, false);
+            assert.equal(isMetadataAddress(host), true);
+            assert.equal(isBlockedAddress(host), true);
+        });
+    }
+
+    for (const host of ["0:0:0:0:0:ffff:8.8.8.8", "64:ff9b:0:0:0:0:808:808",
+        "0:0:0:0:0:ffff:127.0.0.1", "0:0:0:0:0:ffff:192.168.1.1"]) {
+        it(`preserves allowed outbound destination ${host}`, () => {
+            assert.equal(checkOutboundHost(host).safe, true);
+        });
+    }
+});
 
 /**
  * The IPv6 metadata endpoint, refused on the node path too.

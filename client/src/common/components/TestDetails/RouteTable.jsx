@@ -21,7 +21,8 @@ import FigureWithUnit from "@/common/components/FigureWithUnit";
  */
 // The number as well as the latencies: the rows are keyed on it, and two
 // hops without one collide on the same key.
-const drawable = (hop) => hop !== null && typeof hop === "object" && Number.isInteger(hop.hop) && Array.isArray(hop.rtt);
+const drawable = (hop) => hop !== null && typeof hop === "object" && Number.isInteger(hop.hop) && Array.isArray(hop.rtt)
+    && (hop.address === null || typeof hop.address === "string");
 
 const RouteTable = ({hops}) => {
     const rows = Array.isArray(hops) ? hops.filter(drawable) : [];

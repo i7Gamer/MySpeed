@@ -292,6 +292,14 @@ describe("exitError", () => {
         assert.match(exitError(2, {}, null, true), /2/);
     });
 
+    it("recognizes Windows CTRL_C termination only during shutdown", () => {
+        const STATUS_CONTROL_C_EXIT = 3221225786;
+        assert.match(exitError(STATUS_CONTROL_C_EXIT, {}, null, true), /shutting down/);
+        assert.match(exitError(STATUS_CONTROL_C_EXIT, {}, null, false), /code 3221225786/);
+        assert.match(exitError(1, {}, null, true), /code 1/);
+        assert.equal(exitError(STATUS_CONTROL_C_EXIT, {type: 'result'}, null, true), null);
+    });
+
     // The gate is unchanged, so a shutdown that still produced a measurement
     // keeps it - the round has a result and no failure to report.
     it("keeps a result that arrived before the signal", () => {

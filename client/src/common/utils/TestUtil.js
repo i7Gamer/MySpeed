@@ -101,6 +101,11 @@ export function connectionChange(test, previous) {
         const before = previous[key];
         if (!now || !before) return false;
 
+        // Alternating between a line's IPv4 and IPv6 addresses is not a
+        // reassignment, matching the server's connection-change family gate.
+        if (key === "externalIp" && typeof now === "string" && typeof before === "string"
+            && now.includes(":") !== before.includes(":")) return false;
+
         return key === "externalIp" ? comparableAddress(now) !== comparableAddress(before) : now !== before;
     };
 

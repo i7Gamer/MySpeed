@@ -6,6 +6,9 @@ import { validateInput } from '../controller/integrations.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
 
 const app = express.Router();
+// These are string keys: current UUIDs and older random base36 values both
+// remain valid. Only NUL needs rejecting before SQLite parses its SQL literal.
+const INVALID_ID_CHARACTER = /\0/;
 
 app.get("/", password(false), (req, res) => res.json(integrations.getIntegrations()));
 
@@ -54,6 +57,8 @@ app.put("/:integrationName", password(false),
 app.patch("/:id", password(false),
     previewReadOnly.saying("For security reasons, you can't update integrations in preview mode"),
     async (req, res) => {
+    if (INVALID_ID_CHARACTER.test(req.params.id))
+        return res.status(400).json({message: "The integration id must not contain a NUL character"});
     if (!req.body) return res.status(400).json({message: "Missing data"});
 
     const integration = await integrations.getIntegrationById(req.params.id);
@@ -69,6 +74,8 @@ app.patch("/:id", password(false),
 app.delete("/:id", password(false),
     previewReadOnly.saying("For security reasons, you can't delete integrations in preview mode"),
     async (req, res) => {
+    if (INVALID_ID_CHARACTER.test(req.params.id))
+        return res.status(400).json({message: "The integration id must not contain a NUL character"});
     const result = await integrations.deleteIntegration(req.params.id);
     if (result === null) return res.status(404).json({message: "Integration not found"});
     return res.json({message: "Integration deleted"});

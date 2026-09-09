@@ -39,7 +39,7 @@ const PingChart = memo(({ compact = false, ...props }) => {
             return Math.max(down, up);
         };
 
-        const values = props.labels.map((_, index) => props.data.ping[index]);
+        const values = props.labels.map((_, index) => measuredLatency(props.data.ping[index]));
 
         return {
             labels: props.labels,

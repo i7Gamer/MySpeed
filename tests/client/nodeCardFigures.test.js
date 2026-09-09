@@ -350,6 +350,17 @@ describe("a node card reading its node", () => {
         return mounted;
     };
 
+    it("names each measured figure for readers who cannot see its icon", async () => {
+        serve();
+        const {container} = await seeTheCard();
+        const figures = [...container.querySelectorAll(".speed-item h1")];
+        assert.equal(figures.length, 3);
+        for (const [index, label] of ["Ping", "Download", "Upload"].entries()) {
+            assert.ok(figures[index].getAttribute("aria-label")?.startsWith(label));
+            assert.ok(figures[index].getAttribute("aria-label").includes(figures[index].textContent));
+        }
+    });
+
     it("paints the grade the dashboard paints, not the instance-wide one", async () => {
         serve();
         const {container} = await seeTheCard();

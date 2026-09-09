@@ -331,6 +331,8 @@
       "route_address": "地址",
       "route_latency": "延遲",
       "route_no_reply": "無回應",
+      "route_lost_one": "{{count}} 個遺失",
+      "route_lost_other": "{{count}} 個遺失",
       "route_lost": "{{count}} 個遺失"
     }
   },
@@ -831,6 +833,8 @@
     "outage_subject": "MySpeed：連線中斷",
     "recovered": "連線已恢復",
     "recovered_subject": "MySpeed：連線已恢復",
+    "outage_summary_one": "自 {{since}} 起已連續 {{count}} 次測試失敗",
+    "recovered_summary_one": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線",
     "outage_summary": "自 {{since}} 起已連續 {{count}} 次測試失敗",
     "recovered_summary": "自 {{since}} 起 {{count}} 次測試失敗後已恢復上線"
   },
