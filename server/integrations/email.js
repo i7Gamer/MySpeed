@@ -2,8 +2,8 @@ import { phrase } from '../util/notificationLocale.js';
 import nodemailer from "nodemailer";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
-import { bareHost } from "../util/helpers.js";
-import { OUTBOUND_TIMEOUT, noteActivity } from "../util/integrationActivity.js";
+import { noteActivity } from "../util/integrationActivity.js";
+import { transportOptions } from "../util/smtpOptions.js";
 import { wantsDigest } from "../util/digestOptIn.js";
 import { IP_CHANGED_EVENT } from "../util/connectionChange.js";
 import { OUTAGE_EVENT, OUTAGE_SUMMARY, RECOVERED_EVENT } from "../util/outage.js";
@@ -168,33 +168,14 @@ const refuseBlocked = (host, activity) => {
  * needs no credentials is ordinary on a LAN, and nodemailer answers an auth
  * object carrying an empty user by trying to authenticate anyway.
  *
- * `allowInternalNetworkInterfaces` because nodemailer refuses private and
- * loopback addresses by default, which is the opposite of this project's policy
- * - checkOutboundTarget allows both on purpose, and the guard above is what
- * decides the question here.
+ * `allowInternalNetworkInterfaces` keeps address families on internal network
+ * adapters eligible for DNS resolution. Local relays remain supported; the
+ * literal guard and guarded socket resolver enforce the destination policy.
  *
- * The three timeouts are the deadline every other integration's send carries.
- * Without them a relay that accepts a connection and then says nothing holds the
- * notification, and the run that triggered it, on nodemailer's own defaults.
+ * These are connection, greeting and socket-inactivity limits, not a total-send
+ * deadline. DNS retains the mailer's per-query limits and cache behavior.
  */
-export const transportOptions = ({host, port, secure, username, password}) => ({
-    // Bracketed, the way an IPv6 relay is written in a URL and the way the
-    // field accepts it: nodemailer dials this value, and the brackets turned
-    // every send into a getaddrinfo failure.
-    host: bareHost(host),
-    port: Number(port),
-    secure: secure === true,
-    ...(username ? {auth: {user: username, pass: password ?? ""}} : {}),
-    allowInternalNetworkInterfaces: true,
-    connectionTimeout: OUTBOUND_TIMEOUT,
-    greetingTimeout: OUTBOUND_TIMEOUT,
-    socketTimeout: OUTBOUND_TIMEOUT,
-    // One connection per notification. These arrive at most once per speedtest,
-    // so a pool would hold a socket open across the whole gap between two runs
-    // for no saving - and would need tearing down on shutdown, which nothing
-    // else in here has to think about.
-    pool: false
-});
+export {transportOptions};
 
 /**
  * @param createTransport  defaulted, and passed only by the tests, which hand in

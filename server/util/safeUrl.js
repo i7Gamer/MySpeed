@@ -377,11 +377,9 @@ export const safeLookup = (hostname, options, callback) => {
  *
  * HTTP POST and MQTT sends additionally use outboundLookup inside their native
  * connection paths, so hostname resolution cannot bypass this literal policy.
- * MQTT TCP/TLS filtering, allowed-address fallback and late-DNS cleanup are
- * verified under Node, Bun and compiled Bun. SMTP still applies the literal-host
- * check only: a hostname resolving to a forbidden address can deliver credentials
- * or payloads there. Its transport needs a compatibility-preserving guarded
- * connector before claiming DNS coverage.
+ * SMTP uses a guarded resolver and connected-socket hook because Nodemailer
+ * resolves before dialing. Fresh and cached candidates are checked before each
+ * numeric-address connection, retaining its DNS cache, fallback and TLS identity.
  * Project-defined getJson URLs also retain their existing fetch transport;
  * revisit that boundary if its callers gain configurable destinations.
  *
