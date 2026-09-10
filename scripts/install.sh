@@ -792,6 +792,7 @@ Type=simple
 ExecStart=$UNIT_EXECUTABLE
 Restart=always
 User=$SERVICE_ACCOUNT
+# MySpeed-WorkingDirectory-Encoding: percent-v1
 WorkingDirectory=$UNIT_WORKING_DIRECTORY
 NoNewPrivileges=true
 PrivateTmp=true

@@ -6,6 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { readSource } from "../helpers/source.js";
+import {installSandbox, sandboxBash} from "../helpers/installSandbox.js";
 
 /**
  * The uninstaller, run rather than read.
@@ -43,6 +44,8 @@ const bash = (() => {
 
 const RUN_TIMEOUT = 20_000;
 const GUARD_FAILURE = 97;
+const WORKING_DIRECTORY_ENCODING_MARKER = "# MySpeed-WorkingDirectory-Encoding: percent-v1";
+const UNKNOWN_WORKING_DIRECTORY_ENCODING_MARKER = "# MySpeed-WorkingDirectory-Encoding: percent-v2";
 
 /**
  * The same directory, spelled the way the shell spells it.
@@ -88,10 +91,12 @@ const sandboxedScript = (sandbox) => {
     // would throw the captured output away.
     const guardedPath = 'export PATH="$MYSPEED_TEST_STUBS:$PATH"\n'
         + 'for mocked in docker systemctl userdel id; do\n'
-        + `  [ "$(command -v "$mocked")" = "$MYSPEED_TEST_STUBS/$mocked" ] || exit ${GUARD_FAILURE}\n`
+        + '  resolved="$(command -v "$mocked")"\n'
+        + `  [ "$resolved" = "$MYSPEED_TEST_STUBS/$mocked" ] || { echo "unexpected $mocked: $resolved" >&2; exit ${GUARD_FAILURE}; }\n`
         + 'done\n'
         + 'if [ -f "$MYSPEED_TEST_STUBS/rm" ]; then\n'
-        + `  [ "$(command -v rm)" = "$MYSPEED_TEST_STUBS/rm" ] || exit ${GUARD_FAILURE}\n`
+        + '  resolved="$(command -v rm)"\n'
+        + `  [ "$resolved" = "$MYSPEED_TEST_STUBS/rm" ] || { echo "unexpected rm: $resolved" >&2; exit ${GUARD_FAILURE}; }\n`
         + 'fi\n';
     return guardedPath + source.replace(/^(\s*)sleep \d+$/gm, "$1sleep 0").replace(/^(\s*)clear$/gm, "$1:");
 };
@@ -109,8 +114,10 @@ const stub = (file, body) => {
  * be. `account` decides whether `id -u myspeed` succeeds, so the account removal
  * can be observed without one existing.
  */
-const host = ({container = false, service = false, recorded = null, installed = null, account = false,
-    unremovable = false, otherService = false, data = true}) => {
+const host = ({container = false, service = false, recorded = null, recordedMarkers = [],
+    secondaryRecorded = null, secondaryRecordedMarkers = [], unitLineEnding = "\n", installed = null,
+    account = false, unremovable = false, otherService = false, data = true, recordedUnit = null,
+    allowedRemovalPaths = []}) => {
     const sandbox = path.join(root, randomBytes(8).toString("hex"));
 
     fs.mkdirSync(path.join(sandbox, "bin"), {recursive: true});
@@ -123,60 +130,74 @@ const host = ({container = false, service = false, recorded = null, installed = 
     // container that has been removed is no longer listed, and a service that
     // has been disabled is no longer enabled.
     const state = `${sandbox}/state`;
+    const shellState = posix(state);
     fs.mkdirSync(state, {recursive: true});
 
     stub(path.join(sandbox, "bin", "docker"),
         `echo "docker $*" >> "${calls}"\n`
-        + `if [ "$1" = "rm" ]; then rm -f "${state}/container"; fi\n`
-        + `if [ "$1" = "ps" ] && [ -f "${state}/container" ]; then echo MySpeed; fi\n`
+        + `if [ "$1" = "rm" ]; then rm -f "${shellState}/container"; fi\n`
+        + `if [ "$1" = "ps" ] && [ -f "${shellState}/container" ]; then echo MySpeed; fi\n`
         + "exit 0");
 
     stub(path.join(sandbox, "bin", "systemctl"),
         `echo "systemctl $*" >> "${calls}"\n`
-        + `if [ "$1" = "disable" ]; then rm -f "${state}/unit"; fi\n`
-        + `if [ "$1" = "--all" ] && [ -f "${state}/unit" ]; then echo "  myspeed.service loaded active"; fi\n`
-        + `if [ "$1" = "--all" ] && [ -f "${state}/other" ]; then echo "  notmyspeed.service loaded active"; fi\n`
+        + `if [ "$1" = "disable" ]; then rm -f "${shellState}/unit"; fi\n`
+        + `if [ "$1" = "--all" ] && [ -f "${shellState}/unit" ]; then echo "  myspeed.service loaded active"; fi\n`
+        + `if [ "$1" = "--all" ] && [ -f "${shellState}/other" ]; then echo "  notmyspeed.service loaded active"; fi\n`
         + "exit 0");
 
     if (container) fs.writeFileSync(`${state}/container`, "");
     if (service) fs.writeFileSync(`${state}/unit`, "");
     if (otherService) fs.writeFileSync(`${state}/other`, "");
 
-    // A removal that fails, without needing a permission the suite cannot rely
-    // on having - root ignores the mode bits, and Git Bash on Windows does not
-    // honour them at all. Every other path is passed straight through, including
-    // the unit files and the markers the stubs above clear.
-    if (unremovable) {
-        const refused = unremovable === true ? `${posix(sandbox)}/opt/myspeed` : unremovable;
-
-        stub(path.join(sandbox, "bin", "rm"),
-            `for arg in "$@"; do\n`
-            + `  if [ "$arg" = "${refused}" ]; then\n`
+    // Every rm is kept inside the synthetic host, including while a deliberately
+    // broken implementation is exercised by the path-refusal tests below.
+    // `unremovable` adds the existing simulated filesystem failure on top.
+    const nativeSandbox = sandbox.split(path.sep).join("/");
+    const allowedRemovalCases = [
+        `"${posix(sandbox)}"`, `"${posix(sandbox)}"/*`, `"${nativeSandbox}"`, `"${nativeSandbox}"/*`,
+        ...allowedRemovalPaths.map((allowed) => `"${allowed}"`)
+    ].join("|");
+    const refused = unremovable
+        ? (unremovable === true ? `${posix(sandbox)}/opt/myspeed` : unremovable)
+        : null;
+    stub(path.join(sandbox, "bin", "rm"),
+        `for arg in "$@"; do\n`
+        + '  case "$arg" in -*) continue ;; esac\n'
+        + `  case "$arg" in ${allowedRemovalCases}) ;; *) echo "refusing rm outside sandbox: $arg" >&2; exit ${GUARD_FAILURE} ;; esac\n`
+        + (refused ? `  if [ "$arg" = "${refused}" ]; then\n`
             + `    echo "rm: cannot remove '$arg': Operation not permitted" >&2\n`
             + "    exit 1\n"
-            + "  fi\n"
-            + "done\n"
-            + '[ -x /bin/rm ] && exec /bin/rm "$@"\n'
-            + 'exec /usr/bin/rm "$@"');
-    }
+            + "  fi\n" : "")
+        + "done\n"
+        + '[ -x /bin/rm ] && exec /bin/rm "$@"\n'
+        + 'exec /usr/bin/rm "$@"');
 
     stub(path.join(sandbox, "bin", "userdel"), `echo "userdel $*" >> "${calls}"\nexit 0`);
     stub(path.join(sandbox, "bin", "id"),
         `echo "id $*" >> "${calls}"\n` + (account ? "echo 999\nexit 0" : "exit 1"));
 
-    if (recorded) {
+    const writeUnit = (name, value, markers) => {
         // A function when the case is about how the path is spelled - the
         // sandbox directory is only known here, and that spelling is what has to
         // be varied.
-        const at = recorded === true
+        const at = value === true
             ? `${posix(sandbox)}/opt/myspeed`
-            : (typeof recorded === "function" ? recorded(`${posix(sandbox)}/opt/myspeed`) : recorded);
+            : (typeof value === "function" ? value(`${posix(sandbox)}/opt/myspeed`) : value);
+        const markerLines = markers.map((marker) => marker + unitLineEnding).join("");
 
-        fs.writeFileSync(path.join(sandbox, "units", "a.service"), `[Service]\nWorkingDirectory=${at}\n`);
-    }
+        fs.writeFileSync(path.join(sandbox, "units", name),
+            `[Service]${unitLineEnding}${markerLines}WorkingDirectory=${at}${unitLineEnding}`);
+    };
+
+    if (recordedUnit !== null) fs.writeFileSync(path.join(sandbox, "units", "a.service"), recordedUnit);
+    else if (recorded !== null) writeUnit("a.service", recorded, recordedMarkers);
+    if (secondaryRecorded !== null) writeUnit("b.service", secondaryRecorded, secondaryRecordedMarkers);
 
     if (installed) {
-        const at = installed === true ? path.join(sandbox, "opt", "myspeed") : installed;
+        const defaultInstallation = path.join(sandbox, "opt", "myspeed");
+        const at = installed === true ? defaultInstallation
+            : (typeof installed === "function" ? installed(defaultInstallation) : installed);
         fs.mkdirSync(at, {recursive: true});
 
         if (data) {
@@ -239,6 +260,12 @@ after(() => {
 });
 
 const DATABASE = ["opt", "myspeed", "data", "storage.db"];
+const namedInstallation = (name) => (at) => at.replace(/myspeed$/, name);
+const createInstallationSibling = (machine, name) => {
+    const sibling = machine.at("opt", name);
+    fs.mkdirSync(sibling, {recursive: true});
+    fs.writeFileSync(path.join(sibling, "sibling-marker"), "must survive");
+};
 
 describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.sh is a Linux uninstaller"}, () => {
     /**
@@ -374,6 +401,227 @@ describe("the uninstaller", {skip: bash ? false : "no bash on PATH - uninstall.s
                 "the database survived under the completion banner");
         });
     }
+
+    describe("a systemd-escaped WorkingDirectory", () => {
+        it("round-trips the actual installer's unit into the full uninstaller",
+            {skip: !sandboxBash && "no bash on PATH - install.sh is a Linux installer"}, (t) => {
+            const installed = installSandbox(t, "", true, {name: "myspeed%site"});
+            assert.equal(installed.status, 0, installed.output);
+
+            const encodedSibling = path.join(path.dirname(installed.nativeInstallation), "myspeed%%site");
+            fs.mkdirSync(encodedSibling);
+            fs.writeFileSync(path.join(encodedSibling, "sibling-marker"), "must survive");
+            const machine = host({
+                service: true,
+                recordedUnit: installed.unit,
+                allowedRemovalPaths: [installed.installation]
+            });
+
+            const result = machine.run();
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(fs.existsSync(installed.nativeInstallation), false,
+                "the installer's literal-percent directory was left on disk");
+            assert.equal(fs.existsSync(path.join(encodedSibling, "sibling-marker")), true,
+                "the installer's encoded spelling was removed as a sibling path");
+        });
+
+        for (const installationName of ["myspeed%site", "myspeed%%site", "myspeed%%%site"]) {
+            it(`decodes ${installationName} once and preserves its encoded-name sibling`, () => {
+                const encodedName = installationName.replaceAll("%", "%%");
+                const machine = host({
+                    service: true,
+                    recorded: namedInstallation(encodedName),
+                    recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                    installed: namedInstallation(installationName)
+                });
+                createInstallationSibling(machine, encodedName);
+
+                const result = machine.run();
+
+                assert.equal(result.status, 0, result.output);
+                assert.equal(result.survives("opt", installationName), false,
+                    "the decoded installation was left on disk");
+                assert.equal(result.survives("opt", encodedName, "sibling-marker"), true,
+                    "the encoded-name sibling was removed instead");
+            });
+        }
+
+        it("accepts the exact marker in a CRLF unit", () => {
+            const machine = host({
+                service: true,
+                recorded: namedInstallation("myspeed%%site"),
+                recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                unitLineEnding: "\r\n",
+                installed: namedInstallation("myspeed%site")
+            });
+
+            const result = machine.run();
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives("opt", "myspeed%site"), false);
+        });
+
+        it("corroborates a literal -d against the decoded tagged value", () => {
+            const machine = host({
+                service: true,
+                recorded: namedInstallation("myspeed%%site"),
+                recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER]
+            });
+
+            const result = machine.run("-d", machine.given("opt", "myspeed%site"));
+
+            assert.equal(result.status, 0, result.output);
+            assert.ok(result.completed);
+        });
+
+        it("keeps decoded-path data and preserves the encoded-name sibling", () => {
+            const machine = host({
+                service: true,
+                recorded: namedInstallation("myspeed%%keep"),
+                recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                installed: namedInstallation("myspeed%keep"),
+                account: true
+            });
+            createInstallationSibling(machine, "myspeed%%keep");
+
+            const result = machine.run("--keep-data");
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives("opt", "myspeed%keep", "data", "storage.db"), true);
+            assert.equal(result.survives("opt", "myspeed%keep", "myspeed"), false);
+            assert.equal(result.survives("opt", "myspeed%%keep", "sibling-marker"), true);
+            assert.doesNotMatch(result.calls, /userdel/);
+        });
+
+        it("does not decode a literal explicit path containing a percent pair", () => {
+            const machine = host({
+                service: true,
+                recorded: namedInstallation("myspeed%%site"),
+                installed: namedInstallation("myspeed%%site")
+            });
+            createInstallationSibling(machine, "myspeed%site");
+
+            const result = machine.run("-d", machine.given("opt", "myspeed%%site"));
+
+            assert.equal(result.status, 0, result.output);
+            assert.equal(result.survives("opt", "myspeed%%site"), false);
+            assert.equal(result.survives("opt", "myspeed%site", "sibling-marker"), true,
+                "the literal command-line path was decoded");
+        });
+    });
+
+    describe("an ambiguous or invalid recorded WorkingDirectory", () => {
+        for (const [description, recorded, markers] of [
+            ["v1.6 raw percent path", namedInstallation("myspeed%site"), []],
+            ["pre-marker escaped path", namedInstallation("myspeed%%site"), []],
+            ["unknown encoding version", namedInstallation("myspeed%%site"),
+                [UNKNOWN_WORKING_DIRECTORY_ENCODING_MARKER]],
+            ["duplicate encoding marker", namedInstallation("myspeed%%site"),
+                [WORKING_DIRECTORY_ENCODING_MARKER, WORKING_DIRECTORY_ENCODING_MARKER]],
+            ["conflicting encoding markers", namedInstallation("myspeed%%site"),
+                [WORKING_DIRECTORY_ENCODING_MARKER, UNKNOWN_WORKING_DIRECTORY_ENCODING_MARKER]],
+            ["marker prefix rather than a whole line", namedInstallation("myspeed%%site"),
+                [`${WORKING_DIRECTORY_ENCODING_MARKER} extra`]]
+        ]) {
+            it(`refuses the ${description} automatically and accepts a literal override`, () => {
+                const automatic = host({
+                    container: true,
+                    service: true,
+                    recorded,
+                    recordedMarkers: markers,
+                    installed: namedInstallation("myspeed%site"),
+                    account: true
+                });
+                createInstallationSibling(automatic, "myspeed%%site");
+
+                const refused = automatic.run();
+
+                assert.equal(refused.status, 1, refused.output);
+                assert.match(refused.output, /-d/);
+                assert.equal(refused.calls, "", "the host was mutated before the unit value was refused");
+                assert.equal(refused.survives("units", "a.service"), true);
+                assert.equal(refused.survives("opt", "myspeed%site", "data", "storage.db"), true);
+                assert.equal(refused.survives("opt", "myspeed%%site", "sibling-marker"), true);
+
+                const overridden = automatic.run("-d", automatic.given("opt", "myspeed%site"));
+                assert.equal(overridden.status, 0, overridden.output);
+                assert.equal(overridden.survives("opt", "myspeed%site"), false);
+                assert.equal(overridden.survives("opt", "myspeed%%site", "sibling-marker"), true);
+                assert.doesNotMatch(overridden.output, /recorded it at/,
+                    "an invalid recorded value became a fallback suggestion");
+            });
+        }
+
+        const invalidValues = [
+            ["empty", ""],
+            ["whitespace", "   "],
+            ["slash-only", "////"],
+            ["relative", "relative/path"],
+            ["dot directory", namedInstallation("myspeed/.")],
+            ["dot-dot directory", namedInstallation("myspeed/..")],
+            ["opt dot directory", (at) => at.replace(/myspeed$/, ".")],
+            ["opt dot-dot directory", (at) => at.replace(/myspeed$/, "..")],
+            ["unescaped specifier", namedInstallation("myspeed%h")],
+            ["trailing percent", namedInstallation("myspeed%")]
+        ];
+
+        for (const [description, recorded] of invalidValues) {
+            it(`refuses a tagged ${description} value before mutations`, () => {
+                const machine = host({
+                    container: true,
+                    service: true,
+                    recorded,
+                    recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                    installed: true,
+                    account: true
+                });
+
+                const result = machine.run();
+
+                assert.equal(result.status, 1, result.output);
+                assert.match(result.output, /-d/);
+                assert.equal(result.calls, "", "the host was mutated before the unit value was refused");
+                assert.equal(result.survives("units", "a.service"), true);
+                assert.equal(result.survives(...DATABASE), true);
+            });
+
+            it(`lets a valid literal -d override a tagged ${description} value`, () => {
+                const machine = host({
+                    service: true,
+                    recorded,
+                    recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                    installed: true
+                });
+
+                const result = machine.run("-d", machine.given("opt", "myspeed"));
+
+                assert.equal(result.status, 0, result.output);
+                assert.equal(result.survives(...DATABASE), false);
+                assert.doesNotMatch(result.output, /recorded it at/);
+            });
+        }
+
+        it("does not fall through an invalid higher-priority unit", () => {
+            const machine = host({
+                container: true,
+                service: true,
+                recorded: "   ",
+                recordedMarkers: [WORKING_DIRECTORY_ENCODING_MARKER],
+                secondaryRecorded: true,
+                installed: true,
+                account: true
+            });
+
+            const result = machine.run();
+
+            assert.equal(result.status, 1, result.output);
+            assert.equal(result.calls, "");
+            assert.equal(result.survives("units", "a.service"), true);
+            assert.equal(result.survives("units", "b.service"), true);
+            assert.equal(result.survives(...DATABASE), true);
+        });
+    });
 
     /**
      * The unit file goes whether or not systemd ever loaded it.

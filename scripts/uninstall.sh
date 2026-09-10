@@ -10,6 +10,8 @@ NORMAL='\033[0;39m'
 INSTALLATION_PATH="/opt/myspeed"
 DOCKER_INSTALLATION_PATH="/opt/myspeed-dockerized"
 SERVICE_FILES=("/etc/systemd/system/myspeed.service" "/usr/lib/systemd/system/myspeed.service")
+WORKING_DIRECTORY_ENCODING_MARKER="# MySpeed-WorkingDirectory-Encoding: percent-v1"
+WORKING_DIRECTORY_ENCODING_PREFIX="# MySpeed-WorkingDirectory-Encoding:"
 
 # Parsed by hand rather than with getopts, which stops at the first argument
 # beginning with "--" and would leave --keep-data unseen the moment -d is also
@@ -84,6 +86,17 @@ normalise_path() {
   printf '%s' "$value"
 }
 
+# The path shapes install.sh can produce and this script can remove safely.
+# Kept in one predicate so a typed path and a decoded unit path cannot drift
+# into two different deletion rules.
+valid_installation_path() {
+  case "$1" in
+    "" | */. | */..) return 1 ;;
+    /*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --keep-data)
@@ -142,22 +155,20 @@ if [ -n "$CHOSEN_PATH" ]; then
   # and "  " both normalise away to nothing at all, which is the case worth
   # catching first - "" is not a relative path, and saying so would be a worse
   # answer than saying it is not a directory to remove.
-  case "$CHOSEN_PATH" in
-    "" | */. | */..)
+  if ! valid_installation_path "$CHOSEN_PATH"; then
+    case "$CHOSEN_PATH" in
+      "" | */. | */..)
       echo -e "$RED✗ Uninstallation Error:$NORMAL \"$GIVEN\" is not an installation directory."
       echo -e "$NORMAL Removing it would take the filesystem with it. Name the directory MySpeed is in."
       exit 1
       ;;
-  esac
-
-  case "$CHOSEN_PATH" in
-    /*) ;;
-    *)
+      *)
       echo -e "$RED✗ Uninstallation Error:$NORMAL -d needs an absolute path, and \"$GIVEN\" is relative."
       echo -e "$NORMAL It would be taken from the directory you are standing in."
       exit 1
       ;;
-  esac
+    esac
+  fi
 fi
 
 # Where the installation actually is, which is not always the default:
@@ -177,6 +188,78 @@ fi
 # from an absence.
 PATH_FROM_UNIT=0
 RECORDED=""
+RECORDED_PRESENT=0
+RECORDED_INVALID=0
+
+# Reads the first WorkingDirectory assignment in one unit. Percent decoding is
+# allowed only for the exact producer format install.sh writes now: older
+# releases wrote raw percent characters, making a legacy %% path byte-identical
+# to the new representation of a literal % path. Without the marker, guessing
+# between those two names can recursively delete the wrong sibling.
+read_recorded_path() {
+  local unit="$1"
+  local line
+  local raw=""
+  local unpaired
+  local encoding_markers=0
+  local supported_markers=0
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    # Unit files copied through Windows may use CRLF. The assignment reader
+    # already treated the trailing carriage return as whitespace; do the same
+    # for an exact whole-line marker.
+    line="${line%$'\r'}"
+
+    case "$line" in
+      "$WORKING_DIRECTORY_ENCODING_MARKER")
+        encoding_markers=$((encoding_markers + 1))
+        supported_markers=$((supported_markers + 1))
+        ;;
+      "$WORKING_DIRECTORY_ENCODING_PREFIX"*)
+        encoding_markers=$((encoding_markers + 1))
+        ;;
+      WorkingDirectory=*)
+        if [ "$RECORDED_PRESENT" -eq 0 ]; then
+          raw="${line#WorkingDirectory=}"
+          RECORDED_PRESENT=1
+        fi
+        ;;
+    esac
+  done < "$unit"
+
+  [ "$RECORDED_PRESENT" -eq 1 ] || return
+
+  case "$raw" in
+    *%*)
+      # Exactly one supported marker and no other encoding marker. A missing,
+      # duplicated, conflicting or future version is ambiguous and fails shut.
+      if [ "$encoding_markers" -ne 1 ] || [ "$supported_markers" -ne 1 ]; then
+        RECORDED_INVALID=1
+        return
+      fi
+
+      # Remove pairs only to validate the serialized form. The decoded value is
+      # allowed to contain literal percent characters, so it is not checked.
+      unpaired="${raw//%%/}"
+      case "$unpaired" in
+        *%*)
+          RECORDED_INVALID=1
+          return
+          ;;
+      esac
+
+      # Bash performs this global replacement once over the original value:
+      # %%%% becomes %% rather than being reduced repeatedly to %.
+      raw="${raw//%%/%}"
+      ;;
+  esac
+
+  RECORDED="$(normalise_path "$raw")"
+  if ! valid_installation_path "$RECORDED"; then
+    RECORDED=""
+    RECORDED_INVALID=1
+  fi
+}
 
 # Read whatever the system recorded, always - including when -d was given. The
 # unit is the only place the real path is written down, this script is about to
@@ -186,13 +269,21 @@ RECORDED=""
 for unit in "${SERVICE_FILES[@]}"; do
   [ -f "$unit" ] || continue
 
-  # Normalised on the way in, so that a unit carrying a trailing slash or a
-  # carriage return is the same path as the one an operator types - and so that a
-  # value which is nothing but whitespace counts as no record at all rather than
-  # ending the search.
-  RECORDED="$(normalise_path "$(sed -n 's/^WorkingDirectory=//p' "$unit" | head -n 1)")"
-  [ -n "$RECORDED" ] && break
+  read_recorded_path "$unit"
+  # An assignment in the higher-priority unit is authoritative even when it is
+  # invalid. Falling through would let a lower-priority unit choose a deletion
+  # path different from the service definition systemd actually loads.
+  [ "$RECORDED_PRESENT" -eq 1 ] && break
 done
+
+if [ "$RECORDED_INVALID" -eq 1 ]; then
+  RECORDED=""
+  if [ -z "$CHOSEN_PATH" ]; then
+    echo -e "$RED✗ Uninstallation Error:$NORMAL the service records an unsupported installation path."
+    echo -e "$NORMAL Nothing was changed. Re-run with$YELLOW -d /literal/path$NORMAL naming the MySpeed directory."
+    exit 1
+  fi
+fi
 
 if [ -n "$CHOSEN_PATH" ]; then
   INSTALLATION_PATH="$CHOSEN_PATH"
