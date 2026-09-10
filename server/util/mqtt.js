@@ -2,6 +2,7 @@ import net from "node:net";
 import tls from "node:tls";
 import { randomBytes } from "node:crypto";
 import { bareHost } from './helpers.js';
+import { outboundLookup } from './safeUrl.js';
 
 /**
  * Enough of MQTT 3.1.1 to publish a message, and nothing else.
@@ -244,7 +245,8 @@ export const readyEvent = (secure) => secure ? "secureConnect" : "connect";
  * repository, the same way the email integration takes its transport.
  */
 export const openSocket = ({host, port, secure}) =>
-    secure ? tls.connect({host, port, servername: host}) : net.connect({host, port});
+    secure ? tls.connect({host, port, servername: host, lookup: outboundLookup})
+        : net.connect({host, port, lookup: outboundLookup});
 
 export const publishAll = ({host: configuredHost, port, secure, username, password, clientId,
                                messages, qos = 0, timeout, connect = openSocket}) => new Promise((resolve, reject) => {

@@ -1,223 +1,160 @@
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import {
-    carriesWindow, windowProblem, writeQuietHours
-} from "@/common/components/PauseDialog/quietHoursWindow.js";
-import { storedTimezoneToInput } from "@/common/components/PauseDialog/timezoneChoice.js";
-import { blockEnd, readSource } from "../helpers/source.js";
-
-const source = readSource("client/src/common/components/PauseDialog/PauseDialog.jsx");
-
-const bodyOfArrowAt = (text, start) =>
-    text.slice(text.indexOf("{", text.indexOf("=>", start)));
-
-const saveIn = (closure) => {
-    const start = source.indexOf("const saveQuietHours");
-    assert.notEqual(start, -1, "the dialog no longer has a quiet hours save");
-
-    const body = bodyOfArrowAt(source, start);
-    const names = Object.keys(closure);
-
-    return new Function(...names,
-        `return async () => ${body.slice(0, blockEnd(body, 0) + 1)};`)(
-        ...names.map((name) => closure[name]));
-};
-
-class RequestError extends Error {}
+import {act, cleanup, click, createElement as h, render, window} from "../helpers/renderHarness.js";
+import {t} from "i18next";
+import {PauseDialog} from "@/common/components/PauseDialog/PauseDialog";
+import {ConfigContext} from "@/common/contexts/Config";
+import {PreferencesContext} from "@/common/contexts/Preferences";
+import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {request} from "@/common/utils/RequestUtil";
 
 /**
- * The pair the dialog was opened over, and the mixed pair the server is left
- * holding when the second write and the undo are both refused - a new start
- * against the old end. They share an end on purpose: that is what the mixed
- * pair looks like, and the starts differ, so fields re-seeded from the wrong
- * side cannot pass for the right one.
+ * Change both times so stale context, the requested window and a partially
+ * written server window remain distinguishable when a failed save re-reads.
  */
 const CONTEXT = {quietHoursStart: "23:00", quietHoursEnd: "08:00", timezone: "Europe/Berlin"};
-const SERVER_HOLDS = {quietHoursStart: "22:00", quietHoursEnd: "08:00"};
 
-const FIRST_PATCH = 1;
 const SECOND_PATCH = 2;
 
-/**
- * The save wired up over recorders. `refuse` is handed the ordinal of each
- * PATCH; `reread` (or a whole `checkConfig`) is what the failure-path re-read
- * finds on the server.
- */
-const dialogSaving = ({quietStart, quietEnd, refuse = () => false, reread = SERVER_HOLDS, checkConfig,
-                       timezone = CONTEXT.timezone}) => {
-    const seen = {patches: [], toasts: [], shown: [], reloads: 0, saving: []};
+const originalFetch = globalThis.fetch;
+const noop = () => {};
+const response = (body, status = 200) => new Response(JSON.stringify(body), {
+    status, headers: {"content-type": "application/json"}
+});
+afterEach(() => { globalThis.fetch = originalFetch; cleanup(); });
 
-    const save = saveIn({
-        quietProblem: windowProblem(quietStart, quietEnd),
-        quietStart, quietEnd,
-        // Defaulted to what the context holds, so the cases below that are not
-        // about the zone record the two window PATCHes and nothing else.
-        timezone, storedTimezoneToInput,
-        config: CONTEXT,
-        writeQuietHours, carriesWindow, RequestError,
-        setSavingQuiet: (value) => seen.saving.push(value),
-        patchRequest: async (url, {value}) => {
-            seen.patches.push({url, value});
-            return {ok: !refuse(seen.patches.length)};
-        },
-        assertOk: async (response, what) => {
-            if (response.ok) return response;
-            throw new RequestError(`${what} was refused`);
-        },
-        updateToast: (message, color) => seen.toasts.push(color),
-        t: (key) => key,
-        faMoon: {}, faExclamationTriangle: {},
-        checkConfig: checkConfig ?? (async () => reread),
-        showStoredWindow: (stored) => seen.shown.push(stored),
-        reloadConfig: () => seen.reloads++
-    });
-
-    return {save, seen};
+const mountDialog = ({refuse = () => false, reread, waitForWrite} = {}) => {
+    const seen = {patches: [], toasts: [], reads: 0, reloads: 0};
+    const stored = {...CONTEXT};
+    globalThis.fetch = async (url, init = {}) => {
+        if (init.method === "PATCH") {
+            const key = String(url).split("/").at(-1);
+            const {value} = JSON.parse(init.body);
+            seen.patches.push({url: String(url), value});
+            await waitForWrite?.();
+            if (refuse(seen.patches.length)) return response({message: "Write refused"}, 403);
+            stored[key] = value;
+            return response({});
+        }
+        assert.equal(String(url), "/api/config");
+        seen.reads++;
+        return reread ? reread() : response(stored);
+    };
+    const checkConfig = async () => (await request("/config")).json();
+    render(h(ConfigContext.Provider, {value: [CONTEXT, () => seen.reloads++, checkConfig]},
+        h(PreferencesContext.Provider, {value: [{}, noop]},
+            h(ToastNotificationContext.Provider, {value: (...args) => seen.toasts.push(args)},
+                h(PauseDialog, {open: true, onClose: noop})))));
+    const dialog = window.document.querySelector(".pause-dialog");
+    click([...dialog.querySelectorAll("button")].find(button => button.textContent === t("pause.quiet_hours")));
+    return {seen, stored, dialog, save: () => dialog.querySelector(".pause-quiet-save")};
 };
 
-describe("the quiet hours save", () => {
-    it("writes both ends through checked PATCHes and reports the save", async () => {
-        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: "07:00"});
+const editField = async (element, value) => {
+    const prototype = element.tagName === "SELECT" ? window.HTMLSelectElement.prototype : window.HTMLInputElement.prototype;
+    await act(async () => {
+        Object.getOwnPropertyDescriptor(prototype, "value").set.call(element, value);
+        element.dispatchEvent(new window.Event(element.tagName === "SELECT" ? "change" : "input", {bubbles: true}));
+    });
+};
+const timeFields = dialog => [...dialog.querySelectorAll(".pause-quiet-range input")];
+const editWindow = async (view, start = "22:00", end = "07:00") => {
+    const [from, until] = timeFields(view.dialog);
+    await editField(from, start);
+    await editField(until, end);
+};
+const saveWindow = async view => { await act(async () => click(view.save())); };
+const windowWrites = [
+    {url: "/api/config/quietHoursStart", value: "22:00"},
+    {url: "/api/config/quietHoursEnd", value: "07:00"}
+];
 
-        await save();
+describe("saving quiet hours through the rendered dialog", () => {
+    it("clicks Save through real checked requests without rewriting the unchanged timezone", async () => {
+        const view = mountDialog();
+        await editWindow(view);
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, windowWrites);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["green"]);
+        assert.equal(view.seen.reloads, 1);
+        assert.equal(view.seen.reads, 0);
+        assert.equal(view.save().disabled, false);
+    });
 
-        assert.deepEqual(seen.patches, [
-            {url: "/config/quietHoursStart", value: "22:00"},
-            {url: "/config/quietHoursEnd", value: "07:00"}
+    it("writes the selected timezone before either time", async () => {
+        const view = mountDialog();
+        await editWindow(view);
+        await editField(view.dialog.querySelector(".timezone-select"), "Europe/Paris");
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, [{url: "/api/config/timezone", value: "Europe/Paris"}, ...windowWrites]);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["green"]);
+    });
+
+    it("stops after a rejected timezone and displays the unchanged server values", async () => {
+        const view = mountDialog({refuse: () => true});
+        await editWindow(view);
+        await editField(view.dialog.querySelector(".timezone-select"), "Europe/Paris");
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, [{url: "/api/config/timezone", value: "Europe/Paris"}]);
+        assert.deepEqual(timeFields(view.dialog).map(field => field.value), [CONTEXT.quietHoursStart, CONTEXT.quietHoursEnd]);
+        assert.equal(view.dialog.querySelector(".timezone-select").value, CONTEXT.timezone);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["red"]);
+        assert.equal(view.seen.reloads, 1);
+        assert.equal(view.save().disabled, false);
+    });
+
+    for (const rollbackRefused of [false, true]) it(`re-reads server values after a ${rollbackRefused ? "refused" : "successful"} rollback`, async () => {
+        const view = mountDialog({refuse: ordinal => rollbackRefused ? ordinal >= SECOND_PATCH : ordinal === SECOND_PATCH});
+        await editWindow(view);
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, [...windowWrites, {url: "/api/config/quietHoursStart", value: CONTEXT.quietHoursStart}]);
+        assert.deepEqual(timeFields(view.dialog).map(field => field.value), [
+            rollbackRefused ? "22:00" : CONTEXT.quietHoursStart, CONTEXT.quietHoursEnd
         ]);
-        assert.deepEqual(seen.toasts, ["green"]);
-        assert.deepEqual(seen.shown, [], "a save that succeeded has nothing to correct on screen");
-        assert.equal(seen.reloads, 1, "the other readers of these keys never heard about the save");
-        assert.deepEqual(seen.saving, [true, false]);
+        assert.equal(view.seen.reads, 1);
+        assert.equal(view.seen.reloads, 1);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["red"]);
+        assert.equal(view.save().disabled, false);
     });
 
-    /**
-     * The session expires between the first write and the second, which refuses
-     * the undo as well: the server is left holding the mixed pair. The fields
-     * have to be re-seeded from the re-read - not from the context the dialog
-     * was opened over, which still carries the pair from before the edit.
-     */
-    it("shows the pair the server actually holds when a write is refused", async () => {
-        const {save, seen} = dialogSaving({
-            quietStart: "22:00", quietEnd: "07:00",
-            refuse: (patch) => patch !== FIRST_PATCH,
-            reread: SERVER_HOLDS
-        });
-
-        await save();
-
-        // Three PATCHes, not two: the refused second write sends the save back
-        // through the helper's undo rather than out of a bare loop.
-        assert.deepEqual(seen.patches, [
-            {url: "/config/quietHoursStart", value: "22:00"},
-            {url: "/config/quietHoursEnd", value: "07:00"},
-            {url: "/config/quietHoursStart", value: CONTEXT.quietHoursStart}
-        ]);
-        assert.deepEqual(seen.toasts, ["red"]);
-        assert.deepEqual(seen.shown, [SERVER_HOLDS],
-            "the fields go on showing the window that was asked for, not the stored one");
-        assert.equal(seen.reloads, 1, "a partial save does not resync the config");
-        assert.deepEqual(seen.saving, [true, false]);
+    for (const [name, reread] of [
+        ["a refusal body", () => response({message: "Unauthorized"}, 401)],
+        ["invalid JSON", () => new Response("not JSON")],
+        ["a dropped connection", () => { throw new Error("Network unavailable"); }]
+    ]) it(`keeps edited fields when the re-read returns ${name}`, async () => {
+        const view = mountDialog({refuse: ordinal => ordinal >= SECOND_PATCH, reread});
+        await editWindow(view);
+        await saveWindow(view);
+        assert.deepEqual(timeFields(view.dialog).map(field => field.value), ["22:00", "07:00"]);
+        assert.equal(view.seen.reads, 1);
+        assert.equal(view.seen.reloads, 1);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["red"]);
+        assert.equal(view.save().disabled, false);
     });
 
-    /**
-     * The zone decides what the window it is saved beside *means*, so it goes
-     * first - a pair written against the old zone and then re-judged by a new
-     * one is a window nobody asked for, and if the second write is refused that
-     * state is what stands.
-     */
-    it("writes a changed timezone ahead of the window", async () => {
-        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: "07:00", timezone: "Etc/GMT+8"});
-
-        await save();
-
-        assert.deepEqual(seen.patches, [
-            {url: "/config/timezone", value: "Etc/GMT+8"},
-            {url: "/config/quietHoursStart", value: "22:00"},
-            {url: "/config/quietHoursEnd", value: "07:00"}
-        ]);
-        assert.deepEqual(seen.toasts, ["green"]);
+    it("disables Save for an incomplete window", async () => {
+        const view = mountDialog();
+        await editWindow(view, "22:00", "");
+        assert.equal(view.save().disabled, true);
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, []);
+        assert.deepEqual(view.seen.toasts, []);
+        assert.equal(view.seen.reloads, 0);
     });
 
-    /**
-     * The timezone write is checked the way the two window writes are. assertOk
-     * is async and rejects on a refused zone - an ICU id the browser offered but
-     * the server will not compile, a 401, a rate limit - so an unawaited one
-     * leaves the refusal as an unhandled rejection and falls straight through to
-     * write the window against a clock the server never accepted, toasting
-     * success over a window stored against the old zone.
-     */
-    it("stops at a refused timezone instead of writing the window against it", async () => {
-        const {save, seen} = dialogSaving({
-            quietStart: "22:00", quietEnd: "07:00", timezone: "Etc/GMT+8",
-            refuse: (patch) => patch === FIRST_PATCH
-        });
-
-        await save();
-
-        assert.deepEqual(seen.patches, [{url: "/config/timezone", value: "Etc/GMT+8"}],
-            "the window was written against a zone the server had already refused");
-        assert.deepEqual(seen.toasts, ["red"],
-            "the refused timezone fell through to a green success toast");
-    });
-
-    /**
-     * Writing this key restarts the schedule - node-schedule compiles the zone
-     * into the job - and with the offset enabled that also re-randomises when
-     * the next test lands. Saving a window the operator edited without touching
-     * the zone must not cost either.
-     */
-    it("leaves an unchanged timezone alone", async () => {
-        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: "07:00"});
-
-        await save();
-
-        assert.deepEqual(seen.patches.filter((patch) => patch.url === "/config/timezone"), [],
-            "every save of the quiet hours tears the schedule down and rebuilds it");
-    });
-
-    // checkConfig hands back the parsed body whatever the status was, so an
-    // expired session arrives looking like a config with no keys in it.
-    it("does not read a window out of a refusal", async () => {
-        const {save, seen} = dialogSaving({
-            quietStart: "22:00", quietEnd: "07:00",
-            refuse: (patch) => patch >= SECOND_PATCH,
-            reread: {message: "Unauthorized"}
-        });
-
-        await save();
-
-        assert.deepEqual(seen.shown, [],
-            "a refused re-read blanks the fields, calling the window off when it may not be");
-        assert.equal(seen.reloads, 1);
-    });
-
-    // Whatever refused the write is quite capable of refusing the re-read too,
-    // and a save must not turn that into an unhandled rejection.
-    it("survives the re-read failing outright", async () => {
-        const {save, seen} = dialogSaving({
-            quietStart: "22:00", quietEnd: "07:00",
-            refuse: (patch) => patch >= SECOND_PATCH,
-            checkConfig: async () => {
-                throw new Error("network gone");
-            }
-        });
-
-        await save();
-
-        assert.deepEqual(seen.shown, []);
-        assert.deepEqual(seen.toasts, ["red"]);
-        assert.equal(seen.reloads, 1);
-    });
-
-    // The save button is disabled while the window has a problem, but the guard
-    // in the save is the backstop: half a window must never reach the server.
-    it("writes nothing while the window is incomplete", async () => {
-        const {save, seen} = dialogSaving({quietStart: "22:00", quietEnd: ""});
-
-        await save();
-
-        assert.deepEqual(seen.patches, []);
-        assert.equal(seen.reloads, 0);
+    it("disables Save while writes are pending and prevents another request chain", async () => {
+        let finish;
+        const pending = new Promise(resolve => { finish = resolve; });
+        const view = mountDialog({waitForWrite: () => pending});
+        await editWindow(view);
+        await saveWindow(view);
+        assert.equal(view.save().disabled, true);
+        await saveWindow(view);
+        assert.deepEqual(view.seen.patches, [windowWrites[0]]);
+        await act(async () => finish());
+        assert.deepEqual(view.seen.patches, windowWrites);
+        assert.equal(view.save().disabled, false);
+        assert.deepEqual(view.seen.toasts.map(([, colour]) => colour), ["green"]);
+        assert.equal(view.seen.reloads, 1);
     });
 });

@@ -1,6 +1,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import setupEmail, { SUBJECT_LIMIT } from "../../server/integrations/email.js";
+import { OUTBOUND_TIMEOUT } from "../../server/util/integrationActivity.js";
 
 /**
  * Email, which is upstream #1259: "In Settings Notifications there is not a
@@ -108,8 +109,11 @@ describe("the transport", () => {
     it("is bounded by the outbound timeout on every stage", async () => {
         await finish();
 
-        for (const key of ["connectionTimeout", "greetingTimeout", "socketTimeout"])
-            assert.equal(typeof created[0][key], "number", `${key} is left to nodemailer's default`);
+        for (const key of ["connectionTimeout", "greetingTimeout", "socketTimeout"]) {
+            const value = created[0][key];
+            assert.ok(Number.isFinite(value) && value > 0, `${key} must be finite and positive`);
+            assert.equal(value, OUTBOUND_TIMEOUT, `${key} must use the integration timeout`);
+        }
     });
 
     /**

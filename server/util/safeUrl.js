@@ -375,11 +375,13 @@ export const safeLookup = (hostname, options, callback) => {
  * may be *nodes*; applying it here would refuse discord on any instance that set
  * it.
  *
- * HTTP integration sends additionally use outboundLookup inside node:http's
- * connection path, so hostname resolution cannot bypass this literal policy.
- * SMTP/MQTT still apply the literal-host check only: a hostname resolving to a
- * forbidden address can deliver credentials/payloads there. Their transports
- * need separate guarded-connection verification before claiming DNS coverage.
+ * HTTP POST and MQTT sends additionally use outboundLookup inside their native
+ * connection paths, so hostname resolution cannot bypass this literal policy.
+ * MQTT TCP/TLS filtering, allowed-address fallback and late-DNS cleanup are
+ * verified under Node, Bun and compiled Bun. SMTP still applies the literal-host
+ * check only: a hostname resolving to a forbidden address can deliver credentials
+ * or payloads there. Its transport needs a compatibility-preserving guarded
+ * connector before claiming DNS coverage.
  * Project-defined getJson URLs also retain their existing fetch transport;
  * revisit that boundary if its callers gain configurable destinations.
  *

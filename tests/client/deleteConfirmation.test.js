@@ -1,101 +1,134 @@
-import { readSource } from "../helpers/source.js";
-import { describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
+import {act, cleanup, click, createElement as h, render, window} from "../helpers/renderHarness.js";
+import {useState} from "react";
+import {t} from "i18next";
+import {AlertProvider} from "@/common/contexts/Alert";
+import {ConfigContext} from "@/common/contexts/Config";
+import {PreferencesContext} from "@/common/contexts/Preferences";
+import {SpeedtestContext} from "@/common/contexts/Speedtests";
+import {TargetsContext} from "@/common/contexts/Targets";
+import {ToastNotificationContext} from "@/common/contexts/ToastNotification";
+import {formatDateTime} from "@/common/utils/FormatUtil";
+import SpeedtestComponent from "@/pages/Home/components/Speedtest/SpeedtestComponent";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
-const CLIENT_SRC = path.join(ROOT, "client", "src");
 
-const read = (file) => readSource(path.join(CLIENT_SRC, file));
 const locale = (code) => JSON.parse(
     fs.readFileSync(path.join(ROOT, "client", "public", "assets", "locales", `${code}.json`), "utf8"));
 
-const row = read("pages/Home/components/Speedtest/SpeedtestComponent.jsx");
+const originalFetch = globalThis.fetch;
+const FADE_MS = 300;
+const BEFORE_FADE_MS = FADE_MS - 1;
+const ENTRY = {
+    id: 42, created: "2026-09-07T10:00:00.000Z", ping: 12, download: 100, upload: 50,
+    type: "auto", provider: "ookla"
+};
+const noop = () => {};
+const response = (status = 200) => new Response(JSON.stringify({message: "Deletion refused"}), {
+    status, headers: {"content-type": "application/json"}
+});
 
-// The delete handler alone. A fixed window from the openConfirm call was not
-// enough: the question names the test it is about, so the call spans lines.
-const removeTest = (() => {
-    const at = row.indexOf("const removeTest");
-    assert.notEqual(at, -1, "removeTest is gone");
+afterEach(() => { globalThis.fetch = originalFetch; cleanup(); });
 
-    const end = row.indexOf("\n    }", at);
-    assert.notEqual(end, -1, "removeTest is never closed");
+const mountRow = (reply = async () => response()) => {
+    const requests = [], toasts = [], removed = [];
+    globalThis.fetch = async (url, init) => {
+        requests.push({url: String(url), method: init.method});
+        return reply();
+    };
+    // A stateful context consumer proves the row's deletion callback updates
+    // its host list; the production provider's paging rules have their own tests.
+    const List = () => {
+        const [entries, setEntries] = useState([ENTRY]);
+        const deleteTest = id => {
+            removed.push(id);
+            setEntries(current => current.filter(entry => entry.id !== id));
+        };
+        return h(SpeedtestContext.Provider, {value: {deleteTest}}, entries.map(entry =>
+            h(SpeedtestComponent, {...entry, key: entry.id, test: entry, time: entry.created,
+                down: entry.download, up: entry.upload})));
+    };
+    const view = render(h(AlertProvider, null,
+        h(ConfigContext.Provider, {value: [{viewMode: false, previewMode: false}, noop, noop]},
+            h(PreferencesContext.Provider, {value: [{}, noop]},
+                h(TargetsContext.Provider, {value: {targets: [], byId: {}}},
+                    h(ToastNotificationContext.Provider, {value: (...args) => toasts.push(args)}, h(List)))))));
+    assert.equal(view.container.querySelector(".detail-delete"), null, "details start collapsed");
+    click(view.container.querySelector(".speedtest"));
+    click(view.container.querySelector(".detail-delete"));
+    const dialog = window.document.querySelector(".dialog");
+    assert.ok(dialog, "clicking Delete must open its real confirmation");
+    return {...view, dialog, requests, toasts, removed};
+};
 
-    return row.slice(at, end);
-})();
+const answerConfirmation = async (dialog, confirmed) => {
+    const buttons = [...dialog.querySelectorAll(".dialog-btn")];
+    const label = t(confirmed ? "test.delete_confirm.yes" : "dialog.close");
+    click(buttons.find(button => button.textContent === label));
+    // AlertProvider resolves only when the CSS fade finishes; jsdom has no CSS animation.
+    await act(async () => dialog.dispatchEvent(new window.AnimationEvent("animationend", {
+        bubbles: true, animationName: "fadeOut"
+    })));
+};
 
-/**
- * Deleting a test asks first.
- *
- * The button sat in the expanded detail pane and deleted on the click - no
- * confirmation, and nothing that undoes it. A test is a measurement of a moment
- * that will not come round again: unlike a config value there is no way to put
- * it back, and the row it was in is the row a misdirected click lands on, since
- * the pane opens directly under the one being read.
- *
- * Every other irreversible action in the app already asks. Removing a node and
- * removing the password both go through alert.openConfirm with `danger: true`,
- * and clearing the whole history makes the button ask twice. Deleting a single
- * test was the one that did not.
- */
-describe("deleting a test", () => {
-    it("asks before it deletes", () => {
-        assert.match(row, /openConfirm\(/,
-            "the delete button still deletes on the click, with nothing to undo it");
+describe("the rendered delete confirmation", () => {
+    it("identifies the destructive action and leaves a pending/cancelled deletion untouched", async () => {
+        const view = mountRow();
+        assert.equal(view.dialog.querySelector(".dialog-danger").textContent, t("test.delete_confirm.yes"));
+        assert.ok(view.dialog.textContent.includes(t("test.delete_confirm.title")));
+        assert.ok(view.dialog.textContent.includes(formatDateTime(ENTRY.created, {})));
+        assert.deepEqual(view.requests, []);
+        assert.deepEqual(view.toasts, []);
+        assert.equal(view.container.querySelector(".speedtest-hidden"), null);
+        await answerConfirmation(view.dialog, false);
+        assert.deepEqual(view.requests, [], "cancelling must never send DELETE");
+        assert.deepEqual(view.toasts, []);
+        assert.deepEqual(view.removed, []);
+        assert.equal(view.container.querySelector(".speedtest-hidden"), null);
+        assert.ok(view.container.querySelector(".speedtest-entry"));
     });
 
-    /**
-     * The confirmation has to gate the request, not merely precede it. Awaiting
-     * a confirmation and then deleting regardless is the shape that reads
-     * correct and is not.
-     */
-    it("does not delete when the answer is no", () => {
-        assert.match(removeTest, /openConfirm\(/, "the confirmation is not part of the delete path");
-        assert.ok(removeTest.indexOf("openConfirm(") < removeTest.indexOf("deleteRequest("),
-            "the test is deleted before the answer comes back");
-        assert.match(removeTest, /if\s*\(!confirmed\)\s*return|if\s*\(confirmed\)/,
-            "nothing acts on the answer, so declining still deletes");
+    it("waits for the server, then fades and removes the confirmed row after its delay", async context => {
+        let finish;
+        const pending = new Promise(resolve => { finish = resolve; });
+        const view = mountRow(() => pending);
+        context.mock.timers.enable({apis: ["setTimeout"]});
+        await answerConfirmation(view.dialog, true);
+        assert.deepEqual(view.requests, [{url: "/api/speedtests/42", method: "DELETE"}]);
+        assert.deepEqual(view.toasts, []);
+        assert.equal(view.container.querySelector(".speedtest-hidden"), null);
+        await act(async () => finish(response()));
+        assert.ok(view.container.querySelector(".speedtest-hidden"));
+        assert.equal(view.toasts.length, 1);
+        assert.equal(view.toasts[0][0], t("test.deleted"));
+        assert.equal(view.toasts[0][1], "green");
+        act(() => context.mock.timers.tick(BEFORE_FADE_MS));
+        assert.deepEqual(view.removed, []);
+        assert.ok(view.container.querySelector(".speedtest-entry"));
+        act(() => context.mock.timers.tick(FADE_MS - BEFORE_FADE_MS));
+        assert.deepEqual(view.removed, [ENTRY.id]);
+        assert.equal(view.container.querySelector(".speedtest-entry"), null);
     });
 
-    // The same treatment the node deletion gets: a red button, because the
-    // dialog's default reads as the safe choice and this one is not.
-    it("marks it as the dangerous action it is", () => {
-        assert.match(removeTest, /danger:\s*true/,
-            "the confirmation offers deletion as an ordinary choice");
-    });
-
-    it("names the action on the button rather than saying OK", () => {
-        assert.match(removeTest, /buttonText:/,
-            "the confirming button says OK, which says nothing about what it does");
-    });
-
-    /**
-     * The toast and the fade are the report that it happened, and they must not
-     * run for a deletion the reader declined.
-     *
-     * The needle is asserted present before its position is compared: indexOf
-     * answers -1 for a string that is not there, and -1 is less than every real
-     * index - so deleting the guard entirely, which is the regression this
-     * exists to catch, satisfied the comparison and left the test green.
-     */
-    it("says nothing when the answer is no", () => {
-        const guard = removeTest.indexOf("if (!confirmed) return");
-        const fade = removeTest.indexOf("fadeOut(");
-
-        assert.notEqual(guard, -1, "the confirmation gate is gone from removeTest");
-        assert.notEqual(fade, -1, "removeTest no longer fades the row out");
-        assert.ok(guard < fade, "the row fades out before the answer is known");
+    for (const [name, reply] of [
+        ["server refusal", async () => response(403)],
+        ["network failure", async () => { throw new Error("Network unavailable"); }]
+    ]) it(`keeps the row and reports a ${name}`, async () => {
+        const view = mountRow(reply);
+        await answerConfirmation(view.dialog, true);
+        assert.deepEqual(view.requests, [{url: "/api/speedtests/42", method: "DELETE"}]);
+        assert.deepEqual(view.removed, []);
+        assert.equal(view.toasts.length, 1);
+        assert.equal(view.toasts[0][1], "red");
+        assert.equal(view.container.querySelector(".speedtest-hidden"), null);
+        assert.ok(view.container.querySelector(".speedtest-entry"));
     });
 });
 
-/**
- * And it says which test, in every language that ships one.
- *
- * German ships with the feature and the rest follow through Crowdin - the same
- * rule germanLocale holds the file to.
- */
 describe("what the confirmation says", () => {
     const KEYS = ["title", "description", "yes"];
 
@@ -121,9 +154,4 @@ describe("what the confirmation says", () => {
         assert.match(locale("en").test.delete_confirm.description, /cannot be undone/i);
     });
 
-    it("is wired to those keys", () => {
-        for (const key of KEYS)
-            assert.match(row, new RegExp(`test\\.delete_confirm\\.${key}`),
-                `the component does not use test.delete_confirm.${key}`);
-    });
 });

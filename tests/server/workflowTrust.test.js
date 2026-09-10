@@ -16,6 +16,26 @@ const dockerSecrets = ["DOCKERHUB_TOKEN", "DOCKERHUB_USERNAME"];
 const dependabotMerge = () => uses(workflow("merge-dependabot").jobs.merge, "actions/github-script")[0];
 const TESTED_HEAD = "a".repeat(40);
 const PR_NUMBER = 42;
+
+it("runs native and compiled transports on both release runtime platforms", () => {
+    const config = workflow("test");
+    const job = config.jobs.transport;
+    assert.ok(job, "native transport behavior must have a persistent CI gate");
+    assert.deepEqual(job.strategy.matrix.os, ["ubuntu-latest", "windows-latest"]);
+    assert.equal(job["runs-on"], "${{ matrix.os }}");
+    assert.equal(job.if, config.jobs.checks.if);
+    assert.equal((job.permissions ?? config.permissions).contents, "read");
+    const bun = uses(job, "oven-sh/setup-bun")[0];
+    for (const name of ["build-windows", "build-linux", "build-macos"])
+        assert.equal(bun.with["bun-version"], uses(workflow("build-binaries").jobs[name], "oven-sh/setup-bun")[0].with["bun-version"]);
+    const commands = job.steps.map((step) => step.run ?? "").join("\n");
+    assert.match(commands, /node --test \.\/tests\/server\/outboundTransportNative\.test\.js/);
+    assert.match(commands, /bun test --timeout 60000 \.\/tests\/server\/outboundTransportNative\.test\.js/);
+    assert.match(commands, /bun build --compile \.\/tests\/fixtures\/outbound-transport\/run\.mjs/);
+    assert.match(commands, /& \$transportProbe/);
+    assert.doesNotMatch(JSON.stringify(job), /--test-shard|continue-on-error/);
+});
+
 const runDependabotMerge = async ({head = TESTED_HEAD, merged = false, readError, mergeError,
     mergeResult = true} = {}) => {
     const calls = [];
