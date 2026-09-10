@@ -13,6 +13,7 @@ const TRICKLE_MS = 10;
 const PROBE_TIMEOUT_MS = 15000;
 const EPHEMERAL_PORT = 0;
 const BODY = "Grüezi 🌍";
+const PROXY_ENVIRONMENT_KEYS = new Set(["http_proxy", "https_proxy", "no_proxy", "all_proxy"]);
 const bunCandidates = [process.env.BUN_EXECUTABLE, "bun", path.join(process.env.USERPROFILE ?? "", ".bun", "bin", "bun.exe"),
     path.join(process.env.APPDATA ?? "", "npm", "node_modules", "bun", "bin", "bun.exe")];
 const listen = (server) => new Promise((resolve, reject) => {
@@ -80,8 +81,10 @@ for (const runtime of ["node", "bun"]) {
         await listen(server);
         await listen(tlsServer);
         const probe = fileURLToPath(new URL("../helpers/outboundHttpRuntime.mjs", import.meta.url));
+        const env = Object.fromEntries(Object.entries(process.env)
+            .filter(([key]) => !PROXY_ENVIRONMENT_KEYS.has(key.toLowerCase())));
         const child = spawn(command, [probe, String(server.address().port), String(tlsServer.address().port)],
-            {windowsHide: true, stdio: ["ignore", "pipe", "pipe"]});
+            {windowsHide: true, stdio: ["ignore", "pipe", "pipe"], env});
         let output = "";
         child.stdout.on("data", (chunk) => {output += chunk;});
         child.stderr.on("data", (chunk) => {output += chunk;});

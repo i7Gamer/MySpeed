@@ -1,1 +1,3 @@
 This self-signed certificate and public test-only private key are used exclusively by isolated localhost transport tests. The certificate names `outbound-fixture.invalid`; fixtures explicitly trust this certificate and verify the original hostname. These are synthetic test credentials, never production keys.
+
+`ip-cert.pem` and `ip-key.pem` are a separate synthetic pair with IP subject alternative names for `127.0.0.1` and `::1`. They let the HTTPS transport tests verify successful literal-IP connections without DNS SNI, while the original DNS-only certificate verifies rejection of an IP identity mismatch. The IP fixture expires in September 2036.

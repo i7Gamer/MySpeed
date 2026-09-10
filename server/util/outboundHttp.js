@@ -2,6 +2,7 @@ import http from "node:http";
 import https from "node:https";
 import {Readable} from "node:stream";
 import {checkOutboundTarget, outboundLookup} from "./safeUrl.js";
+import {httpsProxyRoute, sendHttpsProxy} from "./outboundHttpsProxy.js";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const HTTP_SUCCESS_START = 200;
@@ -16,6 +17,44 @@ const FETCH_BLOCKED_PORTS = new Set([1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23
     5061, 6000, 6566, 6665, 6666, 6667, 6668, 6669, 6679, 6697, 10080]);
 const httpAgent = new http.Agent({keepAlive: true});
 const httpsAgent = new https.Agent({keepAlive: true});
+
+// Bun's Readable.toWeb adapter can enqueue after cancellation has closed its
+// controller. Own that boundary explicitly for the package-based proxy stream.
+export const responseBodyStream = (body) => {
+    // A source can fail before the Web stream schedules its first pull. The
+    // iterator still reports that error to the reader when it starts reading.
+    body.on("error", () => undefined);
+    const iterator = body[Symbol.asyncIterator]();
+    let closed = false;
+    return new ReadableStream({
+        async pull(controller) {
+            if (closed) return;
+            try {
+                const {done, value} = await iterator.next();
+                if (closed) return;
+                if (done) {
+                    closed = true;
+                    controller.close();
+                } else controller.enqueue(value);
+            } catch (error) {
+                if (!closed) {
+                    closed = true;
+                    controller.error(error);
+                }
+            }
+        },
+        async cancel() {
+            closed = true;
+            body.destroy();
+            try {
+                await iterator.return();
+            } catch {
+                // Destruction rejects an outstanding read/iterator cleanup;
+                // cancellation already settled the Web reader.
+            }
+        }
+    });
+};
 
 /**
  * POST transport for configured integrations. The lookup runs inside the
@@ -55,6 +94,26 @@ const send = (url, {headers, body, signal} = {}) => new Promise((resolve, reject
     }
     if (body !== undefined && body !== null)
         normalized.set("content-length", String(Buffer.byteLength(body)));
+
+    const proxy = bun && secure ? httpsProxyRoute(target) : undefined;
+    if (proxy !== undefined) {
+        // Bun's native proxy path loses bare SNI and hostname NO_PROXY after
+        // lookup rewrites the URL. This lane keeps routing/identity separate
+        // from the approved numeric connection and owns its drain deadline.
+        resolve(sendHttpsProxy(target, {headers: Object.fromEntries(normalized), body, signal}, proxy)
+            .then((incoming) => {
+                if (REDIRECT_STATUSES.has(incoming.statusCode) && incoming.headers.location !== undefined) {
+                    incoming.body.destroy();
+                    throw new Error("Redirect refused");
+                }
+                return {
+                    ok: incoming.ok ?? (incoming.statusCode >= HTTP_SUCCESS_START && incoming.statusCode < HTTP_SUCCESS_END),
+                    status: incoming.statusCode,
+                    body: responseBodyStream(incoming.body)
+                };
+            }));
+        return;
+    }
 
     const transport = secure ? https : http;
     let response;

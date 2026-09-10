@@ -375,8 +375,10 @@ export const safeLookup = (hostname, options, callback) => {
  * may be *nodes*; applying it here would refuse discord on any instance that set
  * it.
  *
- * HTTP POST and MQTT sends additionally use outboundLookup inside their native
- * connection paths, so hostname resolution cannot bypass this literal policy.
+ * HTTP POST and MQTT sends additionally use outboundLookup in their connection
+ * paths, so hostname resolution cannot bypass this literal policy. Bun HTTPS
+ * proxy sends resolve locally and pin each CONNECT to a filtered numeric IP;
+ * proxy-only DNS names remain unsupported while this local policy is retained.
  * SMTP uses a guarded resolver and connected-socket hook because Nodemailer
  * resolves before dialing. Fresh and cached candidates are checked before each
  * numeric-address connection, retaining its DNS cache, fallback and TLS identity.

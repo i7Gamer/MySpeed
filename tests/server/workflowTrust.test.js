@@ -4,6 +4,7 @@ import fs from "node:fs";
 import vm from "node:vm";
 import {createHash} from "node:crypto";
 import {parse} from "yaml";
+import {parse as parseJavaScript} from "espree";
 import {readSource} from "../helpers/source.js";
 
 const workflow = (name) => parse(readSource(`.github/workflows/${name}.yml`));
@@ -34,6 +35,25 @@ it("runs native and compiled transports on both release runtime platforms", () =
     assert.match(commands, /bun build --compile \.\/tests\/fixtures\/outbound-transport\/run\.mjs/);
     assert.match(commands, /& \$transportProbe/);
     assert.doesNotMatch(JSON.stringify(job), /--test-shard|continue-on-error/);
+});
+
+it("includes HTTP scenarios in both runtime entrypoints used by CI", () => {
+    for (const file of ["tests/server/outboundTransportNative.test.js", "tests/fixtures/outbound-transport/run.mjs"]) {
+        // Inspect executable wiring rather than accepting a comment mentioning
+        // HTTP. These entrypoints run tests on import, so importing them here
+        // would launch a second transport suite inside this workflow test.
+        const tree = parseJavaScript(readSource(file), {ecmaVersion: "latest", sourceType: "module"});
+        const httpImport = tree.body.find(node => node.type === "ImportDeclaration"
+            && node.source.value.endsWith("/http/scenarios.js"));
+        assert.ok(httpImport, `${file} omits the HTTP transport fixture`);
+        const local = httpImport.specifiers.find(node => node.imported?.name === "httpScenarios")?.local.name;
+        assert.ok(local, `${file} does not import the HTTP scenario list`);
+        const arrays = tree.body.filter(node => node.type === "VariableDeclaration")
+            .flatMap(node => node.declarations).filter(node => node.init?.type === "ArrayExpression");
+        assert.ok(arrays.some(node => node.init.elements.some(element =>
+            element.type === "SpreadElement" && element.argument.name === local)),
+        `${file} imports HTTP cases without running them alongside the other transports`);
+    }
 });
 
 const runDependabotMerge = async ({head = TESTED_HEAD, merged = false, readError, mergeError,
