@@ -131,6 +131,7 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                                         </div>
                                     </div>
                                     <input type="number" placeholder={recommendations?.ping || ""} className="dialog-input"
+                                           aria-label={`${t("latest.ping")} ${t("welcome.ms")}`}
                                            value={ping} onChange={(e) => setPing(e.target.value)}/>
                                 </div>
                                 <div className="optimal-values-speed">
@@ -142,6 +143,7 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                                         </div>
                                     </div>
                                     <input type="number" placeholder={recommendations?.download || ""} className="dialog-input"
+                                           aria-label={`${t("latest.down")} ${t("welcome.mbps")}`}
                                            value={download} onChange={(e) => setDownload(e.target.value)}/>
                                 </div>
                                 <div className="optimal-values-speed">
@@ -153,6 +155,7 @@ export const OptimalValuesDialog = ({open, onClose}) => {
                                         </div>
                                     </div>
                                     <input type="number" placeholder={recommendations?.upload || ""} className="dialog-input"
+                                           aria-label={`${t("latest.up")} ${t("welcome.mbps")}`}
                                            value={upload} onChange={(e) => setUpload(e.target.value)}/>
                                 </div>
                             </div>

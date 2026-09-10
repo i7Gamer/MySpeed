@@ -19,6 +19,7 @@ export const DataHelper = ({setDownload, download, ping, setPing, upload, setUpl
                         </div>
                     </div>
                     <input type="number" placeholder={t("latest.ping")} className="dialog-input"
+                            aria-label={`${t("latest.ping")} ${t("welcome.ms")}`}
                             value={ping} onChange={(e) => setPing(e.target.value)}/>
                 </div>
                 <div className="speed">
@@ -30,6 +31,7 @@ export const DataHelper = ({setDownload, download, ping, setPing, upload, setUpl
                         </div>
                     </div>
                     <input type="number" placeholder={t("latest.down")}  className="dialog-input"
+                            aria-label={`${t("latest.down")} ${t("welcome.mbps")}`}
                             value={download} onChange={(e) => setDownload(e.target.value)}/>
                 </div>
                 <div className="speed">
@@ -41,6 +43,7 @@ export const DataHelper = ({setDownload, download, ping, setPing, upload, setUpl
                         </div>
                     </div>
                     <input type="number" placeholder={t("latest.up")} className="dialog-input"
+                            aria-label={`${t("latest.up")} ${t("welcome.mbps")}`}
                             value={upload} onChange={(e) => setUpload(e.target.value)}/>
                 </div>
             </div>

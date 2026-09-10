@@ -1,7 +1,10 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { MemoryRouter } from "react-router-dom";
-import { cleanup, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import { act, cleanup, createElement, render, settle, window } from "../helpers/renderHarness.js";
+import i18n from "i18next";
+import german from "../../client/public/assets/locales/de.json" with {type: "json"};
+import {formatLastTest} from "@/common/utils/FormatUtil";
 import { ConfigContext } from "@/common/contexts/Config";
 import { PreferencesContext } from "@/common/contexts/Preferences";
 import { StatusContext } from "@/common/contexts/Status";
@@ -18,7 +21,10 @@ import StatusBarComponent from "@/common/components/StatusBar/StatusBarComponent
  * bar never read that flag, so "No test has run yet" was printed over an
  * instance the retry button two lines below was already apologising for.
  */
-afterEach(cleanup);
+afterEach(async () => {
+    cleanup();
+    await i18n.changeLanguage("en");
+});
 
 const noop = () => undefined;
 
@@ -80,3 +86,18 @@ describe("the status bar's headline when the speedtest list failed to load", () 
             "a loaded list no longer sets the bar's relative-time headline");
     });
 });
+
+for (const created of [null, "2026-09-10T12:00:00Z"]) {
+    it(`retranslates ${created ? "relative last-test time" : "the never-run headline"} without a timer or parent render`, async (context) => {
+        context.mock.method(globalThis, "setInterval", () => 0);
+        i18n.addResourceBundle("de", "translation", german);
+        mount({speedtestContext: {speedtests: created ? [{created}] : [], loadError: null}});
+        await settle();
+        const english = heading();
+        await act(() => i18n.changeLanguage("de"));
+        assert.notEqual(heading(), english);
+        assert.equal(heading(), formatLastTest(created));
+        await act(() => i18n.changeLanguage("en"));
+        assert.equal(heading(), english, "cached locale switch also refreshes immediately");
+    });
+}

@@ -3,7 +3,7 @@ import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
 import {
     faCircleExclamation, faClockRotateLeft, faGaugeHigh, faPause, faTriangleExclamation
 } from "@fortawesome/free-solid-svg-icons";
-import {t} from "i18next";
+import {useTranslation} from "react-i18next";
 import {useNavigate} from "react-router-dom";
 import {serializeRange, TIMEFRAME_CUSTOM} from "@/common/utils/TimeframeUtil";
 import {StatusContext} from "@/common/contexts/Status";
@@ -28,6 +28,7 @@ const HOURS_PER_DAY = 24;
 const RECENT_FAILURE_WINDOW_MS = HOURS_PER_DAY * 60 * 60 * 1000;
 
 const StatusBarComponent = () => {
+    const {t, i18n} = useTranslation();
     const [status] = useContext(StatusContext);
     const [config] = useContext(ConfigContext);
     const [preferences] = useContext(PreferencesContext);
@@ -75,7 +76,9 @@ const StatusBarComponent = () => {
             clearInterval(timer);
             document.removeEventListener("visibilitychange", onVisibilityChange);
         };
-    }, [lastTest?.created]);
+    // The cached sentence must also refresh when the locale changes, even
+    // while a background tab's timer is suspended.
+    }, [lastTest?.created, i18n.language]);
 
     // Ticks locally rather than waiting on the poll, so the seconds advance
     // smoothly instead of in one-second jumps that stall whenever a poll is slow.

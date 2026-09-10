@@ -189,6 +189,7 @@ export default ({tests, close}) => {
                             <div className="storage-input-wrap">
                                 <input
                                     type="number"
+                                    aria-label={`${t("storage.retention")} (${t("storage.retention_days_suffix")})`}
                                     min="0"
                                     max={String(MAX_RETENTION_DAYS)}
                                     className={`storage-input${!isRetentionValid ? " input-error" : ""}`}

@@ -1,6 +1,7 @@
 import {Dialog, DialogHeader, DialogBody, DialogFooter} from "@/common/contexts/Dialog";
-import {t, changeLanguage} from "i18next";
-import {faGlobe} from "@fortawesome/free-solid-svg-icons";
+import i18n, {changeLanguage} from "i18next";
+import {useTranslation} from "react-i18next";
+import {faExclamationTriangle, faGlobe} from "@fortawesome/free-solid-svg-icons";
 import "./styles.sass";
 import {languages} from "@/i18n";
 import {useContext, useState} from "react";
@@ -11,7 +12,9 @@ import {supportedLanguage} from "@/common/utils/LanguageChoice";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
 
 export const LanguageDialog = ({open, onClose}) => {
+    const {t} = useTranslation();
     const updateToast = useContext(ToastNotificationContext);
+    const [saving, setSaving] = useState(false);
     const [selectedLanguage, setSelectedLanguage] = useState(() =>
         supportedLanguage(readStored("language"), languages));
 
@@ -42,22 +45,39 @@ export const LanguageDialog = ({open, onClose}) => {
      * highlighted English over a German interface, and pressing Update again put
      * the interface back to English.
      *
-     * Ahead of the toast and the close only so that the write happens on every
-     * way out of this handler. Nothing depends on that order: `close` adds two
-     * CSS classes, and the unmount comes later, off the fadeOut animation.
+     * Load before activation: changeLanguage resolves even when its backend
+     * failed and can activate a locale with only fallback strings. Checking the
+     * backend callback first preserves the current language on a failed fetch.
+     * Check the bundle as well: the backend may cache a failed request and
+     * finish a later load without an error or any translations. Cached locales
+     * need no request at all.
      */
-    const updateLanguage = (close) => {
-        changeLanguage(selectedLanguage);
-        writeStored("language", selectedLanguage);
-        updateToast(t('dropdown.language_changed'), "green", faGlobe);
-        close();
+    const updateLanguage = async (close) => {
+        if (saving) return;
+        setSaving(true);
+        try {
+            if (!i18n.hasResourceBundle(selectedLanguage, "translation")) {
+                await new Promise((resolve, reject) => {
+                    i18n.reloadResources([selectedLanguage], ["translation"], error => error ? reject(error) : resolve());
+                });
+                if (!i18n.hasResourceBundle(selectedLanguage, "translation")) throw new Error("Locale unavailable");
+            }
+            await changeLanguage(selectedLanguage);
+            writeStored("language", selectedLanguage);
+            updateToast(i18n.t('dropdown.language_changed'), "green", faGlobe);
+            close();
+        } catch {
+            updateToast(t("dropdown.changes_unsaved"), "red", faExclamationTriangle);
+        } finally {
+            setSaving(false);
+        }
     };
 
     return (
-        <Dialog open={open} onClose={onClose} className="language-dialog">
-            {({close}) => (
+        <Dialog open={open} onClose={onClose} className="language-dialog" disableClose={saving}>
+            {({close, forceClose}) => (
                 <>
-                    <DialogHeader onClose={close}>{t("update.language")}</DialogHeader>
+                    <DialogHeader onClose={close} disableClose={saving}>{t("update.language")}</DialogHeader>
                     <DialogBody>
                         <div className="language-content">
                             <SelectableList className="language-list">
@@ -67,14 +87,16 @@ export const LanguageDialog = ({open, onClose}) => {
                                         image={{src: language.flag, alt: language.name}}
                                         title={language.name}
                                         active={selectedLanguage === language.code}
-                                        onClick={() => setSelectedLanguage(language.code)}
+                                        onClick={() => { if (!saving) setSelectedLanguage(language.code); }}
                                     />
                                 ))}
                             </SelectableList>
                         </div>
                     </DialogBody>
                     <DialogFooter>
-                        <button className="dialog-btn" onClick={() => updateLanguage(close)}>{t("dialog.update")}</button>
+                        <button className="dialog-btn" disabled={saving} onClick={() => updateLanguage(forceClose)}>
+                            {t(saving ? "dialog.saving" : "dialog.update")}
+                        </button>
                     </DialogFooter>
                 </>
             )}

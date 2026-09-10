@@ -65,6 +65,7 @@ export const Pagination = memo(() => {
         <div className="pagination" ref={paginationRef}>
             <button
                 type="button"
+                aria-label={t("page.overview")}
                 className={`pagination-item${activeIndex === 0 ? " page-active" : ""}`}
                 onClick={() => handleNavigation("/", 0)}
                 ref={el => itemRefs.current[0] = el}
@@ -74,6 +75,7 @@ export const Pagination = memo(() => {
             </button>
             <button
                 type="button"
+                aria-label={t("page.statistics")}
                 className={`pagination-item${activeIndex === 1 ? " page-active" : ""}`}
                 onClick={() => handleNavigation("/statistics", 1)}
                 ref={el => itemRefs.current[1] = el}

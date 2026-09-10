@@ -183,6 +183,7 @@ export const PauseDialog = ({open, onClose, onPause}) => {
                                         drawing: half an hour at a time is how
                                         this is actually set. */}
                                     <NumberField stepper
+                                                 ariaLabel={`${t("pause.custom")} (${t("update.hours")})`}
                                                  className={`dialog-input pause-input${selected === "custom" && !isCustomValid ? " input-error" : ""}`}
                                                  value={customHours}
                                                  onChange={(hours) => {

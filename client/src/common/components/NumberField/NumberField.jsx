@@ -36,13 +36,15 @@ export const NumberField = ({
     className = "",
     placeholder,
     disabled = false,
-    id
+    id,
+    ariaLabel
 }) => {
     const bounds = {min, max, step: stepSize(step)};
 
     const field = (
         <input
             id={id}
+            aria-label={ariaLabel}
             type="number"
             // Without this a phone offers the full keyboard for a field that
             // only takes digits and a separator.
