@@ -5,7 +5,7 @@
 # and verify-image.sh could not tell, because the runners it boots the image on
 # have AVX2. tests/server/windowsBaseline.test.js holds all three stages to the
 # binaries' pin; move both together, once the two x64 zips differ again.
-FROM oven/bun:1.3.14-alpine AS client-build
+FROM oven/bun:1.4.2-alpine AS client-build
 
 WORKDIR /client
 # The lockfile is copied with the manifest so the install is reproducible and
@@ -33,7 +33,7 @@ ARG CFSPEEDTEST_VERSION=2.2.2
 RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
-FROM oven/bun:1.3.14-alpine AS server-build
+FROM oven/bun:1.4.2-alpine AS server-build
 
 WORKDIR /myspeed
 
@@ -45,7 +45,7 @@ COPY ./scripts /myspeed/scripts
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1.3.14-alpine
+FROM oven/bun:1.4.2-alpine
 
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
