@@ -14,7 +14,6 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 export const DEFAULT_STOP_TIMEOUT_MS = 15_000;
 
 const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
-const TRANSIENT_PROC_EXIT_ERROR_CODES = new Set(["EACCES", "ENOENT"]);
 const LSOF_SUCCESS_STATUS = 0;
 const LSOF_NO_MATCH_STATUS = 1;
 const LSOF_INSPECTION_TIMEOUT_MS = 2_000;
@@ -139,15 +138,17 @@ const ownedSocketInodes = (pid) => {
 };
 
 const linuxListeners = (pid) => {
-    const owned = ownedSocketInodes(pid);
-    const listeners = [];
-    const files = [
+    // A listener can open while these files are read. Resolve ownership after
+    // capturing both tables so a newly observed socket is not marked foreign.
+    const socketTables = [
         {path: "/proc/net/tcp", decode: decodeIpv4},
         {path: "/proc/net/tcp6", decode: decodeIpv6}
-    ];
+    ].map((source) => ({...source, contents: fs.readFileSync(source.path, "utf8")}));
+    const owned = ownedSocketInodes(pid);
+    const listeners = [];
 
-    for (const source of files) {
-        const lines = fs.readFileSync(source.path, "utf8").trim().split(/\r?\n/).slice(1);
+    for (const source of socketTables) {
+        const lines = source.contents.trim().split(/\r?\n/).slice(1);
         for (const line of lines) {
             const fields = line.trim().split(/\s+/);
             if (fields[3] !== "0A") continue;
@@ -302,24 +303,15 @@ export const waitForOwnedListener = async ({child, host, port, timeoutMs, inspec
 };
 
 export const waitForListenerFreeExit = async ({child, port, timeoutMs, inspect = systemListeners,
-    delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)), pollMs = 10,
-    waitForExit = waitForProcessExit}) => {
+    delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)), pollMs = 10}) => {
     const deadline = Date.now() + timeoutMs;
 
     while (Date.now() < deadline) {
         if (child.exitCode !== null || child.signalCode !== null) return child.exitCode;
 
-        let opened;
-        try {
-            opened = inspect(child.pid).find((listener) => Number(listener.port) === port);
-        } catch (error) {
-            if (!TRANSIENT_PROC_EXIT_ERROR_CODES.has(error?.code)) throw error;
-
-            const confirmationTimeoutMs = Math.min(pollMs, Math.max(0, deadline - Date.now()));
-            const reaped = confirmationTimeoutMs > 0 && await waitForExit(child, confirmationTimeoutMs);
-            if (reaped && (child.exitCode !== null || child.signalCode !== null)) return child.exitCode;
-            throw error;
-        }
+        // Ownership is irrelevant here: inspect every listener using the stable
+        // verifier PID so an exiting child cannot invalidate its FD snapshot.
+        const opened = inspect(process.pid).find((listener) => Number(listener.port) === port);
         if (opened) throw new Error(`Listener-free process opened ${opened.address}:${port}`);
         await delay(pollMs);
     }

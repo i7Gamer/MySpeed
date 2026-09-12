@@ -247,42 +247,38 @@ describe("listener ownership gate", () => {
         }), /listener-free process opened/i);
     });
 
-    it("accepts a Linux proc inspection race only after the owned child is reaped", async () => {
-        const child = {pid: OWNED_PID, exitCode: null, signalCode: null};
+    it("fails closed when listener inspection through the stable verifier PID fails", async () => {
         const denied = Object.assign(new Error(`EACCES: scandir '/proc/${OWNED_PID}/fd'`), {code: "EACCES"});
-        let observedTimeout;
+        let inspectedPid;
 
-        const exitCode = await waitForListenerFreeExit({
-            child,
+        await assert.rejects(waitForListenerFreeExit({
+            child: {pid: OWNED_PID, exitCode: null, signalCode: null},
             port: TEST_PORT,
             timeoutMs: 100,
             pollMs: 5,
-            inspect: () => { throw denied; },
-            waitForExit: async (observedChild, timeoutMs) => {
-                assert.equal(observedChild, child);
-                observedTimeout = timeoutMs;
-                child.exitCode = 113;
-                return true;
+            inspect: (pid) => {
+                inspectedPid = pid;
+                throw denied;
+            }
+        }), (error) => error === denied);
+
+        assert.equal(inspectedPid, process.pid);
+    });
+
+    it("does not inspect sockets after the child exit is observable", async () => {
+        let inspections = 0;
+        const exitCode = await waitForListenerFreeExit({
+            child: {pid: OWNED_PID, exitCode: MOCK_FAILURE_EXIT, signalCode: null},
+            port: TEST_PORT,
+            timeoutMs: 100,
+            inspect: () => {
+                inspections += 1;
+                return [];
             }
         });
 
-        assert.equal(exitCode, 113);
-        assert.equal(observedTimeout, 5);
-    });
-
-    it("fails closed when proc inspection is denied while the child remains live", async () => {
-        const denied = Object.assign(new Error(`EACCES: scandir '/proc/${OWNED_PID}/fd'`), {code: "EACCES"});
-
-        for (const waitForExit of [async () => false, async () => true]) {
-            await assert.rejects(waitForListenerFreeExit({
-                child: {pid: OWNED_PID, exitCode: null, signalCode: null},
-                port: TEST_PORT,
-                timeoutMs: 100,
-                pollMs: 5,
-                inspect: () => { throw denied; },
-                waitForExit
-            }), (error) => error === denied);
-        }
+        assert.equal(exitCode, MOCK_FAILURE_EXIT);
+        assert.equal(inspections, 0);
     });
 });
 
