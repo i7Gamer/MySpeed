@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import dns from 'node:dns';
-import shared from 'nodemailer/lib/shared/index.js';
+import {shared, setInterfaces, fixtureInterfaces} from './nodemailerHarness.js';
 import { createSmtpResolver } from '../../../../server/util/smtpResolver.js';
 import { checkOutboundHost } from '../../../../server/util/safeUrl.js';
 const HOST = 'smtp-compatible-fixture.invalid',
@@ -23,7 +23,7 @@ const original = {
   lookup: dns.lookup,
   now: Date.now,
   random: Math.random,
-  interfaces: shared.networkInterfaces
+  interfaces: {...fixtureInterfaces}
 };
 export const resolverScenarios = [];
 const err = code => Object.assign(new Error(code), {
@@ -74,7 +74,7 @@ function harness() {
   dns.lookup = fake.lookup;
   Date.now = () => state.now;
   Math.random = () => state.random;
-  shared.networkInterfaces = interfaces;
+  setInterfaces(interfaces);
   shared.dnsCache.clear();
   shared._resetCacheCleanup();
   const cache = new Map();
@@ -82,7 +82,7 @@ function harness() {
     ...createSmtpResolver({
       cache,
       dnsApi: fake,
-      networkInterfaces: interfaces,
+      networkInterfaces: fixtureInterfaces,
       now: () => state.now,
       random: () => state.random,
       checkAddress: address => checkOutboundHost(address).safe && !state.denied.has(address)
@@ -149,7 +149,7 @@ function test(name, fn) {
         dns.lookup = original.lookup;
         Date.now = original.now;
         Math.random = original.random;
-        shared.networkInterfaces = original.interfaces;
+        setInterfaces(original.interfaces);
         shared.dnsCache.clear();
       }
     }
@@ -161,6 +161,64 @@ test('permitted-literal-does-not-resolve', ({
 }) => {
   assert.deepEqual(get(true, SAFE).addresses, [SAFE]);
   assert.equal(state.calls.length, 0);
+});
+for (const table of [{}, {fixture: []}]) {
+  test(`empty-interface-DNS-precedence-${JSON.stringify(table)}`, ({state, both}) => {
+    setInterfaces(table);
+    state.osError = err('EAI_AGAIN');
+    assert.deepEqual(both().addresses, [SAFE]);
+    assert.equal(state.calls.some(call => call[0] === 'OS'), false);
+  });
+  test(`empty-interface-blocked-DNS-${JSON.stringify(table)}`, ({state, get}) => {
+    setInterfaces(table);
+    state.a = [BLOCKED];
+    assert.equal(get().error, 'ESMTPDESTINATION');
+    assert.equal(state.calls.some(call => call[0] === 'OS'), false);
+  });
+  test(`empty-interface-IPv6-precedence-${JSON.stringify(table)}`, ({state, both}) => {
+    setInterfaces(table);
+    state.a = [];
+    state.aaaa = ['::1'];
+    state.osError = err('EAI_AGAIN');
+    assert.deepEqual(both().addresses, ['::1']);
+    assert.equal(state.calls.some(call => call[0] === 'OS'), false);
+  });
+}
+
+for (const family of [4, 6]) for (const representation of [family, `IPv${family}`]) {
+  test(`known-interface-probes-only-supported-family-${representation}`, ({state, get}) => {
+    setInterfaces({fixture: [{family: representation, internal: false}]});
+    state.aaaa = ['::1'];
+    const expectedAddress = family === 4 ? SAFE : '::1';
+    const expectedQuery = family === 4 ? 'A' : 'AAAA';
+    assert.deepEqual(get().addresses, [expectedAddress]);
+    assert.deepEqual(state.calls.map(call => call[0]), [expectedQuery]);
+  });
+}
+
+for (const allowInternalNetworkInterfaces of [false, true]) {
+  test(`internal-interface-family-policy-${allowInternalNetworkInterfaces}`, ({state, get}) => {
+    setInterfaces({lo: [{family: 'IPv4', internal: true}]});
+    const result = get(true, HOST, {allowInternalNetworkInterfaces});
+    assert.deepEqual(result.addresses, [allowInternalNetworkInterfaces ? SAFE : SECOND]);
+    assert.deepEqual(state.calls.map(call => call[0]), [allowInternalNetworkInterfaces ? 'A' : 'OS']);
+  });
+}
+
+test('unavailable-interface-snapshot-probes-both-DNS-families', () => {
+  const calls = [];
+  const resolver = createSmtpResolver({
+    networkInterfaces: null,
+    dnsApi: {
+      resolve4(_host, callback) { calls.push('A'); callback(null, [SAFE]); },
+      resolve6(_host, callback) { calls.push('AAAA'); callback(null, []); },
+      lookup() { assert.fail('usable DNS answers must not reach OS lookup'); }
+    }
+  });
+  let result;
+  resolver.lookup(HOST, {all: true}, (error, addresses) => { result = {error, addresses}; });
+  assert.deepEqual(result, {error: null, addresses: [{address: SAFE, family: 4}]});
+  assert.deepEqual(calls, ['A', 'AAAA']);
 });
 test('forbidden-literal-does-not-resolve', ({
   get,

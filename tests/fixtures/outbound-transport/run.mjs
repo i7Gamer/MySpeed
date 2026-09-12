@@ -1,9 +1,12 @@
 import {scenarios as mqttScenarios} from "./scenarios.js";
-import {smtpScenarios} from "./smtp/scenarios.js";
-import {resolverScenarios} from "./smtp/resolverScenarios.js";
+import {bootstrapNodemailer} from "./smtp/nodemailerHarness.js";
 import {lifecycleScenarios} from "./smtp/lifecycleScenarios.js";
 import {httpScenarios} from "./http/scenarios.js";
 import {runHttpChild} from "./http/client.js";
+
+await bootstrapNodemailer();
+const {smtpScenarios} = await import("./smtp/scenarios.js");
+const {resolverScenarios} = await import("./smtp/resolverScenarios.js");
 
 const scenarios = [...mqttScenarios, ...resolverScenarios, ...lifecycleScenarios, ...smtpScenarios, ...httpScenarios];
 
