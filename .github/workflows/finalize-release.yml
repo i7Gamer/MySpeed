@@ -1,95 +1,121 @@
-name: Finalize Release
+name: Finalize qualified release
 
 on:
   workflow_call:
     inputs:
-      version:
-        required: true
-        type: string
       release_id:
         required: true
         type: string
-
-env:
-  REGISTRY_IMAGE: i7gamer/myspeed
+      qualification_run_id:
+        required: true
+        type: string
+      qualification_run_attempt:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      windows_stamp:
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: write
-  pull-requests: read
 
 jobs:
   finalize:
-    name: "Update Versions & Publish"
+    name: Publish draft after every promotion gate
     runs-on: ubuntu-latest
+    environment: release-production
+    permissions:
+      actions: read
+      contents: write
     steps:
-      # fetch-depth: 0 so the tag list below is complete. The version bump moved
-      # to create-release, where it lands before the tag is cut; this job only
-      # writes the notes and flips the draft.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Download sealed qualification manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          persist-credentials: false
-          fetch-depth: 0
-          ref: v${{ inputs.version }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          name: release-qualification-manifest
+          path: ${{ runner.temp }}/qualification
 
-      # Through env like the rest, so no workflow expression is substituted into
-      # a shell body anywhere in the chain. This one arrives already checked by
-      # create-release's semver guard; the rule is uniform so that staying safe
-      # does not depend on remembering which values were checked upstream.
-      - name: Get previous tag
-        id: prev
-        env:
-          VERSION: ${{ inputs.version }}
-        run: |
-          CUR="v$VERSION"
-          PREV=$(git tag --sort=-creatordate | grep -v "^$CUR$" | head -1)
-          echo "tag=$PREV" >> $GITHUB_OUTPUT
-
-      - name: Publish release notes
+      - name: Revalidate promotion immediately before mutation
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
+          MANIFEST: ${{ runner.temp }}/qualification/qualification-manifest.json
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
           VERSION: ${{ inputs.version }}
-          PREV_TAG: ${{ steps.prev.outputs.tag }}
-          RELEASE_ID: ${{ inputs.release_id }}
-          REGISTRY_IMAGE: ${{ env.REGISTRY_IMAGE }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         with:
           script: |
-            const { VERSION: v, PREV_TAG: prev, RELEASE_ID: rid, REGISTRY_IMAGE: registry } = process.env;
-            const releaseId = parseInt(rid, 10);
-            const repo = { owner: context.repo.owner, repo: context.repo.repo };
-            const repoUrl = `https://github.com/${repo.owner}/${repo.repo}`;
-            
-            let prs = [];
-            if (prev) {
-              try {
-                const { data: { commits } } = await github.rest.repos.compareCommits({ ...repo, base: prev, head: `v${v}` });
-                for (const c of commits) {
-                  const { data } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ ...repo, commit_sha: c.sha });
-                  for (const pr of data.filter(p => p.merged_at && !prs.find(x => x.number === p.number))) {
-                    prs.push({ number: pr.number, title: pr.title, user: pr.user.login });
-                  }
-                }
-              } catch (e) { console.log('PR fetch error:', e.message); }
-            }
-            
-            const L = (label, file) => `[${label}](../../releases/download/v${v}/${file})`;
-            
-            let body = `## Downloads\n\n`;
-            body += `| Platform | x86-64 | ARM64 |\n`;
-            body += `| :-- | :-- | :-- |\n`;
-            body += `| **Windows** | ${L('EXE', 'MySpeed-windows-x64.exe')} · ${L('MSI', 'MySpeed-installer.msi')} · ${L('EXE (no AVX2)', 'MySpeed-windows-x64-baseline.exe')} · ${L('MSI (no AVX2)', 'MySpeed-installer-baseline.msi')} | |\n`;
-            body += `| **Linux** | ${L('Binary', 'MySpeed-linux-x64')} · ${L('No AVX2', 'MySpeed-linux-x64-baseline')} | ${L('Binary', 'MySpeed-linux-arm64')} |\n`;
-            body += `| **macOS** | ${L('Binary', 'MySpeed-macos-x64')} | ${L('Binary', 'MySpeed-macos-arm64')} |\n`;
-            body += `\n### Source Distribution\n`;
-            body += `- ${L('ZIP Archive', 'MySpeed.zip')} (requires Bun runtime)\n`;
-            body += `\n### Docker Images\n`;
-            body += `- \`${registry}:latest\`\n`;
-            body += `- \`${registry}:${v}\`\n`;
-            
-            if (prs.length) {
-              body += `\n---\n\n## What's Changed\n`;
-              body += prs.map(p => `* ${p.title} by @${p.user} in ${repoUrl}/pull/${p.number}`).join('\n');
-              body += `\n\n**Full Changelog**: ${repoUrl}/compare/${prev}...v${v}`;
-            }
-            
-            await github.rest.repos.updateRelease({ ...repo, release_id: releaseId, body, draft: false });
-            console.log('Published:', prs.length, 'PRs');
+            const fs = require('fs'); const {createHash} = require('crypto');
+            const maxAgeMs = 7 * 24 * 60 * 60 * 1000; const maxManifestBytes = 10 * 1024 * 1024;
+            const bytes = fs.readFileSync(process.env.MANIFEST); const stat = fs.lstatSync(process.env.MANIFEST);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size === 0 || stat.size > maxManifestBytes) throw new Error('Unsafe qualification manifest');
+            const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
+            if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
+            const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
+            if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
+              || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
+              || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
+            const {data: run} = await github.rest.actions.getWorkflowRun({owner: context.repo.owner, repo: context.repo.repo, run_id: runId});
+            const {data: branch} = await github.rest.repos.getBranch({owner: context.repo.owner, repo: context.repo.repo, branch: process.env.DEFAULT_BRANCH});
+            const createdAt = Date.parse(run.created_at);
+            if (context.ref !== 'refs/heads/' + process.env.DEFAULT_BRANCH || branch.commit.sha !== process.env.SOURCE_SHA
+              || run.run_attempt !== attempt || run.event !== 'workflow_dispatch' || run.conclusion !== 'success'
+              || run.path !== '.github/workflows/qualify-release.yml' || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo
+              || run.head_sha !== process.env.SOURCE_SHA || run.head_branch !== process.env.DEFAULT_BRANCH
+              || !Number.isFinite(createdAt) || Date.now() - createdAt > maxAgeMs) throw new Error('Qualification is stale or untrusted');
+
+      - name: Generate notes and publish the existing draft
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          RELEASE_ID: ${{ inputs.release_id }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            if (!/^\d+\.\d+\.\d+$/.test(process.env.VERSION)) throw new Error('Invalid release version');
+            const releaseId = Number(process.env.RELEASE_ID);
+            if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw new Error('Invalid release ID');
+            const tag = 'v' + process.env.VERSION;
+            const {data: release} = await github.rest.repos.getRelease({owner: context.repo.owner,
+              repo: context.repo.repo, release_id: releaseId});
+            if (!release.draft || release.tag_name !== tag) throw new Error('Release draft identity mismatch');
+            const {data: tagRef} = await github.rest.git.getRef({owner: context.repo.owner,
+              repo: context.repo.repo, ref: 'tags/' + tag});
+            if (tagRef.object.type !== 'commit' || tagRef.object.sha !== process.env.SOURCE_SHA)
+              throw new Error('Release tag no longer points to the qualified candidate');
+            const {data: generated} = await github.rest.repos.generateReleaseNotes({owner: context.repo.owner,
+              repo: context.repo.repo, tag_name: tag, target_commitish: release.target_commitish});
+            const base = 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/releases/download/' + tag + '/';
+            const downloads = [
+              ['Windows x64', 'MySpeed-windows-x64.exe'],
+              ['Windows x64 baseline', 'MySpeed-windows-x64-baseline.exe'],
+              ['Windows installer', 'MySpeed-installer.msi'],
+              ['Windows baseline installer', 'MySpeed-installer-baseline.msi'],
+              ['Linux x64', 'MySpeed-linux-x64'],
+              ['Linux x64 baseline', 'MySpeed-linux-x64-baseline'],
+              ['Linux arm64', 'MySpeed-linux-arm64'],
+              ['macOS x64', 'MySpeed-macos-x64'],
+              ['macOS arm64', 'MySpeed-macos-arm64'],
+              ['Source bundle', 'MySpeed.zip'],
+              ['Linux installer', 'install.sh'],
+              ['Docker installer', 'docker-install.sh'],
+              ['Installer chooser', 'chooser.sh'],
+              ['SHA-256 checksums', 'SHA256SUMS'],
+              ['Qualification manifest', 'qualification-manifest.json'],
+              ['Qualification manifest digest', 'qualification-manifest.json.sha256']
+            ].map(([label, file]) => '| ' + label + ' | [' + file + '](' + base + file + ') |').join('\n');
+            const compatibility = '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 binaries share the Nehalem/SSE4.2 floor with runtime AVX dispatch; the baseline filenames are compatibility aliases.';
+            const body = generated.body + '\n\n' + compatibility + '\n\n## Downloads\n\n| Platform | Asset |\n| :-- | :-- |\n' + downloads;
+            await github.rest.repos.updateRelease({owner: context.repo.owner, repo: context.repo.repo,
+              release_id: releaseId, name: tag, body, draft: false, prerelease: false});

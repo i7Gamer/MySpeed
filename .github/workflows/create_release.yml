@@ -1,589 +1,341 @@
-name: Release
+name: Promote qualified release
 
 on:
   workflow_dispatch:
     inputs:
+      qualification_run_id:
+        required: true
+        type: string
+      qualification_run_attempt:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
       version:
-        description: "Version to release, without the leading v (e.g. 1.1.0)"
+        required: true
+        type: string
+      windows_stamp:
         required: true
         type: string
 
-# The repository default for GITHUB_TOKEN is read-only, which made every release
-# API call 403. Reusable workflows can only narrow the caller's permissions, so
-# this has to be granted here for build-binaries/build-msi/finalize to inherit it.
-# contents: write covers creating the tag and release, uploading the assets and
-# pushing the version bump; pull-requests: read is for the generated changelog.
 permissions:
-  contents: write
-  pull-requests: read
+  actions: read
+  contents: read
 
-# One release at a time, and never cancelled halfway.
-#
-# Two dispatches used to run side by side: both bump package.json and push to the
-# default branch, so the second push can be rejected non-fast-forward after its
-# own tag guard has already passed, and both reach publish-docker, where the
-# later `imagetools create` decides what :latest means. The group is shared with
-# the manual dev deploy, which moves the same tag from the other side.
-#
-# cancel-in-progress is false on purpose: a cancelled release is the one shape
-# neither recovery job below can clean up.
 concurrency:
   group: release-and-registry
   cancel-in-progress: false
 
 jobs:
-  # Gates everything below it: no tag, no release and no artefact gets cut
-  # unless the suite passes first.
-  test:
-    name: "Tests"
-    uses: ./.github/workflows/test.yml
-
-  create-release:
-    name: "Create Release"
-    needs: test
+  validate:
+    name: Validate trusted qualification
     runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-      release_id: ${{ steps.create_release.outputs.id }}
-
+    permissions:
+      actions: read
+      contents: read
     steps:
-      # Dispatch carries no branch restriction and the push below targets the
-      # default branch by name, so a run started from a feature branch would
-      # push that branch's HEAD onto the default one. Refused here, before the
-      # checkout authenticates to the repository or anything is pushed.
-      #
-      # Both names read through env, for the reason stated below the checkout: a
-      # `${{ }}` expression is substituted into the shell source before bash
-      # parses it, and a refname may hold `"`, `;`, a backtick or `$()`. Spliced
-      # in, the branch this step exists to refuse was the branch that decided
-      # what the step ran - inside the one job in this workflow holding
-      # contents: write, and at the one step that runs before anything else.
-      - name: Refuse to release from a non-default branch
+      - name: Validate qualification run provenance
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
-          REF_NAME: ${{ github.ref_name }}
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          if [ "$REF_NAME" != "$DEFAULT_BRANCH" ]; then
-            echo "Release must be dispatched from the default branch, not $REF_NAME." >&2
-            exit 1
-          fi
+          OUTPUT_PATH: ${{ runner.temp }}/artifacts.json
+        with:
+          script: |
+            const maxQualificationAgeMs = 7 * 24 * 60 * 60 * 1000;
+            const runId = Number(process.env.RUN_ID);
+            const attempt = Number(process.env.RUN_ATTEMPT);
+            if (!Number.isSafeInteger(runId) || runId <= 0 || !Number.isSafeInteger(attempt) || attempt <= 0)
+              throw new Error('Invalid qualification run identity');
+            const {data: run} = await github.rest.actions.getWorkflowRun({
+              owner: context.repo.owner, repo: context.repo.repo, run_id: runId
+            });
+            const {data: branch} = await github.rest.repos.getBranch({owner: context.repo.owner,
+              repo: context.repo.repo, branch: process.env.DEFAULT_BRANCH});
+            if (context.ref !== 'refs/heads/' + process.env.DEFAULT_BRANCH || context.sha !== branch.commit.sha)
+              throw new Error('Promotion workflow must be dispatched from the current trusted default-branch head');
+            if (run.run_attempt !== attempt || run.event !== 'workflow_dispatch' || run.conclusion !== 'success')
+              throw new Error('Qualification run or attempt is not a successful manual qualification');
+            if (run.path !== '.github/workflows/qualify-release.yml' || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo)
+              throw new Error('Qualification came from an untrusted workflow or repository');
+            if (run.head_sha !== process.env.SOURCE_SHA || run.head_sha !== branch.commit.sha
+              || run.head_branch !== process.env.DEFAULT_BRANCH)
+              throw new Error('Qualification source is stale or is not the default-branch head');
+            const createdAt = Date.parse(run.created_at);
+            if (!Number.isFinite(createdAt) || Date.now() - createdAt > maxQualificationAgeMs)
+              throw new Error('Qualification is expired');
+            const fs = require('fs');
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner: context.repo.owner, repo: context.repo.repo, run_id: runId, per_page: 100
+            });
+            const mebibyte = 1024 * 1024;
+            const gibibyte = 1024 * mebibyte;
+            const expected = ['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe',
+              'MySpeed-linux-x64', 'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64',
+              'MySpeed-macos-x64', 'MySpeed-macos-arm64', 'MySpeed.zip',
+              'release-msi-MySpeed-installer.msi', 'release-msi-MySpeed-installer-baseline.msi',
+              'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64',
+              'qualified-oci-index',
+              'release-qualification-manifest'].sort();
+            const names = artifacts.map(({name}) => name).sort();
+            if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error('Actions artifact set mismatch');
+            for (const artifact of artifacts) {
+              const limit = artifact.name === 'release-static' || artifact.name === 'release-qualification-manifest'
+                ? 10 * mebibyte : artifact.name === 'MySpeed.zip' ? 2 * gibibyte
+                  : artifact.name.startsWith('qualified-oci-') ? 4 * gibibyte : gibibyte;
+              if (artifact.expired || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > limit
+                || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest))
+                throw new Error('Unsafe Actions artifact metadata: ' + artifact.name);
+            }
+            fs.writeFileSync(process.env.OUTPUT_PATH, JSON.stringify({artifacts:
+              artifacts.filter(({name}) => name !== 'release-qualification-manifest')}));
 
-      - name: Checkout project
+      - name: Checkout current trusted promotion logic
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.sha }}
 
-      # The version now comes from the dispatch input rather than a pushed tag.
-      # Normalised so that both "1.1.0" and "v1.1.0" are accepted.
-      # Read through env, never spliced into the script body. A `${{ }}`
-      # expression is substituted into the shell source before bash parses it,
-      # so the dispatch input reached this step as code - eleven lines above the
-      # regex that exists precisely because the value is not trusted, in a job
-      # that holds a contents:write token. Dispatching needs write access, so this is not a boundary
-      # being crossed; it is the difference between "can cut a release" and "can
-      # run anything inside the release job". The cleanup jobs below already do
-      # it this way, for the same reason.
-      - name: Get version from input
-        id: get_version
-        env:
-          RAW_VERSION: ${{ inputs.version }}
-        run: |
-          VERSION="${RAW_VERSION#v}"
-
-          # Three numeric parts and nothing after them, which is narrower than
-          # semver allows and exactly what this pipeline can deliver. build-msi
-          # splices the version into WiX's Product/@Version as "<version>.0",
-          # which must be numeric dotted fields, so a prerelease suffix or a
-          # fourth part reached candle and failed it after the version bump,
-          # tag and binary builds. Docker publication waits for MSI, but this
-          # input can be refused before any release artifacts need recovery.
-          # Refused here instead, before anything has been published.
-          # Match the complete input: grep accepts a valid line beside a bad
-          # one, which could inject extra records into GITHUB_OUTPUT below.
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::'$VERSION' is not a release version. Use three numbers, as in 1.4.0 - prereleases and four-part versions cannot be built into the MSI."
-            exit 1
-          fi
-
-          # MSI ProductVersion stores major/minor as bytes and build as a word.
-          # Trim leading zeroes for comparison only; preserve the release name.
-          # Bound the length before numeric comparison so huge inputs cannot
-          # overflow shell arithmetic and escape the preflight.
-          MSI_MAX_MAJOR=255
-          MSI_MAX_MINOR=255
-          MSI_MAX_BUILD=65535
-          IFS=. read -r VERSION_MAJOR VERSION_MINOR VERSION_BUILD <<< "$VERSION"
-          VERSION_PARTS=("$VERSION_MAJOR" "$VERSION_MINOR" "$VERSION_BUILD")
-          VERSION_LIMITS=("$MSI_MAX_MAJOR" "$MSI_MAX_MINOR" "$MSI_MAX_BUILD")
-          for index in "${!VERSION_PARTS[@]}"; do
-            part="${VERSION_PARTS[$index]}"
-            part="${part#"${part%%[!0]*}"}"
-            part="${part:-0}"
-            limit="${VERSION_LIMITS[$index]}"
-            if [ "${#part}" -gt "${#limit}" ] || [ "$part" -gt "$limit" ]; then
-              echo "::error::Release version exceeds MSI limits: $MSI_MAX_MAJOR.$MSI_MAX_MINOR.$MSI_MAX_BUILD."
-              exit 1
-            fi
-          done
-
-          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "::error::Tag v$VERSION already exists."
-            exit 1
-          fi
-
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-
-      # The bump has to land before the tag is cut. server/routes/system.js reads
-      # packageJson.version at import time, so it is compiled into every binary
-      # and shown by /version against the latest release tag. Bumping afterwards
-      # shipped binaries stamped with the previous version, which then reported
-      # themselves as out of date the moment they started.
-      #
-      # Through env like the steps around it. The value is validated by the time
-      # it gets here, so this is the rule being kept rather than a hole being
-      # closed - and a rule with exceptions in the file that states it is one
-      # nobody can check by reading.
-      #
-      # And through --arg for the same reason, one interpreter further in. Written
-      # as `jq ".version = \"$VERSION\""`, the shell expands the variable before
-      # jq is executed at all, so what jq parses is a program built out of the
-      # value - the care taken on the line above buys nothing the moment the
-      # language changes. --arg binds it as data, which is what env: does for the
-      # shell.
-      - name: Bump version files
-        env:
-          VERSION: ${{ steps.get_version.outputs.version }}
-        run: |
-          jq --arg v "$VERSION" '.version = $v' package.json > tmp && mv tmp package.json
-          jq --arg v "$VERSION" '.version = $v' client/package.json > tmp && mv tmp client/package.json
-
-      # Read through env, never spliced into the script body - the same rule
-      # the branch guard above follows, in the one step that performs the push
-      # that guard exists to protect.
-      - name: Commit and push version bump
-        env:
-          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.get_version.outputs.version }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        run: |
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json client/package.json
-          if ! git diff --staged --quiet; then
-            git commit -m "chore: bump version to $VERSION"
-            git push origin HEAD:"$DEFAULT_BRANCH"
-          fi
-
-      # Not github.sha: that is the dispatched commit, which predates the bump.
-      - name: Resolve release commit
-        id: sha
-        run: echo "sha=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
-
-      # The tag has to be pushed here, with git. A draft release carries a tag_name
-      # but does not create the ref: GitHub only creates it when the release is
-      # published, which is finalize-release - long after every build job has tried
-      # to check the tag out and failed. Releases only ever succeeded when a tag
-      # left over from an earlier attempt happened to still be there.
-      #
-      # Both through env, for the reason stated at the branch guard - and this is
-      # the step that guard exists to protect, so it is the last one that should
-      # have been splicing anything into a shell.
-      - name: Push release tag
-        env:
-          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ steps.get_version.outputs.tag }}
-          SHA: ${{ steps.sha.outputs.sha }}
-        run: |
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 -w0)"
-          git tag "$TAG" "$SHA"
-          git push origin "$TAG"
-
-      # Everything downstream builds from this tag rather than from the dispatched
-      # ref, so the artifacts and the version they report come from the same commit.
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+      - name: Set up trusted validation runtime
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          tag_name: ${{ steps.get_version.outputs.tag }}
-          target_commitish: ${{ steps.sha.outputs.sha }}
-          name: Release ${{ steps.get_version.outputs.version }}
-          draft: true
-          prerelease: false
+          bun-version: 1.4.2
 
-  build-binaries:
-    name: "Build Binaries"
-    needs: create-release
-    uses: ./.github/workflows/build-binaries.yml
-    with:
-      version: ${{ needs.create-release.outputs.version }}
-      release_id: ${{ needs.create-release.outputs.release_id }}
+      - name: Install trusted validator dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
 
-  # Two assets with one digest are one build under two names - v1.5.2's x64
-  # and x64-baseline pairs under Bun 1.4.0 - and the release has to stop. It
-  # stops here rather than inside build-binaries: a failure there is "the
-  # binaries failed" to cleanup-on-failure, which deletes the release and the
-  # tag, the very assets the check was placed after the upload to leave
-  # verifiable. Failing here keeps build-binaries green, holds the publish
-  # back through publish-docker's and finalize-release's needs, and lands in
-  # the partial-release report with the draft intact.
-  refuse-duplicate-digests:
-    name: "Refuse Duplicate Digests"
-    runs-on: ubuntu-latest
-    needs: build-binaries
-    steps:
-      - name: Compare the published digests
+      - name: Download exact qualification artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          pattern: "*"
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Revalidate every candidate byte with trusted code
         env:
-          DUPLICATES: ${{ needs.build-binaries.outputs.duplicate-digests }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/artifacts
+          ARTIFACT_METADATA: ${{ runner.temp }}/artifacts.json
+          MANIFEST: ${{ runner.temp }}/artifacts/release-qualification-manifest/qualification-manifest.json
+          EVIDENCE: ${{ runner.temp }}/evidence.json
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
         run: |
-          if [ -n "$DUPLICATES" ]; then
-            echo "::error::one build under two names: $DUPLICATES"
+          [ "$(git rev-parse HEAD)" = "$GITHUB_SHA" ] || {
+            echo 'Trusted promotion validator checkout moved after provenance validation.' >&2
             exit 1
-          fi
-          echo "Every asset has a digest of its own."
+          }
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.env.MANIFEST));fs.writeFileSync(process.env.EVIDENCE,JSON.stringify(m.evidence))"
+          node scripts/release/qualification-manifest.mjs validate \
+            --root "$ARTIFACT_ROOT" --output "$RUNNER_TEMP/unused" --artifacts "$ARTIFACT_METADATA" \
+            --evidence "$EVIDENCE" --manifest "$MANIFEST" --sha "$SOURCE_SHA" --version "$VERSION" \
+            --windows-stamp "$WINDOWS_STAMP" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY"
+          jq -e '.promotion.eligible == true' "$MANIFEST" >/dev/null || {
+            echo 'Qualification is a rehearsal only; required native and MSI lifecycle evidence is missing.' >&2
+            exit 1
+          }
 
-  # Beside the binaries, not after them: this is the slow half, and it only
-  # pushes untagged digests, which publish nothing anyone can pull by name.
-  build-docker:
-    name: "Build Docker"
-    needs: create-release
-    uses: ./.github/workflows/build-docker.yml
-    with:
-      ref: v${{ needs.create-release.outputs.version }}
-    secrets:
-      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  create-draft:
+    name: Create immutable tag and draft
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: release-production
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      release_id: ${{ steps.release.outputs.id }}
+    steps:
+      - name: Download sealed qualification manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          name: release-qualification-manifest
+          path: ${{ runner.temp }}/qualification
 
-  # The tags, and the first moment this release is visible to `docker pull`.
-  #
-  # Held behind build-binaries because that is the job whose failure tears the
-  # release down: cleanup-on-failure deletes the tag and the draft, and it has
-  # no reach into a registry. Published beside the binaries, as it was until
-  # 1.3.3, a failed release left `:latest` on a version that no longer had a
-  # GitHub release - which happened three times the night 1.3.3 was cut, and
-  # left `docker pull myspeed` on an unreleased build for about four hours.
-  #
-  # Also behind build-msi: the MSI is the other artifact the release must ship,
-  # so :latest must not be published before it has built - otherwise a failed
-  # MSI leaves Docker on a version whose GitHub release stays a draft.
-  #
-  # And behind refuse-duplicate-digests: that job is what stops a release whose
-  # x64 and x64-baseline assets are one build, and finalize-release waiting on
-  # it was not enough - this job did not, so :latest was published on a build
-  # the GitHub release then refused.
+      - name: Revalidate promotion immediately before mutation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MANIFEST: ${{ runner.temp }}/qualification/qualification-manifest.json
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        with:
+          script: |
+            const fs = require('fs'); const {createHash} = require('crypto');
+            const maxAgeMs = 7 * 24 * 60 * 60 * 1000; const maxManifestBytes = 10 * 1024 * 1024;
+            const bytes = fs.readFileSync(process.env.MANIFEST); const stat = fs.lstatSync(process.env.MANIFEST);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size === 0 || stat.size > maxManifestBytes) throw new Error('Unsafe qualification manifest');
+            const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
+            if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
+            const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
+            if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
+              || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
+              || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
+            const {data: run} = await github.rest.actions.getWorkflowRun({owner: context.repo.owner, repo: context.repo.repo, run_id: runId});
+            const {data: branch} = await github.rest.repos.getBranch({owner: context.repo.owner, repo: context.repo.repo, branch: process.env.DEFAULT_BRANCH});
+            const createdAt = Date.parse(run.created_at);
+            if (context.ref !== 'refs/heads/' + process.env.DEFAULT_BRANCH || branch.commit.sha !== process.env.SOURCE_SHA
+              || run.run_attempt !== attempt || run.event !== 'workflow_dispatch' || run.conclusion !== 'success'
+              || run.path !== '.github/workflows/qualify-release.yml' || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo
+              || run.head_sha !== process.env.SOURCE_SHA || run.head_branch !== process.env.DEFAULT_BRANCH
+              || !Number.isFinite(createdAt) || Date.now() - createdAt > maxAgeMs) throw new Error('Qualification is stale or untrusted');
+
+      - name: Create tag and draft release
+        id: release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+        with:
+          script: |
+            const versionPattern = /^\d+\.\d+\.\d+$/;
+            if (!versionPattern.test(process.env.VERSION) || !/^[a-f0-9]{40}$/.test(process.env.SOURCE_SHA))
+              throw new Error('Invalid qualified release identity');
+            const tag = 'v' + process.env.VERSION;
+            for (const lookup of [
+              () => github.rest.git.getRef({owner: context.repo.owner, repo: context.repo.repo, ref: 'tags/' + tag}),
+              () => github.rest.repos.getReleaseByTag({owner: context.repo.owner, repo: context.repo.repo, tag})
+            ]) try { await lookup(); throw new Error(tag + ' already exists'); } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await github.rest.git.createRef({owner: context.repo.owner, repo: context.repo.repo,
+              ref: 'refs/tags/' + tag, sha: process.env.SOURCE_SHA});
+            const {data: release} = await github.rest.repos.createRelease({owner: context.repo.owner,
+              repo: context.repo.repo, tag_name: tag, name: tag, draft: true, prerelease: false});
+            core.setOutput('id', release.id);
+
+  publish-assets:
+    name: Attach exact qualified assets
+    needs: [validate, create-draft]
+    runs-on: ubuntu-latest
+    environment: release-production
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download exact qualification artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          pattern: "*"
+          path: ${{ runner.temp }}/artifacts
+
+      - name: Revalidate promotion immediately before mutation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MANIFEST: ${{ runner.temp }}/artifacts/release-qualification-manifest/qualification-manifest.json
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        with:
+          script: |
+            const fs = require('fs'); const {createHash} = require('crypto');
+            const maxAgeMs = 7 * 24 * 60 * 60 * 1000; const maxManifestBytes = 10 * 1024 * 1024;
+            const bytes = fs.readFileSync(process.env.MANIFEST); const stat = fs.lstatSync(process.env.MANIFEST);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size === 0 || stat.size > maxManifestBytes) throw new Error('Unsafe qualification manifest');
+            const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
+            if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
+            const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
+            if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
+              || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
+              || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
+            const {data: run} = await github.rest.actions.getWorkflowRun({owner: context.repo.owner, repo: context.repo.repo, run_id: runId});
+            const {data: branch} = await github.rest.repos.getBranch({owner: context.repo.owner, repo: context.repo.repo, branch: process.env.DEFAULT_BRANCH});
+            const createdAt = Date.parse(run.created_at);
+            if (context.ref !== 'refs/heads/' + process.env.DEFAULT_BRANCH || branch.commit.sha !== process.env.SOURCE_SHA
+              || run.run_attempt !== attempt || run.event !== 'workflow_dispatch' || run.conclusion !== 'success'
+              || run.path !== '.github/workflows/qualify-release.yml' || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo
+              || run.head_sha !== process.env.SOURCE_SHA || run.head_branch !== process.env.DEFAULT_BRANCH
+              || !Number.isFinite(createdAt) || Date.now() - createdAt > maxAgeMs) throw new Error('Qualification is stale or untrusted');
+
+      - name: Upload fixed validated release payloads
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          ROOT: ${{ runner.temp }}/artifacts
+          RELEASE_ID: ${{ needs.create-draft.outputs.release_id }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const {createHash} = require('crypto');
+            const manifestPath = path.join(process.env.ROOT, 'release-qualification-manifest', 'qualification-manifest.json');
+            const manifest = JSON.parse(fs.readFileSync(manifestPath));
+            const assets = manifest.releaseAssets;
+            for (const asset of assets) {
+              if (!/^[A-Za-z0-9_.-]+$/.test(asset.artifact) || !/^[A-Za-z0-9_.-]+$/.test(asset.path) || !/^[A-Za-z0-9_.-]+$/.test(asset.name))
+                throw new Error('Unsafe release asset name');
+              const file = path.join(process.env.ROOT, asset.artifact, asset.path);
+              const stat = fs.lstatSync(file);
+              if (!stat.isFile() || stat.nlink !== 1 || stat.size !== asset.size || stat.size === 0)
+                throw new Error('Invalid release asset: ' + asset.name);
+              const actual = createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+              if (actual !== asset.sha256) throw new Error('Release asset digest mismatch: ' + asset.name);
+            }
+            for (const asset of assets) await github.rest.repos.uploadReleaseAsset({owner: context.repo.owner,
+              repo: context.repo.repo, release_id: Number(process.env.RELEASE_ID), name: asset.name,
+              data: fs.readFileSync(path.join(process.env.ROOT, asset.artifact, asset.path))});
+            for (const name of ['SHA256SUMS', 'qualification-manifest.json', 'qualification-manifest.json.sha256']) await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner, repo: context.repo.repo, release_id: Number(process.env.RELEASE_ID),
+              name, data: fs.readFileSync(path.join(process.env.ROOT, 'release-qualification-manifest', name))});
+
   publish-docker:
-    name: "Publish Docker"
-    needs: [create-release, build-binaries, build-docker, build-msi, refuse-duplicate-digests]
+    name: Publish exact qualified containers
+    needs: [validate, create-draft, publish-assets]
+    permissions:
+      actions: read
+      contents: read
     uses: ./.github/workflows/publish-docker.yml
     with:
-      tags: |
-        latest
-        ${{ needs.create-release.outputs.version }}
+      qualification_run_id: ${{ inputs.qualification_run_id }}
+      qualification_run_attempt: ${{ inputs.qualification_run_attempt }}
+      candidate_sha: ${{ inputs.candidate_sha }}
+      version: ${{ inputs.version }}
+      windows_stamp: ${{ inputs.windows_stamp }}
     secrets:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
-  build-msi:
-    name: "Build MSI"
-    needs: [create-release, build-binaries]
-    uses: ./.github/workflows/build-msi.yml
-    with:
-      version: ${{ needs.create-release.outputs.version }}
-      release_id: ${{ needs.create-release.outputs.release_id }}
-
-  # The two installers, hashed after the fact.
-  #
-  # build-binaries' own checksums job lives inside that workflow, and build-msi
-  # needs the whole of it - so the list was always written before either .msi
-  # existed. SHA256SUMS therefore described the binaries, the source ZIP and the
-  # install scripts and never the installers, on every release rather than only
-  # on the first: a Windows user downloading the one artifact that installs a
-  # LocalSystem service found no line to check it against, and no install script
-  # checks it for them either.
-  #
-  # Appending here rather than moving the original job. Moving it would delay
-  # the three install scripts, which that job also publishes and which need
-  # nothing a build produced - and, taken literally, would make one failing MSI
-  # leg suppress the checksum file for every other asset, which is worse than
-  # today and against this workflow's own position that a partial release is
-  # still worth having.
-  checksums-msi:
-    name: "Checksums for the installers"
-    runs-on: ubuntu-latest
-    needs: [create-release, build-binaries, build-msi]
-    # !cancelled() rather than success(), so a failed or skipped MSI leg still
-    # leaves the list exactly as build-binaries wrote it - skipping this job
-    # would take with it any chance of the file being completed.
-    #
-    # And rather than always(), which runs on a cancelled workflow too: there
-    # the release is about to be deleted or reported, and a job uploading to it
-    # is at best wasted and at worst racing that.
-    #
-    # build-binaries is required rather than merely awaited for the same
-    # reason. Its failure is what cleanup-on-failure deletes the whole release
-    # over, and an upload landing in the middle of that deletion is a race with
-    # nothing to win: finalize-release needs build-binaries as well, so there is
-    # nothing left for this file to be published with.
-    if: >-
-      !cancelled()
-      && needs.create-release.result == 'success'
-      && needs.build-binaries.result == 'success'
-    steps:
-      - name: Add any unhashed asset to SHA256SUMS
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-        with:
-          script: |
-            const crypto = require('crypto');
-            const release_id = parseInt(process.env.RELEASE_ID, 10);
-            const {owner, repo} = context.repo;
-
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets,
-              {owner, repo, release_id, per_page: 100});
-
-            const published = assets.find((asset) => asset.name === 'SHA256SUMS');
-
-            const body = async (asset) => {
-              const {data} = await github.rest.repos.getReleaseAsset({
-                owner, repo, asset_id: asset.id,
-                headers: {accept: 'application/octet-stream'}
-              });
-              return Buffer.from(data);
-            };
-
-            // What the earlier job already hashed, kept as it was: those bytes
-            // have not changed, and re-downloading six binaries to prove it
-            // would double the transfer for nothing.
-            const digests = new Map();
-
-            if (published)
-              for (const line of (await body(published)).toString().split('\n')) {
-                const match = /^([0-9a-f]{64})\s\s(.+)$/.exec(line.trim());
-                if (match) digests.set(match[2], match[1]);
-              }
-
-            const added = [];
-
-            for (const asset of assets) {
-              if (asset.name === 'SHA256SUMS' || digests.has(asset.name)) continue;
-
-              digests.set(asset.name, crypto.createHash('sha256').update(await body(asset)).digest('hex'));
-              added.push(asset.name);
-            }
-
-            if (added.length === 0) {
-              core.info('Every asset is already listed; SHA256SUMS left alone.');
-              return;
-            }
-
-            core.info(`Adding: ${added.join(', ')}`);
-
-            const lines = [...digests.entries()]
-              .sort(([left], [right]) => left.localeCompare(right))
-              .map(([name, digest]) => `${digest}  ${name}`);
-
-            core.info(lines.join('\n'));
-
-            // Replaced rather than uploaded beside: a release cannot carry two
-            // assets of one name, so the old one goes first.
-            //
-            // Which is not atomic, and cannot be made so through this API: a
-            // failure between the two leaves the release with no SHA256SUMS at
-            // all. What makes that recoverable rather than silent is the gate
-            // above - finalize-release needs this job, so a release that lost
-            // its list stays a draft, and re-running the job rebuilds the whole
-            // file from the assets rather than from what it found.
-            if (published)
-              await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id: published.id});
-
-            await github.rest.repos.uploadReleaseAsset({
-              owner, repo, release_id,
-              name: 'SHA256SUMS',
-              data: lines.join('\n') + '\n'
-            });
-
-  # After publish-docker rather than beside it: this is what turns the draft
-  # into the published release, and the body it writes names the Docker tags.
-  #
-  # checksums-msi is in the list because this is what un-drafts the release: a
-  # release made public before the checksum file was completed would hand out
-  # installers nothing could verify, which is the whole point of the job above.
   finalize-release:
-    name: "Finalize Release"
-    needs: [create-release, build-binaries, refuse-duplicate-digests, publish-docker, build-msi, checksums-msi]
+    name: Publish release
+    needs: [create-draft, publish-assets, publish-docker]
+    permissions:
+      contents: write
     uses: ./.github/workflows/finalize-release.yml
     with:
-      version: ${{ needs.create-release.outputs.version }}
-      release_id: ${{ needs.create-release.outputs.release_id }}
+      release_id: ${{ needs.create-draft.outputs.release_id }}
+      qualification_run_id: ${{ inputs.qualification_run_id }}
+      qualification_run_attempt: ${{ inputs.qualification_run_attempt }}
+      candidate_sha: ${{ inputs.candidate_sha }}
+      version: ${{ inputs.version }}
+      windows_stamp: ${{ inputs.windows_stamp }}
 
-  # Tearing the release down is only right when nothing usable came out of it.
-  # create-release failing leaves a bare tag and an empty draft; build-binaries
-  # failing leaves a draft with a platform missing. Neither is salvageable, so
-  # the tag is freed up and the same version can be dispatched again.
-  #
-  # A build-docker, publish-docker or build-msi failure deliberately does not
-  # reach here. Every platform binary is already attached by then and the release
-  # is still a draft, so deleting it would destroy good artifacts over a side
-  # channel that can be retried by hand. report-partial-release says what was
-  # left behind instead.
-  #
-  # What this job can undo is now the whole of what a failure at this point has
-  # published. It deletes a tag and a draft release, and it has no reach into a
-  # registry - which is why publish-docker waits for build-binaries rather than
-  # running beside it. A failure here leaves untagged digests on Docker Hub:
-  # unreferenced, unresolvable by `docker pull`, and collectable, rather than
-  # `:latest` moved to a version whose release is about to be deleted.
-  #
-  # The version bump commit is not reverted. Rewriting the default branch to undo
-  # a failed release is worse than leaving it, and it costs nothing: re-running
-  # the same version finds package.json already correct, skips the commit, and
-  # cuts the tag afresh.
-  cleanup-on-failure:
-    name: "Cleanup on Failure"
+  report-failure:
+    name: Preserve and report partial promotion
+    if: ${{ failure() }}
+    needs: [validate, create-draft, publish-assets, publish-docker, finalize-release]
     runs-on: ubuntu-latest
-    needs: [create-release, build-binaries]
-    if: |
-      failure()
-      && (needs.create-release.result == 'failure' || needs.build-binaries.result == 'failure')
+    permissions: {}
     steps:
-      # Both ids are read through env rather than interpolated into the script
-      # body: when create-release fails they are empty, and an empty expression
-      # spliced into the source produced a SyntaxError that masked the real error.
-      - name: Delete release
-        if: needs.create-release.outputs.release_id != ''
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+      - name: Report forensic state
         env:
-          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
-        with:
-          script: |
-            try {
-              await github.rest.repos.deleteRelease({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: parseInt(process.env.RELEASE_ID, 10)
-              });
-              console.log('Release deleted');
-            } catch (e) {
-              console.log('Failed to delete release:', e.message);
-            }
-
-      - name: Delete tag
-        if: needs.create-release.outputs.version != ''
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        with:
-          script: |
-            try {
-              await github.rest.git.deleteRef({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                ref: `tags/v${process.env.VERSION}`
-              });
-              console.log('Tag deleted');
-            } catch (e) {
-              console.log('Failed to delete tag:', e.message);
-            }
-
-  # A cancelled run is neither of the two cases below.
-  #
-  # Both of them key on failure(), which a cancellation does not satisfy - and
-  # `cancelled()` at the workflow level is exactly the moment a tag has been cut,
-  # a version bumped and the assets left half-uploaded. Nothing said so: the run
-  # ended grey, and the next dispatch of that version was refused by
-  # create-release's own tag guard with no explanation anywhere.
-  #
-  # It reports rather than deletes. What survived a cancellation is not knowable
-  # from here - the upload may have been halfway through an asset - and deleting
-  # a release somebody stopped on purpose is not this job's decision to make.
-  report-cancelled-release:
-    name: "Report Cancelled Release"
-    runs-on: ubuntu-latest
-    needs: [create-release]
-    if: cancelled() && needs.create-release.result == 'success'
-    steps:
-      - name: Say what was left behind
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          {
-            echo "### Release v$VERSION was cancelled part way through"
-            echo
-            echo "The tag and the draft release exist, the version bump is on the default"
-            echo "branch, and the assets are whatever had finished uploading. Dispatching"
-            echo "v$VERSION again will be refused while the tag is there."
-            echo
-            echo "Look at the draft, then either publish it by hand or free the version up:"
-            echo
-            echo '```'
-            echo "gh release delete v$VERSION --cleanup-tag --yes"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::warning::Release v$VERSION was cancelled. Tag v$VERSION is taken - delete it before re-running this version."
-
-  # The counterpart to cleanup-on-failure: the release survived, so say what is
-  # sitting there and how to get rid of it, rather than leaving an unexplained
-  # draft and a version number that can no longer be dispatched.
-  report-partial-release:
-    name: "Report Partial Release"
-    runs-on: ubuntu-latest
-    needs: [create-release, build-binaries, refuse-duplicate-digests, build-docker, publish-docker, build-msi,
-      checksums-msi, finalize-release]
-    if: |
-      failure()
-      && needs.create-release.result == 'success'
-      && needs.build-binaries.result == 'success'
-    steps:
-      - name: Summarise what survived
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          DUPLICATE_DIGESTS_RESULT: ${{ needs.refuse-duplicate-digests.result }}
-          DOCKER_BUILD_RESULT: ${{ needs.build-docker.result }}
-          DOCKER_PUBLISH_RESULT: ${{ needs.publish-docker.result }}
-          MSI_RESULT: ${{ needs.build-msi.result }}
-          CHECKSUMS_RESULT: ${{ needs.checksums-msi.result }}
-          FINALIZE_RESULT: ${{ needs.finalize-release.result }}
-        run: |
-          {
-            echo "### Release v$VERSION kept as a draft"
-            echo
-            echo "Every platform binary built and uploaded, so the release was not deleted."
-            echo
-            echo "| Job | Result |"
-            echo "| :-- | :-- |"
-            echo "| Refuse duplicate digests | $DUPLICATE_DIGESTS_RESULT |"
-            echo "| Build Docker | $DOCKER_BUILD_RESULT |"
-            echo "| Publish Docker | $DOCKER_PUBLISH_RESULT |"
-            echo "| Build MSI | $MSI_RESULT |"
-            echo "| Checksums for the installers | $CHECKSUMS_RESULT |"
-            echo "| Finalize Release | $FINALIZE_RESULT |"
-            echo
-
-            # Which of the two the images reached matters to whoever picks this
-            # up: a build that pushed digests published nothing pullable, while
-            # a publish that succeeded has already moved :latest.
-            if [ "$DOCKER_PUBLISH_RESULT" = "success" ]; then
-              echo "\`:latest\` and \`:$VERSION\` are already on Docker Hub."
-            else
-              echo "No Docker tag was published. The per-arch digests may be up, but"
-              echo "nothing resolves to them and \`:latest\` still points where it did."
-            fi
-            echo
-            echo "Fix the failing job and publish the draft by hand, or free the version"
-            echo "number up for another run with:"
-            echo
-            echo '```'
-            echo "gh release delete v$VERSION --cleanup-tag --yes"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::warning::Release v$VERSION was left as a draft with its binaries intact. Tag v$VERSION is now taken - delete it before re-running this version."
+          VERSION: ${{ inputs.version }}
+        run: echo "::error::Promotion of v$VERSION failed. Qualified artifacts and any draft release are preserved for review."

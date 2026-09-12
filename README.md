@@ -43,13 +43,13 @@ through Docker's network stack rather than your line.
 
 Download a Linux binary from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest):
 
-- `MySpeed-linux-x64` — default Bun target (needs **AVX2**)
-- `MySpeed-linux-x64-baseline` — older x86_64 CPUs without AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-linux-x64` — x64 default-name compatibility alias
+- `MySpeed-linux-x64-baseline` — x64 baseline-name compatibility alias
 - `MySpeed-linux-arm64` — aarch64
 
-If the default binary exits immediately with `Illegal instruction` / `SIGILL`, use the
-baseline build. The install script picks baseline automatically when `/proc/cpuinfo`
-has no `avx2` flag.
+In Bun 1.4.2-based builds, the x64 aliases target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
+the names are retained for download and installer compatibility. The install script
+still selects the baseline-name alias when `/proc/cpuinfo` has no `avx2` flag.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
@@ -64,22 +64,22 @@ run, `chooser.sh` at the same address puts the question first.
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
 Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
 native addons (e.g. `@resvg/resvg-js`), producing a binary that starts and then fails
-at runtime.
+at runtime. Standalone compilation is qualified only with Bun **exactly 1.4.2** and
+rejects any other Bun version; running MySpeed from source still supports the minimum
+documented below.
 
 #### 🪟 Windows
 
 Download from the [releases page](https://github.com/i7Gamer/MySpeed/releases/latest):
 
-- `MySpeed-windows-x64.exe` — default Bun target (needs **AVX2**)
-- `MySpeed-windows-x64-baseline.exe` — older x86_64 CPUs without AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-windows-x64.exe` — x64 default-name compatibility alias
+- `MySpeed-windows-x64-baseline.exe` — x64 baseline-name compatibility alias
 - `MySpeed-installer.msi` and `MySpeed-installer-baseline.msi` — the same two as an
   installer, which registers MySpeed as a Windows service
 
-Nothing picks the right one for you here, so go by the symptom: the exe exits
-immediately with `Illegal instruction`, and the MSI installs cleanly but leaves a
-service that never starts. Either one means the baseline build. To check before
-downloading, PowerShell 7 answers it with
-`[System.Runtime.Intrinsics.X86.Avx2]::IsSupported`.
+In Bun 1.4.2-based builds, both x64 names target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
+the default and baseline names remain as download/MSI compatibility aliases. Either
+Windows executable or MSI variant is therefore suitable for supported x64 hardware.
 
 The two installers are one product, so running the other one switches the build and
 keeps your database.
@@ -136,7 +136,9 @@ The route trace (switched on under *Optimal values*) uses the operating system's
 <details>
 <summary><strong>Build and run it yourself</strong> — the binaries above are this, already built</summary>
 
-Requires [bun](https://bun.sh).
+Requires [Bun](https://bun.sh) **1.4.2 or newer**. Upgrade the Bun runtime before
+installing dependencies; a source ZIP does not carry its own runtime. Node.js
+**22.19.0 or newer** is required for Node-based development and tests.
 
 ```bash
 git clone https://github.com/i7Gamer/MySpeed.git

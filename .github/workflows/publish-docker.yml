@@ -1,89 +1,138 @@
-name: Publish Docker
+name: Publish qualified Docker OCI
 
-# The moment a MySpeed image becomes pullable by name.
-#
-# Split out of build-docker.yml so the release chain can hold it behind
-# build-binaries. It used to sit at the end of that workflow, which ran beside
-# the binaries rather than after them, so the tags went up while a binary could
-# still fail - and when one did, cleanup-on-failure deleted the tag and the
-# draft release and left `:latest` pointing at a version with no release behind
-# it. Nothing rolls a registry back; the fix is not to publish that early.
-#
-# The line the split follows is the one the pipeline already had: build-docker
-# pushes each architecture by digest, which is an untagged blob that no
-# `docker pull` resolves to, and only the manifest list below gives those
-# digests a name. So a release that dies after the builds leaves unreferenced
-# digests - collectable, invisible - instead of a moved tag.
 on:
   workflow_call:
+    inputs:
+      qualification_run_id:
+        required: true
+        type: string
+      qualification_run_attempt:
+        required: true
+        type: string
+      candidate_sha:
+        required: true
+        type: string
+      version:
+        required: true
+        type: string
+      windows_stamp:
+        required: true
+        type: string
     secrets:
       DOCKERHUB_USERNAME:
         required: true
       DOCKERHUB_TOKEN:
         required: true
-    inputs:
-      tags:
-        description: "Newline-separated tags to publish, without the image name"
-        required: true
-        type: string
+
+permissions:
+  actions: read
+  contents: read
 
 env:
   REGISTRY_IMAGE: i7gamer/myspeed
 
-# Pushing authenticates against Docker Hub with its own secrets. Left unset this
-# would inherit whatever the caller holds - contents: write, in the release
-# chain - for a job that never touches the repository.
-permissions:
-  contents: read
-
 jobs:
-  merge:
-    name: "Merge Docker Manifests"
+  publish:
+    name: Publish exact qualified OCI content
     runs-on: ubuntu-latest
-    # Never checks the repository out - it only pulls the digest artifacts and
-    # pushes the manifest list - so it needs no token scopes at all.
-    permissions: {}
-
+    environment: release-production
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - name: Download digests
+      - name: Download exact OCI artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          path: ${{ runner.temp }}/digests
-          pattern: digests-*
-          merge-multiple: true
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          pattern: qualified-oci-*
+          path: ${{ runner.temp }}/oci
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4
+      - name: Download sealed qualification manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.qualification_run_id }}
+          name: release-qualification-manifest
+          path: ${{ runner.temp }}/qualification
 
-      - name: Login to DockerHub
+      - name: Recheck exact OCI bytes and provenance
+        env:
+          ROOT: ${{ runner.temp }}
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          manifest="$ROOT/qualification/qualification-manifest.json"
+          [ "$(jq -r '.run.id' "$manifest")" = "$RUN_ID" ]
+          [ "$(jq -r '.run.attempt' "$manifest")" = "$RUN_ATTEMPT" ]
+          [ "$(jq -r '.source.sha' "$manifest")" = "$SOURCE_SHA" ]
+          [ "$(jq -r '.source.version' "$manifest")" = "$VERSION" ]
+          for architecture in amd64 arm64; do
+            archive="$ROOT/oci/qualified-oci-$architecture/myspeed-$architecture.oci.tar"
+            expected="$(jq -r --arg platform "linux/$architecture" '.containers[] | select(.platform == $platform) | .sha256' "$manifest")"
+            actual="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+            [ "$actual" = "$expected" ] || { echo "OCI archive digest mismatch for $architecture" >&2; exit 1; }
+          done
+          archive="$ROOT/oci/qualified-oci-index/myspeed-multiarch.oci.tar"
+          expected="$(jq -r '.containerIndex.sha256' "$manifest")"
+          actual="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          [ "$actual" = "$expected" ] || { echo 'Combined OCI archive digest mismatch' >&2; exit 1; }
+
+      - name: Install OCI transport without registry credentials
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes skopeo
+
+      - name: Revalidate promotion immediately before mutation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          MANIFEST: ${{ runner.temp }}/qualification/qualification-manifest.json
+          RUN_ID: ${{ inputs.qualification_run_id }}
+          RUN_ATTEMPT: ${{ inputs.qualification_run_attempt }}
+          SOURCE_SHA: ${{ inputs.candidate_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        with:
+          script: |
+            const fs = require('fs'); const {createHash} = require('crypto');
+            const maxAgeMs = 7 * 24 * 60 * 60 * 1000; const maxManifestBytes = 10 * 1024 * 1024;
+            const bytes = fs.readFileSync(process.env.MANIFEST); const stat = fs.lstatSync(process.env.MANIFEST);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.size === 0 || stat.size > maxManifestBytes) throw new Error('Unsafe qualification manifest');
+            const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
+            if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
+            const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
+            if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
+              || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
+              || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
+            const {data: run} = await github.rest.actions.getWorkflowRun({owner: context.repo.owner, repo: context.repo.repo, run_id: runId});
+            const {data: branch} = await github.rest.repos.getBranch({owner: context.repo.owner, repo: context.repo.repo, branch: process.env.DEFAULT_BRANCH});
+            const createdAt = Date.parse(run.created_at);
+            if (context.ref !== 'refs/heads/' + process.env.DEFAULT_BRANCH || branch.commit.sha !== process.env.SOURCE_SHA
+              || run.run_attempt !== attempt || run.event !== 'workflow_dispatch' || run.conclusion !== 'success'
+              || run.path !== '.github/workflows/qualify-release.yml' || run.head_repository?.full_name !== context.repo.owner + '/' + context.repo.repo
+              || run.head_sha !== process.env.SOURCE_SHA || run.head_branch !== process.env.DEFAULT_BRANCH
+              || !Number.isFinite(createdAt) || Date.now() - createdAt > maxAgeMs) throw new Error('Qualification is stale or untrusted');
+
+      - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # One manifest list carrying both per-arch digests, published under every
-      # requested tag at once. Each tag therefore points at the same multi-arch
-      # manifest rather than at whichever architecture was pushed last.
-      - name: Create manifest list and push
-        working-directory: ${{ runner.temp }}/digests
+      - name: Publish the exact qualified multi-platform index
         env:
-          TAGS: ${{ inputs.tags }}
+          ROOT: ${{ runner.temp }}
+          VERSION: ${{ inputs.version }}
         run: |
-          tag_args=()
-          while IFS= read -r tag; do
-            tag="${tag//[[:space:]]/}"
-            [ -n "$tag" ] || continue
-            tag_args+=(-t "${REGISTRY_IMAGE}:${tag}")
-          done <<< "$TAGS"
-
-          if [ ${#tag_args[@]} -eq 0 ]; then
-            echo "::error::No tags to publish."
-            exit 1
-          fi
-
-          digest_args=()
-          for digest in *; do
-            digest_args+=("${REGISTRY_IMAGE}@sha256:${digest}")
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          archive="$ROOT/oci/qualified-oci-index/myspeed-multiarch.oci.tar"
+          for tag in "$VERSION" latest; do
+            skopeo copy --all --preserve-digests "oci-archive:$archive:myspeed" "docker://$REGISTRY_IMAGE:$tag"
           done
-
-          docker buildx imagetools create "${tag_args[@]}" "${digest_args[@]}"

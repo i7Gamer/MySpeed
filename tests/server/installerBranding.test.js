@@ -110,8 +110,8 @@ describe("the service the installer registers restarts after a crash", () => {
     });
 
     it("links the util extension into both WiX passes", () => {
-        assert.match(workflow, /candle [^\n]*-ext WixUtilExtension/, "candle does not load the util extension");
-        assert.match(workflow, /light [^\n]*-ext WixUtilExtension/, "light does not load the util extension");
+        assert.match(workflow, /WIX_CANDLE [^\n]*-ext WixUtilExtension/, "candle does not load the util extension");
+        assert.match(workflow, /WIX_LIGHT [^\n]*-ext WixUtilExtension/, "light does not load the util extension");
     });
 
     it("no longer carries the WinSW recovery elements the MSI never applies", () => {

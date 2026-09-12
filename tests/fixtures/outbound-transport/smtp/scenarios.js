@@ -2,8 +2,7 @@ import assert from 'node:assert/strict';
 import dns from 'node:dns';
 import net from 'node:net';
 import tls from 'node:tls';
-import nodemailer from 'nodemailer';
-import shared from 'nodemailer/lib/shared/index.js';
+import {nodemailer, shared, setInterfaces, fixtureInterfaces} from './nodemailerHarness.js';
 import { smtpFixture, cert, HOST } from './fixture.js';
 import { createSmtpSocket } from '../../../../server/util/smtpSocket.js';
 import { checkOutboundHost } from '../../../../server/util/safeUrl.js';
@@ -24,7 +23,7 @@ const original = {
   random: Math.random,
   netConnect: net.connect,
   tlsConnect: tls.connect,
-  interfaces: shared.networkInterfaces
+  interfaces: {...fixtureInterfaces}
 };
 let answers = [{
     address: '127.0.0.1',
@@ -140,7 +139,7 @@ const check = (name, run) => smtpScenarios.push({
     const cache = new Map();
     smtpResolver = {
       ...createSmtpResolver({
-        cache
+        cache, networkInterfaces: fixtureInterfaces
       }),
       cache
     };
@@ -159,7 +158,7 @@ const check = (name, run) => smtpScenarios.push({
       Math.random = original.random;
       net.connect = original.netConnect;
       tls.connect = original.tlsConnect;
-      shared.networkInterfaces = original.interfaces;
+      setInterfaces(original.interfaces);
       shared.dnsCache.clear();
     }
   }
@@ -567,14 +566,14 @@ for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-
     address: '127.0.0.1',
     family: 4
   }];
-  const previous = shared.networkInterfaces,
+  const previous = {...fixtureInterfaces},
     onlyLoopback = {
       lo: [{
         family: 'IPv4',
         internal: true
       }]
     };
-  shared.networkInterfaces = onlyLoopback;
+  setInterfaces(onlyLoopback);
   const resolver = createSmtpResolver({
     networkInterfaces: onlyLoopback
   });
@@ -589,7 +588,7 @@ for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-
       lookupCalls
     };
   } finally {
-    shared.networkInterfaces = previous;
+    setInterfaces(previous);
     await fixture.close();
   }
 });
@@ -665,7 +664,7 @@ for (const adapter of [false, true]) for (const mode of ['plain', 'tls']) check(
   // Test fallback rather than this host's resolver interface snapshot. Even
   // when IPv6 cannot connect, its failure must leave the IPv4 candidate usable.
   const networkInterfaces = {fixture: [{family: 'IPv4', internal: false}, {family: 'IPv6', internal: false}]};
-  shared.networkInterfaces = networkInterfaces;
+  setInterfaces(networkInterfaces);
   const cache = new Map();
   smtpResolver = {...createSmtpResolver({cache, networkInterfaces}), cache};
   const fixture = await smtpFixture({

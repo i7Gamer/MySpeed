@@ -6,7 +6,10 @@ on:
       version:
         required: true
         type: string
-      release_id:
+      source_sha:
+        required: true
+        type: string
+      windows_stamp:
         required: true
         type: string
 
@@ -21,17 +24,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One installer per Windows binary. The service is where the AVX2
-          # crash is worst - it installs cleanly and then never starts - and
-          # Windows has no install script to pick the right binary the way
-          # scripts/install.sh does on Linux, so the choice has to be a download.
+          # Retain both Windows installer names for existing download links.
+          # Bun 1.4.2 gives both x64 targets the same Nehalem/SSE4.2 floor
+          # with runtime AVX dispatch, so baseline is a compatibility alias.
           - label: x64
             artifact: MySpeed-windows-x64.exe
             product_name: MySpeed
             asset_name: MySpeed-installer.msi
           - label: x64-baseline
             artifact: MySpeed-windows-x64-baseline.exe
-            product_name: MySpeed (no AVX2)
+            product_name: MySpeed (baseline alias)
             asset_name: MySpeed-installer-baseline.msi
 
     steps:
@@ -42,6 +44,43 @@ jobs:
         with:
           name: ${{ matrix.artifact }}
           path: ./installer
+
+      - name: Verify qualified binary input
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          MSI_MAX_MAJOR: 255
+          MSI_MAX_MINOR: 255
+          MSI_MAX_BUILD: 65535
+        run: |
+          if ($env:SOURCE_SHA -notmatch '^[a-f0-9]{40}$') { throw 'Invalid qualification source SHA' }
+          if ($env:VERSION -notmatch '^(\d+)\.(\d+)\.(\d+)$') { throw 'Invalid qualification version' }
+          if ($env:WINDOWS_STAMP -notmatch '^\d+\.\d+\.\d+\.\d+$' -or
+              ($env:WINDOWS_STAMP.Split('.')[0..2] -join '.') -ne $env:VERSION) {
+            throw 'Invalid frozen Windows build stamp'
+          }
+          $parts = $env:VERSION.Split('.')
+          $limits = @([int]$env:MSI_MAX_MAJOR, [int]$env:MSI_MAX_MINOR, [int]$env:MSI_MAX_BUILD)
+          for ($index = 0; $index -lt $parts.Count; $index++) {
+            if ([System.Numerics.BigInteger]::Parse($parts[$index]) -gt $limits[$index]) {
+              throw 'Qualification version exceeds MSI bounds'
+            }
+          }
+          $binary = 'installer/MySpeed.exe'
+          $expected = (Get-Content -LiteralPath "$binary.sha256" -Raw).Trim()
+          $actual = (Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($expected -notmatch '^[a-f0-9]{64}$' -or $actual -ne $expected) {
+            throw 'Qualified Windows binary SHA256 mismatch'
+          }
+          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo(
+            (Resolve-Path -LiteralPath $binary).Path
+          )
+          if ($versionInfo.FileVersion -ne $env:WINDOWS_STAMP -or
+              $versionInfo.ProductVersion -ne $env:WINDOWS_STAMP) {
+            throw "Qualified executable version does not match frozen stamp $($env:WINDOWS_STAMP)"
+          }
 
       # The wrapper this MSI installs as a LocalSystem service, so what it is
       # matters as much as the binary beside it. Pinned by digest: dependabot
@@ -94,42 +133,45 @@ jobs:
           "@
           $serviceConfig | Out-File -FilePath "installer\MySpeedService.xml" -Encoding UTF8
 
-      # The version is pinned and the directory is discovered, rather than the
-      # package being whatever the feed serves today and the path being asserted
-      # to be v3.11. The chocolatey package also ships 3.14, which installs
-      # beside a differently named directory - and the day that lands, candle is
-      # not on PATH, build-msi fails, and a release stops with the tag cut, the
-      # version bumped and no Docker tag published.
-      #
-      # That day landed on 1.5.2, by the other door. The runner image now ships
-      # 3.14 itself, so asking for 3.11.2 is a downgrade and chocolatey refuses
-      # one outright: it exits 1 with "A newer version is already installed"
-      # having changed nothing - and the discovery below then found 3.14 exactly
-      # where it looks, printed the path, and the step failed anyway on an exit
-      # code from a request the image had already satisfied.
-      #
-      # So the install is best-effort and the discovery is the gate. It exits 1
-      # itself when there is no bin directory, which is the case this step is
-      # actually here to catch; a chocolatey that declined to act is not.
-      - name: Install WiX Toolset
+      # A runner-installed toolset is mutable state: the old step asked
+      # Chocolatey for 3.11.2, accepted a refused downgrade, then selected the
+      # highest preinstalled WiX directory. Download the official portable
+      # archive instead, verify its immutable bytes before extraction, and pass
+      # absolute tool paths to the build rather than trusting PATH.
+      - name: Download pinned portable WiX Toolset
+        shell: pwsh
+        env:
+          WIX_VERSION: "3.14.1"
+          WIX_URL: "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
+          WIX_SHA256: "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31"
         run: |
-          choco install wixtoolset -y --version=3.11.2
+          $archive = Join-Path $env:RUNNER_TEMP "wix-$($env:WIX_VERSION)-binaries.zip"
+          $directory = Join-Path $env:RUNNER_TEMP "wix-$($env:WIX_VERSION)"
+          Invoke-WebRequest -Uri $env:WIX_URL -OutFile $archive
 
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "chocolatey exited $LASTEXITCODE - using the WiX already on the image"
-            $global:LASTEXITCODE = 0
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:WIX_SHA256) {
+            throw "WiX archive digest mismatch: expected $($env:WIX_SHA256), got $actual"
           }
 
-          $bin = Get-ChildItem "C:\Program Files (x86)\WiX Toolset v*\bin" -Directory |
-            Sort-Object Name | Select-Object -Last 1
-
-          if (-not $bin) {
-            Write-Error "WiX was installed but no 'WiX Toolset v*' bin directory was found"
-            exit 1
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory
+          $candle = Join-Path $directory "candle.exe"
+          $light = Join-Path $directory "light.exe"
+          foreach ($tool in @($candle, $light)) {
+            if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) {
+              throw "Portable WiX archive is missing $tool"
+            }
           }
 
-          Write-Host "Using WiX at $($bin.FullName)"
-          echo $bin.FullName >> $env:GITHUB_PATH
+          $candleSha256 = (Get-FileHash -LiteralPath $candle -Algorithm SHA256).Hash.ToLowerInvariant()
+          $lightSha256 = (Get-FileHash -LiteralPath $light -Algorithm SHA256).Hash.ToLowerInvariant()
+          "WIX_CANDLE=$candle" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIX_LIGHT=$light" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIX_ARCHIVE_VERSION=$($env:WIX_VERSION)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIX_ARCHIVE_URL=$($env:WIX_URL)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WIX_ARCHIVE_SHA256=$actual" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Portable candle verified: $candleSha256"
+          Write-Host "Portable light verified: $lightSha256"
 
       # Through env like the rest of the chain, so no workflow expression is
       # substituted into a script body. Both values arrive already checked -
@@ -165,8 +207,14 @@ jobs:
                    leaving two entries in Add/Remove Programs instead of a working
                    service. ProgramData is untouched by the swap, and MigrateLegacyData
                    below already refuses to copy over a database that is there, so
-                   the existing data survives it. -->
-              <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+                   the existing data survives it.
+
+                   Schedule removal after InstallInitialize so it is inside the
+                   Windows Installer transaction. The earlier default removes the
+                   predecessor before rollback begins, so a later failure leaves
+                   neither version installed instead of restoring the old one. -->
+              <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"
+                            DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
               <MediaTemplate EmbedCab="yes" />
 
               <!-- Add/Remove Programs reads these; the UAC prompt reads none of
@@ -301,15 +349,43 @@ jobs:
       # warning, but silencing it keeps a real one visible in the log.
       - name: Build MSI
         working-directory: installer
+        shell: pwsh
         run: |
-          candle -arch x64 -ext WixUtilExtension myspeed.wxs
-          light myspeed.wixobj -ext WixUtilExtension -sice:ICE61 -o MySpeed-installer.msi
+          & $env:WIX_CANDLE -arch x64 -ext WixUtilExtension myspeed.wxs
+          if ($LASTEXITCODE -ne 0) { throw 'WiX compiler failed' }
+          & $env:WIX_LIGHT myspeed.wixobj -ext WixUtilExtension -sice:ICE61 -v -o MySpeed-installer.msi 2>&1 |
+            Tee-Object -FilePath ice-validation.log
+          if ($LASTEXITCODE -ne 0) { throw 'WiX linker or ICE validation failed' }
 
       - name: Hash installer
         shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
         run: |
-          $path = 'installer/MySpeed-installer.msi'
-          (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -LiteralPath "$path.sha256" -Encoding ascii
+          foreach ($path in @('installer/MySpeed-installer.msi', 'installer/ice-validation.log')) {
+            (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() |
+              Set-Content -LiteralPath "$path.sha256" -Encoding ascii
+          }
+          $provenance = [ordered]@{
+            sourceSha = $env:SOURCE_SHA
+            version = $env:VERSION
+            windowsStamp = $env:WINDOWS_STAMP
+            wixArchiveVersion = $env:WIX_ARCHIVE_VERSION
+            wixArchiveUrl = $env:WIX_ARCHIVE_URL
+            wixArchiveSha256 = $env:WIX_ARCHIVE_SHA256
+            wixCandleVersion = (Get-Item -LiteralPath $env:WIX_CANDLE).VersionInfo.FileVersion
+            wixCandleSha256 = (Get-FileHash -LiteralPath $env:WIX_CANDLE -Algorithm SHA256).Hash.ToLowerInvariant()
+            wixLightVersion = (Get-Item -LiteralPath $env:WIX_LIGHT).VersionInfo.FileVersion
+            wixLightSha256 = (Get-FileHash -LiteralPath $env:WIX_LIGHT -Algorithm SHA256).Hash.ToLowerInvariant()
+            binarySha256 = (Get-FileHash -LiteralPath 'installer/MySpeed.exe' -Algorithm SHA256).Hash.ToLowerInvariant()
+            installerSha256 = (Get-FileHash -LiteralPath 'installer/MySpeed-installer.msi' -Algorithm SHA256).Hash.ToLowerInvariant()
+            iceSha256 = (Get-FileHash -LiteralPath 'installer/ice-validation.log' -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $provenance | ConvertTo-Json | Set-Content -LiteralPath 'installer/msi-build-provenance.json' -Encoding utf8
+          (Get-FileHash -LiteralPath 'installer/msi-build-provenance.json' -Algorithm SHA256).Hash.ToLowerInvariant() |
+            Set-Content -LiteralPath 'installer/msi-build-provenance.json.sha256' -Encoding ascii
 
       - name: Upload verified installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -318,44 +394,8 @@ jobs:
           path: |
             installer/MySpeed-installer.msi
             installer/MySpeed-installer.msi.sha256
+            installer/ice-validation.log
+            installer/ice-validation.log.sha256
+            installer/msi-build-provenance.json
+            installer/msi-build-provenance.json.sha256
           if-no-files-found: error
-
-  publish-msi:
-    name: "Publish installers"
-    runs-on: ubuntu-latest
-    needs: build-msi
-    permissions:
-      contents: write
-    steps:
-      - name: Download installers
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: release-msi-*
-          path: artifacts
-
-      - name: Upload to Release
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          RELEASE_ID: ${{ inputs.release_id }}
-        with:
-          script: |
-            const fs = require('fs');
-            const {createHash} = require('crypto');
-            const names = ['MySpeed-installer.msi', 'MySpeed-installer-baseline.msi'];
-            for (const name of names) {
-              const path = `artifacts/release-msi-${name}/MySpeed-installer.msi`;
-              if (!fs.lstatSync(path).isFile() || fs.statSync(path).size === 0)
-                throw new Error(`Missing or empty release asset: ${name}`);
-              const expected = fs.readFileSync(path + '.sha256', 'utf8').trim();
-              const actual = createHash('sha256').update(fs.readFileSync(path)).digest('hex');
-              if (actual !== expected) throw new Error('SHA256 digest mismatch: ' + name);
-            }
-            for (const name of names) {
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: Number(process.env.RELEASE_ID),
-                name,
-                data: fs.readFileSync(`artifacts/release-msi-${name}/MySpeed-installer.msi`)
-              });
-            }

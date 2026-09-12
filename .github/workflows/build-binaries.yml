@@ -1,22 +1,19 @@
 name: Build Binaries
 
-# Every job checks out v<version> rather than the dispatched ref. create-release
-# pushes the version bump and then cuts the tag at that commit, so the tag is the
-# only ref where package.json already carries the version being released - and
-# that value is compiled into the binaries by server/routes/system.js.
+# Every job checks out the exact, already-versioned qualification commit.
+# Nothing here creates tags, publishes releases, or changes the source version.
 on:
   workflow_call:
     inputs:
       version:
         required: true
         type: string
-      release_id:
+      ref:
         required: true
         type: string
-    outputs:
-      duplicate-digests:
-        description: "The assets that share one SHA-256 digest, or empty"
-        value: ${{ jobs.checksums.outputs.duplicate-digests }}
+      windows_stamp:
+        required: true
+        type: string
 
 # Dependency scripts and compiled artifacts execute only with repository read access.
 permissions:
@@ -30,15 +27,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Default Bun x64 target needs AVX2, same as on Linux. Older CPUs
-          # (e.g. Bay Trail Celeron) die with "Illegal instruction" at startup -
-          # and the MSI registers this binary as a service, where that crash
-          # surfaces as a service that never starts rather than as an error.
+          # Bun 1.4.2's default and baseline target names both use the unified
+          # Nehalem/SSE4.2 runtime and dispatch newer AVX instructions at run
+          # time. Keep both names for existing direct-download and MSI URLs.
           - label: x64
             target: bun-windows-x64
             artifact_name: MySpeed-windows-x64.exe
           - label: x64-baseline
-            target: bun-windows-x64-baseline
+            target: bun-windows-x64
             artifact_name: MySpeed-windows-x64-baseline.exe
 
     steps:
@@ -46,17 +42,28 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: v${{ inputs.version }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
+
+      - name: Validate qualification inputs
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: bun scripts/release/validate-inputs.mjs
 
       - name: Install client dependencies
         working-directory: client
         run: bun install --frozen-lockfile
+
+      - name: Generate third-party notices
+        run: bun scripts/generate-third-party-notices.mjs
 
       - name: Build client
         working-directory: client
@@ -77,76 +84,45 @@ jobs:
       - name: Generate client embed
         run: bun run generate-client-embed
 
-      # Asked to compile for a target it is not, Bun fetches that runtime itself
-      # - and on windows-latest that fetch does not work. Three releases died on
-      # "Failed to extract executable for 'bun-windows-x64-baseline-v1.3.14'.
-      # The download may be incomplete.", about 0.6s after bundling cleanly,
-      # each deleting its own tag and draft while Docker had already been pushed.
-      #
-      # The message names a download and none of it holds. Diagnosed on the
-      # runner: Defender's real-time protection is off there and an exclusion
-      # changed nothing, curl pulled the same artifact in a second (38,023,440
-      # bytes) and Expand-Archive unpacked it, and Bun's cache was empty
-      # afterwards - nothing partial was ever written. Retrying three times with
-      # the cache cleared in between failed three times.
-      #
-      # Compiling with the baseline Bun itself worked first try. That is also
-      # why the default leg has never failed: the runner's Bun is windows-x64,
-      # so it has nothing to fetch. Giving each leg a Bun that is its own target
-      # puts the working leg's condition under the broken one.
-      #
-      # Bun's release archives are named for these same targets, so the asset is
-      # the matrix value with .zip after it. setup-bun above still installs the
-      # host Bun that runs bun install and the client build.
-      - name: Fetch a Bun matching the target
-        shell: pwsh
-        run: |
-          $version = bun --version
-          $url = "https://github.com/oven-sh/bun/releases/download/bun-v$version/${{ matrix.target }}.zip"
-          Write-Host "fetching $url"
-
-          curl.exe -sSL --retry 3 --fail -o target-bun.zip $url
-          if ($LASTEXITCODE -ne 0) { throw "could not download $url (curl exit $LASTEXITCODE)" }
-
-          Expand-Archive target-bun.zip -DestinationPath target-bun -Force
-
-          $exe = (Get-ChildItem target-bun -Recurse -Filter bun.exe | Select-Object -First 1).FullName
-          if (-not $exe) { throw "no bun.exe inside $url" }
-
-          & $exe --version
-          "TARGET_BUN=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      # --windows-version stamps the exe's version resource with MySpeed's own
-      # version, four parts so the run number makes every build strictly newer
-      # than the one before it. Without it the resource is Bun's: v1.5.2's exe
-      # carried 1.4.0.0 and v1.5.3's 1.3.14.0, from the Bun each was compiled
-      # with, and Windows Installer keeps a file whose version on disk is higher
-      # - then the major upgrade removed the old product and that file with it,
-      # so the service was started into a missing MySpeed.exe, the installer
-      # waited out its restart loop and rolled back. The same rule refuses an
-      # equal version, which is what a rebuild of one release used to publish.
+      # The native unified runtime avoids the obsolete baseline download. The
+      # frozen four-part MySpeed stamp is shared by every artifact in this run.
       - name: Compile binary
         shell: pwsh
         env:
-          # Through env, never spliced into the script: the version is a
-          # dispatch input, the classic injection carrier.
-          RELEASE_VERSION: ${{ inputs.version }}
-          RUN_NUMBER: ${{ github.run_number }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
         run: |
-          & "$env:TARGET_BUN" build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} --windows-version="${env:RELEASE_VERSION}.${env:RUN_NUMBER}" server/index.js --outfile MySpeed.exe
+          bun scripts/build-binary.mjs --target=${{ matrix.target }} --windows-version="$env:WINDOWS_STAMP" --outfile MySpeed.exe
           if ($LASTEXITCODE -ne 0) { throw "the binary did not compile (exit $LASTEXITCODE)" }
 
-      # A green compile says nothing about whether the binary runs, which is the
-      # whole premise of the baseline leg. Before the upload, so a binary that
-      # never boots fails the release rather than being attached to it.
-      #
-      # The runner has AVX2, so for the baseline leg this proves the binary is
-      # not broken - not that it fixes a machine without AVX2. That part is what
-      # the emulator run and a hardware report are for.
-      - name: Verify binary boots and serves
+      # This starts the real compiled graph without listeners. Full native
+      # network-isolated acceptance and CPU-floor evidence remain promotion gates.
+      - name: Windows listener-free rehearsal
         shell: pwsh
-        run: ./scripts/verify-binary.ps1 -Binary ./MySpeed.exe
+        run: ./scripts/verify-binary.ps1 -Binary ./MySpeed.exe -ListenerFree -EvidenceDirectory ./qualification-evidence
 
+      - name: Verify Windows version metadata
+        shell: pwsh
+        env:
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: |
+          $metadata = (Get-Item -LiteralPath ./MySpeed.exe).VersionInfo
+          if ($metadata.FileVersion -ne $env:WINDOWS_STAMP -or $metadata.ProductVersion -ne $env:WINDOWS_STAMP) {
+            throw 'Windows binary metadata does not match the frozen qualification stamp'
+          }
+          $evidence = @{
+            fileVersion = $metadata.FileVersion
+            productVersion = $metadata.ProductVersion
+            windowsStamp = $env:WINDOWS_STAMP
+            artifactSha256 = (Get-FileHash -LiteralPath ./MySpeed.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          $evidence | ConvertTo-Json | Set-Content -LiteralPath windows-version.json -Encoding utf8NoBOM
+          (Get-FileHash -LiteralPath windows-version.json -Algorithm SHA256).Hash.ToLowerInvariant() | Set-Content -LiteralPath windows-version.json.sha256 -Encoding utf8NoBOM
+
+      - name: Collect verifier summary
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: bun scripts/qualification/collect-summary.mjs --evidence-dir qualification-evidence --output qualification-summary.json --source-sha "$SOURCE_SHA" --mode listener-free-reset
 
       # Both legs compile to MySpeed.exe - build-msi's WiX source resolves
       # against that name - so the matrix value is all that keeps the two
@@ -165,6 +141,11 @@ jobs:
           path: |
             MySpeed.exe
             MySpeed.exe.sha256
+            qualification-summary.json
+            qualification-summary.json.sha256
+            windows-version.json
+            windows-version.json.sha256
+            qualification-evidence/
           if-no-files-found: error
 
   build-linux:
@@ -174,21 +155,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Default Bun x64 target needs AVX2. Older CPUs (e.g. Bay Trail
-          # Celeron) SIGILL on startup — ship a baseline build for them.
-          # `verify` says per leg whether the compiled binary is booted before it
-          # is uploaded. Both x64 legs are, because install.sh picks between them
-          # automatically on the user's behalf - and the baseline one is chosen
-          # silently, on exactly the CPUs whose owner is least placed to debug a
-          # binary that will not start. arm64 is not: pwsh, which
-          # verify-binary.ps1 needs, is not on the arm runner image.
+          # Bun 1.4.2's default and baseline x64 names both select its unified
+          # Nehalem/SSE4.2 runtime, which dispatches AVX2/AVX-512 paths at run
+          # time. Both artifact names remain for compatibility with old URLs.
+          # Every native leg must run the same required artifact checks.
           - label: x64
             target: bun-linux-x64
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64
             verify: true
           - label: x64-baseline
-            target: bun-linux-x64-baseline
+            # Explicit baseline targets still request a separate runtime
+            # download; compile natively and retain the compatibility filename.
+            target: bun-linux-x64
             runner: ubuntu-latest
             artifact_name: MySpeed-linux-x64-baseline
             verify: true
@@ -196,24 +175,35 @@ jobs:
             target: bun-linux-arm64
             runner: ubuntu-24.04-arm
             artifact_name: MySpeed-linux-arm64
-            verify: false
+            verify: true
 
     steps:
       - name: Checkout project
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: v${{ inputs.version }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
+
+      - name: Validate qualification inputs
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: bun scripts/release/validate-inputs.mjs
 
       - name: Install client dependencies
         working-directory: client
         run: bun install --frozen-lockfile
+
+      - name: Generate third-party notices
+        run: bun scripts/generate-third-party-notices.mjs
 
       - name: Build client
         working-directory: client
@@ -235,7 +225,7 @@ jobs:
         run: bun run generate-client-embed
 
       - name: Compile binary
-        run: bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} server/index.js --outfile MySpeed
+        run: bun scripts/build-binary.mjs --target=${{ matrix.target }} --outfile MySpeed
 
       - name: Rename binary
         run: mv MySpeed ${{ matrix.artifact_name }}
@@ -249,9 +239,52 @@ jobs:
       # The runner has AVX2, so for the baseline leg this proves the binary is
       # not broken - not that it fixes a machine without AVX2.
       - name: Verify binary boots and serves
-        if: ${{ matrix.verify }}
-        shell: pwsh
-        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }}
+        shell: bash
+        env:
+          ARTIFACT_NAME: ${{ matrix.artifact_name }}
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: |
+          node scripts/qualification/verify-standalone.mjs \
+            --artifact "$ARTIFACT_NAME" --repo "$PWD" --source-sha "$SOURCE_SHA" \
+            --evidence-dir "$PWD/qualification-evidence" --original-build-root "$PWD"
+          node scripts/qualification/collect-summary.mjs --evidence-dir qualification-evidence \
+            --output qualification-summary.json --source-sha "$SOURCE_SHA" --mode full
+
+      # Execute the actual candidate under the oldest x64 CPU contract Bun 1.4
+      # supports. The reset command loads the compiled application and opens its
+      # SQLite database, but returns before starting listeners, schedulers or
+      # providers. Empty current server lists stop top-level discovery, and the
+      # network namespace makes that isolation a gate rather than an assumption.
+      - name: Verify x64 binary on Nehalem CPU
+        if: ${{ startsWith(matrix.target, 'bun-linux-x64') }}
+        shell: bash
+        env:
+          CPU_PROBE_TIMEOUT_SECONDS: 60
+          RESET_NOTHING_TO_DO_EXIT: 113
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qemu-user
+
+          artifact="$(realpath "./${{ matrix.artifact_name }}")"
+          probe_work="$(mktemp -d)"
+          trap 'sudo rm -rf -- "$probe_work"' EXIT
+          mkdir -p "$probe_work/data/servers"
+          printf '{}\n' > "$probe_work/data/servers/ookla.json"
+          printf '{}\n' > "$probe_work/data/servers/librespeed.json"
+
+          set +e
+          (
+            cd "$probe_work"
+            timeout "${CPU_PROBE_TIMEOUT_SECONDS}s" sudo unshare --net -- \
+              /usr/bin/qemu-x86_64 -cpu Nehalem "$artifact" --reset-password
+          )
+          probe_status=$?
+          set -e
+
+          if [ "$probe_status" -ne "$RESET_NOTHING_TO_DO_EXIT" ]; then
+            echo "::error::Nehalem CPU probe exited $probe_status, expected $RESET_NOTHING_TO_DO_EXIT."
+            exit 1
+          fi
 
       - name: Hash verified binary
         shell: bash
@@ -267,6 +300,9 @@ jobs:
           path: |
             ${{ matrix.artifact_name }}
             ${{ matrix.artifact_name }}.sha256
+            qualification-summary.json
+            qualification-summary.json.sha256
+            qualification-evidence/
           if-no-files-found: error
 
   build-macos:
@@ -306,17 +342,28 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: v${{ inputs.version }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
+
+      - name: Validate qualification inputs
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: bun scripts/release/validate-inputs.mjs
 
       - name: Install client dependencies
         working-directory: client
         run: bun install --frozen-lockfile
+
+      - name: Generate third-party notices
+        run: bun scripts/generate-third-party-notices.mjs
 
       - name: Build client
         working-directory: client
@@ -338,19 +385,22 @@ jobs:
         run: bun run generate-client-embed
 
       - name: Compile binary
-        run: bun build --compile --compile-autoload-package-json --external pg-hstore --external pg --target=${{ matrix.target }} server/index.js --outfile MySpeed
+        run: bun scripts/build-binary.mjs --target=${{ matrix.target }} --outfile MySpeed
 
       - name: Rename binary
         run: mv MySpeed ${{ matrix.artifact_name }}
 
-      # macOS was the only platform shipping a binary nobody had started. Windows
-      # and Linux both boot theirs before the upload; this job went compile ->
-      # rename -> release, so any fault that shows at startup rather than at
-      # compile time - a missing native binding above all - reached users first.
-      - name: Verify binary boots and serves
+      # Listener-free rehearsal is not full native runtime qualification.
+      # Promotion remains blocked until trusted, network-isolated evidence exists.
+      - name: macOS listener-free rehearsal
         if: ${{ matrix.verify }}
         shell: pwsh
-        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }}
+        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }} -ListenerFree -EvidenceDirectory ./qualification-evidence
+
+      - name: Collect verifier summary
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: bun scripts/qualification/collect-summary.mjs --evidence-dir qualification-evidence --output qualification-summary.json --source-sha "$SOURCE_SHA" --mode listener-free-reset
 
       - name: Hash verified binary
         shell: bash
@@ -366,6 +416,9 @@ jobs:
           path: |
             ${{ matrix.artifact_name }}
             ${{ matrix.artifact_name }}.sha256
+            qualification-summary.json
+            qualification-summary.json.sha256
+            qualification-evidence/
           if-no-files-found: error
 
   build-zip:
@@ -376,17 +429,28 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: v${{ inputs.version }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Source users need this same minimum runtime for the tested dependency set.
+          bun-version: 1.4.2
+
+      - name: Validate qualification inputs
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: bun scripts/release/validate-inputs.mjs
 
       - name: Install client dependencies
         working-directory: client
         run: bun install --frozen-lockfile
+
+      - name: Generate third-party notices
+        run: bun scripts/generate-third-party-notices.mjs
 
       - name: Build client
         working-directory: client
@@ -405,11 +469,45 @@ jobs:
         run: bun run generate-integrations
 
       - name: Create zip archive
-        # bun.lock too: the archive is advertised as "requires Bun runtime", and
+        # bun.lock too: the archive requires Bun 1.4.2 or newer, and
         # without the lockfile `bun install` re-resolves every range - two people
         # unpacking one release get different builds of express and sequelize,
         # neither of them the one that was tested.
         run: zip -r MySpeed.zip build server package.json bun.lock
+
+      - name: Verify packaged source on Node and Bun
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.ref }}
+        run: |
+          source_snapshot="$(mktemp -d)"
+          trap 'rm -rf -- "$source_snapshot"' EXIT
+          unzip -q MySpeed.zip -d "$source_snapshot"
+          (cd "$source_snapshot" && bun install --production --frozen-lockfile)
+          for runtime in node bun; do
+            if [ "$runtime" = node ]; then
+              image=node:22.19.0-bookworm-slim
+            else
+              image=oven/bun:1.4.2
+            fi
+            evidence="$(mktemp -d)"
+            work="$(mktemp -d)"
+            # Source installs serve cwd/build. Mount only the ZIP's client
+            # assets there; the synthetic work/data directory remains separate.
+            docker run --rm --network none --user "$(id -u):$(id -g)" \
+              --mount "type=bind,source=$source_snapshot,target=/source,readonly" \
+              --mount "type=bind,source=$PWD/scripts/qualification,target=/qualification,readonly" \
+              --mount "type=bind,source=$evidence,target=/evidence" \
+              --mount "type=bind,source=$work,target=/test-work" \
+              --mount "type=bind,source=$source_snapshot/build,target=/test-work/build,readonly" \
+              --entrypoint "$runtime" "$image" /qualification/check-artifact.mjs \
+              --command "/usr/local/bin/$runtime" --artifact "/usr/local/bin/$runtime" \
+              --arg /source/server/index.js --repo /source \
+              --work /test-work --keep-work \
+              --fixture-runtime "$runtime" --evidence-dir /evidence --source-sha "$SOURCE_SHA"
+            node scripts/qualification/collect-summary.mjs --evidence-dir "$evidence" \
+              --output "qualification-${runtime}-summary.json" --source-sha "$SOURCE_SHA" --mode full
+          done
 
       - name: Hash source archive
         shell: bash
@@ -425,160 +523,50 @@ jobs:
           path: |
             MySpeed.zip
             MySpeed.zip.sha256
+            qualification-node-summary.json
+            qualification-node-summary.json.sha256
+            qualification-bun-summary.json
+            qualification-bun-summary.json.sha256
           if-no-files-found: error
 
-  # A fresh runner uploads bytes without executing repository or artifact code.
-  publish-binaries:
-    name: "Publish verified binaries"
+  build-static:
+    name: "Install scripts"
     runs-on: ubuntu-latest
-    needs: [build-windows, build-linux, build-macos, build-zip]
-    permissions:
-      contents: write
-    steps:
-      - name: Download verified builds
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          pattern: MySpeed*
-          path: artifacts
-
-      - name: Upload to Release
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          RELEASE_ID: ${{ inputs.release_id }}
-        with:
-          script: |
-            const fs = require('fs');
-            const assets = [
-              // Every payload is checked against its build-side SHA256 below.
-              ['MySpeed-windows-x64.exe', 'MySpeed.exe'],
-              ['MySpeed-windows-x64-baseline.exe', 'MySpeed.exe'],
-              ['MySpeed-linux-x64', 'MySpeed-linux-x64'],
-              ['MySpeed-linux-x64-baseline', 'MySpeed-linux-x64-baseline'],
-              ['MySpeed-linux-arm64', 'MySpeed-linux-arm64'],
-              ['MySpeed-macos-x64', 'MySpeed-macos-x64'],
-              ['MySpeed-macos-arm64', 'MySpeed-macos-arm64'],
-              ['MySpeed.zip', 'MySpeed.zip']
-            ];
-            // Validate the complete handoff before the first upload.
-            const {createHash} = require('crypto');
-            for (const [name, file] of assets) {
-              const path = `artifacts/${name}/${file}`;
-              if (!fs.lstatSync(path).isFile() || fs.statSync(path).size === 0)
-                throw new Error(`Missing or empty release asset: ${name}`);
-              const expected = fs.readFileSync(path + '.sha256', 'utf8').trim();
-              const actual = createHash('sha256').update(fs.readFileSync(path)).digest('hex');
-              if (actual !== expected) throw new Error('SHA256 digest mismatch: ' + name);
-            }
-            for (const [name, file] of assets) {
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: Number(process.env.RELEASE_ID),
-                name,
-                data: fs.readFileSync(`artifacts/${name}/${file}`)
-              });
-            }
-
-  # Last, and needing every job that uploads an asset: it hashes what the
-  # release actually carries rather than what a build thought it produced.
-  checksums:
-    name: "Install scripts and checksums"
-    runs-on: ubuntu-latest
-    needs: [publish-binaries]
-    permissions:
-      contents: write
-    outputs:
-      duplicate-digests: ${{ steps.sha256sums.outputs.duplicate-digests }}
     steps:
       - name: Checkout project
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: v${{ inputs.version }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
-      # The documented install command fetches these. Served from the release
-      # rather than from a branch, so what a new installer runs is a version
-      # that was cut, not whatever the working branch holds this hour.
-      - name: Upload the install scripts
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        env:
-          RELEASE_ID: ${{ inputs.release_id }}
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          script: |
-            const fs = require('fs');
+          bun-version: 1.4.2
 
-            for (const name of ['install.sh', 'docker-install.sh', 'chooser.sh']) {
-              await github.rest.repos.uploadReleaseAsset({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                release_id: parseInt(process.env.RELEASE_ID, 10),
-                name,
-                data: fs.readFileSync(`scripts/${name}`)
-              });
-            }
-
-      # What a download is supposed to be.
-      #
-      # install.sh runs the binary it fetched as root and checked only that the
-      # file was not empty, and a person downloading by hand had nothing to
-      # compare against at all - the whole guarantee was TLS to two hosts. The
-      # project already pins the digests of the provider CLIs it downloads;
-      # this is the same promise for its own artifacts.
-      #
-      # Hashed from the published assets, so the file describes the bytes a
-      # user will actually receive.
-      - name: Publish SHA256SUMS
-        id: sha256sums
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+      - name: Validate qualification inputs
         env:
-          RELEASE_ID: ${{ inputs.release_id }}
+          SOURCE_SHA: ${{ inputs.ref }}
+          VERSION: ${{ inputs.version }}
+          WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+        run: bun scripts/release/validate-inputs.mjs
+
+      - name: Hash install scripts
+        working-directory: scripts
+        run: |
+          for script in install.sh docker-install.sh chooser.sh; do
+            sha256sum "$script" | cut -d ' ' -f 1 > "$script.sha256"
+          done
+
+      - name: Upload qualification scripts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          script: |
-            const crypto = require('crypto');
-            const release_id = parseInt(process.env.RELEASE_ID, 10);
-            const {owner, repo} = context.repo;
-
-            const assets = await github.paginate(github.rest.repos.listReleaseAssets,
-              {owner, repo, release_id, per_page: 100});
-
-            const lines = [];
-
-            for (const asset of assets.sort((a, b) => a.name.localeCompare(b.name))) {
-              if (asset.name === 'SHA256SUMS') continue;
-
-              const {data} = await github.rest.repos.getReleaseAsset({
-                owner, repo, asset_id: asset.id,
-                headers: {accept: 'application/octet-stream'}
-              });
-
-              const digest = crypto.createHash('sha256').update(Buffer.from(data)).digest('hex');
-              lines.push(`${digest}  ${asset.name}`);
-            }
-
-            core.info(lines.join('\n'));
-
-            await github.rest.repos.uploadReleaseAsset({
-              owner, repo, release_id,
-              name: 'SHA256SUMS',
-              data: lines.join('\n') + '\n'
-            });
-
-            // Two assets with one digest are one build under two names. v1.5.2's
-            // x64 and x64-baseline pairs were exactly that: Bun 1.4.0 ships its
-            // baseline runtime as a byte-for-byte copy of the AVX2 one, so the
-            // fallback install.sh picks for a pre-AVX2 CPU was the crash it
-            // exists to avoid, and nothing in the pipeline could tell - the
-            // verify step runs on runners that have AVX2. Hence the pin on
-            // every Setup Bun above, and this, after the upload so the assets
-            // stay verifiable while somebody looks.
-            //
-            // Reported as an output rather than failing this job: a failure
-            // here is a failure of build-binaries to the release workflow,
-            // whose cleanup deletes the release and the tag on exactly that -
-            // the assets this check was placed after the upload to leave.
-            // refuse-duplicate-digests in create_release.yml is what fails.
-            const digests = lines.map((line) => line.slice(0, 64));
-            const repeated = new Set(digests.filter((digest, index) => digests.indexOf(digest) !== index));
-            const duplicates = lines.filter((line) => repeated.has(line.slice(0, 64))).join(', ');
-            core.setOutput('duplicate-digests', duplicates);
-            if (duplicates !== '') core.warning(`one build under two names: ${duplicates}`);
+          name: release-static
+          path: |
+            scripts/install.sh
+            scripts/install.sh.sha256
+            scripts/docker-install.sh
+            scripts/docker-install.sh.sha256
+            scripts/chooser.sh
+            scripts/chooser.sh.sha256
+          if-no-files-found: error
