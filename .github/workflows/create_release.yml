@@ -226,28 +226,38 @@ jobs:
       version: ${{ needs.create-release.outputs.version }}
       release_id: ${{ needs.create-release.outputs.release_id }}
 
-  # Two assets with one digest are one build under two names - v1.5.2's x64
-  # and x64-baseline pairs under Bun 1.4.0 - and the release has to stop. It
-  # stops here rather than inside build-binaries: a failure there is "the
-  # binaries failed" to cleanup-on-failure, which deletes the release and the
-  # tag, the very assets the check was placed after the upload to leave
-  # verifiable. Failing here keeps build-binaries green, holds the publish
+  # Bun 1.4's same-platform x64 default/baseline names are verified aliases.
+  # Any other assets sharing a digest stop the release after checksums-msi has
+  # seen the installers too. The first checksum job reports rather than fails:
+  # a build-binaries failure reaches cleanup-on-failure, deleting the release
+  # and tag. The final checksum pass reports to this same refusal job so both
+  # checks retain their checksum evidence and one gate blocks publication.
+  # Failing here keeps build-binaries green, holds the publish
   # back through publish-docker's and finalize-release's needs, and lands in
   # the partial-release report with the draft intact.
   refuse-duplicate-digests:
-    name: "Refuse Duplicate Digests"
+    name: "Refuse Unexpected Digest Collisions"
     runs-on: ubuntu-latest
-    needs: build-binaries
+    needs: [build-binaries, checksums-msi]
     steps:
-      - name: Compare the published digests
+      - name: Refuse unexpected published digest collisions
         env:
-          DUPLICATES: ${{ needs.build-binaries.outputs.duplicate-digests }}
+          BINARY_DUPLICATES: ${{ needs.build-binaries.outputs.duplicate-digests }}
+          FINAL_DUPLICATES: ${{ needs.checksums-msi.outputs.duplicate-digests }}
         run: |
+          # The final pass includes the installers and normally subsumes the
+          # first. Keep the binary-stage verdict as a fallback so moving or
+          # narrowing the final parser cannot silently bypass an earlier block.
+          DUPLICATES="$FINAL_DUPLICATES"
+          if [ -z "$DUPLICATES" ]; then
+            DUPLICATES="$BINARY_DUPLICATES"
+          fi
+
           if [ -n "$DUPLICATES" ]; then
-            echo "::error::one build under two names: $DUPLICATES"
+            echo "::error::unexpected assets share a digest: $DUPLICATES"
             exit 1
           fi
-          echo "Every asset has a digest of its own."
+          echo "No unexpected assets share a digest."
 
   # Beside the binaries, not after them: this is the slow half, and it only
   # pushes untagged digests, which publish nothing anyone can pull by name.
@@ -274,10 +284,10 @@ jobs:
   # so :latest must not be published before it has built - otherwise a failed
   # MSI leaves Docker on a version whose GitHub release stays a draft.
   #
-  # And behind refuse-duplicate-digests: that job is what stops a release whose
-  # x64 and x64-baseline assets are one build, and finalize-release waiting on
-  # it was not enough - this job did not, so :latest was published on a build
-  # the GitHub release then refused.
+  # And behind refuse-duplicate-digests: that job is what stops unexpected
+  # cross-platform or multi-asset digest collisions. finalize-release waiting
+  # on it was not enough - this job did not, so :latest could be published on a
+  # build the GitHub release then refused.
   publish-docker:
     name: "Publish Docker"
     needs: [create-release, build-binaries, build-docker, build-msi, refuse-duplicate-digests]
@@ -318,6 +328,8 @@ jobs:
     name: "Checksums for the installers"
     runs-on: ubuntu-latest
     needs: [create-release, build-binaries, build-msi]
+    outputs:
+      duplicate-digests: ${{ steps.sha256sums.outputs.duplicate-digests }}
     # !cancelled() rather than success(), so a failed or skipped MSI leg still
     # leaves the list exactly as build-binaries wrote it - skipping this job
     # would take with it any chance of the file being completed.
@@ -337,6 +349,7 @@ jobs:
       && needs.build-binaries.result == 'success'
     steps:
       - name: Add any unhashed asset to SHA256SUMS
+        id: sha256sums
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
@@ -379,36 +392,60 @@ jobs:
               added.push(asset.name);
             }
 
-            if (added.length === 0) {
-              core.info('Every asset is already listed; SHA256SUMS left alone.');
-              return;
-            }
-
-            core.info(`Adding: ${added.join(', ')}`);
-
             const lines = [...digests.entries()]
               .sort(([left], [right]) => left.localeCompare(right))
               .map(([name, digest]) => `${digest}  ${name}`);
 
-            core.info(lines.join('\n'));
+            if (added.length === 0) {
+              core.info('Every asset is already listed; SHA256SUMS left alone.');
+            } else {
+              core.info(`Adding: ${added.join(', ')}`);
+              core.info(lines.join('\n'));
 
-            // Replaced rather than uploaded beside: a release cannot carry two
-            // assets of one name, so the old one goes first.
-            //
-            // Which is not atomic, and cannot be made so through this API: a
-            // failure between the two leaves the release with no SHA256SUMS at
-            // all. What makes that recoverable rather than silent is the gate
-            // above - finalize-release needs this job, so a release that lost
-            // its list stays a draft, and re-running the job rebuilds the whole
-            // file from the assets rather than from what it found.
-            if (published)
-              await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id: published.id});
+              // Replaced rather than uploaded beside: a release cannot carry two
+              // assets of one name, so the old one goes first.
+              //
+              // Which is not atomic, and cannot be made so through this API: a
+              // failure between the two leaves the release with no SHA256SUMS at
+              // all. What makes that recoverable rather than silent is the gate
+              // above - finalize-release needs this job, so a release that lost
+              // its list stays a draft, and re-running the job rebuilds the whole
+              // file from the assets rather than from what it found.
+              if (published)
+                await github.rest.repos.deleteReleaseAsset({owner, repo, asset_id: published.id});
 
-            await github.rest.repos.uploadReleaseAsset({
-              owner, repo, release_id,
-              name: 'SHA256SUMS',
-              data: lines.join('\n') + '\n'
-            });
+              await github.rest.repos.uploadReleaseAsset({
+                owner, repo, release_id,
+                name: 'SHA256SUMS',
+                data: lines.join('\n') + '\n'
+              });
+            }
+
+            // The first checksum pass cannot see installers, so repeat the exact
+            // alias policy over the combined list. Report only after the updated
+            // SHA256SUMS is safe on the draft; the dedicated refusal job, rather
+            // than checksum generation, reports the collision as a failure.
+            const allowedAliases = [
+              new Set(['MySpeed-linux-x64', 'MySpeed-linux-x64-baseline']),
+              new Set(['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe'])
+            ];
+            const byDigest = new Map();
+            for (const [name, digest] of digests) {
+              const group = byDigest.get(digest) ?? [];
+              group.push({digest, name});
+              byDigest.set(digest, group);
+            }
+            const isAllowedAlias = (group) => {
+              const names = new Set(group.map(({name}) => name));
+              return allowedAliases.some((allowed) => allowed.size === group.length
+                && allowed.size === names.size && [...names].every((name) => allowed.has(name)));
+            };
+            const unexpected = [...byDigest.values()]
+              .filter((group) => group.length > 1 && !isAllowedAlias(group))
+              .flat();
+            const duplicates = unexpected.map(({digest, name}) => `${digest}  ${name}`).join(', ');
+            core.setOutput('duplicate-digests', duplicates);
+            if (duplicates !== '') core.warning(`unexpected assets share a digest: ${duplicates}`);
 
   # After publish-docker rather than beside it: this is what turns the draft
   # into the published release, and the body it writes names the Docker tags.
@@ -560,7 +597,7 @@ jobs:
             echo
             echo "| Job | Result |"
             echo "| :-- | :-- |"
-            echo "| Refuse duplicate digests | $DUPLICATE_DIGESTS_RESULT |"
+            echo "| Refuse unexpected digest collisions | $DUPLICATE_DIGESTS_RESULT |"
             echo "| Build Docker | $DOCKER_BUILD_RESULT |"
             echo "| Publish Docker | $DOCKER_PUBLISH_RESULT |"
             echo "| Build MSI | $MSI_RESULT |"

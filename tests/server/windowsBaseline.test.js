@@ -34,17 +34,14 @@ const windows = job(binaries, "build-windows");
 const installer = job(msi, "build-msi");
 
 /**
- * Bun's default x64 target compiles in AVX2. On a pre-Haswell / Atom-class CPU
- * the binary dies at startup with `Illegal instruction`, which is why #13 added
- * a baseline Linux build. `bun-windows-x64` carries the same assumption, so the
- * same-era Windows machines crash the same way - and under the MSI, which
- * registers this binary as a service, the crash surfaces as a service that
- * never starts rather than as an error anyone can read.
+ * Bun 1.4 removed the Haswell-only x64 build. Both default and baseline target
+ * names now select the Nehalem/SSE4.2 runtime, with newer AVX instructions
+ * dispatched at runtime. Keep both names for existing download and MSI URLs.
  */
 describe("the Windows binaries a release publishes", () => {
-    it("builds a baseline variant for CPUs without AVX2", () => {
+    it("retains the baseline compatibility name", () => {
         assert.match(windows, /target: *bun-windows-x64-baseline\b/,
-            "nothing in the Windows job compiles the non-AVX2 target");
+            "the Windows baseline compatibility asset disappeared");
     });
 
     /**
@@ -274,56 +271,53 @@ describe("the MSI a release publishes", () => {
     });
 });
 
-/**
- * The two x64 binaries a release publishes have to be two binaries.
- *
- * v1.5.2 shipped MySpeed-linux-x64 and MySpeed-linux-x64-baseline with one
- * SHA-256 between them, and the Windows pair the same - not a fault in this
- * workflow, which compiles each leg for its own target and says so in the
- * log, but in Bun 1.4.0, whose bun-linux-x64-baseline.zip carries the same
- * binary as bun-linux-x64.zip (byte-identical, checked). The baseline leg
- * exists for the CPUs that binary SIGILLs on, so under `bun-version: latest`
- * the fallback install.sh picks for them was the crash it exists to avoid.
- *
- * Two guards: the release compiles with a pinned Bun whose baseline is a
- * separate build, and the checksums job reports any digest its asset list
- * carries twice, after publishing SHA256SUMS so the assets stay verifiable
- * while somebody looks. The refusal itself lives in the release workflow -
- * releasePublishOrder.test.js says why - so it holds the publish back
- * without the cleanup deleting the assets it was meant to leave.
- */
-describe("the two x64 builds are two builds", () => {
+/** Bun 1.4.2 is the verified unified-baseline runtime for release artifacts. */
+describe("the unified x64 runtime contract", () => {
+    const BUN_RUNTIME_VERSION = "1.4.2";
+
     it("compiles with a pinned Bun rather than whatever is latest", () => {
         assert.doesNotMatch(binaries, /bun-version:\s*latest/,
-            "the release inherits whatever Bun ships that day, including a baseline that is not one");
-        assert.match(binaries, /bun-version:\s*"?1\.3\.14"?/, "the pin is not the last Bun with a distinct baseline");
+            "the release inherits whatever Bun ships that day");
+        assert.match(binaries, new RegExp(`bun-version:\\s*"?${BUN_RUNTIME_VERSION.replaceAll(".", "\\.")}"?`),
+            "the release does not use the verified unified-baseline Bun");
     });
 
-    it("reports a release whose assets share a digest", () => {
+    it("reports only unexpected digest collisions after publishing checksums", () => {
         const publish = binaries.slice(binaries.indexOf("name: Publish SHA256SUMS"));
         assert.notEqual(publish.indexOf("uploadReleaseAsset"), -1, "re-anchor: the checksums upload moved");
 
         const afterUpload = publish.slice(publish.indexOf("uploadReleaseAsset"));
         assert.match(afterUpload, /core\.setOutput\('duplicate-digests'/, "a repeated digest is published with nothing said");
-        assert.match(afterUpload, /new Set\(/, "nothing compares the digests to each other");
+        for (const pair of [
+            ["MySpeed-linux-x64", "MySpeed-linux-x64-baseline"],
+            ["MySpeed-windows-x64.exe", "MySpeed-windows-x64-baseline.exe"]
+        ]) for (const name of pair)
+            assert.match(afterUpload, new RegExp(name.replaceAll(".", "\\.")), `${name} is not an explicit alias member`);
+    });
+
+    it("executes both Linux x64 artifacts with a Nehalem CPU before upload", () => {
+        const linux = job(binaries, "build-linux");
+        const verify = linux.indexOf("qemu-x86_64 -cpu Nehalem");
+        const upload = linux.indexOf("Upload verified build");
+
+        assert.notEqual(verify, -1, "the unified x64 runtime is never executed without AVX or AVX2");
+        assert.ok(verify < upload, "the Nehalem execution check runs after the artifact is uploaded");
+        assert.match(linux, /startsWith\(matrix\.target, 'bun-linux-x64'\)/,
+            "the Nehalem check does not cover both x64 compatibility names");
+        assert.match(linux, /unshare --net/,
+            "the CPU probe can contact production services while loading the candidate");
+        assert.match(linux, /mktemp -d/, "the CPU probe reuses persistent application data");
+        for (const provider of ["ookla", "librespeed"])
+            assert.match(linux, new RegExp(`data/servers/${provider}\\.json`),
+                `${provider} discovery is not disabled before the network-isolated probe`);
+        assert.match(linux, /--reset-password/,
+            "the CPU probe starts the supervisor and opens a listener instead of taking the bounded command path");
+        assert.match(linux, /RESET_NOTHING_TO_DO_EXIT:\s*113/,
+            "the CPU probe does not assert that the application reached its expected exit path");
     });
 });
 
-/**
- * The container carries the same conflation, one layer down.
- *
- * The image runs `bun run server/index.js` on the runtime the base image
- * ships rather than on a compiled binary, and the official Alpine image
- * installs Bun's x64-musl-baseline asset for x86_64 - which in 1.4.0, 1.4.1
- * and 1.4.2 is byte-identical to the AVX2 build (downloaded and hashed, and
- * the `bun` inside the pulled image matches). So a container on a pre-AVX2
- * host crashed at start with no fallback at all, where the native install
- * at least ships a real baseline binary, and verify-image.sh could not tell,
- * because the runners it boots the image on have AVX2. The tag is held to the
- * same Bun the binaries are compiled with, for the same reason and with the
- * same revisit rule: compare the two x64 zips on each Bun release, and move
- * both pins together when they differ again.
- */
+/** The image and compiled artifacts must ship the same verified Bun runtime. */
 describe("the container runs on the pinned Bun", () => {
     const dockerfile = readSource("Dockerfile");
     const pinned = binaries.match(/bun-version:\s*"?(\d+\.\d+\.\d+)"?/)?.[1];
@@ -344,6 +338,6 @@ describe("the container runs on the pinned Bun", () => {
     it("pins every stage to the binaries' Bun", () => {
         for (const tag of stages)
             assert.equal(tag, `${pinned}-alpine`,
-                `oven/bun:${tag} ships the AVX2 runtime under the baseline name; the binaries pin ${pinned}`);
+                `oven/bun:${tag} does not match the binaries' Bun ${pinned}`);
     });
 });

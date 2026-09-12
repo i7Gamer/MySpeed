@@ -286,15 +286,16 @@ describe("the checksum list and the installers", () => {
 });
 
 /**
- * Two assets with one digest are one build under two names, and the release
- * has to stop - but not by failing the checksums job inside build-binaries.
+ * Bun 1.4's two exact same-platform x64 default/baseline pairs are compatible
+ * aliases. Any other repeated digest has to stop the release - but not by
+ * failing the checksums job inside build-binaries.
  * That reads as "the binaries failed" to cleanup-on-failure, which deletes
  * the release and the tag: the very assets the check was placed after the
  * upload to leave verifiable. So the checksums job reports the duplicates as
  * an output, and a job of the release workflow refuses them - one
  * finalize-release waits for, the report names, and the cleanup ignores.
  */
-describe("a repeated digest holds the publish back without deleting the release", () => {
+describe("an unexpected digest collision holds the publish back without deleting the release", () => {
     const binaries = read("build-binaries.yml");
     const refuse = withoutComments(releaseJobs["refuse-duplicate-digests"] ?? "");
 
@@ -307,9 +308,13 @@ describe("a repeated digest holds the publish back without deleting the release"
             "the reusable workflow does not hand the output to its caller");
     });
 
-    it("is refused by a job of the release workflow that the publish waits for", () => {
+    it("is refused after the final checksum pass by a job the publish waits for", () => {
         assert.notEqual(refuse, "", "there is no refuse-duplicate-digests job");
         assert.match(refuse, /needs\.build-binaries\.outputs\.duplicate-digests/, "the job does not read the output");
+        assert.ok(needsOf(refuse).includes("checksums-msi"),
+            "the refusal runs before MSI assets are hashed and classified");
+        assert.match(refuse, /needs\.checksums-msi\.outputs\.duplicate-digests/,
+            "the refusal ignores collisions introduced by MSI assets");
         assert.match(refuse, /exit 1/, "the job reports the duplicates and lets the publish go on");
         assert.ok(needsOf(releaseJobs["finalize-release"]).includes("refuse-duplicate-digests"),
             "the release is un-drafted whether or not its assets are distinct");
@@ -317,9 +322,22 @@ describe("a repeated digest holds the publish back without deleting the release"
             ":latest reaches Docker Hub on a build whose GitHub release was refused");
     });
 
+    it("exposes final collisions after publishing the combined checksum list", () => {
+        const checksums = releaseJobs["checksums-msi"] ?? "";
+        const upload = checksums.indexOf("uploadReleaseAsset");
+        const output = checksums.indexOf("core.setOutput('duplicate-digests'");
+
+        assert.match(checksums, /outputs:\s*\n\s*duplicate-digests:/,
+            "checksums-msi does not expose its final collision verdict");
+        assert.notEqual(upload, -1, "the final checksum pass no longer publishes SHA256SUMS");
+        assert.ok(upload < output, "the final classifier reports before preserving checksum evidence");
+        assert.doesNotMatch(checksums, /core\.setFailed\(/,
+            "the final classifier fails checksums-msi and bypasses the dedicated refusal topology");
+    });
+
     it("routes to the partial-release report rather than to the cleanup", () => {
         assert.doesNotMatch(withoutComments(releaseJobs["cleanup-on-failure"]), /refuse-duplicate-digests/,
-            "a repeated digest still deletes the release");
+            "an unexpected digest collision still deletes the release");
 
         const report = withoutComments(releaseJobs["report-partial-release"] ?? "");
         assert.ok(needsOf(report).includes("refuse-duplicate-digests"));

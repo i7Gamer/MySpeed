@@ -21,17 +21,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # One installer per Windows binary. The service is where the AVX2
-          # crash is worst - it installs cleanly and then never starts - and
-          # Windows has no install script to pick the right binary the way
-          # scripts/install.sh does on Linux, so the choice has to be a download.
+          # Retain both Windows installer names for existing download links.
+          # Bun 1.4.2 gives both x64 targets the same Nehalem/SSE4.2 floor
+          # with runtime AVX dispatch, so baseline is a compatibility alias.
           - label: x64
             artifact: MySpeed-windows-x64.exe
             product_name: MySpeed
             asset_name: MySpeed-installer.msi
           - label: x64-baseline
             artifact: MySpeed-windows-x64-baseline.exe
-            product_name: MySpeed (no AVX2)
+            product_name: MySpeed (baseline alias)
             asset_name: MySpeed-installer-baseline.msi
 
     steps:

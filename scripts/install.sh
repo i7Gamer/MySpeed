@@ -100,8 +100,9 @@ fi
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
-        # Bun's default linux-x64 executable requires AVX2. CPUs without it
-        # (pre-Haswell / some Atom/Celeron) die with SIGILL on startup.
+        # Bun 1.4.2 x64 default/baseline assets are compatibility aliases: both
+        # target Nehalem/SSE4.2 and dispatch newer AVX instructions at runtime.
+        # Keep the CPU-based name choice and both asset names for old URLs.
         if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
             BINARY_NAME="MySpeed-linux-x64"
             BINARY_FALLBACK="MySpeed-linux-x64-baseline"
@@ -283,7 +284,7 @@ RELEASE_JSON=$(curl -s --max-time 15 https://api.github.com/repos/i7Gamer/MySpee
 # A rate limit, an outage, or no network answers with JSON holding no assets at
 # all, which reads exactly like a release that happens not to carry the file
 # being looked for. Everything below reports a missing asset as a fact - and on
-# a CPU without AVX2 it stops the install on that basis - so the two have to be
+# the requested asset it stops the install on that basis - so the two have to be
 # told apart here, while the difference is still visible.
 if ! echo "$RELEASE_JSON" | grep -q "browser_download_url"; then
     echo -e "$RED✗ Could not fetch release information"
@@ -300,16 +301,14 @@ release_asset_url() {
 
 RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 if [ -z "$RELEASE_URL" ] && [ -n "$BINARY_FALLBACK" ]; then
-    # The fallback only runs one way. Baseline starts on every x86_64 CPU, so an
-    # AVX2 machine that has to take it loses nothing. The reverse installs a
-    # binary that SIGILLs on every start, under a unit written below with
-    # Restart=always - a permanent crash loop, announced by the completion
-    # banner as a finished installation. Stopping is the more useful answer.
+    # Keep the fallback one-way: older releases may require AVX2 for the default
+    # name. Bun 1.4.2-based builds unify the runtime floor, but a missing baseline
+    # asset does not prove that the published default is one of those builds.
     if [ "$BINARY_FALLBACK" = "MySpeed-linux-x64" ]; then
         echo -e "$RED✗ ABORTED"
-        echo -e "$NORMAL This CPU has no AVX2, and $BINARY_NAME is not among the latest release's assets."
-        echo -e "$NORMAL $BINARY_FALLBACK needs AVX2 and would crash on every start here, so it was not installed."
-        echo -e "$NORMAL Build one on a Linux machine with 'bun run build:binary:baseline', or wait for the next release."
+        echo -e "$NORMAL The requested x64 compatibility asset $BINARY_NAME is not among the latest release's assets."
+        echo -e "$NORMAL $BINARY_FALLBACK was not substituted: older releases may require AVX2 for that name."
+        echo -e "$NORMAL Wait for a release that includes the retained x64 asset names, or build one locally."
         exit 1
     fi
 

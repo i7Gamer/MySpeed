@@ -76,11 +76,12 @@ jobs:
             let body = `## Downloads\n\n`;
             body += `| Platform | x86-64 | ARM64 |\n`;
             body += `| :-- | :-- | :-- |\n`;
-            body += `| **Windows** | ${L('EXE', 'MySpeed-windows-x64.exe')} · ${L('MSI', 'MySpeed-installer.msi')} · ${L('EXE (no AVX2)', 'MySpeed-windows-x64-baseline.exe')} · ${L('MSI (no AVX2)', 'MySpeed-installer-baseline.msi')} | |\n`;
-            body += `| **Linux** | ${L('Binary', 'MySpeed-linux-x64')} · ${L('No AVX2', 'MySpeed-linux-x64-baseline')} | ${L('Binary', 'MySpeed-linux-arm64')} |\n`;
+            body += `| **Windows** | ${L('EXE', 'MySpeed-windows-x64.exe')} · ${L('MSI', 'MySpeed-installer.msi')} · ${L('EXE (baseline alias)', 'MySpeed-windows-x64-baseline.exe')} · ${L('MSI (baseline alias)', 'MySpeed-installer-baseline.msi')} | |\n`;
+            body += `| **Linux** | ${L('Binary', 'MySpeed-linux-x64')} · ${L('Baseline alias', 'MySpeed-linux-x64-baseline')} | ${L('Binary', 'MySpeed-linux-arm64')} |\n`;
             body += `| **macOS** | ${L('Binary', 'MySpeed-macos-x64')} | ${L('Binary', 'MySpeed-macos-arm64')} |\n`;
+            body += `\nBun 1.4.2-based x64 builds target Nehalem/SSE4.2; default and baseline names are compatibility aliases with newer AVX paths selected at runtime.\n`;
             body += `\n### Source Distribution\n`;
-            body += `- ${L('ZIP Archive', 'MySpeed.zip')} (requires Bun runtime)\n`;
+            body += `- ${L('ZIP Archive', 'MySpeed.zip')} (requires Bun 1.4.2 or newer; upgrade the runtime before installing dependencies)\n`;
             body += `\n### Docker Images\n`;
             body += `- \`${registry}:latest\`\n`;
             body += `- \`${registry}:${v}\`\n`;

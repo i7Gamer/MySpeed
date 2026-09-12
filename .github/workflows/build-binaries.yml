@@ -15,7 +15,7 @@ on:
         type: string
     outputs:
       duplicate-digests:
-        description: "The assets that share one SHA-256 digest, or empty"
+        description: "Unexpected assets that share one SHA-256 digest, or empty"
         value: ${{ jobs.checksums.outputs.duplicate-digests }}
 
 # Dependency scripts and compiled artifacts execute only with repository read access.
@@ -30,10 +30,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Default Bun x64 target needs AVX2, same as on Linux. Older CPUs
-          # (e.g. Bay Trail Celeron) die with "Illegal instruction" at startup -
-          # and the MSI registers this binary as a service, where that crash
-          # surfaces as a service that never starts rather than as an error.
+          # Bun 1.4.2's default and baseline target names both use the unified
+          # Nehalem/SSE4.2 runtime and dispatch newer AVX instructions at run
+          # time. Keep both names for existing direct-download and MSI URLs.
           - label: x64
             target: bun-windows-x64
             artifact_name: MySpeed-windows-x64.exe
@@ -51,8 +50,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
 
       - name: Install client dependencies
         working-directory: client
@@ -174,8 +173,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Default Bun x64 target needs AVX2. Older CPUs (e.g. Bay Trail
-          # Celeron) SIGILL on startup — ship a baseline build for them.
+          # Bun 1.4.2's default and baseline x64 names both select its unified
+          # Nehalem/SSE4.2 runtime, which dispatches AVX2/AVX-512 paths at run
+          # time. Both artifact names remain for compatibility with old URLs.
           # `verify` says per leg whether the compiled binary is booted before it
           # is uploaded. Both x64 legs are, because install.sh picks between them
           # automatically on the user's behalf - and the baseline one is chosen
@@ -208,8 +208,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
 
       - name: Install client dependencies
         working-directory: client
@@ -252,6 +252,42 @@ jobs:
         if: ${{ matrix.verify }}
         shell: pwsh
         run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }}
+
+      # Execute the actual candidate under the oldest x64 CPU contract Bun 1.4
+      # supports. The reset command loads the compiled application and opens its
+      # SQLite database, but returns before starting listeners, schedulers or
+      # providers. Empty current server lists stop top-level discovery, and the
+      # network namespace makes that isolation a gate rather than an assumption.
+      - name: Verify x64 binary on Nehalem CPU
+        if: ${{ startsWith(matrix.target, 'bun-linux-x64') }}
+        shell: bash
+        env:
+          CPU_PROBE_TIMEOUT_SECONDS: 60
+          RESET_NOTHING_TO_DO_EXIT: 113
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes qemu-user
+
+          artifact="$(realpath "./${{ matrix.artifact_name }}")"
+          probe_work="$(mktemp -d)"
+          trap 'sudo rm -rf -- "$probe_work"' EXIT
+          mkdir -p "$probe_work/data/servers"
+          printf '{}\n' > "$probe_work/data/servers/ookla.json"
+          printf '{}\n' > "$probe_work/data/servers/librespeed.json"
+
+          set +e
+          (
+            cd "$probe_work"
+            timeout "${CPU_PROBE_TIMEOUT_SECONDS}s" sudo unshare --net -- \
+              /usr/bin/qemu-x86_64 -cpu Nehalem "$artifact" --reset-password
+          )
+          probe_status=$?
+          set -e
+
+          if [ "$probe_status" -ne "$RESET_NOTHING_TO_DO_EXIT" ]; then
+            echo "::error::Nehalem CPU probe exited $probe_status, expected $RESET_NOTHING_TO_DO_EXIT."
+            exit 1
+          fi
 
       - name: Hash verified binary
         shell: bash
@@ -311,8 +347,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Pinned to the unified-baseline runtime qualified for this release.
+          bun-version: 1.4.2
 
       - name: Install client dependencies
         working-directory: client
@@ -381,8 +417,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
-          # Pinned, not latest - the checksums job at the end says why.
-          bun-version: 1.3.14
+          # Source users need this same minimum runtime for the tested dependency set.
+          bun-version: 1.4.2
 
       - name: Install client dependencies
         working-directory: client
@@ -405,7 +441,7 @@ jobs:
         run: bun run generate-integrations
 
       - name: Create zip archive
-        # bun.lock too: the archive is advertised as "requires Bun runtime", and
+        # bun.lock too: the archive requires Bun 1.4.2 or newer, and
         # without the lockfile `bun install` re-resolves every range - two people
         # unpacking one release get different builds of express and sequelize,
         # neither of them the one that was tested.
@@ -542,6 +578,7 @@ jobs:
               {owner, repo, release_id, per_page: 100});
 
             const lines = [];
+            const entries = [];
 
             for (const asset of assets.sort((a, b) => a.name.localeCompare(b.name))) {
               if (asset.name === 'SHA256SUMS') continue;
@@ -553,6 +590,7 @@ jobs:
 
               const digest = crypto.createHash('sha256').update(Buffer.from(data)).digest('hex');
               lines.push(`${digest}  ${asset.name}`);
+              entries.push({digest, name: asset.name});
             }
 
             core.info(lines.join('\n'));
@@ -563,22 +601,34 @@ jobs:
               data: lines.join('\n') + '\n'
             });
 
-            // Two assets with one digest are one build under two names. v1.5.2's
-            // x64 and x64-baseline pairs were exactly that: Bun 1.4.0 ships its
-            // baseline runtime as a byte-for-byte copy of the AVX2 one, so the
-            // fallback install.sh picks for a pre-AVX2 CPU was the crash it
-            // exists to avoid, and nothing in the pipeline could tell - the
-            // verify step runs on runners that have AVX2. Hence the pin on
-            // every Setup Bun above, and this, after the upload so the assets
-            // stay verifiable while somebody looks.
+            // Bun 1.4 deliberately uses one Nehalem/SSE4.2 x64 runtime behind
+            // the default and baseline compatibility names. Only those exact
+            // same-platform pairs may share a digest. Any extra member - even a
+            // third asset alongside an allowed pair - is unexpected.
             //
             // Reported as an output rather than failing this job: a failure
             // here is a failure of build-binaries to the release workflow,
             // whose cleanup deletes the release and the tag on exactly that -
             // the assets this check was placed after the upload to leave.
             // refuse-duplicate-digests in create_release.yml is what fails.
-            const digests = lines.map((line) => line.slice(0, 64));
-            const repeated = new Set(digests.filter((digest, index) => digests.indexOf(digest) !== index));
-            const duplicates = lines.filter((line) => repeated.has(line.slice(0, 64))).join(', ');
+            const allowedAliases = [
+              new Set(['MySpeed-linux-x64', 'MySpeed-linux-x64-baseline']),
+              new Set(['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe'])
+            ];
+            const byDigest = new Map();
+            for (const entry of entries) {
+              const group = byDigest.get(entry.digest) ?? [];
+              group.push(entry);
+              byDigest.set(entry.digest, group);
+            }
+            const isAllowedAlias = (group) => {
+              const names = new Set(group.map(({name}) => name));
+              return allowedAliases.some((allowed) => allowed.size === group.length
+                && allowed.size === names.size && [...names].every((name) => allowed.has(name)));
+            };
+            const unexpected = [...byDigest.values()]
+              .filter((group) => group.length > 1 && !isAllowedAlias(group))
+              .flat();
+            const duplicates = unexpected.map(({digest, name}) => `${digest}  ${name}`).join(', ');
             core.setOutput('duplicate-digests', duplicates);
-            if (duplicates !== '') core.warning(`one build under two names: ${duplicates}`);
+            if (duplicates !== '') core.warning(`unexpected assets share a digest: ${duplicates}`);

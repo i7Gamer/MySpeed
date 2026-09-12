@@ -43,13 +43,14 @@ Netzwerk-Stack von Docker statt deine Leitung.
 
 Lade eine Linux-Binary von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest) herunter:
 
-- `MySpeed-linux-x64` - Standard-Ziel von Bun (benötigt **AVX2**)
-- `MySpeed-linux-x64-baseline` - ältere x86_64-CPUs ohne AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-linux-x64` - x64-Kompatibilitätsalias mit Standardnamen
+- `MySpeed-linux-x64-baseline` - x64-Kompatibilitätsalias mit Baseline-Namen
 - `MySpeed-linux-arm64` - aarch64
 
-Beendet sich die Standard-Binary sofort mit `Illegal instruction` / `SIGILL`, nimm den
-Baseline-Build. Das Installationsskript wählt Baseline automatisch, wenn `/proc/cpuinfo`
-kein `avx2`-Flag enthält.
+Bei Builds mit Bun 1.4.2 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
+AVX/AVX2/AVX-512-Pfade werden zur Laufzeit ausgewählt. Beide Namen bleiben für bestehende
+Downloads und Installer erhalten. Ohne `avx2`-Flag in `/proc/cpuinfo` wählt das
+Installationsskript weiterhin den Baseline-Namen.
 
 ```bash
 curl -sSL -o /tmp/myspeed-install.sh \
@@ -70,15 +71,15 @@ zwar, scheitert aber zur Laufzeit.
 
 Lade von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest) herunter:
 
-- `MySpeed-windows-x64.exe` - Standard-Ziel von Bun (benötigt **AVX2**)
-- `MySpeed-windows-x64-baseline.exe` - ältere x86_64-CPUs ohne AVX2 (SSE4.2 / Nehalem+)
+- `MySpeed-windows-x64.exe` - x64-Kompatibilitätsalias mit Standardnamen
+- `MySpeed-windows-x64-baseline.exe` - x64-Kompatibilitätsalias mit Baseline-Namen
 - `MySpeed-installer.msi` und `MySpeed-installer-baseline.msi` - dieselben beiden als
   Installer, der MySpeed als Windows-Dienst einrichtet
 
-Hier wählt nichts automatisch für dich aus, also geh nach dem Symptom: Die Exe beendet
-sich sofort mit `Illegal instruction`, und das MSI installiert sauber, hinterlässt aber
-einen Dienst, der nie startet. Beides heißt Baseline-Build. Vorab beantwortet PowerShell 7
-die Frage mit `[System.Runtime.Intrinsics.X86.Avx2]::IsSupported`.
+Bei Builds mit Bun 1.4.2 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
+AVX/AVX2/AVX-512-Pfade werden zur Laufzeit ausgewählt. Die Standard- und Baseline-Namen
+bleiben als Download-/MSI-Kompatibilitätsaliase erhalten. Für unterstützte x64-Hardware
+kannst du daher jede der beiden Exe- oder MSI-Varianten verwenden.
 
 Die beiden Installer sind ein Produkt: Den jeweils anderen auszuführen wechselt den Build
 und behält deine Datenbank.
@@ -137,7 +138,9 @@ Die Routenverfolgung wird unter *Optimale Werte* eingeschaltet und verwendet das
 <details>
 <summary><strong>Selbst bauen und starten</strong> - die Binaries oben sind genau das, nur schon gebaut</summary>
 
-Benötigt [bun](https://bun.sh).
+Benötigt [Bun](https://bun.sh) **1.4.2 oder neuer**. Aktualisiere Bun vor der
+Installation der Abhängigkeiten; das Quellcode-ZIP enthält keine Laufzeitumgebung.
+Für Node-basierte Entwicklung und Tests wird Node.js **22.19.0 oder neuer** benötigt.
 
 ```bash
 git clone https://github.com/i7Gamer/MySpeed.git
