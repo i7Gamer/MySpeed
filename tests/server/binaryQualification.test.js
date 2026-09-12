@@ -9,6 +9,7 @@ const workflow = parse(source);
 const inputs = workflow.on.workflow_call.inputs;
 const PAYLOAD_JOBS = ['build-windows', 'build-linux', 'build-macos', 'build-zip'];
 const COMPILER_JOBS = ['build-windows', 'build-linux', 'build-macos'];
+const TRUSTED_CHECKOUT_REF = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
 
 it('binary qualification accepts immutable source/stamp inputs without release authority', () => {
     assert.equal(inputs.ref.required, true);
@@ -18,11 +19,11 @@ it('binary qualification accepts immutable source/stamp inputs without release a
     assert.doesNotMatch(source, /contents: write|uploadReleaseAsset|deleteReleaseAsset|createRelease/);
 });
 
-it('every binary build checks out and verifies the exact qualification SHA', () => {
+it('every binary build selects a trusted checkout and verifies the exact qualification SHA', () => {
     for (const name of PAYLOAD_JOBS) {
         const steps = workflow.jobs[name].steps;
         const checkout = steps.find(step => step.uses?.startsWith('actions/checkout@'));
-        assert.equal(checkout.with.ref, '${{ inputs.ref }}', name);
+        assert.equal(checkout.with.ref, TRUSTED_CHECKOUT_REF, name);
         assert.equal(checkout.with['persist-credentials'], false, name);
         const validation = steps.find(step => step.name === 'Validate qualification inputs');
         assert.ok(validation, `${name} must reject a changed SHA/version/stamp before building`);

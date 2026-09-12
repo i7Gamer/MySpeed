@@ -18,6 +18,9 @@ const openDatabase = async (file) => process.versions.bun
         };
     });
 
+// Integrity fingerprint of an already-stored synthetic bcrypt record, not a
+// password-storage or authentication hash. This read-only checker never writes
+// the fingerprint to config or uses it to accept credentials.
 const sha256Text = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
 
 const assertIntegrity = (rows) => {

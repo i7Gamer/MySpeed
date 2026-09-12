@@ -80,7 +80,7 @@ jobs:
       - name: Prepare compiled renderer test
         run: |
           bun scripts/generate-third-party-notices.mjs
-          bun --cwd client run build
+          bun run --cwd client build
           node scripts/move-client-build.js
           bun run generate-client-embed
           echo "MYSPEED_BUN_BINARY=$(command -v bun)" >> "$GITHUB_ENV"

@@ -3,6 +3,7 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {inspectCombinedOciArchive, inspectOciArchive} from './inspect-oci-archive.mjs';
+import {inspectDockerRuntimeEvidence} from './docker-runtime-evidence.mjs';
 
 const MANIFEST_SCHEMA_VERSION = 1;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -317,6 +318,11 @@ const buildManifest = async (options) => {
         const checked = await checkedFile(options.root, artifact, file, OCI_ARCHIVE_LIMIT);
         const inspected = await inspectOciArchive({archive: path.join(options.root, artifact, file),
             platform, sourceSha: options.candidateSha, version: options.version});
+        const runtimeDocker = await inspectDockerRuntimeEvidence({
+            file: path.join(options.root, artifact, 'container-inspect.json'),
+            expectedConfigDigest: inspected.configDigest,
+            sidecar: 'require'
+        });
         const provenancePath = path.join(options.root, artifact, 'oci-provenance.json');
         const provenance = JSON.parse(await fs.promises.readFile(provenancePath, 'utf8'));
         if (provenance.sourceSha !== options.candidateSha || provenance.version !== options.version
@@ -324,7 +330,8 @@ const buildManifest = async (options) => {
             || provenance.indexDigest !== inspected.indexDigest
             || provenance.manifestDigest !== inspected.manifestDigest
             || provenance.configDigest !== inspected.configDigest
-            || JSON.stringify(provenance.layerDigests) !== JSON.stringify(inspected.layerDigests))
+            || JSON.stringify(provenance.layerDigests) !== JSON.stringify(inspected.layerDigests)
+            || JSON.stringify(provenance.runtimeDocker) !== JSON.stringify(runtimeDocker))
             throw new Error(`OCI provenance mismatch: ${artifact}`);
         for (const field of ['indexDigest', 'manifestDigest', 'configDigest'])
             if (!/^sha256:[a-f0-9]{64}$/.test(provenance[field]))
@@ -333,9 +340,10 @@ const buildManifest = async (options) => {
             || provenance.layerDigests.some((value) => !/^sha256:[a-f0-9]{64}$/.test(value)))
             throw new Error(`Invalid OCI layer digests: ${artifact}`);
         const architecture = platform.endsWith('amd64') ? 'x64' : 'arm64';
-        runtimeVerification.docker.push(await checkedVerificationSummary(options, artifact,
+        const verification = await checkedVerificationSummary(options, artifact,
             'qualification-summary.json', {architecture, command: 'docker-entrypoint.sh',
-                mode: FULL_MODE, platform: 'linux'}));
+                mode: FULL_MODE, platform: 'linux'});
+        runtimeVerification.docker.push({...verification, runtimeDocker});
         inspectedPlatforms.push(inspected);
         containers.push({...checked, platform, indexDigest: inspected.indexDigest,
             manifestDigest: inspected.manifestDigest, configDigest: inspected.configDigest,

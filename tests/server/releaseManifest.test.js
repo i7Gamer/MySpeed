@@ -146,6 +146,17 @@ describe("qualification manifest", () => {
             const fixture = await platformOciFixture(architecture);
             platformFixtures.push(fixture);
             writeCheckedFile(directory, `myspeed-${architecture}.oci.tar`, fixture.archive);
+            const inspection = JSON.stringify([{
+                Id: "c".repeat(64), Image: fixture.provenance.configDigest,
+            }]);
+            writeCheckedFile(directory, "container-inspect.json", inspection);
+            fixture.provenance.runtimeDocker = {
+                containerId: "c".repeat(64),
+                image: fixture.provenance.configDigest,
+                inspectionPath: "container-inspect.json",
+                inspectionSha256: digest(Buffer.from(inspection)),
+                inspectionSize: Buffer.byteLength(inspection)
+            };
             fs.writeFileSync(path.join(directory, "oci-provenance.json"),
                 JSON.stringify(fixture.provenance));
             writeCheckedFile(directory, "qualification-summary.json", JSON.stringify({
@@ -215,6 +226,11 @@ describe("qualification manifest", () => {
         assert.equal(manifest.runtimeVerification.windows.length, 2);
         assert.equal(manifest.runtimeVerification.macos.length, 2);
         assert.equal(manifest.runtimeVerification.docker.length, 2);
+        assert.ok(manifest.runtimeVerification.docker.every(({runtimeDocker}) =>
+            manifest.containers.some(({configDigest}) => configDigest === runtimeDocker.image)
+            && runtimeDocker.inspectionPath === "container-inspect.json"
+            && /^[a-f0-9]{64}$/.test(runtimeDocker.containerId)
+            && /^[a-f0-9]{64}$/.test(runtimeDocker.inspectionSha256)));
         assert.deepEqual(Object.keys(manifest.runtimeVerification.source).sort(), ["bun", "node"]);
         assert.equal(manifest.runtimeVerification.wixIce.length, 2);
         assert.ok(manifest.runtimeVerification.linux.every(({mode, summarySha256}) =>
@@ -323,6 +339,20 @@ describe("qualification manifest", () => {
         fs.writeFileSync(provenancePath, JSON.stringify(provenance));
         await assert.rejects(createQualificationManifest(options()), /OCI|archive|digest|provenance/i);
     });
+
+    for (const defect of ["wrong-image", "missing-id", "empty", "multiple", "missing-proof"])
+        it(`rejects unbound Docker runtime evidence: ${defect}`, async () => {
+            const directory = path.join(root, "qualified-oci-amd64");
+            const file = "container-inspect.json";
+            const inspection = JSON.parse(fs.readFileSync(path.join(directory, file)));
+            if (defect === "wrong-image") inspection[0].Image = `sha256:${"9".repeat(64)}`;
+            if (defect === "missing-id") delete inspection[0].Id;
+            if (defect === "empty") inspection.length = 0;
+            if (defect === "multiple") inspection.push({...inspection[0]});
+            writeCheckedFile(directory, file, JSON.stringify(inspection));
+            if (defect === "missing-proof") fs.unlinkSync(path.join(directory, file));
+            await assert.rejects(createQualificationManifest(options()), /container|runtime|image/i);
+        });
 
     it("rejects stale or substituted source, version, stamp, run and repository metadata", async () => {
         const manifest = await createQualificationManifest(options());

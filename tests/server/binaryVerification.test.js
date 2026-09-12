@@ -295,7 +295,7 @@ describe("CI compiles the client", () => {
         assert.ok(generators.length, 'CI must exercise the actual client embed generator');
         for (const job of generators) {
             const commands = job.steps.map(step => step.run ?? '').join('\n');
-            const build = commands.search(/\bbun(?: --cwd client)? run build\b/);
+            const build = commands.search(/\bbun run(?: --cwd client)? build\b/);
             const embed = commands.indexOf('bun run generate-client-embed');
             assert.ok(build >= 0 && build < embed, 'The job must build its own fresh client assets before embedding');
         }

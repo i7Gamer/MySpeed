@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import net from "node:net";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { once } from "node:events";
 
 export const LOOPBACK_IPV4 = "127.0.0.1";
@@ -15,6 +15,10 @@ export const DEFAULT_STOP_TIMEOUT_MS = 15_000;
 
 const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");
 const TRANSIENT_PROC_EXIT_ERROR_CODES = new Set(["EACCES", "ENOENT"]);
+const LSOF_SUCCESS_STATUS = 0;
+const LSOF_NO_MATCH_STATUS = 1;
+const LSOF_INSPECTION_TIMEOUT_MS = 2_000;
+const LSOF_INSPECTION_MAX_BUFFER_BYTES = 1_048_576;
 const SAFE_ENVIRONMENT_KEYS = [
     "PATH", "SystemRoot", "WINDIR", "ComSpec", "PATHEXT", "TEMP", "TMP", "TMPDIR", "TZ",
     "LANG", "LC_ALL", "LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"
@@ -173,26 +177,91 @@ const windowsListeners = () => {
     return listeners;
 };
 
-const macListeners = (pid) => {
-    const output = execFileSync("lsof", ["-nP", "-a", "-p", String(pid), "-iTCP", "-sTCP:LISTEN", "-F", "pn"], {
-        encoding: "utf8"
+const macListeners = (runCommand) => {
+    const result = runCommand("lsof", ["-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pfn"], {
+        encoding: "utf8",
+        maxBuffer: LSOF_INSPECTION_MAX_BUFFER_BYTES,
+        timeout: LSOF_INSPECTION_TIMEOUT_MS
     });
-    const listeners = [];
+    const output = typeof result.stdout === "string" ? result.stdout : result.stdout?.toString("utf8") ?? "";
+    const stderr = typeof result.stderr === "string" ? result.stderr : result.stderr?.toString("utf8") ?? "";
 
-    for (const line of output.split(/\r?\n/)) {
-        if (!line.startsWith("n")) continue;
-        const endpoint = line.slice(1).split("->")[0];
-        const match = /^(\[[^\]]+]|[^:]+):(\d+)$/.exec(endpoint);
-        if (match) listeners.push({address: match[1].replace(/^\[|]$/g, ""), port: Number(match[2]), pid});
+    if (result.error) {
+        const detail = result.error.code ?? result.error.message;
+        throw new Error(`lsof listener inspection could not start: ${detail}`, {cause: result.error});
     }
+    if (result.signal) throw new Error(`lsof listener inspection terminated by ${result.signal}`);
+    if (result.status === LSOF_NO_MATCH_STATUS && output === "" && stderr === "") return [];
+    if (result.status !== LSOF_SUCCESS_STATUS)
+        throw new Error(`lsof listener inspection failed with status ${result.status}: ${stderr.trim() || "no diagnostic"}`);
+    if (stderr !== "") throw new Error(`lsof listener inspection wrote stderr: ${stderr.trim()}`);
+    if (output === "") throw new Error("Malformed lsof output: successful inspection returned no records");
+
+    const listeners = [];
+    let currentPid = null;
+    let currentFd = null;
+    let currentNames = 0;
+    const lines = output.split(/\r?\n/);
+    if (lines.at(-1) === "") lines.pop();
+
+    for (const line of lines) {
+        const processRecord = /^p(\d+)$/.exec(line);
+        if (processRecord) {
+            if (currentFd !== null)
+                throw new Error(`Malformed lsof output: file descriptor ${currentFd} has no listener record`);
+            if (currentPid !== null && currentNames === 0)
+                throw new Error(`Malformed lsof output: PID ${currentPid} has no listener record`);
+            currentPid = Number(processRecord[1]);
+            currentFd = null;
+            currentNames = 0;
+            if (!Number.isSafeInteger(currentPid) || currentPid < 1)
+                throw new Error(`Malformed lsof output: invalid process record "${line}"`);
+            continue;
+        }
+
+        const fileRecord = /^f(0|[1-9]\d*)$/.exec(line);
+        if (fileRecord) {
+            if (currentPid === null)
+                throw new Error(`Malformed lsof output: file descriptor precedes a process record "${line}"`);
+            if (currentFd !== null)
+                throw new Error(`Malformed lsof output: file descriptor ${currentFd} has no listener record`);
+            currentFd = Number(fileRecord[1]);
+            if (!Number.isSafeInteger(currentFd))
+                throw new Error(`Malformed lsof output: invalid file descriptor record "${line}"`);
+            continue;
+        }
+
+        if (!line.startsWith("n") || currentPid === null || currentFd === null)
+            throw new Error(`Malformed lsof output: unexpected field record "${line}"`);
+
+        const endpoint = line.slice(1);
+        const match = /^(\[[^\]]+]|[^:]+):(\d+)$/.exec(endpoint);
+        if (!match) throw new Error(`Malformed lsof output: invalid listener endpoint "${endpoint}"`);
+
+        const address = match[1].replace(/^\[|]$/g, "");
+        const unscopedAddress = address.split("%")[0];
+        const port = Number(match[2]);
+        if (address !== "*" && net.isIP(unscopedAddress) === 0)
+            throw new Error(`Malformed lsof output: invalid listener address "${address}"`);
+        if (!Number.isInteger(port) || port < 1 || port > MAX_PORT)
+            throw new Error(`Malformed lsof output: invalid listener port "${match[2]}"`);
+
+        listeners.push({address, port, pid: currentPid});
+        currentFd = null;
+        currentNames += 1;
+    }
+    if (currentFd !== null)
+        throw new Error(`Malformed lsof output: file descriptor ${currentFd} has no listener record`);
+    if (currentPid === null || currentNames === 0)
+        throw new Error("Malformed lsof output: missing listener records");
 
     return listeners;
 };
 
-export const systemListeners = (pid, platform = process.platform) => {
+export const systemListeners = (pid, platform = process.platform, runMacCommand = spawnSync) => {
     if (platform === "linux") return linuxListeners(pid);
     if (platform === "win32") return windowsListeners();
-    if (platform === "darwin") return macListeners(pid);
+    if (platform === "darwin") return macListeners(runMacCommand);
     throw new Error(`Listener ownership inspection is unsupported on ${platform}`);
 };
 

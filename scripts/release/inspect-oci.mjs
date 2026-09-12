@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {inspectDockerRuntimeEvidence} from './docker-runtime-evidence.mjs';
 
 const DIGEST = /^sha256:([a-f0-9]{64})$/;
 const SOURCE_SHA = /^[a-f0-9]{40}$/;
@@ -62,7 +63,9 @@ const runCli = async () => {
     const args = argumentsMap(process.argv.slice(2));
     const result = await inspectOciLayout({root: args.root, platform: args.platform,
         sourceSha: process.env.SOURCE_SHA, version: process.env.VERSION});
-    await fs.promises.writeFile(args.output, `${JSON.stringify(result, null, 2)}\n`, {flag: 'wx'});
+    const runtimeDocker = await inspectDockerRuntimeEvidence({file: args['container-inspect'],
+        expectedConfigDigest: result.configDigest, sidecar: 'create'});
+    await fs.promises.writeFile(args.output, `${JSON.stringify({...result, runtimeDocker}, null, 2)}\n`, {flag: 'wx'});
 };
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url))

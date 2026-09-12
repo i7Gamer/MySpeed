@@ -68,6 +68,9 @@ describe('read-only release qualification', () => {
         assert.match(source, /type=oci/);
         assert.match(source, /verify-image\.sh/);
         assert.match(source, /oci-provenance\.json/);
+        assert.match(source, /skopeo copy --format v2s2 "oci-archive:\$OCI_ARCHIVE" docker-daemon:myspeed:verify/);
+        assert.doesNotMatch(source, /skopeo copy --preserve-digests[^\n]*docker-daemon/);
+        assert.match(source, /--container-inspect "\$EVIDENCE_ROOT\/container-inspect\.json"/);
         assert.match(source, /QUALIFICATION_EVIDENCE_DIRECTORY/);
         const imageVerifier = readSource('scripts/verify-image.sh');
         assert.match(imageVerifier, /qualification-summary\.json/);

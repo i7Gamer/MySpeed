@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -73,7 +73,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install --yes skopeo
-          skopeo copy --preserve-digests "oci-archive:$OCI_ARCHIVE" docker-daemon:myspeed:verify
+          skopeo copy --format v2s2 "oci-archive:$OCI_ARCHIVE" docker-daemon:myspeed:verify
 
       - name: Verify the exact image with outbound networking denied
         env:
@@ -91,7 +91,7 @@ jobs:
         run: |
           mkdir -p "$OCI_ROOT"
           tar -xf "$OCI_ARCHIVE" -C "$OCI_ROOT"
-          bun scripts/release/inspect-oci.mjs --root "$OCI_ROOT" --platform "${{ matrix.platform }}" --output "$EVIDENCE_ROOT/oci-provenance.json"
+          bun scripts/release/inspect-oci.mjs --root "$OCI_ROOT" --platform "${{ matrix.platform }}" --output "$EVIDENCE_ROOT/oci-provenance.json" --container-inspect "$EVIDENCE_ROOT/container-inspect.json"
           sha256sum "$OCI_ARCHIVE" | cut -d ' ' -f 1 > "$OCI_ARCHIVE.sha256"
           mv -- "$OCI_ARCHIVE" "$OCI_ARCHIVE.sha256" "$EVIDENCE_ROOT/"
 
