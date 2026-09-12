@@ -122,7 +122,8 @@ describe("qualification manifest", () => {
             const payloadDigest = digest(fs.readFileSync(path.join(root, artifact, payload)));
             writeCheckedFile(path.join(root, artifact), "qualification-summary.json", JSON.stringify({
                 status: "passed", exit: 0, mode, sourceSha: SHA, commit: SHA, platform, architecture,
-                artifactSha256: payloadDigest, command: [`/${payload}`], processes: mode === FULL_MODE
+                artifactSha256: payloadDigest, command: [platform === "linux" ? "/candidate" : `/${payload}`],
+                processes: mode === FULL_MODE
                     ? [{scenario: "populated-first-boot"}, {scenario: "populated-restart"},
                         {scenario: "fresh-no-config-reset"}]
                     : [{scenario: "listener-free-reset"}]
@@ -253,6 +254,38 @@ describe("qualification manifest", () => {
         await createQualificationManifest(options());
         fs.appendFileSync(path.join(output, "qualification-manifest.json"), " ");
         await assert.rejects(readSealedQualificationManifest(output), /digest/i);
+    });
+
+    for (const artifact of ["MySpeed-linux-x64", "MySpeed-linux-x64-baseline", "MySpeed-linux-arm64"])
+        it(`requires the exact isolated standalone command for ${artifact}`, async () => {
+            const directory = path.join(root, artifact);
+            const file = "qualification-summary.json";
+            const summary = JSON.parse(fs.readFileSync(path.join(directory, file)));
+            assert.deepEqual(summary.command, ["/candidate"]);
+            await assert.doesNotReject(createQualificationManifest(options()));
+            for (const command of [[], null, "/candidate", ["candidate"], ["/tmp/candidate"],
+                ["C:\\candidate"], [`/${artifact}`], ["/different-executable"]]) {
+                writeCheckedFile(directory, file, JSON.stringify({...summary, command}));
+                await assert.rejects(createQualificationManifest(options()), /command mismatch/i);
+            }
+        });
+
+    for (const [artifact, file] of [
+        ["MySpeed-windows-x64.exe", "qualification-summary.json"],
+        ["MySpeed-windows-x64-baseline.exe", "qualification-summary.json"],
+        ["MySpeed-macos-x64", "qualification-summary.json"],
+        ["MySpeed-macos-arm64", "qualification-summary.json"],
+        ["MySpeed.zip", "qualification-node-summary.json"],
+        ["MySpeed.zip", "qualification-bun-summary.json"],
+        ["qualified-oci-amd64", "qualification-summary.json"],
+        ["qualified-oci-arm64", "qualification-summary.json"]
+    ]) it(`rejects the Linux standalone command in ${artifact}/${file}`, async () => {
+        const directory = path.join(root, artifact);
+        const summary = JSON.parse(fs.readFileSync(path.join(directory, file)));
+        summary.command[0] = "/candidate";
+        writeCheckedFile(directory, file, JSON.stringify(summary));
+        await assert.rejects(createQualificationManifest(options()),
+            new RegExp(`command mismatch: ${artifact.replaceAll(".", "\\.")}/${file.replaceAll(".", "\\.")}`));
     });
 
     for (const defect of ["missing", "empty", "non-file", "wrong-digest", "missing-digest"]) {

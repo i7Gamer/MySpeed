@@ -22,6 +22,7 @@ const OCI_ARCHIVE_LIMIT = 4 * GIBIBYTE;
 const EVIDENCE_FILE_LIMIT = MEBIBYTE;
 const FULL_MODE = 'full';
 const RESET_MODE = 'listener-free-reset';
+const LINUX_STANDALONE_COMMAND = '/candidate';
 const REQUIRED_EVIDENCE_FIELDS = ['tests', 'binaries', 'msi', 'docker', 'dockerIndex', 'ice'];
 const PROMOTION_BLOCKERS = [
     'Windows native full verification with enforced outbound denial',
@@ -184,7 +185,11 @@ const checkedVerificationSummary = async (options, artifact, file, expected) => 
         throw new Error(`Verifier evidence artifact digest is invalid: ${artifact}/${file}`);
     if (expected.artifactSha256 && summary.artifactSha256 !== expected.artifactSha256)
         throw new Error(`Verifier evidence artifact digest mismatch: ${artifact}/${file}`);
-    if (!Array.isArray(summary.command) || portableBasename(summary.command[0]) !== expected.command)
+    // Linux standalone verification mounts the exact payload at this fixed, read-only path.
+    // Keep native/source/container commands on their existing basename contracts.
+    const actualCommand = expected.command === LINUX_STANDALONE_COMMAND
+        ? summary.command?.[0] : portableBasename(summary.command?.[0]);
+    if (!Array.isArray(summary.command) || actualCommand !== expected.command)
         throw new Error(`Verifier evidence command mismatch: ${artifact}/${file}`);
     const scenarios = summary.processes?.map(({scenario}) => scenario);
     const expectedScenarios = expected.mode === FULL_MODE
@@ -260,7 +265,7 @@ const buildManifest = async (options) => {
             && candidate.path === payload);
         const verification = await checkedVerificationSummary(options, artifact,
             'qualification-summary.json', {artifactSha256: asset.sha256, architecture,
-                command: payload, mode, platform});
+                command: platform === 'linux' ? LINUX_STANDALONE_COMMAND : payload, mode, platform});
         if (platform === 'win32') {
             const versionFile = await checkedFile(options.root, artifact,
                 'windows-version.json', EVIDENCE_FILE_LIMIT);
