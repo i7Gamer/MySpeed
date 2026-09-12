@@ -11,6 +11,7 @@ const read = (name) => fs.readFileSync(path.join(WORKFLOWS, name), "utf8");
 
 const binaries = read("build-binaries.yml");
 const msi = read("build-msi.yml");
+const releaseManifest = readSource('scripts/release/qualification-manifest.mjs');
 
 // A job's own lines, so an assertion about the Windows job cannot be satisfied
 // by something the Linux job happens to say. Jobs sit at two spaces; the next
@@ -40,8 +41,12 @@ const installer = job(msi, "build-msi");
  */
 describe("the Windows binaries a release publishes", () => {
     it("retains the baseline compatibility name", () => {
-        assert.match(windows, /target: *bun-windows-x64-baseline\b/,
+        assert.match(windows, /artifact_name: *MySpeed-windows-x64-baseline\.exe\b/,
             "the Windows baseline compatibility asset disappeared");
+    });
+
+    it("uses the unified native compiler target for both compatibility names", () => {
+        assert.deepEqual(matrixValues(windows, "target"), ['bun-windows-x64', 'bun-windows-x64']);
     });
 
     /**
@@ -60,8 +65,8 @@ describe("the Windows binaries a release publishes", () => {
 
     it("uploads each variant under the name its own leg carries", () => {
         for (const name of matrixValues(windows, "artifact_name"))
-            assert.ok(job(binaries, "publish-binaries").includes("['" + name + "', 'MySpeed.exe']"),
-                "the publication job does not map this variant to its own release asset");
+            assert.ok(releaseManifest.includes("['" + name + "', 'MySpeed.exe', '" + name + "']"),
+                "the immutable manifest does not map this variant to its own release asset");
         assert.match(windows, /name: \$\{\{ matrix\.artifact_name \}\}/,
             "the build artifact name is not the matrix's, so the two legs collide");
     });
@@ -83,34 +88,7 @@ describe("the Windows binaries a release publishes", () => {
     });
 });
 
-/**
- * The compile is run by a Bun that is already the target it compiles for.
- *
- * Asked to compile for a target it is not, Bun fetches that runtime itself -
- * and on windows-latest that fetch does not work. Three releases in a row died
- * on `Failed to extract executable for 'bun-windows-x64-baseline-v1.3.14'. The
- * download may be incomplete.`, roughly 0.6s after bundling 921 modules
- * cleanly, each one deleting its own tag and draft while the Docker jobs had
- * already pushed :latest.
- *
- * Diagnosed on the runner rather than guessed at, after two wrong guesses. The
- * message names a download, but nothing about it holds: Defender's real-time
- * protection is off there and an exclusion changed nothing; curl fetched the
- * same artifact in a second (38,023,440 bytes) and Expand-Archive unpacked it;
- * and Bun's cache was empty afterwards, so no partial file was ever written.
- * Retrying three times with the cache cleared in between failed identically
- * three times.
- *
- * What did work, first time, was compiling with the baseline Bun itself. That
- * is also why the default leg has never failed - the runner's Bun is
- * windows-x64, so that leg has nothing to fetch. Both legs now get a Bun
- * matching their own target, which puts the working leg's condition under the
- * broken one rather than adding a workaround to it.
- *
- * setup-bun stays for everything else in the job: it installs the host Bun that
- * runs bun install and the client build, neither of which cares about the
- * target.
- */
+/** Both compatibility names use Bun 1.4.2's already-installed native runtime. */
 describe("compiling the Windows binaries", () => {
     const stepNamed = (name) => {
         const start = windows.indexOf(`- name: ${name}`);
@@ -123,7 +101,6 @@ describe("compiling the Windows binaries", () => {
     // Looked up inside each test rather than once above them: resolved here,
     // a missing step fails the whole block with one message and the assertions
     // below never report at all.
-    const fetchStep = () => stepNamed("Fetch a Bun matching the target");
     const compileStep = () => stepNamed("Compile binary");
 
     it("still compiles the leg's own target", () => {
@@ -140,42 +117,24 @@ describe("compiling the Windows binaries", () => {
      * parts, the run number last, so a rebuild of one version is newer too -
      * an equal version is refused the same way a higher one is.
      */
-    it("stamps the exe with MySpeed's version, the run number after it", () => {
-        assert.match(compileStep(), /--windows-version="\$\{env:RELEASE_VERSION\}\.\$\{env:RUN_NUMBER\}"/,
+    it("stamps the exe with the frozen MySpeed qualification version", () => {
+        assert.match(compileStep(), /--windows-version="\$env:WINDOWS_STAMP"/,
             "the exe carries Bun's version resource, which an upgrade compares against and may find newer");
-        assert.match(compileStep(), /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/,
-            "the stamp is not the release's version");
-        assert.match(compileStep(), /RUN_NUMBER: \$\{\{ github\.run_number \}\}/,
-            "the stamp has no run number, so a rebuild of one version is refused as an equal");
+        assert.match(compileStep(), /WINDOWS_STAMP: \$\{\{ inputs\.windows_stamp \}\}/,
+            "the stamp is not the exact four-part qualification input");
     });
 
-    /**
-     * Bun publishes its releases under the same names these targets carry, so
-     * the archive is the matrix value with .zip after it. Spelled from the
-     * matrix rather than restated, or the two legs fetch one runtime and the
-     * baseline leg is back to compiling for a target it is not.
-     */
-    it("fetches the runtime for the leg's own target", () => {
-        assert.match(fetchStep(), /\$\{\{ matrix\.target \}\}\.zip/,
-            "the fetched runtime is not the leg's target, so one leg compiles cross-target again");
+    it("does not download a redundant per-target runtime", () => {
+        assert.doesNotMatch(windows, /Fetch a Bun matching the target|target-bun\.zip|TARGET_BUN/);
     });
 
-    it("compiles with that runtime rather than the host one", () => {
-        assert.doesNotMatch(compileStep(), /^\s*bun build/m,
-            "the compile calls the host bun, which is what fetches a runtime it cannot extract");
-        assert.match(compileStep(), /TARGET_BUN/,
-            "the compile does not use the Bun the step before it fetched");
-        assert.match(fetchStep(), /TARGET_BUN=/, "nothing publishes the fetched Bun's path");
+    it("compiles using the already pinned native Bun", () => {
+        assert.match(compileStep(), /^\s*bun (?:build|scripts\/build-binary\.mjs)/m);
     });
 
-    /**
-     * A fetch that quietly produced no bun.exe would leave the compile calling
-     * an empty path, which is a far worse error to read at release time than
-     * the one it replaces.
-     */
-    it("fails the fetch rather than passing an empty path on", () => {
-        assert.match(fetchStep(), /--fail/, "curl reports a 404 body as a successful download");
-        assert.match(fetchStep(), /throw/, "an archive with no bun.exe in it is passed on as an empty path");
+    it("propagates the compiler's failure", () => {
+        assert.match(compileStep(), /\$LASTEXITCODE -ne 0/);
+        assert.match(compileStep(), /throw/);
     });
 });
 
@@ -219,7 +178,8 @@ describe("the MSI a release publishes", () => {
             "both installers upload under one asset name, so the second upload fails mid-release");
         assert.match(installer, /name: release-msi-\$\{\{ matrix\.asset_name \}\}/,
             "the installers are uploaded under a fixed name rather than their leg's");
-        for (const name of names) assert.ok(job(msi, "publish-msi").includes("'" + name + "'"));
+        for (const name of names)
+            assert.ok(releaseManifest.includes("'release-msi-" + name + "', 'MySpeed-installer.msi', '" + name + "'"));
     });
 
     /**
@@ -238,6 +198,20 @@ describe("the MSI a release publishes", () => {
             "installing the other variant of the same version leaves both registered");
         assert.equal(installer.match(/UpgradeCode="[^"]+"/g).length, 1,
             "the two installers no longer share one UpgradeCode");
+    });
+
+    /**
+     * WiX otherwise schedules RemoveExistingProducts before InstallInitialize.
+     * A later failure then leaves neither product installed because removal sat
+     * outside the transaction Windows Installer can roll back.
+     */
+    it("removes the predecessor inside the upgrade transaction", () => {
+        assert.match(installer, /<MajorUpgrade[^>]*Schedule="afterInstallInitialize"/,
+            "a failed major upgrade cannot roll the predecessor back");
+        assert.match(installer, /<ServiceControl[^>]*Start="install"[^>]*Stop="both"[^>]*Remove="uninstall"/,
+            "transactional removal no longer stops and restores the managed service");
+        assert.match(installer, /<Custom Action="MigrateLegacyData" Before="StartServices">NOT Installed<\/Custom>/,
+            "legacy data migration no longer completes before the replacement service starts");
     });
 
     /**
@@ -282,17 +256,15 @@ describe("the unified x64 runtime contract", () => {
             "the release does not use the verified unified-baseline Bun");
     });
 
-    it("reports only unexpected digest collisions after publishing checksums", () => {
-        const publish = binaries.slice(binaries.indexOf("name: Publish SHA256SUMS"));
-        assert.notEqual(publish.indexOf("uploadReleaseAsset"), -1, "re-anchor: the checksums upload moved");
-
-        const afterUpload = publish.slice(publish.indexOf("uploadReleaseAsset"));
-        assert.match(afterUpload, /core\.setOutput\('duplicate-digests'/, "a repeated digest is published with nothing said");
-        for (const pair of [
+    it("allows only the exact same-platform compatibility digest pairs", () => {
+        const aliases = /const ALLOWED_DUPLICATES = \[([\s\S]*?)\n];/.exec(releaseManifest)?.[1];
+        assert.ok(aliases, "the manifest no longer declares its narrow alias policy");
+        const pairs = [...aliases.matchAll(/new Set\(\[([^\]]+)\]\)/g)]
+            .map(([, names]) => [...names.matchAll(/'([^']+)'/g)].map(([, name]) => name));
+        assert.deepEqual(pairs, [
             ["MySpeed-linux-x64", "MySpeed-linux-x64-baseline"],
             ["MySpeed-windows-x64.exe", "MySpeed-windows-x64-baseline.exe"]
-        ]) for (const name of pair)
-            assert.match(afterUpload, new RegExp(name.replaceAll(".", "\\.")), `${name} is not an explicit alias member`);
+        ]);
     });
 
     it("executes both Linux x64 artifacts with a Nehalem CPU before upload", () => {

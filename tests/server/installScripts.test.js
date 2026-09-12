@@ -172,12 +172,10 @@ describe("the root privilege guard", () => {
 });
 
 /**
- * Bun's default linux-x64 executable uses AVX2, so it dies with SIGILL on the
- * pre-Haswell Atoms and Celerons a great many home servers still are. The
- * release carries a baseline build beside it now, which only helps anyone if
- * the installer picks it - and the systemd unit written a few lines later has
- * Restart=always, so choosing wrong is a permanent crash loop rather than one
- * visible failure.
+ * Bun 1.4.2 builds both x64 compatibility names from the qualified Nehalem
+ * runtime. The installer retains its CPU-based name choice because older
+ * releases may still carry an AVX2-only default asset; substituting that older
+ * default on a pre-AVX2 host would create a Restart=always crash loop.
  */
 describe("install.sh picks a Linux binary the CPU can run", () => {
     const source = read("install.sh");
@@ -212,7 +210,7 @@ describe("install.sh picks a Linux binary the CPU can run", () => {
         assert.match(branch, /2>\/dev\/null/,
             "an unreadable /proc/cpuinfo is an error rather than a decision");
         assert.match(withoutAvx2, /BINARY_NAME="MySpeed-linux-x64-baseline"/,
-            "a CPU without AVX2 is handed the build that SIGILLs on it");
+            "a CPU without AVX2 is handed the historically unsafe default name");
     });
 
     /**
@@ -243,15 +241,13 @@ describe("install.sh picks a Linux binary the CPU can run", () => {
     });
 
     /**
-     * The fallback exists for the window where a release has one x64 build and
-     * not the other, and it runs in both directions - but only one of them is
-     * safe. Baseline runs on every x86_64 CPU, so an AVX2 machine falling back
-     * to it loses nothing. The other way round installs a binary that SIGILLs on
-     * every start, under a unit this script writes with Restart=always, and then
-     * prints the completion banner over it: a permanent crash loop reported as a
-     * finished install, which is the one outcome worse than stopping.
+     * The fallback exists for releases that carry only one x64 name. Falling
+     * back to the baseline name is safe, but the reverse is not safe across old
+     * releases whose default asset may require AVX2. Installing that historical
+     * default on an older CPU can create a Restart=always crash loop reported as
+     * a completed installation, so the installer must stop instead.
      */
-    it("refuses to install the AVX2 build on a CPU without AVX2", () => {
+    it("refuses the historically unsafe default fallback on a CPU without AVX2", () => {
         const start = source.indexOf("BINARY_FALLBACK\" = \"MySpeed-linux-x64\"");
         assert.notEqual(start, -1, "the fallback no longer distinguishes which direction it is going");
 
@@ -260,7 +256,7 @@ describe("install.sh picks a Linux binary the CPU can run", () => {
         assert.match(branch, /exit\s+[1-9]/,
             "the installer carries on to its success banner over a binary that cannot start here");
         assert.doesNotMatch(branch, /BINARY_NAME="?\$BINARY_FALLBACK/,
-            "the AVX2 build is still selected for a CPU the script just found has no AVX2");
+            "the default-name fallback is still selected for a CPU the script found has no AVX2");
     });
 
     it("matches the release asset name exactly", () => {

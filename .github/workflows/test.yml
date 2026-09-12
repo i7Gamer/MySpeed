@@ -11,6 +11,10 @@ on:
       dependabot-call:
         type: boolean
         default: false
+      ref:
+        description: "Exact commit to test; defaults to the event revision"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -39,6 +43,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
 
       # bun.lock is the only lockfile in the repository, so bun installs the
       # dependencies even though the suite itself runs under node.
@@ -71,6 +76,14 @@ jobs:
         run: |
           bun run generate-migrations
           bun run generate-integrations
+
+      - name: Prepare compiled renderer test
+        run: |
+          bun scripts/generate-third-party-notices.mjs
+          bun --cwd client run build
+          node scripts/move-client-build.js
+          bun run generate-client-embed
+          echo "MYSPEED_BUN_BINARY=$(command -v bun)" >> "$GITHUB_ENV"
 
       # test:coverage is test:all - every suite, where `npm test` is the fast
       # tier for the edit-run loop and running only that here would publish
@@ -105,6 +118,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - name: Set up bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
@@ -158,6 +172,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
 
       - name: Set up bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2

@@ -11,6 +11,12 @@ WORKDIR /client
 COPY ./client/package.json ./client/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY ./client ./
+# Build-only metadata and maintained license texts; the final image receives
+# just the generated notice in its client assets, not these helper scripts.
+COPY ./package.json ./bun.lock /
+COPY ./scripts/generate-third-party-notices.mjs /scripts/generate-third-party-notices.mjs
+COPY ./scripts/licenses /scripts/licenses
+RUN bun /scripts/generate-third-party-notices.mjs
 RUN bun run build
 
 # Every cfspeedtest release is glibc-linked, so the binary the server downloads

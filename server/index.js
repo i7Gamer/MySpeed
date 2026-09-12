@@ -2,6 +2,7 @@ import https from 'node:https';
 import fs from 'node:fs';
 import app from './app.js';
 import { certPath, keyPath, httpsPort, hasSSLCerts, setHttpsListening } from './config/tls.js';
+import { bindAddress } from './config/bind.js';
 import { announceSetupToken } from './util/setupToken.js';
 import * as timerTask from './tasks/timer.js';
 import * as integrationTask from './tasks/integrations.js';
@@ -326,7 +327,7 @@ const run = async () => {
 
     await announceAccess();
 
-    const httpServer = app.listen(port, () => console.log(`Server listening on port ${port}`));
+    const httpServer = app.listen(port, bindAddress, () => console.log(`Server listening on port ${port}`));
     const reportHttpError = listenerErrorReporter();
 
     // The HTTP listener is the instance's only way in on a plain-HTTP install,
@@ -408,7 +409,7 @@ const run = async () => {
 
             listeners.push(httpsServer);
 
-            httpsServer.listen(httpsPort, () => {
+            httpsServer.listen(httpsPort, bindAddress, () => {
                 setHttpsListening(true);
                 console.log(`HTTPS server listening on port ${httpsPort}`);
             });

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { iperfVersion, iperfList } from '../../config/binaries.js';
-import { downloadAndExtract, downloadBinary, extractFiles } from './downloadHelper.js';
+import { downloadAndExtract, downloadBinary, extractFiles, waitForInstall } from './downloadHelper.js';
 import { heldDownload } from './downloadHold.js';
 
 /**
@@ -18,6 +18,7 @@ const binaryName = executableName(process.platform);
 const binaryDirectory = path.join(process.cwd(), 'bin');
 const binaryPath = path.join(binaryDirectory, binaryName);
 const downloadBaseURL = `https://github.com/userdocs/iperf3-static/releases/download/${iperfVersion}/`;
+let loadInProgress;
 
 /**
  * The Windows build is a Cygwin one: iperf3.exe will not start without the
@@ -87,7 +88,10 @@ export const missingFiles = ({platform = process.platform, arch = process.arch,
 // The same question as a yes or a no, which is all load() wants of it. It takes
 // the injectable trio through so the answer itself is testable, and not merely
 // the list it is derived from.
-export const fileExists = async (where) => missingFiles(where).length === 0;
+export const fileExists = async (where = {}) => {
+    await waitForInstall(where.directory ?? binaryDirectory);
+    return missingFiles(where).length === 0;
+};
 
 /**
  * Why an unpacked archive is not an install yet, or null when it is one.
@@ -133,7 +137,10 @@ export const downloadFile = async () => {
             // Each member keeps its own name - see extractFiles. outputName is
             // unused on this path and stated so the call reads the same as the
             // other loaders'.
-            outputName: binaryName, extract: extractFiles, sha256: binary.sha256});
+            outputName: binaryName, extract: extractFiles, sha256: binary.sha256,
+            // The whole set is validated before either member is staged or
+            // published, so a changed upstream layout cannot expose half a pair.
+            requiredFiles: installFiles()});
 
         // A partial unpack is refused here rather than left to look like an
         // install - see partialInstallError.
@@ -149,8 +156,31 @@ export const downloadFile = async () => {
     return downloadBinary(url, {outputPath: binaryPath, sha256: binary.sha256});
 };
 
-export const load = async () => {
+const coalescedLoad = async (task) => {
+    // Two ensureBinary callers can both observe a missing pair before either
+    // download reaches extraction. Coalesce the whole provider load so the
+    // first caller cannot proceed to spawn while a second pair publication is
+    // queued behind it.
+    if (loadInProgress) return loadInProgress;
+
+    const attempt = task();
+    loadInProgress = attempt;
+
+    try {
+        return await attempt;
+    } finally {
+        if (loadInProgress === attempt) loadInProgress = undefined;
+    }
+};
+
+// Injectable entry point for the isolated concurrency regression; production
+// callers use load below and cannot replace the pinned downloader.
+export const loadWith = async ({exists, download, hold}) => coalescedLoad(async () => {
+    if (!await exists()) await hold("iperf3", download);
+});
+
+export const load = async () => coalescedLoad(async () => {
     // Behind the existence check, so a binary an operator dropped in by
     // hand is picked up on the next tick rather than waiting a hold out.
     if (!await fileExists()) await heldDownload("iperf3", downloadFile);
-};
+});

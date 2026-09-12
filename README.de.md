@@ -65,7 +65,9 @@ Installationsarten laufen soll, nimmt `chooser.sh` unter derselben Adresse.
 Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* Linux
 geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die
 nativen Module des Host-Systems (z. B. `@resvg/resvg-js`) in der Binary; sie startet dann
-zwar, scheitert aber zur Laufzeit.
+zwar, scheitert aber zur Laufzeit. Die eigenständige Kompilierung ist nur mit Bun
+**genau 1.4.2** qualifiziert und lehnt jede andere Bun-Version ab; für den Betrieb aus dem
+Quellcode gilt weiterhin die unten angegebene Mindestversion.
 
 #### 🪟 Windows
 

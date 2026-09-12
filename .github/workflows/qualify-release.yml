@@ -1,0 +1,248 @@
+name: Qualify release candidate
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: "Exact 40-character SHA at the default-branch head"
+        required: true
+        type: string
+      version:
+        description: "Version already committed in both package manifests"
+        required: true
+        type: string
+      windows_stamp:
+        description: "Frozen four-part Windows file version"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: qualify-release-${{ github.event.pull_request.number || inputs.candidate_sha || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  prepare:
+    name: Resolve immutable candidate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+      windows_stamp: ${{ steps.identity.outputs.windows_stamp }}
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Resolve and validate identity
+        id: identity
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          INPUT_SHA: ${{ inputs.candidate_sha }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_WINDOWS_STAMP: ${{ inputs.windows_stamp }}
+          DISPATCH_SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = pull_request ]; then
+            SOURCE_SHA="$PR_SHA"
+            VERSION="$(node -p "require('./package.json').version")"
+            WINDOWS_STAMP="$VERSION.$GITHUB_RUN_NUMBER"
+          else
+            SOURCE_SHA="$INPUT_SHA"
+            VERSION="$INPUT_VERSION"
+            WINDOWS_STAMP="$INPUT_WINDOWS_STAMP"
+            [ "$REF_NAME" = "$DEFAULT_BRANCH" ] || { echo 'Manual qualification must run from the default branch.' >&2; exit 1; }
+            [ "$SOURCE_SHA" = "$DISPATCH_SHA" ] || { echo 'Candidate SHA is not the dispatched default-branch head.' >&2; exit 1; }
+          fi
+          SOURCE_SHA="$SOURCE_SHA" VERSION="$VERSION" WINDOWS_STAMP="$WINDOWS_STAMP" \
+            bun scripts/release/validate-inputs.mjs
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "windows_stamp=$WINDOWS_STAMP" >> "$GITHUB_OUTPUT"
+
+  tests:
+    name: Full test suite
+    needs: prepare
+    uses: ./.github/workflows/test.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+
+  binaries:
+    name: Qualified binaries
+    needs: prepare
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      windows_stamp: ${{ needs.prepare.outputs.windows_stamp }}
+
+  msi:
+    name: Qualified installers
+    needs: [prepare, binaries]
+    uses: ./.github/workflows/build-msi.yml
+    with:
+      source_sha: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      windows_stamp: ${{ needs.prepare.outputs.windows_stamp }}
+
+  docker:
+    name: Qualified OCI images
+    needs: prepare
+    uses: ./.github/workflows/build-docker.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      windows_stamp: ${{ needs.prepare.outputs.windows_stamp }}
+
+  docker-index:
+    name: Seal multi-platform OCI index
+    needs: [prepare, docker]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout exact candidate tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.sha }}
+      - name: Download verified platform OCI archives
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: qualified-oci-*
+          path: ${{ runner.temp }}/platforms
+      - name: Combine content-addressed platform layouts
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/amd64" "$RUNNER_TEMP/arm64"
+          tar -xf "$RUNNER_TEMP/platforms/qualified-oci-amd64/myspeed-amd64.oci.tar" -C "$RUNNER_TEMP/amd64"
+          tar -xf "$RUNNER_TEMP/platforms/qualified-oci-arm64/myspeed-arm64.oci.tar" -C "$RUNNER_TEMP/arm64"
+          node scripts/release/combine-oci-layouts.mjs --amd64 "$RUNNER_TEMP/amd64" \
+            --arm64 "$RUNNER_TEMP/arm64" --output "$RUNNER_TEMP/index" \
+            --provenance "$RUNNER_TEMP/oci-index-provenance.json"
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+            -cf "$RUNNER_TEMP/myspeed-multiarch.oci.tar" -C "$RUNNER_TEMP/index" oci-layout index.json blobs
+          sha256sum "$RUNNER_TEMP/myspeed-multiarch.oci.tar" | cut -d ' ' -f 1 > \
+            "$RUNNER_TEMP/myspeed-multiarch.oci.tar.sha256"
+      - name: Upload immutable multi-platform OCI index
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: qualified-oci-index
+          path: |
+            ${{ runner.temp }}/myspeed-multiarch.oci.tar
+            ${{ runner.temp }}/myspeed-multiarch.oci.tar.sha256
+            ${{ runner.temp }}/oci-index-provenance.json
+          if-no-files-found: error
+          retention-days: 7
+
+  summary:
+    name: Seal qualification manifest
+    if: ${{ always() }}
+    needs: [prepare, tests, binaries, msi, docker, docker-index]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout trusted candidate tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ needs.prepare.outputs.sha }}
+
+      - name: Set up qualification runtime
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install qualification validator dependencies without lifecycle scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Preflight immutable Actions artifact metadata
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          OUTPUT_PATH: ${{ runner.temp }}/artifacts.json
+        with:
+          script: |
+            const fs = require('fs');
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+              per_page: 100
+            });
+            const mebibyte = 1024 * 1024;
+            const gibibyte = 1024 * mebibyte;
+            const expected = ['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe',
+              'MySpeed-linux-x64', 'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64',
+              'MySpeed-macos-x64', 'MySpeed-macos-arm64', 'MySpeed.zip',
+              'release-msi-MySpeed-installer.msi', 'release-msi-MySpeed-installer-baseline.msi',
+              'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64', 'qualified-oci-index'].sort();
+            const names = artifacts.map(({name}) => name).sort();
+            if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error('Actions artifact set mismatch');
+            for (const artifact of artifacts) {
+              const limit = artifact.name === 'release-static' ? 10 * mebibyte
+                : artifact.name === 'MySpeed.zip' ? 2 * gibibyte
+                  : artifact.name.startsWith('qualified-oci-') ? 4 * gibibyte : gibibyte;
+              if (artifact.expired || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > limit
+                || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest))
+                throw new Error('Unsafe Actions artifact metadata: ' + artifact.name);
+            }
+            fs.writeFileSync(process.env.OUTPUT_PATH, JSON.stringify({artifacts}));
+
+      - name: Download every candidate artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          path: ${{ runner.temp }}/artifacts
+          pattern: "*"
+
+      - name: Seal complete successful qualification
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          WINDOWS_STAMP: ${{ needs.prepare.outputs.windows_stamp }}
+          PREPARE_RESULT: ${{ needs.prepare.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          BINARIES_RESULT: ${{ needs.binaries.result }}
+          MSI_RESULT: ${{ needs.msi.result }}
+          DOCKER_RESULT: ${{ needs.docker.result }}
+          DOCKER_INDEX_RESULT: ${{ needs['docker-index'].result }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/artifacts
+          ARTIFACT_METADATA: ${{ runner.temp }}/artifacts.json
+          EVIDENCE_PATH: ${{ runner.temp }}/evidence.json
+          OUTPUT_PATH: ${{ runner.temp }}/qualification
+        run: |
+          node -e "require('fs').writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({tests:process.env.TESTS_RESULT,binaries:process.env.BINARIES_RESULT,msi:process.env.MSI_RESULT,docker:process.env.DOCKER_RESULT,dockerIndex:process.env.DOCKER_INDEX_RESULT,ice:process.env.MSI_RESULT}))"
+          node scripts/release/qualification-manifest.mjs create \
+            --root "$ARTIFACT_ROOT" --output "$OUTPUT_PATH" --artifacts "$ARTIFACT_METADATA" \
+            --evidence "$EVIDENCE_PATH" --sha "$SOURCE_SHA" --version "$VERSION" \
+            --windows-stamp "$WINDOWS_STAMP" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY"
+
+      - name: Upload immutable qualification manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-qualification-manifest
+          path: ${{ runner.temp }}/qualification
+          if-no-files-found: error
+          retention-days: 7

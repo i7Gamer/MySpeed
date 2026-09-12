@@ -140,6 +140,160 @@ describe("downloading a bare executable", () => {
             assert.equal(fs.existsSync(file), false, "every download leaves its staging copy behind");
     });
 
+    it("handles EXDEV by copying to a fresh same-directory file before atomic publication", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        const {client} = serving();
+        let firstRename = true;
+        const rename = async (from, to) => {
+            if (firstRename) {
+                firstRename = false;
+                const error = new Error("different filesystems");
+                error.code = "EXDEV";
+                throw error;
+            }
+            return fs.promises.rename(from, to);
+        };
+
+        await downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client, tmp: stagedIn().tmp, operations: {rename}
+        });
+
+        assert.deepEqual(fs.readFileSync(outputPath), PAYLOAD);
+        assert.deepEqual(fs.readdirSync(path.dirname(outputPath)), ["iperf3"]);
+    });
+
+    it("refuses a pre-existing hardlink without changing its sibling", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        fs.mkdirSync(path.dirname(outputPath));
+        const sentinel = path.join(workDir, "sentinel");
+        fs.writeFileSync(sentinel, "keep");
+        fs.linkSync(sentinel, outputPath);
+
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp
+        }), /hardlink|link count/i);
+        assert.equal(fs.readFileSync(sentinel, "utf8"), "keep");
+    });
+
+    it("refuses a pre-existing symlink without changing its target", async (context) => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        fs.mkdirSync(path.dirname(outputPath));
+        const sentinel = path.join(workDir, "sentinel");
+        fs.writeFileSync(sentinel, "keep");
+        try {
+            fs.symlinkSync(sentinel, outputPath, "file");
+        } catch (error) {
+            if (error.code === "EPERM") return context.skip("file symlinks require host permission");
+            throw error;
+        }
+
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp
+        }), /symlink/i);
+        assert.equal(fs.readFileSync(sentinel, "utf8"), "keep");
+    });
+
+    it("refuses a linked parent below the canonical temporary root", async () => {
+        const linkedParent = path.join(workDir, "linked-parent");
+        fs.mkdirSync(linkedParent);
+        const outputPath = path.join(linkedParent, "bin", "iperf3");
+
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp,
+            operations: {
+                lstat: async (target) => path.basename(target) === path.basename(linkedParent)
+                    ? {
+                        isDirectory: () => true,
+                        isFile: () => false,
+                        isSymbolicLink: () => true,
+                        nlink: 1,
+                        size: 0,
+                        mode: 0o755
+                    }
+                    : fs.promises.lstat(target)
+            }
+        }), /linked parent|output directory/i);
+        assert.deepEqual(fs.readdirSync(linkedParent), []);
+    });
+
+    it("refuses a destination name that is unsafe on Windows", async () => {
+        const outputPath = path.join(workDir, "bin", "NUL");
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp
+        }), /unsafe|Windows/i);
+        assert.equal(fs.existsSync(path.dirname(outputPath)), false);
+    });
+
+    it("preserves a prior binary and cleans same-directory staging on copy failure", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        fs.mkdirSync(path.dirname(outputPath));
+        fs.writeFileSync(outputPath, "old");
+        const exdevRename = async () => {
+            const error = new Error("different filesystems");
+            error.code = "EXDEV";
+            throw error;
+        };
+        const copyFile = async () => { throw new Error("injected copy failure"); };
+
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp,
+            operations: {rename: exdevRename, copyFile}
+        }), /injected copy failure/);
+        assert.equal(fs.readFileSync(outputPath, "utf8"), "old");
+        assert.deepEqual(fs.readdirSync(path.dirname(outputPath)), ["iperf3"]);
+    });
+
+    it("preserves a prior binary and cleans staging on final rename failure", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        fs.mkdirSync(path.dirname(outputPath));
+        fs.writeFileSync(outputPath, "old");
+        const rename = async (from, to) => {
+            if (path.basename(to) === path.basename(outputPath))
+                throw new Error("injected publication failure");
+            return fs.promises.rename(from, to);
+        };
+
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp,
+            operations: {rename}
+        }), /injected publication failure/);
+        assert.equal(fs.readFileSync(outputPath, "utf8"), "old");
+        assert.deepEqual(fs.readdirSync(path.dirname(outputPath)), ["iperf3"]);
+    });
+
+    it("refuses an empty bare executable without replacing a prior binary", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        fs.mkdirSync(path.dirname(outputPath));
+        fs.writeFileSync(outputPath, "old");
+        const emptyDigest = createHash("sha256").update("").digest("hex");
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: emptyDigest, client: serving(Buffer.alloc(0)).client, tmp: stagedIn().tmp
+        }), /nonempty/i);
+        assert.equal(fs.readFileSync(outputPath, "utf8"), "old");
+    });
+
+    it("refuses privilege bits in a requested executable mode", async () => {
+        const outputPath = path.join(workDir, "bin", "iperf3");
+        await assert.rejects(downloadBinary("https://example.test/iperf3", {
+            outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp, mode: 0o4755
+        }), /mode|privilege/i);
+        assert.equal(fs.existsSync(outputPath), false);
+    });
+
+    it("preserves a prior binary and cleans staging on chmod failure",
+        {skip: process.platform === "win32"}, async () => {
+            const outputPath = path.join(workDir, "bin", "iperf3");
+            fs.mkdirSync(path.dirname(outputPath));
+            fs.writeFileSync(outputPath, "old");
+            const chmod = async () => { throw new Error("injected chmod failure"); };
+            await assert.rejects(downloadBinary("https://example.test/iperf3", {
+                outputPath, sha256: DIGEST, client: serving().client, tmp: stagedIn().tmp,
+                operations: {chmod}
+            }), /injected chmod failure/);
+            assert.equal(fs.readFileSync(outputPath, "utf8"), "old");
+            assert.deepEqual(fs.readdirSync(path.dirname(outputPath)), ["iperf3"]);
+        });
+
     /**
      * A published bare binary arrives without an executable bit, where a tar
      * member carries its mode inside the archive. Without this the spawn fails

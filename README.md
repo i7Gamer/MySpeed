@@ -64,7 +64,9 @@ run, `chooser.sh` at the same address puts the question first.
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
 Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
 native addons (e.g. `@resvg/resvg-js`), producing a binary that starts and then fails
-at runtime.
+at runtime. Standalone compilation is qualified only with Bun **exactly 1.4.2** and
+rejects any other Bun version; running MySpeed from source still supports the minimum
+documented below.
 
 #### 🪟 Windows
 

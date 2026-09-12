@@ -12,7 +12,8 @@ import { measureLatency, median, sampleHandshake, spread } from "../../server/ut
 import { IPERF_DEFAULT_PORT, IPERF_MAX_BITRATE_MBPS, IPERF_MIN_BITRATE_MBPS, REGISTRY, joinEndpoint,
     splitEndpoint } from "../../server/util/providers/registry.js";
 import { iperfEndpointProblem, targetProblem } from "../../server/controller/targets.js";
-import { fileExists, installFiles, missingFiles, partialInstallError, selectBinary }
+import { ensureBinary } from "../../server/util/speedtest.js";
+import { fileExists, installFiles, loadWith as loadIperf3, missingFiles, partialInstallError, selectBinary }
     from "../../server/util/providers/loadIperf3.js";
 import { iperfList } from "../../server/config/binaries.js";
 
@@ -1047,8 +1048,72 @@ describe("an archive that unpacked only half of itself", () => {
         const download = withoutJsComments(bodyIn("server/util/providers/loadIperf3.js",
             "export const downloadFile"));
 
+        assert.match(download, /requiredFiles:\s*installFiles\(\)/,
+            "the complete pair is not given to the extractor before publication");
         assert.match(download, /partialInstallError\(missingFiles\(\)/);
         assert.match(download, /throw new Error\(problem\)/);
+    });
+
+    it("keeps existence checks behind an in-process installation", () => {
+        const existence = withoutJsComments(bodyIn("server/util/providers/loadIperf3.js",
+            "export const fileExists"));
+
+        assert.match(existence, /await waitForInstall\(/,
+            "a consumer can observe the EXE while the required DLL is still being replaced");
+    });
+
+    it("coalesces concurrent loader calls onto one complete installation", async () => {
+        let releaseDownload;
+        let downloadStarted;
+        let downloads = 0;
+        const paused = new Promise((resolve) => { releaseDownload = resolve; });
+        const started = new Promise((resolve) => { downloadStarted = resolve; });
+        const options = {
+            exists: async () => false,
+            download: async () => {
+                downloads++;
+                downloadStarted();
+                await paused;
+            },
+            hold: async (_provider, download) => download()
+        };
+
+        const loader = {load: () => loadIperf3(options)};
+        let consumersReleased = 0;
+        const first = ensureBinary("iperf3", "synthetic/iperf3.exe", {iperf3: loader})
+            .then(() => { consumersReleased++; });
+        await started;
+        const second = ensureBinary("iperf3", "synthetic/iperf3.exe", {iperf3: loader})
+            .then(() => { consumersReleased++; });
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(consumersReleased, 0, "an ensureBinary caller passed the incomplete installation");
+        releaseDownload();
+        await Promise.all([first, second]);
+
+        assert.equal(downloads, 1,
+            "two ensureBinary callers can queue a second pair replacement behind the first");
+        assert.equal(consumersReleased, 2);
+    });
+
+    it("allows a fresh loader attempt after a coalesced one fails", async () => {
+        let attempts = 0;
+        const hold = async (_provider, download) => download();
+        const failedOptions = {
+            exists: async () => false,
+            download: async () => {
+                attempts++;
+                throw new Error("synthetic download failure");
+            },
+            hold
+        };
+        await assert.rejects(loadIperf3(failedOptions), /synthetic download failure/);
+
+        await loadIperf3({
+            exists: async () => false,
+            download: async () => { attempts++; },
+            hold
+        });
+        assert.equal(attempts, 2);
     });
 });
 

@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import {parse} from "yaml";
+import {QUALIFIED_BUN_VERSION} from "../../scripts/build-binary.mjs";
 
 const ROOT = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const read = file => fs.readFileSync(path.join(ROOT, file), "utf8");
@@ -33,14 +34,19 @@ describe("Bun runtime guidance", () => {
 
     it("generates release notes with the current CPU and source-runtime contract", async () => {
         const workflow = parse(read(".github/workflows/finalize-release.yml"));
-        const step = workflow.jobs.finalize.steps.find(step => step.name === "Publish release notes");
+        const step = workflow.jobs.finalize.steps.find(step => step.name === "Generate notes and publish the existing draft");
         const version = JSON.parse(read("package.json")).version;
+        const sourceSha = "a".repeat(40);
         const updates = [];
         await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
-            process: {env: {VERSION: version, PREV_TAG: "", RELEASE_ID: "1", REGISTRY_IMAGE: "fixture/myspeed"}},
+            process: {env: {VERSION: version, SOURCE_SHA: sourceSha, RELEASE_ID: "1"}},
             context: {repo: {owner: "fixture", repo: "myspeed"}},
             console: {log() {}},
-            github: {rest: {repos: {updateRelease: async value => { updates.push(value); }}}}
+            github: {rest: {git: {getRef: async () => ({data: {object: {type: "commit", sha: sourceSha}}})}, repos: {
+                getRelease: async () => ({data: {draft: true, tag_name: `v${version}`, target_commitish: "fixture"}}),
+                generateReleaseNotes: async () => ({data: {body: "generated"}}),
+                updateRelease: async value => { updates.push(value); }
+            }}}
         });
         assert.equal(updates.length, 1);
         const {body} = updates[0];
@@ -57,6 +63,17 @@ describe("Bun runtime guidance", () => {
             "source users are not told to upgrade Bun before installing dependencies");
         assert.match(readme, /Node(?:\.js)?[\s\S]*?22\.19\.0[\s\S]*?(?:development|test)/i,
             "Node development/test minimum is not documented");
+    });
+
+    it("distinguishes the source-runtime minimum from the exact standalone compiler", () => {
+        const english = read("README.md");
+        const german = read("README.de.md");
+        const version = QUALIFIED_BUN_VERSION.replaceAll(".", "\\.");
+
+        assert.match(english, new RegExp(`Bun[\\s\\S]*?${version} or newer`, "i"));
+        assert.match(german, new RegExp(`Bun[\\s\\S]*?${version} oder neuer`, "i"));
+        assert.match(english, new RegExp(`standalone compilation[\\s\\S]*?exactly ${version}`, "i"));
+        assert.match(german, new RegExp(`eigenst.ndige Kompilierung[\\s\\S]*?genau ${version}`, "i"));
     });
 
     it("describes x64 default and baseline names as compatibility aliases", () => {

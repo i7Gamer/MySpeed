@@ -2,7 +2,6 @@ import {it} from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
-import {createHash} from "node:crypto";
 import {parse} from "yaml";
 import {parse as parseJavaScript} from "espree";
 import {readSource} from "../helpers/source.js";
@@ -134,7 +133,7 @@ it("pins every external action and never persists checkout credentials", () => {
     }
 });
 
-it("binary compilation and verification hold read-only tokens, publication runs separately", () => {
+it("binary compilation and verification are build-only and read-only", () => {
     const config = workflow("build-binaries");
     for (const name of buildNames) {
         const job = config.jobs[name];
@@ -143,100 +142,27 @@ it("binary compilation and verification hold read-only tokens, publication runs 
         assert.ok(uses(job, "actions/upload-artifact").length, name);
         assert.ok(uses(job, "actions/upload-artifact").every((step) => step.with.path.includes(".sha256")));
     }
-    const publish = config.jobs["publish-binaries"];
-    assert.deepEqual(publish.needs, buildNames);
-    assert.equal(publish.permissions.contents, "write");
-    assert.equal(uses(publish, "actions/checkout").length, 0);
-    assert.ok(uses(publish, "actions/download-artifact").length);
-    assert.ok(uses(publish, "actions/github-script").length);
-    assert.deepEqual(config.jobs.checksums.needs, ["publish-binaries"]);
-    assert.equal(config.jobs.checksums.permissions.contents, "write");
-    for (const name of ["publish-binaries", "checksums"])
-        assert.ok(config.jobs[name].steps.every((step) => !/bun |npm |node |\.\/scripts\//.test(step.run ?? "")));
+    assert.equal(config.jobs["publish-binaries"], undefined);
+    assert.equal(config.jobs.checksums, undefined);
 });
 
-it("MSI building cannot write releases and publishing never executes an artifact", () => {
+it("MSI building cannot write releases", () => {
     const config = workflow("build-msi");
     const build = config.jobs["build-msi"];
     assert.equal((build.permissions ?? config.permissions).contents, "read");
     assert.equal(uses(build, "actions/github-script").length, 0);
     assert.equal(uses(build, "actions/upload-artifact").length, 1);
     assert.ok(uses(build, "actions/upload-artifact")[0].with.path.includes(".sha256"));
-    const publish = config.jobs["publish-msi"];
-    assert.equal(publish.needs, "build-msi");
-    assert.equal(publish.permissions.contents, "write");
-    assert.equal(uses(publish, "actions/checkout").length, 0);
-    assert.ok(publish.steps.every((step) => !step.run));
+    assert.equal(config.jobs["publish-msi"], undefined);
 });
 
-for (const [name, jobName, prefix, sourceFile] of [
-    ["build-binaries", "publish-binaries", "", null],
-    ["build-msi", "publish-msi", "release-msi-", "MySpeed-installer.msi"]
-]) {
-    const config = workflow(name);
-    const buildJobs = name === "build-binaries" ? buildNames : ["build-msi"];
-    const expected = buildJobs.flatMap((jobName) => {
-        const job = config.jobs[jobName];
-        if (jobName === "build-zip") return [["MySpeed.zip", "MySpeed.zip"]];
-        return job.strategy.matrix.include.map((leg) => {
-            const asset = leg.artifact_name ?? leg.asset_name;
-            return [asset, sourceFile ?? (jobName === "build-windows" ? "MySpeed.exe" : asset)];
-        });
-    });
-    const execute = async (files, uploads) => {
-        const script = uses(config.jobs[jobName], "actions/github-script")[0].with.script;
-        const stat = (path) => {
-            if (!files.has(path)) throw new Error("Missing artifact");
-            return {isFile: () => files.get(path) !== null, size: files.get(path)?.length ?? 0};
-        };
-        const sandbox = {
-            require: (module) => {
-                if (module === "crypto") return {createHash};
-                assert.equal(module, "fs");
-                return {lstatSync: stat, statSync: stat, readFileSync: (path) => files.get(path)};
-            },
-            process: {env: {RELEASE_ID: "123"}},
-            context: {repo: {owner: "test", repo: "myspeed"}},
-            github: {rest: {repos: {uploadReleaseAsset: async (asset) => uploads.push(asset)}}}
-        };
-        return vm.runInNewContext("(async () => {" + script + "})()", sandbox);
-    };
-    const artifacts = () => new Map(expected.flatMap(([asset, file]) => {
-        const path = "artifacts/" + prefix + asset + "/" + file;
-        return [[path, Buffer.from(asset)],
-            [path + ".sha256", createHash("sha256").update(asset).digest("hex") + "\n"]];
-    }));
-    it(name + " publishes every matrix variant under its exact release name", async () => {
-        const uploads = [];
-        await execute(artifacts(), uploads);
-        assert.deepEqual(uploads.map((asset) => asset.name).sort(), expected.map(([asset]) => asset).sort());
-        for (const asset of uploads) {
-            assert.equal(asset.release_id, 123);
-            assert.equal(asset.data.toString(), asset.name);
-        }
-    });
-    for (const defect of ["missing", "empty", "non-file", "wrong-digest", "missing-digest"]) {
-        it(name + " rejects a " + defect + " artifact before any publication", async () => {
-            const files = artifacts();
-            const last = [...files.keys()].filter((path) => !path.endsWith(".sha256")).at(-1);
-            if (defect === "missing-digest") files.delete(last + ".sha256");
-            else if (defect === "wrong-digest") files.set(last + ".sha256", "0".repeat(64));
-            else if (defect === "missing") files.delete(last);
-            else files.set(last, defect === "empty" ? Buffer.alloc(0) : null);
-            const uploads = [];
-            await assert.rejects(execute(files, uploads), /Missing|empty|digest|undefined/);
-            assert.equal(uploads.length, 0);
-        });
-    }
-}
-
-it("only Docker workflows accept explicit registry secrets through both callers", () => {
-    for (const name of ["build-docker", "publish-docker"])
-        assert.deepEqual(Object.keys(workflow(name).on.workflow_call.secrets).sort(), dockerSecrets);
+it("only qualified Docker publication accepts registry secrets", () => {
+    assert.equal(workflow("build-docker").on.workflow_call.secrets, undefined);
+    assert.deepEqual(Object.keys(workflow("publish-docker").on.workflow_call.secrets).sort(), dockerSecrets);
     for (const [, config] of all()) {
         for (const job of Object.values(config.jobs)) {
             if (!job.uses) continue;
-            if (/\/(?:build|publish)-docker\.yml$/.test(job.uses)) {
+            if (/\/publish-docker\.yml$/.test(job.uses)) {
                 assert.deepEqual(Object.keys(job.secrets).sort(), dockerSecrets);
                 for (const key of dockerSecrets) assert.equal(job.secrets[key], `\${{ secrets.${key} }}`);
             } else assert.equal(job.secrets, undefined);
@@ -244,14 +170,13 @@ it("only Docker workflows accept explicit registry secrets through both callers"
     }
 });
 
-it("release finalization and Docker publication retain all existing gates", () => {
+it("release finalization and Docker publication retain all qualification gates", () => {
     const jobs = workflow("create_release").jobs;
-    for (const name of ["build-binaries", "build-msi", "refuse-duplicate-digests"])
+    for (const name of ["validate", "create-draft", "publish-assets"])
         assert.ok(jobs["publish-docker"].needs.includes(name), name);
-    for (const name of ["publish-docker", "checksums-msi"])
+    for (const name of ["publish-docker", "publish-assets"])
         assert.ok(jobs["finalize-release"].needs.includes(name), name);
-    assert.ok(jobs["cleanup-on-failure"].if.includes("failure()"));
-    assert.ok(jobs["report-cancelled-release"].if.includes("cancelled()"));
+    assert.ok(jobs["report-failure"].if.includes("failure()"));
 });
 
 it("Dependabot watches both Bun lockfiles, actions and Docker as structured entries", () => {
