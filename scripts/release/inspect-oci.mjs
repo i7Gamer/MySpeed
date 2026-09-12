@@ -3,6 +3,8 @@ import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {inspectDockerRuntimeEvidence} from './docker-runtime-evidence.mjs';
+import {assertOciDescriptor, inspectPlatformImage, OCI_JSON_LIMIT_BYTES}
+    from './oci-platform-inspection.mjs';
 
 const DIGEST = /^sha256:([a-f0-9]{64})$/;
 const SOURCE_SHA = /^[a-f0-9]{40}$/;
@@ -11,42 +13,59 @@ const SINGLE_LINK = 1;
 
 const digest = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
-const readBlob = async (root, expected) => {
-    const match = DIGEST.exec(expected);
-    if (!match) throw new Error(`Invalid OCI digest: ${expected}`);
+const hashFile = (file) => new Promise((resolve, reject) => {
+    const hash = createHash('sha256');
+    const stream = fs.createReadStream(file);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.once('error', reject);
+    stream.once('end', () => resolve(`sha256:${hash.digest('hex')}`));
+});
+
+const readBlob = async (root, descriptor, label, retain) => {
+    assertOciDescriptor(descriptor, label);
+    const match = DIGEST.exec(descriptor.digest);
     const blobPath = path.join(root, 'blobs', 'sha256', match[1]);
     const stats = await fs.promises.lstat(blobPath);
     if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== SINGLE_LINK || stats.size === 0)
-        throw new Error(`OCI digest is not an ordinary non-empty blob: ${expected}`);
-    const bytes = await fs.promises.readFile(blobPath);
-    if (digest(bytes) !== expected) throw new Error(`OCI blob digest mismatch: ${expected}`);
-    return bytes;
+        throw new Error(`${label} digest is not an ordinary non-empty blob: ${descriptor.digest}`);
+    if (stats.size !== descriptor.size) throw new Error(`${label} descriptor size mismatch`);
+    if (retain && stats.size > OCI_JSON_LIMIT_BYTES)
+        throw new Error(`${label} exceeds the JSON size limit`);
+    const bytes = retain ? await fs.promises.readFile(blobPath) : null;
+    const actual = bytes ? digest(bytes) : await hashFile(blobPath);
+    if (actual !== descriptor.digest) throw new Error(`OCI blob digest mismatch: ${descriptor.digest}`);
+    return {bytes, digest: actual, size: stats.size};
+};
+
+const readIndex = async (root) => {
+    const indexPath = path.join(root, 'index.json');
+    const stats = await fs.promises.lstat(indexPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== SINGLE_LINK || stats.size === 0
+        || stats.size > OCI_JSON_LIMIT_BYTES)
+        throw new Error('OCI layout index is not an ordinary bounded non-empty file');
+    const bytes = await fs.promises.readFile(indexPath);
+    return {bytes, digest: digest(bytes), size: stats.size};
+};
+
+export const inspectOciLayoutPlatform = async ({root, platform}) => {
+    const [os, architecture] = platform.split('/');
+    if (!os || !architecture || platform !== `${os}/${architecture}`)
+        throw new Error(`Invalid OCI platform: ${platform}`);
+
+    const indexEntry = await readIndex(root);
+    const inspected = await inspectPlatformImage({indexEntry, platform,
+        loadDescriptor: (descriptor, label, retain) => readBlob(root, descriptor, label, retain)});
+
+    return {...inspected, indexDigest: indexEntry.digest};
 };
 
 export const inspectOciLayout = async ({root, platform, sourceSha, version}) => {
     if (!SOURCE_SHA.test(sourceSha)) throw new Error(`Invalid OCI source SHA: ${sourceSha}`);
     if (!VERSION.test(version)) throw new Error(`Invalid OCI source version: ${version}`);
-    const [os, architecture] = platform.split('/');
-    if (!os || !architecture || platform !== `${os}/${architecture}`)
-        throw new Error(`Invalid OCI platform: ${platform}`);
-
-    const indexBytes = await fs.promises.readFile(path.join(root, 'index.json'));
-    const index = JSON.parse(indexBytes);
-    const candidates = index.manifests?.filter((item) => item.platform?.os === os
-        && item.platform?.architecture === architecture) ?? [];
-    if (candidates.length !== SINGLE_LINK)
-        throw new Error(`OCI index must contain exactly one ${platform} platform manifest`);
-    const manifestDigest = candidates[0].digest;
-    const manifest = JSON.parse(await readBlob(root, manifestDigest));
-    const configDigest = manifest.config?.digest;
-    await readBlob(root, configDigest);
-    if (!Array.isArray(manifest.layers) || manifest.layers.length === 0)
-        throw new Error('OCI manifest has no layers');
-    const layerDigests = manifest.layers.map((layer) => layer.digest);
-    for (const layerDigest of layerDigests) await readBlob(root, layerDigest);
-
-    return {sourceSha, version, platform, verification: 'success', indexDigest: digest(indexBytes),
-        manifestDigest, configDigest, layerDigests};
+    const inspected = await inspectOciLayoutPlatform({root, platform});
+    return {sourceSha, version, platform, verification: 'success', indexDigest: inspected.indexDigest,
+        manifestDigest: inspected.manifestDigest, configDigest: inspected.configDigest,
+        layerDigests: inspected.layerDigests};
 };
 
 const argumentsMap = (tokens) => {

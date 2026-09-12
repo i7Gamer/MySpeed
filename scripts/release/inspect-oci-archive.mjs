@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {pipeline} from 'node:stream/promises';
 import tarStream from 'tar-stream';
+import {assertOciDescriptor, inspectPlatformImage, OCI_JSON_LIMIT_BYTES}
+    from './oci-platform-inspection.mjs';
 
 const SHA256_DIGEST = /^sha256:([a-f0-9]{64})$/;
 const BLOB_PATH = /^blobs\/sha256\/([a-f0-9]{64})$/;
-const MEBIBYTE = 1024 * 1024;
-const JSON_LIMIT_BYTES = 10 * MEBIBYTE;
 const REQUIRED_PLATFORM_COUNT = 2;
 const INDEX_REFERENCE = 'myspeed';
 
@@ -45,7 +45,7 @@ const readArchive = async (archive) => {
             stream.on('data', (chunk) => {
                 size += chunk.length;
                 hash.update(chunk);
-                if (retain && size <= JSON_LIMIT_BYTES) chunks.push(chunk);
+                if (retain && size <= OCI_JSON_LIMIT_BYTES) chunks.push(chunk);
                 else retain = false;
             });
             stream.once('error', fail);
@@ -90,6 +90,14 @@ const blobEntry = (entries, expected, label) => {
     return entry;
 };
 
+const descriptorEntry = (entries, descriptor, label, retain) => {
+    assertOciDescriptor(descriptor, label);
+    const entry = blobEntry(entries, descriptor.digest, label);
+    if (descriptor.size !== entry.size) throw new Error(`${label} descriptor size mismatch`);
+    if (retain && !entry.bytes) throw new Error(`${label} exceeds the JSON size limit`);
+    return entry;
+};
+
 export const inspectOciArchive = async ({archive, platform, sourceSha, version}) => {
     const [os, architecture] = platform.split('/');
     if (!os || !architecture || platform !== `${os}/${architecture}`)
@@ -98,28 +106,14 @@ export const inspectOciArchive = async ({archive, platform, sourceSha, version})
     const layout = parseJson(entries.get('oci-layout'), 'OCI layout metadata');
     if (layout.imageLayoutVersion !== '1.0.0') throw new Error('Unsupported OCI layout version');
     const indexEntry = entries.get('index.json');
-    const index = parseJson(indexEntry, 'OCI layout index');
-    const matches = index.manifests?.filter((item) => item.platform?.os === os
-        && item.platform?.architecture === architecture) ?? [];
-    if (matches.length !== 1) throw new Error(`OCI index must contain exactly one ${platform} descriptor`);
-    const descriptor = matches[0];
-    const manifestEntry = blobEntry(entries, descriptor.digest, 'OCI manifest');
-    if (descriptor.size !== manifestEntry.size) throw new Error('OCI manifest descriptor size mismatch');
-    const manifest = parseJson(manifestEntry, 'OCI manifest');
-    const configEntry = blobEntry(entries, manifest.config?.digest, 'OCI config');
-    if (manifest.config?.size !== undefined && manifest.config.size !== configEntry.size)
-        throw new Error('OCI config descriptor size mismatch');
-    if (!Array.isArray(manifest.layers) || manifest.layers.length === 0)
-        throw new Error('OCI manifest has no layers');
-    for (const layer of manifest.layers) {
-        const entry = blobEntry(entries, layer.digest, 'OCI layer');
-        if (layer.size !== undefined && layer.size !== entry.size)
-            throw new Error('OCI layer descriptor size mismatch');
-    }
+    const inspected = await inspectPlatformImage({indexEntry, platform,
+        loadDescriptor: (descriptor, label, retain) =>
+            descriptorEntry(entries, descriptor, label, retain)});
     return {sourceSha, version, platform, verification: 'success',
-        indexDigest: indexEntry.digest, descriptor,
-        manifestDigest: descriptor.digest, configDigest: manifest.config.digest,
-        layerDigests: manifest.layers.map(({digest: value}) => value)};
+        indexDigest: indexEntry.digest, descriptor: inspected.descriptor,
+        attestationDescriptors: inspected.attestationDescriptors,
+        manifestDigest: inspected.manifestDigest, configDigest: inspected.configDigest,
+        layerDigests: inspected.layerDigests};
 };
 
 export const inspectCombinedOciArchive = async ({archive, platforms}) => {
@@ -134,15 +128,31 @@ export const inspectCombinedOciArchive = async ({archive, platforms}) => {
     const rootDescriptor = root.manifests[0];
     if (rootDescriptor.annotations?.['org.opencontainers.image.ref.name'] !== INDEX_REFERENCE)
         throw new Error('Combined OCI image reference mismatch');
-    const indexEntry = blobEntry(entries, rootDescriptor.digest, 'combined OCI image index');
-    if (rootDescriptor.size !== indexEntry.size) throw new Error('Combined OCI index descriptor size mismatch');
+    if (root.schemaVersion !== 2
+        || (root.mediaType !== undefined && root.mediaType !== 'application/vnd.oci.image.index.v1+json')
+        || rootDescriptor.mediaType !== 'application/vnd.oci.image.index.v1+json')
+        throw new Error('Invalid combined OCI layout index');
+    const indexEntry = descriptorEntry(entries, rootDescriptor, 'combined OCI image index', true);
     const index = parseJson(indexEntry, 'combined OCI image index');
-    const actual = [...(index.manifests ?? [])]
-        .sort((left, right) => left.platform.architecture.localeCompare(right.platform.architecture));
-    const expected = platforms.map(({descriptor}) => descriptor)
-        .sort((left, right) => left.platform.architecture.localeCompare(right.platform.architecture));
-    if (actual.length !== REQUIRED_PLATFORM_COUNT || JSON.stringify(actual) !== JSON.stringify(expected))
+    if (index.schemaVersion !== 2 || index.mediaType !== 'application/vnd.oci.image.index.v1+json')
+        throw new Error('Invalid combined OCI image index');
+    const groups = platforms.map(({descriptor, attestationDescriptors = []}) =>
+        ({descriptor, attestationDescriptors})).sort((left, right) =>
+        left.descriptor.platform.architecture.localeCompare(right.descriptor.platform.architecture));
+    const expected = groups.flatMap(({descriptor, attestationDescriptors}) =>
+        [descriptor, ...attestationDescriptors]);
+    const actual = index.manifests ?? [];
+    if (JSON.stringify(actual) !== JSON.stringify(expected))
         throw new Error('Combined OCI descriptors do not match qualified platform archives');
+    for (const {descriptor, attestationDescriptors} of groups) {
+        const bytes = Buffer.from(JSON.stringify({schemaVersion: 2,
+            manifests: [descriptor, ...attestationDescriptors]}));
+        await inspectPlatformImage({indexEntry: {bytes, digest: digest(bytes), size: bytes.length},
+            platform: `${descriptor.platform.os}/${descriptor.platform.architecture}`,
+            loadDescriptor: (item, label, retain) =>
+                descriptorEntry(entries, item, label, retain)});
+    }
     return {indexDigest: rootDescriptor.digest, reference: INDEX_REFERENCE,
-        platforms: actual.map(({platform}) => `${platform.os}/${platform.architecture}`)};
+        platforms: groups.map(({descriptor}) =>
+            `${descriptor.platform.os}/${descriptor.platform.architecture}`)};
 };

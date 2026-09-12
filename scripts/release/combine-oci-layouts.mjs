@@ -2,35 +2,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import {inspectOciLayoutPlatform} from './inspect-oci.mjs';
 
-const DIGEST = /^sha256:([a-f0-9]{64})$/;
 const SINGLE_MATCH = 1;
 const INDEX_MEDIA_TYPE = 'application/vnd.oci.image.index.v1+json';
 const OCI_LAYOUT = '{"imageLayoutVersion":"1.0.0"}';
 const INDEX_REFERENCE = 'myspeed';
 const digest = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
-const descriptorFor = async ({root, platform}) => {
-    const [os, architecture] = platform.split('/');
-    const index = JSON.parse(await fs.promises.readFile(path.join(root, 'index.json')));
-    const matches = index.manifests?.filter((descriptor) => descriptor.platform?.os === os
-        && descriptor.platform?.architecture === architecture) ?? [];
-    if (matches.length !== SINGLE_MATCH) throw new Error(`Expected one OCI descriptor for ${platform}`);
-    const descriptor = matches[0];
-    const match = DIGEST.exec(descriptor.digest);
-    if (!match) throw new Error(`Invalid OCI manifest digest for ${platform}`);
-    const bytes = await fs.promises.readFile(path.join(root, 'blobs', 'sha256', match[1]));
-    if (digest(bytes) !== descriptor.digest || bytes.length !== descriptor.size)
-        throw new Error(`OCI manifest descriptor mismatch for ${platform}`);
-    return descriptor;
-};
-
 export const combineOciLayouts = async ({sources, output}) => {
     if (!Array.isArray(sources) || sources.length < 2) throw new Error('Multiple OCI platforms are required');
     await fs.promises.mkdir(path.join(output, 'blobs', 'sha256'), {recursive: true});
-    const manifests = [];
+    const manifestGroups = [];
     for (const source of sources) {
-        manifests.push(await descriptorFor(source));
+        const inspected = await inspectOciLayoutPlatform(source);
+        manifestGroups.push({descriptor: inspected.descriptor,
+            attestationDescriptors: inspected.attestationDescriptors});
         const sourceBlobs = path.join(source.root, 'blobs', 'sha256');
         for (const name of await fs.promises.readdir(sourceBlobs)) {
             if (!/^[a-f0-9]{64}$/.test(name)) throw new Error(`Unsafe OCI blob name: ${name}`);
@@ -50,7 +37,10 @@ export const combineOciLayouts = async ({sources, output}) => {
             }
         }
     }
-    manifests.sort((left, right) => left.platform.architecture.localeCompare(right.platform.architecture));
+    manifestGroups.sort((left, right) =>
+        left.descriptor.platform.architecture.localeCompare(right.descriptor.platform.architecture));
+    const manifests = manifestGroups.flatMap(({descriptor, attestationDescriptors}) =>
+        [descriptor, ...attestationDescriptors]);
     const imageIndexBytes = Buffer.from(JSON.stringify({schemaVersion: 2,
         mediaType: INDEX_MEDIA_TYPE, manifests}));
     const indexDigest = digest(imageIndexBytes);
@@ -61,8 +51,9 @@ export const combineOciLayouts = async ({sources, output}) => {
         annotations: {'org.opencontainers.image.ref.name': INDEX_REFERENCE}}]};
     await fs.promises.writeFile(path.join(output, 'index.json'), JSON.stringify(layoutIndex), {flag: 'wx'});
     await fs.promises.writeFile(path.join(output, 'oci-layout'), OCI_LAYOUT, {flag: 'wx'});
-    return {indexDigest, reference: INDEX_REFERENCE, platforms: manifests.map(({platform}) =>
-        `${platform.os}/${platform.architecture}`)};
+    return {indexDigest, reference: INDEX_REFERENCE,
+        platforms: manifestGroups.map(({descriptor}) =>
+            `${descriptor.platform.os}/${descriptor.platform.architecture}`)};
 };
 
 const parse = (tokens) => {

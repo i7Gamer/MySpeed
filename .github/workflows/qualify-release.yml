@@ -199,7 +199,8 @@ jobs:
               'release-msi-MySpeed-installer.msi', 'release-msi-MySpeed-installer-baseline.msi',
               'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64', 'qualified-oci-index'].sort();
             const names = artifacts.map(({name}) => name).sort();
-            if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error('Actions artifact set mismatch');
+            if (JSON.stringify(names) !== JSON.stringify(expected))
+              throw new Error('Actions artifact set mismatch: expected ' + expected.join(', ') + '; received ' + names.join(', '));
             for (const artifact of artifacts) {
               const limit = artifact.name === 'release-static' ? 10 * mebibyte
                 : artifact.name === 'MySpeed.zip' ? 2 * gibibyte

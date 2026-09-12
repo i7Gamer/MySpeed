@@ -133,6 +133,7 @@ describe("Docker runtime evidence", () => {
         const manifest = writeBlob(Buffer.from(JSON.stringify({schemaVersion: 2, config, layers: [layer]})));
         fs.writeFileSync(path.join(ociRoot, "index.json"), JSON.stringify({schemaVersion: 2, manifests: [{
             ...manifest,
+            mediaType: "application/vnd.oci.image.manifest.v1+json",
             platform: {os: "linux", architecture: "amd64"}
         }]}));
 

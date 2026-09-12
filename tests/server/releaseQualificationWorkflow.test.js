@@ -23,6 +23,51 @@ const QUALIFICATION_ARTIFACTS = [
 ];
 
 describe('read-only release qualification', () => {
+    const expectedArtifacts = QUALIFICATION_ARTIFACTS.filter(name => name !== 'release-qualification-manifest');
+    const executeArtifactPreflight = async (names) => {
+        const step = workflow('qualify-release').jobs.summary.steps
+            .find(({name}) => name === 'Preflight immutable Actions artifact metadata');
+        const artifacts = names.map((name, index) => ({name, id: index + 1, expired: false,
+            size_in_bytes: 1024, digest: `sha256:${'b'.repeat(64)}`}));
+        let written;
+        await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
+            process: {env: {OUTPUT_PATH: 'synthetic-artifact-metadata.json'}},
+            context: {repo: {owner: 'synthetic', repo: 'fixture'}, runId: 1},
+            require: name => {
+                assert.equal(name, 'fs');
+                return {writeFileSync: (_file, bytes) => { written = JSON.parse(bytes); }};
+            },
+            github: {paginate: async () => artifacts,
+                rest: {actions: {listWorkflowRunArtifacts() {}}}}
+        });
+        return written;
+    };
+
+    it('preflights only the complete exact candidate artifact set and diagnoses extra build records', async () => {
+        assert.equal((await executeArtifactPreflight(expectedArtifacts)).artifacts.length, expectedArtifacts.length);
+        const buildRecord = 'synthetic-build.dockerbuild';
+        for (const names of [
+            expectedArtifacts.filter(name => !name.startsWith('qualified-oci-')).concat(buildRecord),
+            expectedArtifacts.concat(buildRecord),
+            expectedArtifacts.concat(expectedArtifacts[0]),
+        ]) await assert.rejects(executeArtifactPreflight(names), error => {
+            assert.match(error.message, /Actions artifact set mismatch/);
+            assert.match(error.message, /expected.*qualified-oci-index/);
+            assert.match(error.message, /received/);
+            return true;
+        });
+    });
+
+    it('disables automatic Docker build-record uploads without weakening candidate provenance', () => {
+        const job = workflow('build-docker').jobs.build;
+        const builders = uses(job, 'docker/build-push-action@');
+        assert.equal(builders.length, 1);
+        assert.equal(builders[0].env?.DOCKER_BUILD_RECORD_UPLOAD, 'false');
+        assert.match(builders[0].with.outputs, /type=oci/);
+        assert.ok(uses(job, 'actions/upload-artifact@').some(step =>
+            step.with.name === 'qualified-oci-${{ matrix.architecture }}'));
+    });
+
     it('qualifies pull-request heads and explicitly selected immutable commits without write authority', () => {
         const source = read('qualify-release');
         const config = workflow('qualify-release');

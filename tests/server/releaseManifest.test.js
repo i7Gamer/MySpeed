@@ -443,13 +443,18 @@ describe("OCI provenance inspection", () => {
     };
 
     it("binds verified platform config, layers and manifest bytes", async () => {
-        const configDigest = blob(Buffer.from("config"));
-        const layerDigest = blob(Buffer.from("layer"));
-        const manifest = Buffer.from(JSON.stringify({schemaVersion: 2, config: {digest: configDigest},
-            layers: [{digest: layerDigest}]}));
+        const config = Buffer.from(JSON.stringify({os: "linux", architecture: "amd64"}));
+        const configDigest = blob(config);
+        const layer = Buffer.from("layer");
+        const layerDigest = blob(layer);
+        const manifest = Buffer.from(JSON.stringify({schemaVersion: 2,
+            config: {digest: configDigest, size: config.length},
+            layers: [{digest: layerDigest, size: layer.length}]}));
         const manifestDigest = blob(manifest);
         fs.writeFileSync(path.join(root, "index.json"), JSON.stringify({schemaVersion: 2, manifests: [{
-            digest: manifestDigest, platform: {os: "linux", architecture: "amd64"}
+            digest: manifestDigest, size: manifest.length,
+            mediaType: "application/vnd.oci.image.manifest.v1+json",
+            platform: {os: "linux", architecture: "amd64"}
         }]}));
 
         const result = await inspectOciLayout({root, platform: "linux/amd64", sourceSha: SHA,
@@ -463,14 +468,17 @@ describe("OCI provenance inspection", () => {
     it("rejects a missing platform and altered blob", async () => {
         const manifestDigest = blob(Buffer.from(JSON.stringify({schemaVersion: 2,
             config: {digest: `sha256:${"a".repeat(64)}`}, layers: []})));
+        const manifestSize = fs.statSync(path.join(root, "blobs", "sha256", manifestDigest.slice(7))).size;
         fs.writeFileSync(path.join(root, "index.json"), JSON.stringify({schemaVersion: 2, manifests: [{
-            digest: manifestDigest, platform: {os: "linux", architecture: "arm64"}
+            digest: manifestDigest, size: manifestSize,
+            mediaType: "application/vnd.oci.image.manifest.v1+json",
+            platform: {os: "linux", architecture: "arm64"}
         }]}));
         await assert.rejects(inspectOciLayout({root, platform: "linux/amd64", sourceSha: SHA,
             version: VERSION}), /platform/i);
         fs.writeFileSync(path.join(root, "blobs", "sha256", manifestDigest.slice(7)), "altered");
         await assert.rejects(inspectOciLayout({root, platform: "linux/arm64", sourceSha: SHA,
-            version: VERSION}), /digest/i);
+            version: VERSION}), /digest|descriptor size/i);
     });
 });
 
@@ -488,7 +496,7 @@ describe("multi-platform OCI index", () => {
             fs.writeFileSync(target, bytes);
             return {digest: `sha256:${hash}`, size: bytes.length};
         };
-        const config = writeBlob(Buffer.from(`config-${architecture}`));
+        const config = writeBlob(Buffer.from(JSON.stringify({os: "linux", architecture})));
         const layer = writeBlob(Buffer.from(`layer-${architecture}`));
         const manifestBytes = Buffer.from(JSON.stringify({schemaVersion: 2, config, layers: [layer]}));
         const manifest = writeBlob(manifestBytes);
