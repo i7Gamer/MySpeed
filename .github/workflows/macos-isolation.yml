@@ -1,0 +1,67 @@
+name: macOS isolation feasibility
+
+# Candidate-neutral probes only. Passing this workflow does not qualify a
+# MySpeed artifact or make the release manifest eligible for promotion.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/macos-isolation.yml
+      - scripts/qualification/macos-isolation.mjs
+      - tests/server/macosIsolation*.test.js
+  push:
+    branches: [development]
+    paths:
+      - .github/workflows/macos-isolation.yml
+      - scripts/qualification/macos-isolation.mjs
+      - tests/server/macosIsolation*.test.js
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canary:
+    name: Isolation probes (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15-intel
+            arch: x64
+          - runner: macos-15
+            arch: arm64
+    steps:
+      - name: Checkout exact event revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Prove native isolation without running a release candidate
+        shell: bash
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          node scripts/qualification/macos-isolation.mjs canary \
+            --expected-arch "$EXPECTED_ARCH" \
+            --source-root "$GITHUB_WORKSPACE" \
+            --evidence-dir "$RUNNER_TEMP/macos-isolation-evidence" \
+            --source-sentinel package.json
+
+      - name: Retain isolation diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-isolation-${{ matrix.arch }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/macos-isolation-evidence/macos-isolation.sb
+            ${{ runner.temp }}/macos-isolation-evidence/macos-isolation.json
