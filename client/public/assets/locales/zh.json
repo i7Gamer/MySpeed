@@ -355,6 +355,7 @@
     "connection_refused": "由于连接被拒绝，测试无法进行。",
     "timed_out": "在测试期间，互联网连接不稳定。",
     "config": "配置文件不能被加载",
+    "ookla_configuration_unavailable": "测速配置请求返回了 HTTP 503（服务不可用）。请稍后重试",
     "cannot_open_socket": "无法与测速服务器建立连接。所选网络接口可能无法访问它。",
     "latency_failed": "延迟测试失败，因此无法测出速度。",
     "rate_limited": "提供商拒绝了本次测速，因为近期运行的次数过多。下一次会自动延后。",

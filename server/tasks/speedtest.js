@@ -1375,7 +1375,7 @@ const executeTarget = async (target, type, retried = false) => {
 
         sendError(failedPayload(failure)).catch(err =>
             console.error(`Could not notify the integrations: ${toErrorMessage(err)}`));
-        console.log(`Test #${testResult.id} was not executed successfully. Please try reconnecting to the internet or restarting the software: ` + message);
+        console.log(`Test #${testResult.id} was not executed successfully: ` + message);
 
         // And how long this has been going on, read after the row so the
         // failure just recorded is counted. Every failure leaves with its

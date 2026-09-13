@@ -373,6 +373,7 @@
     "connection_refused": "Níorbh fhéidir an tástáil a dhéanamh mar gur diúltaíodh don nasc",
     "timed_out": "Bhí an nasc Idirlín éagobhsaí le linn na tástála",
     "config": "Níorbh fhéidir an comhad cumraíochta a luchtú",
+    "ookla_configuration_unavailable": "D'fhill an t-iarratas cumraíochta don tástáil luais HTTP 503 (níl an tseirbhís ar fáil). Bain triail eile as ar ball",
     "cannot_open_socket": "Níorbh fhéidir nasc a oscailt chuig an bhfreastalaí tástála. Seans nach féidir teacht air ón gcomhéadan líonra roghnaithe.",
     "latency_failed": "Theip ar an tástáil aga folaigh, mar sin níorbh fhéidir aon luas a thomhas.",
     "rate_limited": "Dhiúltaigh an soláthraí don tástáil mar go ndearnadh an iomarca le déanaí. Cuirtear moill ar an gcéad cheann eile go huathoibríoch.",

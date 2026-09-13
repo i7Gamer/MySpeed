@@ -361,6 +361,7 @@
     "connection_refused": "No s'ha pogut fer la prova perquè s'ha rebutjat la connexió",
     "timed_out": "La connexió a internet era inestable durant la prova",
     "config": "No s'ha pogut carregar el fitxer de configuració",
+    "ookla_configuration_unavailable": "La sol·licitud de configuració de la prova de velocitat ha retornat HTTP 503 (servei no disponible). Torneu-ho a provar més tard",
     "cannot_open_socket": "No s'ha pogut obrir una connexió amb el servidor de proves. Pot ser que no sigui accessible des de la interfície de xarxa seleccionada.",
     "latency_failed": "La prova de latència ha fallat, així que no s'ha pogut mesurar cap velocitat.",
     "rate_limited": "El proveïdor ha rebutjat la prova perquè se n'han executat massa fa poc. La següent es retarda automàticament.",

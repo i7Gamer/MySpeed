@@ -355,6 +355,7 @@
     "connection_refused": "De test kon niet worden uitgevoerd omdat de verbinding werd geweigerd",
     "timed_out": "De internetverbinding was instabiel tijdens de duur van de test",
     "config": "Het configuratiebestand kon niet worden geladen",
+    "ookla_configuration_unavailable": "Het configuratieverzoek voor de snelheidstest heeft HTTP 503 geretourneerd (service niet beschikbaar). Probeer het later opnieuw",
     "cannot_open_socket": "Kon geen verbinding met de testserver openen. Mogelijk is die niet bereikbaar vanaf de gekozen netwerkinterface.",
     "latency_failed": "De latentietest is mislukt, dus kon er geen snelheid worden gemeten.",
     "rate_limited": "De provider heeft de test geweigerd omdat er kort geleden te veel zijn uitgevoerd. De volgende wordt automatisch uitgesteld.",

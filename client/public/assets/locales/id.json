@@ -355,6 +355,7 @@
     "connection_refused": "Pengujian tidak dapat dilakukan karena koneksi ditolak",
     "timed_out": "Koneksi internet tidak stabil selama pengujian",
     "config": "File konfigurasi tidak dapat dimuat",
+    "ookla_configuration_unavailable": "Permintaan konfigurasi uji kecepatan menghasilkan HTTP 503 (layanan tidak tersedia). Silakan coba lagi nanti",
     "cannot_open_socket": "Tidak dapat membuka koneksi ke server pengujian. Server itu mungkin tidak terjangkau dari antarmuka jaringan yang dipilih.",
     "latency_failed": "Pengujian latensi gagal, sehingga tidak ada kecepatan yang dapat diukur.",
     "rate_limited": "Penyedia menolak pengujian karena terlalu banyak yang dijalankan baru-baru ini. Yang berikutnya ditunda secara otomatis.",

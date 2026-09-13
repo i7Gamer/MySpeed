@@ -355,6 +355,7 @@
     "connection_refused": "The test could not be performed because the connection was rejected",
     "timed_out": "Internet connection was unstable during the time of the test",
     "config": "The configuration file could not be loaded",
+    "ookla_configuration_unavailable": "The speed-test configuration request returned HTTP 503 (service unavailable). Please try again later",
     "cannot_open_socket": "Could not open a connection to the test server. It may be unreachable from the selected network interface.",
     "latency_failed": "The latency test failed, so no speed could be measured.",
     "rate_limited": "The provider refused the test because too many have been run recently. The next one is delayed automatically.",

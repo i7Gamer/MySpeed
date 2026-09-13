@@ -385,6 +385,7 @@
     "connection_refused": "Test nie mógł zostać wykonany, ponieważ połączenie zostało odrzucone",
     "timed_out": "Połączenie internetowe było niestabilne podczas testu",
     "config": "Nie udało się załadować pliku konfiguracyjnego",
+    "ookla_configuration_unavailable": "Żądanie konfiguracji testu prędkości zwróciło HTTP 503 (usługa niedostępna). Spróbuj ponownie później",
     "cannot_open_socket": "Nie udało się otworzyć połączenia z serwerem testowym. Może być nieosiągalny z wybranego interfejsu sieciowego.",
     "latency_failed": "Test opóźnienia nie powiódł się, więc nie dało się zmierzyć prędkości.",
     "rate_limited": "Dostawca odrzucił test, ponieważ ostatnio wykonano ich zbyt wiele. Następny zostanie automatycznie opóźniony.",
