@@ -155,7 +155,7 @@ const makeCompletedEvidence = root => {
         const operationArguments = isProbe ? [] : operationId === "discover-vswhere"
             ? ["-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
                 "-property", "installationPath", "-format", "value", "-utf8"]
-            : ["/d", "/s", "/c", `"${path.join(evidenceRoot, `${operationId}.cmd`)}"`];
+            : ["/d", "/s", "/c", `.\\${operationId}.cmd`];
         return {operationId, tool: toolName, toolSha256: isProbe ? "c".repeat(64) : tools[toolName].sha256,
         arguments: operationArguments, isProbe, classification: CLASSIFICATION,
         launcher: {schemaVersion: 1, authorizesTransfer: false, processId: 1000 + index,

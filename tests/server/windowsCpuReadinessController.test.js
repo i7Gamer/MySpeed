@@ -40,6 +40,54 @@ const invoke = (mode, values = {}, environment = process.env) => {
     return childProcess.spawnSync(POWERSHELL, args, {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS, env: {...environment}});
 };
 
+const quoteCrtArgument = value => {
+    if (value.length > 0 && !/[ \t\n\v"]/u.test(value)) return value;
+    let result = "\"";
+    let slashes = 0;
+    for (const character of value) {
+        if (character === "\\") {
+            slashes += 1;
+            continue;
+        }
+        if (character === "\"") {
+            result += "\\".repeat((slashes * 2) + 1) + "\"";
+            slashes = 0;
+            continue;
+        }
+        result += "\\".repeat(slashes) + character;
+        slashes = 0;
+    }
+    return result + "\\".repeat(slashes * 2) + "\"";
+};
+
+const runWithProcessStartInfo = (workingDirectory, arguments_) => {
+    const script = [
+        "$start = New-Object Diagnostics.ProcessStartInfo",
+        "$start.FileName = $env:MYSPEED_TEST_CMD",
+        "$start.Arguments = $env:MYSPEED_TEST_ARGUMENTS",
+        "$start.WorkingDirectory = $env:MYSPEED_TEST_WORK",
+        "$start.UseShellExecute = $false",
+        "$start.CreateNoWindow = $true",
+        "$start.RedirectStandardOutput = $true",
+        "$start.RedirectStandardError = $true",
+        "$process = [Diagnostics.Process]::Start($start)",
+        "$stdout = $process.StandardOutput.ReadToEnd()",
+        "$stderr = $process.StandardError.ReadToEnd()",
+        "$process.WaitForExit()",
+        "[Console]::Out.Write($stdout)",
+        "[Console]::Error.Write($stderr)",
+        "exit $process.ExitCode"
+    ].join("; ");
+    const joined = arguments_.map(quoteCrtArgument).join(" ");
+    return childProcess.spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], {
+            encoding: "utf8",
+            timeout: PROCESS_TIMEOUT_MS,
+            env: {...process.env, MYSPEED_TEST_CMD: path.join(process.env.SystemRoot, "System32", "cmd.exe"),
+                MYSPEED_TEST_ARGUMENTS: joined, MYSPEED_TEST_WORK: workingDirectory}
+        });
+};
+
 const fixture = () => {
     const parent = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-cpu-controller-")));
     roots.push(parent);
@@ -162,6 +210,38 @@ describe("Windows CPU readiness controller", {skip: process.platform !== "win32"
         const result = invoke("TestModuleDispatch");
         assert.equal(result.status, 0, result.stderr);
         assert.deepEqual(JSON.parse(result.stdout), {first: "alpha", second: "beta"});
+    });
+
+    it("runs an owned command file by exact relative token through .NET ProcessStartInfo", {
+        timeout: TEST_TIMEOUT_MS
+    }, () => {
+        const workingDirectory = fs.realpathSync.native(fs.mkdtempSync(
+            path.join(os.tmpdir(), "myspeed cpu command path with spaces ")));
+        roots.push(workingDirectory);
+        const operationId = "environment-preflight";
+        const commandPath = path.join(workingDirectory, `${operationId}.cmd`);
+        const marker = "exact-owned-relative-command";
+        fs.writeFileSync(commandPath, `@echo ${marker}\r\n@exit /b 0\r\n`);
+
+        const old = runWithProcessStartInfo(workingDirectory,
+            ["/d", "/s", "/c", `"${commandPath}"`]);
+        assert.notEqual(old.status, 0, "the old prequoted absolute argument unexpectedly worked");
+        assert.match(old.stderr, /not recognized|cannot find/i);
+
+        const generated = invoke("TestCommandArguments", {InputJson: JSON.stringify({operationId})});
+        assert.equal(generated.status, 0, generated.stderr);
+        const arguments_ = JSON.parse(generated.stdout).arguments;
+        assert.deepEqual(arguments_, ["/d", "/s", "/c", `.\\${operationId}.cmd`]);
+        const current = runWithProcessStartInfo(workingDirectory, arguments_);
+        assert.equal(current.status, 0, current.stderr);
+        assert.equal(current.stdout.trim(), marker);
+
+        for (const invalid of ["../escape", "bad name", "bad&name", "bad.cmd", ""] ) {
+            const rejected = invoke("TestCommandArguments", {
+                InputJson: JSON.stringify({operationId: invalid})
+            });
+            assert.notEqual(rejected.status, 0, invalid);
+        }
     });
 
     it("pins the exact ordered 32-operation execution plan", {timeout: TEST_TIMEOUT_MS}, () => {

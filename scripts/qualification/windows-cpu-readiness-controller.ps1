@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','EmitClosureManifest','TestValidateClosure','TestModuleDispatch','TestOperationPlan','TestChildEnvelope','TestAggregate','TestNativeLifecycle','TestLifecycle','InvokeHostedReadiness')]
+    [ValidateSet('Library','EmitClosureManifest','TestValidateClosure','TestModuleDispatch','TestOperationPlan','TestCommandArguments','TestChildEnvelope','TestAggregate','TestNativeLifecycle','TestLifecycle','InvokeHostedReadiness')]
     [string]$Mode = 'Library',
     [string]$ExpectedRunId,
     [string]$ExpectedRunAttempt,
@@ -43,6 +43,7 @@ $script:Sha40 = '^[a-f0-9]{40}$'
 $script:Sha256 = '^[a-f0-9]{64}$'
 $script:NoncePattern = '^[a-f0-9]{32}$'
 $script:ImageVersionPattern = '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+$script:OperationPattern = '^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$'
 $script:RequiredFiles = @(
     'windows-cpu-floor-probe.c',
     'windows-cpu-readiness.ps1',
@@ -484,6 +485,13 @@ function Assert-MyspeedControllerChildEnvelope {
     return [pscustomobject]@{accepted=$true}
 }
 
+function Get-MyspeedCommandFileArguments {
+    param([object]$OperationId)
+    $operation = Assert-MyspeedControllerString $OperationId 'Command operation ID'
+    if ($operation -cnotmatch $script:OperationPattern) { throw 'Command operation ID is invalid' }
+    return [string[]]@('/d','/s','/c',(".\$operation.cmd"))
+}
+
 function Invoke-MyspeedBoundedNativeOperation {
     param([string]$OperationId,[object]$ToolIdentity,[string[]]$Arguments,[bool]$IsProbe,[int64]$ExpectedExitCode)
     if ($script:ControllerState.operationIds.Contains($OperationId) -or
@@ -591,8 +599,9 @@ function Invoke-MyspeedVcCommandOperation {
     $commandAfter = Get-MyspeedControllerFileIdentity $commandIdentity.name $commandPath `
         $script:ControllerState.taskRoot $script:ToolStreamBytes 'generated-command'
     Assert-MyspeedControllerIdentityEqual $commandIdentity $commandAfter
+    $commandArguments = Get-MyspeedCommandFileArguments $OperationId
     return Invoke-MyspeedBoundedNativeOperation $OperationId $script:ControllerState.tools.cmd `
-        @('/d','/s','/c',('"' + $commandPath + '"')) $false 0
+        $commandArguments $false 0
 }
 
 function Initialize-MyspeedNativeControllerState {
@@ -689,8 +698,9 @@ function Invoke-MyspeedPreflight {
         (New-MyspeedPreflightCommand $vcvars.path) (New-Object Text.ASCIIEncoding) $script:ToolStreamBytes
     $script:ControllerState.generated[$operationId]=$commandIdentity
     Assert-MyspeedControllerFileIdentityUnchanged $commandIdentity $script:ControllerState.taskRoot $script:ToolStreamBytes
+    $commandArguments = Get-MyspeedCommandFileArguments $operationId
     $result = Invoke-MyspeedBoundedNativeOperation $operationId $script:ControllerState.tools.cmd `
-        @('/d','/s','/c',('"' + $commandPath + '"')) $false 0
+        $commandArguments $false 0
     if ($result.stderr.Length -ne 0) { throw 'Preflight stderr is not empty' }
     $projection = Invoke-MyspeedControllerModuleCommand $script:ControllerNative.core `
         'ConvertFrom-MyspeedPreflightOutput' @($result.stdout)
@@ -1050,6 +1060,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             'TestValidateClosure' { Assert-MyspeedClosure $ClosureRoot $ManifestPath | ConvertTo-Json -Compress -Depth 20 }
             'TestModuleDispatch' { Invoke-MyspeedTestModuleDispatch | ConvertTo-Json -Compress }
             'TestOperationPlan' { [pscustomobject]@{operationIds=(Get-MyspeedExpectedOperationIds)} | ConvertTo-Json -Compress }
+            'TestCommandArguments' { [pscustomobject]@{arguments=@(Get-MyspeedCommandFileArguments (($InputJson | ConvertFrom-Json).operationId))} | ConvertTo-Json -Compress }
             'TestChildEnvelope' { Assert-MyspeedControllerChildEnvelope ($InputJson | ConvertFrom-Json) | ConvertTo-Json -Compress }
             'TestAggregate' { Invoke-MyspeedInjectedAggregate ($InputJson | ConvertFrom-Json) | ConvertTo-Json -Compress }
             'TestNativeLifecycle' { Invoke-MyspeedInjectedNativeLifecycle ($InputJson | ConvertFrom-Json) | ConvertTo-Json -Compress -Depth 20 }

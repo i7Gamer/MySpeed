@@ -571,8 +571,7 @@ jobs:
             }
             if ($isProbe -and $operation.arguments.Count -ne 0) { throw 'Probe arguments differ' }
             if (-not $isProbe -and $operationId -cne 'discover-vswhere') {
-              $commandPath = Join-Path $root "$operationId.cmd"
-              Assert-ConsumerStringArrayEqual $operation.arguments @('/d','/s','/c',('"' + $commandPath + '"')) `
+              Assert-ConsumerStringArrayEqual $operation.arguments @('/d','/s','/c',(".\$operationId.cmd")) `
                 'Command operation arguments'
             }
             foreach ($suffix in @('request','result')) {
