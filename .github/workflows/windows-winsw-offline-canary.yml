@@ -317,7 +317,8 @@ jobs:
           $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
           $scriptPath = Join-Path $closureRoot 'windows-winsw-offline-canary.ps1'
           Write-Output 'The Actions runner continued after the offline interval and cleanup step.'
-          $MAX_INTERFACE_DESCRIPTION_LENGTH = 1024
+          $NET_LUID_PATTERN = '\A[0-9a-f]{16}\z'
+          $ZERO_NET_LUID_HEX = '0000000000000000'
 
           function Assert-ExactKeys([object]$Value, [string[]]$Expected, [string]$Label) {
             if ($null -eq $Value -or $Value -isnot [psobject] -or
@@ -460,17 +461,16 @@ jobs:
           $preAdapters = @(Assert-Array $result.preDisable.adapters 'Pre-disable adapters')
           if ($preAdapters.Count -eq 0) { throw 'Pre-disable adapter inventory is empty' }
           $preGuids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-          $preDescriptions = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+          $preLuids = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
           $enabledNonLoopback = [Collections.Generic.List[object]]::new()
           foreach ($adapter in $preAdapters) {
-            Assert-ExactKeys $adapter @('interfaceGuid','interfaceDescription','hidden','loopback','enabled','status') `
+            Assert-ExactKeys $adapter @('interfaceGuid','netLuid','hidden','loopback','enabled','status') `
               'Pre-disable adapter'
             if ($adapter.interfaceGuid -isnot [string] -or
               $adapter.interfaceGuid -cnotmatch '^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$' -or
-              $adapter.interfaceDescription -isnot [string] -or
-              [string]::IsNullOrWhiteSpace($adapter.interfaceDescription) -or
-              $adapter.interfaceDescription.Length -gt $MAX_INTERFACE_DESCRIPTION_LENGTH -or
-              $adapter.interfaceDescription -cmatch '[\x00-\x1f\x7f]' -or
+              $adapter.netLuid -isnot [string] -or
+              $adapter.netLuid -cnotmatch $NET_LUID_PATTERN -or
+              $adapter.netLuid -ceq $ZERO_NET_LUID_HEX -or
               $adapter.status -isnot [string] -or [string]::IsNullOrWhiteSpace($adapter.status)) {
               throw 'Pre-disable adapter identity differs'
             }
@@ -478,14 +478,14 @@ jobs:
             Assert-Boolean $adapter.loopback ([bool]$adapter.loopback) 'Pre-disable loopback flag'
             Assert-Boolean $adapter.enabled ([bool]$adapter.enabled) 'Pre-disable enabled flag'
             if (-not $preGuids.Add($adapter.interfaceGuid) -or
-              -not $preDescriptions.Add($adapter.interfaceDescription)) { throw 'Pre-disable adapter identity is duplicated' }
+              -not $preLuids.Add($adapter.netLuid)) { throw 'Pre-disable adapter identity is duplicated' }
             if (-not $adapter.loopback -and $adapter.enabled) { [void]$enabledNonLoopback.Add($adapter) }
           }
           $requestAdapters = @(Assert-Array $request.adapters 'Recovery adapters')
           if ($requestAdapters.Count -ne $enabledNonLoopback.Count) { throw 'Recovery adapter snapshot differs' }
           foreach ($adapter in $enabledNonLoopback) {
             $matches = @($requestAdapters | Where-Object { $_.interfaceGuid -ieq $adapter.interfaceGuid -and
-              [string]::Equals($_.interfaceDescription,$adapter.interfaceDescription,[StringComparison]::Ordinal) })
+              [string]::Equals($_.netLuid,$adapter.netLuid,[StringComparison]::Ordinal) })
             if ($matches.Count -ne 1) { throw 'Recovery adapter is not bound to pre-disable state' }
           }
           $preKinds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -506,7 +506,7 @@ jobs:
           if ($boundaryAdapters.Count -ne $preAdapters.Count) { throw 'Offline adapter inventory differs from pre-disable state' }
           foreach ($adapter in $preAdapters) {
             $matches = @($boundaryAdapters | Where-Object { $_.interfaceGuid -ieq $adapter.interfaceGuid -and
-              [string]::Equals($_.interfaceDescription,$adapter.interfaceDescription,[StringComparison]::Ordinal) -and $_.hidden -eq $adapter.hidden -and
+              [string]::Equals($_.netLuid,$adapter.netLuid,[StringComparison]::Ordinal) -and $_.hidden -eq $adapter.hidden -and
               $_.loopback -eq $adapter.loopback })
             if ($matches.Count -ne 1) { throw 'Offline adapter is not bound to pre-disable state' }
           }

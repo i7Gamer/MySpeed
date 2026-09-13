@@ -487,20 +487,32 @@ describe("hosted Linux KVM capability contract", () => {
     });
 });
 
-describe("manual nonpublishing capability workflow", () => {
+describe("manual and same-repository PR nonpublishing capability workflow", () => {
     it("uses a source-bound producer and a no-checkout exact-artifact execution job", async () => {
         const {parse} = await import("yaml");
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
-        assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+        assert.deepEqual(Object.keys(workflow.on), ["pull_request", "workflow_dispatch"]);
+        assert.deepEqual(workflow.on.pull_request.paths, [
+            ".github/workflows/linux-kvm-capability.yml",
+            "scripts/qualification/linux-kvm-capability.mjs",
+            "tests/server/linuxKvmCapability.test.js"
+        ]);
         assert.deepEqual(workflow.permissions, {actions: "read", contents: "read"});
         assert.deepEqual(Object.keys(workflow.jobs), ["prepare", "observe"]);
+        assert.equal(workflow.env.EXPECTED_SOURCE_SHA,
+            "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}");
+        assert.equal(workflow.env.EXPECTED_EVENT_SHA, "${{ github.sha }}");
+        assert.equal(workflow.jobs.prepare.if, "github.repository == 'i7Gamer/MySpeed' && " +
+            "(github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == " +
+            "github.repository && github.event.pull_request.base.ref == 'development'))");
         assert.equal(workflow.jobs.prepare["runs-on"], "ubuntu-24.04");
         assert.equal(workflow.jobs.observe["runs-on"], "ubuntu-24.04");
         assert.equal(workflow.jobs.prepare["timeout-minutes"], 5);
         assert.equal(workflow.jobs.observe["timeout-minutes"], 5);
         const uses = job => job.steps.filter(step => step.uses);
         const checkout = uses(workflow.jobs.prepare).find(step => step.uses.startsWith("actions/checkout@"));
-        assert.equal(checkout.with.ref, "${{ github.sha }}");
+        assert.equal(checkout.with.ref,
+            "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}");
         assert.equal(checkout.with["persist-credentials"], false);
         const setupNode = uses(workflow.jobs.prepare).find(step => step.uses.startsWith("actions/setup-node@"));
         assert.equal(setupNode.with["node-version"], "22.19.0");
@@ -530,5 +542,6 @@ describe("manual nonpublishing capability workflow", () => {
         assert.equal(upload.with["retention-days"], 7);
         assert.match(source, /nonqualifying|non-qualifying/);
         assert.doesNotMatch(source, /secrets\.|continue-on-error|releaseGateCleared:\s*true/);
+        assert.doesNotMatch(source, /pull_request_target|\n\s*push:/u);
     });
 });

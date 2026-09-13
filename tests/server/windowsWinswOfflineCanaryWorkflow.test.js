@@ -27,7 +27,7 @@ const EVENT_SHA = "b".repeat(40);
 const NONCE = "0123456789abcdef0123456789abcdef";
 const IMAGE_VERSION = "20260907.229.1";
 const SHELL_TIMEOUT_MS = 15_000;
-const MAX_INTERFACE_DESCRIPTION_LENGTH = 1024;
+const NET_LUID_HEX_LENGTH = 16;
 const EXPECTED_ENVIRONMENT = {SERVER_HOST: "127.0.0.1", SERVER_PORT: "43127", HTTPS_REDIRECT: "false",
     DB_TYPE: "sqlite", RUN_TEST_ON_STARTUP: "false", PREVIEW_MODE: "false", ALLOW_NO_PASSWORD: "false",
     ALLOW_LOCAL_NODES: "false"};
@@ -285,9 +285,9 @@ describe("independent post-reconnect evidence consumer", {
             end100ns: "550000000", watchdogDeadline100ns: "700000000", elapsedMilliseconds: 45_000},
         providers: {adapters: true, ipInterfaces: true, ipAddresses: true, routes: true},
         adapters: [
-            {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", interfaceDescription: "Synthetic Ethernet 0",
+            {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", netLuid: "0006000001000000",
                 hidden: false, loopback: false, enabled: false, status: "Disabled"},
-            {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", interfaceDescription: "Synthetic Loopback 0",
+            {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", netLuid: "0018000001000000",
                 hidden: true, loopback: true, enabled: true, status: "Up"}
         ],
         ipState: ["interface", "address", "route"].map(kind =>
@@ -346,7 +346,7 @@ describe("independent post-reconnect evidence consumer", {
             taskName: `MySpeedOfflineRecovery-${NONCE}`, serviceName: `MySpeedOfflineCanary-${NONCE}`,
             serviceExecutablePath, serviceXmlPath, childPath, environment: {...EXPECTED_ENVIRONMENT},
             adapters: [{interfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-                interfaceDescription: "Synthetic Ethernet 0"}],
+                netLuid: "0006000001000000"}],
             offlineStart100ns: "100000000", watchdogDeadline100ns: "700000000"
         };
         delete request.root;
@@ -372,9 +372,9 @@ describe("independent post-reconnect evidence consumer", {
             runAttempt: RUN_ATTEMPT, imageVersion: IMAGE_VERSION, nonce: NONCE,
             preDisable: {providers: {adapters: true, ipInterfaces: true, ipAddresses: true, routes: true},
                 adapters: [
-                    {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", interfaceDescription: "Synthetic Ethernet 0",
+                    {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", netLuid: "0006000001000000",
                         hidden: false, loopback: false, enabled: true, status: "Up"},
-                    {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", interfaceDescription: "Synthetic Loopback 0",
+                    {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", netLuid: "0018000001000000",
                         hidden: true, loopback: true, enabled: true, status: "Up"}
                 ], ipState: ["interface", "address", "route"].map(kind =>
                     ({kind, compartmentId: 1, loopback: kind !== "route", routable: kind === "route"}))},
@@ -436,40 +436,51 @@ describe("independent post-reconnect evidence consumer", {
             request.watchdogDeadline100ns = "700000000";
         }, /Boundary offline start/i],
         ["an unbound pre-disable snapshot", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = "Other Ethernet";
+            result.preDisable.adapters[0].netLuid = "0006000003000000";
         },
             /pre-disable|Recovery adapter/i],
-        ["a case-drifted pre-disable description", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = "synthetic ethernet 0";
+        ["an uppercase pre-disable LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = "000600000A000000";
         }, /pre-disable|Recovery adapter/i],
         ["a stale PnP adapter schema", ({result}) => {
             const adapter = result.preDisable.adapters[0];
-            adapter.pnpDeviceId = adapter.interfaceDescription;
-            delete adapter.interfaceDescription;
+            adapter.pnpDeviceId = adapter.netLuid;
+            delete adapter.netLuid;
         }, /Pre-disable adapter schema/i],
-        ["a mixed PnP and interface-description schema", ({result}) => {
-            result.preDisable.adapters[0].pnpDeviceId = result.preDisable.adapters[0].interfaceDescription;
+        ["a mixed PnP and LUID schema", ({result}) => {
+            result.preDisable.adapters[0].pnpDeviceId = result.preDisable.adapters[0].netLuid;
         }, /Pre-disable adapter schema/i],
-        ["a missing interface description", ({result}) => {
-            delete result.preDisable.adapters[0].interfaceDescription;
+        ["a stale display-description schema", ({result}) => {
+            const adapter = result.preDisable.adapters[0];
+            adapter.interfaceDescription = adapter.netLuid;
+            delete adapter.netLuid;
         }, /Pre-disable adapter schema/i],
-        ["a null interface description", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = null;
+        ["a mixed display-description and LUID schema", ({result}) => {
+            result.preDisable.adapters[0].interfaceDescription = result.preDisable.adapters[0].netLuid;
+        }, /Pre-disable adapter schema/i],
+        ["a zero LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = "0".repeat(NET_LUID_HEX_LENGTH);
         }, /Pre-disable adapter identity/i],
-        ["a blank interface description", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = "   ";
+        ["a missing LUID", ({result}) => {
+            delete result.preDisable.adapters[0].netLuid;
+        }, /Pre-disable adapter schema/i],
+        ["a null LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = null;
         }, /Pre-disable adapter identity/i],
-        ["a control-bearing interface description", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = "Synthetic\nEthernet";
+        ["a blank LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = "   ";
         }, /Pre-disable adapter identity/i],
-        ["a culture-equivalent interface-description drift", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = `Synthetic${String.fromCharCode(0xad)} Ethernet 0`;
+        ["a control-bearing LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = "Synthetic\nEthernet";
+        }, /Pre-disable adapter identity/i],
+        ["a non-hexadecimal LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = `Synthetic${String.fromCharCode(0xad)} Ethernet 0`;
         }, /pre-disable|Recovery adapter/i],
-        ["an oversized interface description", ({result}) => {
-            result.preDisable.adapters[0].interfaceDescription = "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH + 1);
+        ["an oversized LUID", ({result}) => {
+            result.preDisable.adapters[0].netLuid = "x".repeat(NET_LUID_HEX_LENGTH + 1);
         }, /Pre-disable adapter identity/i],
-        ["a duplicate interface description", ({result}) => {
-            result.preDisable.adapters[1].interfaceDescription = result.preDisable.adapters[0].interfaceDescription;
+        ["a duplicate LUID", ({result}) => {
+            result.preDisable.adapters[1].netLuid = result.preDisable.adapters[0].netLuid;
         }, /duplicated/i],
         ["a malformed LocalSystem probe", ({result}) => { result.probe.sid = "S-1-5-19"; }, /Probe|LocalSystem/i],
         ["a valid but differently bound probe", ({result}) => {

@@ -59,7 +59,9 @@ $script:MaximumSourceBytes = 262144
 $script:ExpectedWinswBytes = 18286774
 $script:MaximumWinswBytes = 20971520
 $script:MaximumCompilerBytes = 16777216
-$script:MaximumInterfaceDescriptionLength = 1024
+$script:NetLuidHexFormat = 'x16'
+$script:NetLuidPattern = '\A[0-9a-f]{16}\z'
+$script:ZeroNetLuidHex = '0000000000000000'
 $script:WinswSha256 = 'a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20'
 $script:ClosureKind = 'myspeed-winsw-offline-canary-closure'
 $script:RequiredClosureFiles = @('windows-winsw-offline-canary.ps1','WinSW-x64.exe')
@@ -147,16 +149,21 @@ function Assert-MyspeedCanaryOrderedStrings {
     }
 }
 
-function Assert-MyspeedCanaryInterfaceDescription {
+function ConvertFrom-MyspeedCanaryNativeNetLuid {
     param([object]$Value,[string]$Label)
-    if($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or
-        $Value.Length -gt $script:MaximumInterfaceDescriptionLength -or $Value -cmatch '[\x00-\x1f\x7f]'){
-        $kind=if($null -eq $Value){'null'}elseif($Value -is [string]){'string'}elseif($Value -is [array]){'array'}else{'other'}
-        $length=if($Value -is [string]){$Value.Length}else{-1}
-        $blank=[int]($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value))
-        $control=[int]($Value -is [string] -and $Value -cmatch '[\x00-\x1f\x7f]')
-        $diagnostic="kind=$kind;length=$length;limit=$($script:MaximumInterfaceDescriptionLength);blank=$blank;control=$control"
-        throw "$Label must be a bounded exact string ($diagnostic)"
+    if($null -eq $Value -or [Type]::GetTypeCode($Value.GetType()) -notin @(
+        [TypeCode]::SByte,[TypeCode]::Byte,[TypeCode]::Int16,[TypeCode]::UInt16,
+        [TypeCode]::Int32,[TypeCode]::UInt32,[TypeCode]::Int64,[TypeCode]::UInt64)){
+        throw "$Label must be an exact primitive integer NetLuid"
+    }
+    if($Value -le 0){throw "$Label NetLuid must be nonzero and positive"}
+    return ([uint64]$Value).ToString($script:NetLuidHexFormat,[Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Assert-MyspeedCanaryNetLuid {
+    param([object]$Value,[string]$Label)
+    if($Value -isnot [string] -or $Value -cnotmatch $script:NetLuidPattern -or $Value -ceq $script:ZeroNetLuidHex){
+        throw "$Label must be a nonzero canonical 16-digit lowercase hexadecimal NetLuid"
     }
     return [string]$Value
 }
@@ -170,10 +177,10 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
     if($adapters.Count -eq 0){throw 'Native adapter inventory is empty'}
     $normalized=[Collections.Generic.List[object]]::new()
     $guids=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $descriptions=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $luids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $indices=[Collections.Generic.HashSet[uint32]]::new()
     foreach($adapter in $adapters){
-        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','interfaceDescription','hidden','interfaceType',
+        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','netLuid','hidden','interfaceType',
             'interfaceAdminStatus','status','interfaceIndex') 'Native adapter'
         if($adapter.interfaceGuid -is [guid]){$guid=$adapter.interfaceGuid.ToString('B')}
         else {$guid=Assert-MyspeedCanaryString $adapter.interfaceGuid 'Native adapter GUID' `
@@ -186,16 +193,16 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
         $status=Assert-MyspeedCanaryString $adapter.status 'Native adapter status'
         if($KnownStatuses -cnotcontains $status){throw 'Native adapter status is unknown'}
         $index=Assert-MyspeedCanaryInteger $adapter.interfaceIndex 'Native adapter interface index' 1 4294967295
-        $description=Assert-MyspeedCanaryInterfaceDescription $adapter.interfaceDescription `
-            'Native adapter interface description'
+        $luid=Assert-MyspeedCanaryNetLuid $adapter.netLuid `
+            'Native adapter NetLuid'
         $enabled=$adminStatus -eq $EnabledAdminStatus
         if(($enabled -and $status -ceq 'Disabled') -or (-not $enabled -and $status -cne 'Disabled')){
             throw 'Native adapter administrative status is inconsistent'
         }
-        if(-not $guids.Add($guid) -or -not $descriptions.Add($description) -or -not $indices.Add([uint32]$index)){
+        if(-not $guids.Add($guid) -or -not $luids.Add($luid) -or -not $indices.Add([uint32]$index)){
             throw 'Native adapter identity or index is duplicated'
         }
-        [void]$normalized.Add([pscustomobject][ordered]@{interfaceGuid=$guid;interfaceDescription=$description;hidden=$hidden
+        [void]$normalized.Add([pscustomobject][ordered]@{interfaceGuid=$guid;netLuid=$luid;hidden=$hidden
             interfaceType=$interfaceType;interfaceAdminStatus=$adminStatus;status=$status;interfaceIndex=$index
             loopback=($interfaceType -eq $LoopbackType);enabled=$enabled})
     }
@@ -209,7 +216,7 @@ function ConvertFrom-MyspeedCanaryNetAdapterProviderInventory {
         [string[]]$KnownStatuses=$script:KnownAdapterStatuses,[scriptblock]$NormalizeAdapters)
     $raw=Assert-MyspeedCanaryArray $Value 'Native provider adapter inventory'
     $dtos=@($raw|ForEach-Object {
-        [pscustomobject]@{interfaceGuid=$_.InterfaceGuid;interfaceDescription=$_.InterfaceDescription;hidden=$_.Hidden
+        [pscustomobject]@{interfaceGuid=$_.InterfaceGuid;netLuid=(ConvertFrom-MyspeedCanaryNativeNetLuid $_.NetLuid 'Native adapter');hidden=$_.Hidden
             interfaceType=$_.InterfaceType;interfaceAdminStatus=$_.InterfaceAdminStatus
             status=$_.Status;interfaceIndex=$_.ifIndex}})
     if($null -eq $NormalizeAdapters){ConvertTo-MyspeedCanaryAdapterInventory $dtos $LoopbackType $EnabledAdminStatus `
@@ -234,11 +241,11 @@ function Get-MyspeedCanaryAdapterProviderSnapshot {
         @($inventory|Where-Object {$_ -is [array]}).Count -ne 0){throw 'Normalized adapter snapshot shape differs'}
     for($index=0;$index -lt $raw.Count;$index++){
         $rawGuid=([guid]$raw[$index].InterfaceGuid).ToString('B')
-        $rawDescription=Assert-MyspeedCanaryInterfaceDescription $raw[$index].InterfaceDescription `
-            'Raw adapter interface description'
+        $rawLuid=ConvertFrom-MyspeedCanaryNativeNetLuid $raw[$index].NetLuid `
+            'Raw adapter NetLuid'
         if($inventory[$index].interfaceGuid -isnot [string] -or $inventory[$index].interfaceGuid -ine $rawGuid -or
-            $inventory[$index].interfaceDescription -isnot [string] -or
-            -not [string]::Equals($inventory[$index].interfaceDescription,$rawDescription,[StringComparison]::Ordinal)){
+            $inventory[$index].netLuid -isnot [string] -or
+            -not [string]::Equals($inventory[$index].netLuid,$rawLuid,[StringComparison]::Ordinal)){
             throw 'Normalized adapter snapshot order differs'
         }
     }
@@ -505,14 +512,14 @@ function Assert-MyspeedCanaryRecoveryRequest {
     $adapters=Assert-MyspeedCanaryArray $Request.adapters 'Recovery adapters'
     if ($adapters.Count -eq 0) { throw 'Recovery adapter target set is empty' }
     $guids=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $descriptions=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $luids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($adapter in $adapters) {
-        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','interfaceDescription') 'Recovery adapter'
+        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','netLuid') 'Recovery adapter'
         $guid=Assert-MyspeedCanaryString $adapter.interfaceGuid 'Recovery adapter GUID' `
             '^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$'
-        $description=Assert-MyspeedCanaryInterfaceDescription $adapter.interfaceDescription `
-            'Recovery adapter interface description'
-        if (-not $guids.Add($guid) -or -not $descriptions.Add($description)) { throw 'Recovery adapter identity is duplicated' }
+        $luid=Assert-MyspeedCanaryNetLuid $adapter.netLuid `
+            'Recovery adapter NetLuid'
+        if (-not $guids.Add($guid) -or -not $luids.Add($luid)) { throw 'Recovery adapter identity is duplicated' }
     }
     $start=ConvertTo-MyspeedCanaryUInt64BigInteger $Request.offlineStart100ns 'Recovery offline start'
     if($start -eq [Numerics.BigInteger]::Zero){throw 'Recovery offline start is zero'}
@@ -588,19 +595,19 @@ function Assert-MyspeedOfflineBoundary {
     $adapters=Assert-MyspeedCanaryArray $Boundary.adapters 'Boundary adapters'
     if ($adapters.Count -eq 0) { throw 'Boundary adapter inventory is empty' }
     $adapterGuids=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $adapterDescriptions=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $adapterLuids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     foreach ($adapter in $adapters) {
-        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','interfaceDescription','hidden','loopback','enabled','status') 'Boundary adapter'
+        Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','netLuid','hidden','loopback','enabled','status') 'Boundary adapter'
         $guid=Assert-MyspeedCanaryString $adapter.interfaceGuid 'Boundary adapter GUID' `
             '^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$'
-        $description=Assert-MyspeedCanaryInterfaceDescription $adapter.interfaceDescription `
-            'Boundary adapter interface description'
+        $luid=Assert-MyspeedCanaryNetLuid $adapter.netLuid `
+            'Boundary adapter NetLuid'
         [void](Assert-MyspeedCanaryBoolean $adapter.hidden 'Boundary adapter hidden flag')
         $loopback=Assert-MyspeedCanaryBoolean $adapter.loopback 'Boundary adapter loopback flag'
         $enabled=Assert-MyspeedCanaryBoolean $adapter.enabled 'Boundary adapter enabled flag'
         [void](Assert-MyspeedCanaryString $adapter.status 'Boundary adapter status')
-        if (-not $adapterGuids.Add($guid) -or -not $adapterDescriptions.Add($description)) {
-            throw 'Boundary adapter GUID or interface description is duplicated'
+        if (-not $adapterGuids.Add($guid) -or -not $adapterLuids.Add($luid)) {
+            throw 'Boundary adapter GUID or NetLuid is duplicated'
         }
         if (-not $loopback -and $enabled) { throw 'Boundary contains an enabled non-loopback adapter' }
     }
@@ -1195,7 +1202,7 @@ function Get-MyspeedNativeOfflineBoundary {
     $snapshot=& $GetAdapterSnapshot $rawAdapters $NormalizeProviderAdapters $LoopbackType $EnabledAdminStatus `
         $DisabledAdminStatus $KnownStatuses $NormalizeAdapters
     $inventory=$snapshot.inventory
-    $adapters=@($inventory | ForEach-Object {[pscustomobject]@{interfaceGuid=$_.interfaceGuid;interfaceDescription=$_.interfaceDescription
+    $adapters=@($inventory | ForEach-Object {[pscustomobject]@{interfaceGuid=$_.interfaceGuid;netLuid=$_.netLuid
         hidden=$_.hidden;loopback=$_.loopback;enabled=$_.enabled;status=$_.status}})
     $interfaces=@(Get-NetIPInterface -IncludeAllCompartments -ErrorAction Stop)
     $addresses=@(Get-NetIPAddress -IncludeAllCompartments -ErrorAction Stop)
@@ -1399,7 +1406,7 @@ public static class MySpeedCanaryJob {
             $inventory=(& $getNativeAdapters).inventory
             foreach($target in $State.request.adapters){$matches=@($inventory|Where-Object {
                 $_.interfaceGuid -ieq $target.interfaceGuid -and
-                [string]::Equals($_.interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal) -and $_.enabled})
+                [string]::Equals($_.netLuid,$target.netLuid,[StringComparison]::Ordinal) -and $_.enabled})
                 if($matches.Count -ne 1){return}}
             if(Test-Path -LiteralPath $State.request.cancelPath -PathType Leaf){return}
             & $writeBytes $State.request.cancelPath ([byte[]](1)) 1
@@ -1416,14 +1423,14 @@ public static class MySpeedCanaryJob {
             foreach($target in $State.request.adapters){
                 $indexes=@(for($index=0;$index -lt $inventory.Count;$index++){
                     if($inventory[$index].interfaceGuid -ieq $target.interfaceGuid -and
-                        [string]::Equals($inventory[$index].interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal)){$index}})
+                        [string]::Equals($inventory[$index].netLuid,$target.netLuid,[StringComparison]::Ordinal)){$index}})
                 if($indexes.Count -ne 1){throw 'Recovery adapter identity drifted'}
                 [void]$matched.Add($all[$indexes[0]])
             }
             @($matched) | Enable-NetAdapter -Confirm:$false -ErrorAction Stop
             $after=(& $getNativeAdapters).inventory
             foreach($target in $State.request.adapters){$matches=@($after|Where-Object {$_.interfaceGuid -ieq $target.interfaceGuid -and
-                [string]::Equals($_.interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal) -and $_.enabled});if($matches.Count -ne 1){throw 'Recovery adapter enable proof failed'}}
+                [string]::Equals($_.netLuid,$target.netLuid,[StringComparison]::Ordinal) -and $_.enabled});if($matches.Count -ne 1){throw 'Recovery adapter enable proof failed'}}
             $offlineEnd=[uint64](& $getClock)
             [void](& $assertRestoreWindow ([string]$offlineEnd) $State.request.watchdogDeadline100ns $false)
             if($null -eq $State.boundary){throw 'Offline boundary is absent before restoration'}
@@ -1536,7 +1543,7 @@ public static class MySpeedCanaryJob {
             $State.configurationSha=& $hashFile $State.request.serviceXmlPath $maximumConfiguration
             $State.adapters=& $snapshotAdapters
             $State.request.adapters=@($State.adapters | Where-Object {-not $_.loopback -and $_.enabled} | ForEach-Object {
-                [pscustomobject]@{interfaceGuid=$_.interfaceGuid;interfaceDescription=$_.interfaceDescription}})
+                [pscustomobject]@{interfaceGuid=$_.interfaceGuid;netLuid=$_.netLuid}})
             if($State.request.adapters.Count -eq 0){throw 'No enabled non-loopback recovery adapters'}
             $State.request.offlineStart100ns=([string](& $getClock));$State.request.watchdogDeadline100ns=
                 ([string]([uint64]$State.request.offlineStart100ns+[uint64]$offlineMaximum100ns))
@@ -1615,7 +1622,7 @@ public static class MySpeedCanaryJob {
             $current=& $getNativeAdapters;$matched=[Collections.Generic.List[object]]::new()
             foreach($target in $State.request.adapters){$indexes=@(for($index=0;$index -lt $current.inventory.Count;$index++){
                 if($current.inventory[$index].interfaceGuid -ieq $target.interfaceGuid -and
-                    [string]::Equals($current.inventory[$index].interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal) -and
+                    [string]::Equals($current.inventory[$index].netLuid,$target.netLuid,[StringComparison]::Ordinal) -and
                     $current.inventory[$index].enabled){$index}})
                 if($indexes.Count -ne 1){throw 'Adapter changed before disable'};[void]$matched.Add($current.raw[$indexes[0]])}
             $preIp=& $projectIpState $current.inventory @(Get-NetIPInterface -IncludeAllCompartments -ErrorAction Stop) `
@@ -1624,7 +1631,7 @@ public static class MySpeedCanaryJob {
             if(($preKinds -join "`n") -cne (@('address','interface','route') -join "`n")){throw 'Pre-disable IP provider projection is incomplete'}
             $State.preDisable=[pscustomobject][ordered]@{providers=[pscustomobject]@{adapters=$true;ipInterfaces=$true
                 ipAddresses=$true;routes=$true};adapters=@($current.inventory|ForEach-Object {[pscustomobject]@{
-                    interfaceGuid=$_.interfaceGuid;interfaceDescription=$_.interfaceDescription;hidden=$_.hidden;loopback=$_.loopback
+                    interfaceGuid=$_.interfaceGuid;netLuid=$_.netLuid;hidden=$_.hidden;loopback=$_.loopback
                     enabled=$_.enabled;status=$_.status}});ipState=$preIp}
             @($matched) | Disable-NetAdapter -Confirm:$false -ErrorAction Stop
         }.GetNewClosure()
@@ -1817,7 +1824,7 @@ public static class MySpeedRestorationClock {
         foreach($target in $Request.adapters){
             $indexes=@(for($index=0;$index -lt $inventory.Count;$index++){
                 if($inventory[$index].interfaceGuid -ieq $target.interfaceGuid -and
-                    [string]::Equals($inventory[$index].interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal)){$index}})
+                    [string]::Equals($inventory[$index].netLuid,$target.netLuid,[StringComparison]::Ordinal)){$index}})
             if($indexes.Count -ne 1){throw 'Emergency adapter identity drifted'}
             [void]$matched.Add($all[$indexes[0]])
         }
@@ -1825,7 +1832,7 @@ public static class MySpeedRestorationClock {
         $after=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
         $afterInventory=(Get-MyspeedCanaryAdapterProviderSnapshot $after).inventory
         foreach($target in $Request.adapters){if(@($afterInventory|Where-Object {$_.interfaceGuid -ieq $target.interfaceGuid -and
-            [string]::Equals($_.interfaceDescription,$target.interfaceDescription,[StringComparison]::Ordinal) -and $_.enabled}).Count -ne 1){throw 'Emergency adapter enable proof failed'}}
+            [string]::Equals($_.netLuid,$target.netLuid,[StringComparison]::Ordinal) -and $_.enabled}).Count -ne 1){throw 'Emergency adapter enable proof failed'}}
         $adapterRestored=$true
         $result=[pscustomobject][ordered]@{schemaVersion=1;classification='inconclusive';emergencyRestore=$true
             serviceTeardownProven=$false;adapterRestoreProven=$true;requestSha256=$RequestSha;failure=$null}

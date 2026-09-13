@@ -31,7 +31,9 @@ const EVENT_SHA = "b".repeat(40);
 const NONCE = "0123456789abcdef0123456789abcdef";
 const WIN_SW_SHA = "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20";
 const WIN_SW_BYTES = 18_286_774;
-const MAX_INTERFACE_DESCRIPTION_LENGTH = 1024;
+const NET_LUID_HEX_LENGTH = 16;
+const NATIVE_NET_LUID = 0x0006000001000000;
+const CANONICAL_NET_LUID = "0006000001000000";
 const CHILD_SHA = "c".repeat(64);
 const OFFLINE_START_100NS = 100_000_000n;
 const OFFLINE_END_100NS = 550_000_000n;
@@ -111,9 +113,9 @@ $safeDefinition='function New-MyspeedNativeCanaryOperations {'+[Environment]::Ne
 function global:Add-Type {throw 'Native compilation forbidden in fixture'}
 function global:Import-Module {throw 'Native module import forbidden in fixture'}
 function global:Get-NetAdapter {
-  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0'
+  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7}
-  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';InterfaceDescription='Synthetic Ethernet 1'
+  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';NetLuid=[uint64]0x0006000002000000
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
 }
 function global:Get-NetTCPConnection {throw 'Native endpoint query forbidden in fixture'}
@@ -169,8 +171,8 @@ if(${inspectAdapters ? "$true" : "$false"}){
   if($observed.raw.Count -ne 2 -or $observed.inventory.Count -ne 2 -or $observed.inventory[0] -is [array]){
     throw 'Actual native factory nested the normalized adapter inventory'
   }
-  if($observed.inventory[0].interfaceDescription -cne 'Synthetic Ethernet 0' -or
-     $observed.inventory[1].interfaceDescription -cne 'Synthetic Ethernet 1' -or
+  if($observed.inventory[0].netLuid -cne '0006000001000000' -or
+     $observed.inventory[1].netLuid -cne '0006000002000000' -or
      -not $observed.inventory[0].enabled -or $observed.inventory[1].enabled){throw 'Native ordinal/state mapping differs'}
   $projection=New-MyspeedCanaryProviderProjectionOperations
   $boundary=& $actualOfflineBoundary -State @{request=[pscustomobject]@{offlineStart100ns='100';watchdogDeadline100ns='600000100'}} -Clock {'200'} -NormalizeProviderAdapters $projection.normalizeAdapters -NormalizeAdapters (Get-Command ConvertTo-MyspeedCanaryAdapterInventory).ScriptBlock -GetAdapterSnapshot (Get-Command Get-MyspeedCanaryAdapterProviderSnapshot).ScriptBlock -ProjectIpState $projection.projectIpState -GetElapsed (Get-Command Get-MyspeedCanaryElapsedMilliseconds).ScriptBlock -LoopbackType 24 -EnabledAdminStatus 1 -DisabledAdminStatus 2 -KnownStatuses $script:KnownAdapterStatuses
@@ -228,9 +230,9 @@ const boundary = () => ({
     },
     providers: {adapters: true, ipInterfaces: true, ipAddresses: true, routes: true},
     adapters: [
-        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", interfaceDescription: "Synthetic Ethernet 0",
+        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", netLuid: "0006000001000000",
             hidden: false, loopback: false, enabled: false, status: "Disabled"},
-        {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", interfaceDescription: "Synthetic Loopback 0",
+        {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", netLuid: "0018000001000000",
             hidden: true, loopback: true, enabled: true, status: "Up"}
     ],
     ipState: [
@@ -333,7 +335,7 @@ const recoveryRequest = () => ({
     environment: {...EXPECTED_ENVIRONMENT},
     adapters: [
         {interfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-            interfaceDescription: "Synthetic Ethernet 0"}
+            netLuid: "0006000001000000"}
     ],
     offlineStart100ns: OFFLINE_START_100NS.toString(),
     watchdogDeadline100ns: WATCHDOG_DEADLINE_100NS.toString()
@@ -411,7 +413,7 @@ Set-StrictMode -Version Latest
   . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
   $projection=New-MyspeedCanaryProviderProjectionOperations
   $outer={
-    $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+    $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000;Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
     $inventory=& $projection.normalizeAdapters $raw
     if($inventory.Count -ne $raw.Count -or -not $inventory[0].enabled){throw 'Projection differs'}
     $emptyRows=@()
@@ -482,24 +484,25 @@ Set-StrictMode -Version Latest
 
     windowsFilesystemPowershellIt("validates the immutable restoration request and exact owned path derivation", () => {
         assert.equal(run("ValidateRecoveryRequest", recoveryRequest()).accepted, true);
-        const caseDistinct = recoveryRequest();
-        caseDistinct.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
-            interfaceDescription: "synthetic ethernet 0"});
-        assert.equal(run("ValidateRecoveryRequest", caseDistinct).accepted, true);
+        const distinctLuid = recoveryRequest();
+        distinctLuid.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
+            netLuid: "000600000a000000"});
+        assert.equal(run("ValidateRecoveryRequest", distinctLuid).accepted, true);
         for (const mutate of [
             value => { value.extra = true; },
             value => { value.adapters[0].interfaceGuid = "bad"; },
-            value => { value.adapters[0].interfaceDescription = null; },
-            value => { value.adapters[0].interfaceDescription = "Synthetic\nEthernet"; },
+            value => { value.adapters[0].netLuid = null; },
+            value => { value.adapters[0].netLuid = "Synthetic\nEthernet"; },
             value => {
                 value.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
-                    interfaceDescription: value.adapters[0].interfaceDescription});
+                    netLuid: value.adapters[0].netLuid});
             },
             value => {
-                value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription;
-                delete value.adapters[0].interfaceDescription;
+                value.adapters[0].pnpDeviceId = value.adapters[0].netLuid;
+                delete value.adapters[0].netLuid;
             },
-            value => { value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription; },
+            value => { value.adapters[0].pnpDeviceId = value.adapters[0].netLuid; },
+            value => { value.adapters[0].interfaceDescription = value.adapters[0].netLuid; },
             value => { value.adapters.push({...value.adapters[0]}); },
             value => { value.lockPath = "C:\\unowned\\recovery.lock"; },
             value => { value.serviceName = "OtherService"; },
@@ -556,7 +559,7 @@ Set-StrictMode -Version Latest
         assert.match(source, /Owned recovery process remained after task stop/u);
         assert.match(source, /StartTime\.ToUniversalTime\(\)\.ToFileTimeUtc/u);
         assert.match(source, /cancelRecoveryWhenAdaptersEnabled/u);
-        assert.match(source, /\[string\]::Equals\(\$_\.interfaceDescription,\$target\.interfaceDescription,\[StringComparison\]::Ordinal\) -and \$_\.enabled/u);
+        assert.match(source, /\[string\]::Equals\(\$_\.netLuid,\$target\.netLuid,\[StringComparison\]::Ordinal\) -and \$_\.enabled/u);
         assert.doesNotMatch(source, /Stop-ScheduledTask/u);
     });
 
@@ -608,13 +611,13 @@ Set-StrictMode -Version Latest
     powershellIt("rejects malformed native adapter DTOs before deriving mutation state", () => {
         const adapters = () => ({adapters: [
             {InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-                InterfaceDescription: "Synthetic Ethernet 0",
+                NetLuid: 0x0006000001000000,
                 Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4},
             {InterfaceGuid: "{22222222-2222-2222-2222-222222222222}",
-                InterfaceDescription: "Synthetic Loopback 0",
+                NetLuid: 0x0018000001000000,
                 Hidden: true, InterfaceType: 24, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 1},
             {InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",
-                InterfaceDescription: "Synthetic Ethernet 1",
+                NetLuid: 0x0006000002000000,
                 Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 2, Status: "Disabled", ifIndex: 5}
         ]});
         const accepted = run("NormalizeAdapters", adapters());
@@ -633,9 +636,9 @@ Set-StrictMode -Version Latest
             value => { value.adapters[0].Status = "Unexpected"; },
             value => { value.adapters[0].ifIndex = 0; },
             value => { value.adapters[0].ifIndex = 4.5; },
-            value => { value.adapters[0].InterfaceDescription = ""; },
+            value => { value.adapters[0].NetLuid = ""; },
             value => { value.adapters[1].InterfaceGuid = value.adapters[0].InterfaceGuid; },
-            value => { value.adapters[1].InterfaceDescription = value.adapters[0].InterfaceDescription; },
+            value => { value.adapters[1].NetLuid = value.adapters[0].NetLuid; },
             value => { value.adapters[1].ifIndex = value.adapters[0].ifIndex; }
         ]) {
             const value = adapters(); mutate(value);
@@ -649,83 +652,85 @@ Set-StrictMode -Version Latest
         assert.match(source, /\$afterInventory=\(Get-MyspeedCanaryAdapterProviderSnapshot \$after/u);
     });
 
-    it("uses the documented stable interface description instead of nullable PnP identity", () => {
+    it("uses the documented native LUID instead of optional display properties", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
-        assert.match(source, /interfaceDescription/u);
-        assert.doesNotMatch(source, /pnpDeviceId|Get-MyspeedCanaryExactProviderPnpDeviceId/u);
+        assert.match(source, /netLuid/u);
+        assert.doesNotMatch(source, /pnpDeviceId|interfaceDescription|Get-MyspeedCanaryExactProviderPnpDeviceId/u);
     });
 
-    powershellIt("accepts only bounded exact interface descriptions", () => {
+    powershellIt("binds native NetLuid without relying on nullable or empty display properties", () => {
         const adapter = () => ({
-            InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-            InterfaceDescription: "Synthetic Ethernet 0",
-            Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4
+            InterfaceGuid: "{11111111-1111-1111-1111-111111111111}", NetLuid: NATIVE_NET_LUID,
+            InterfaceDescription: "", pnpDeviceId: null,
+            Hidden: true, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4
         });
         const accepted = run("NormalizeAdapters", {adapters: [adapter()]});
-        assert.equal(accepted.interfaceDescription, "Synthetic Ethernet 0");
-        const providerWithExtraProperty = adapter();
-        providerWithExtraProperty.pnpDeviceId = null;
-        assert.equal(run("NormalizeAdapters", {adapters: [providerWithExtraProperty]}).interfaceDescription,
-            "Synthetic Ethernet 0", "unrelated raw provider properties do not replace the stable identity");
-        const maximumLength = adapter();
-        maximumLength.InterfaceDescription = "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH);
-        assert.equal(run("NormalizeAdapters", {adapters: [maximumLength]}).interfaceDescription.length,
-            MAX_INTERFACE_DESCRIPTION_LENGTH);
-
-        for (const mutate of [
-            value => { delete value.InterfaceDescription; },
-            value => { value.InterfaceDescription = null; },
-            value => { value.InterfaceDescription = ""; },
-            value => { value.InterfaceDescription = "   "; },
-            value => { value.InterfaceDescription = false; },
-            value => { value.InterfaceDescription = ["Synthetic Ethernet 0"]; },
-            value => { value.InterfaceDescription = {value: "Synthetic Ethernet 0"}; },
-            value => { value.InterfaceDescription = "Synthetic\nEthernet"; },
-            value => { value.InterfaceDescription = `Synthetic${String.fromCharCode(0x7f)}Ethernet`; },
-            value => { value.InterfaceDescription = "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH + 1); }
-        ]) {
-            const value = adapter(); mutate(value);
-            reject("NormalizeAdapters", {adapters: [value]}, /interface description|InterfaceDescription|schema|bounded exact string/i);
+        assert.equal(accepted.netLuid, CANONICAL_NET_LUID);
+        assert.equal(accepted.hidden, true);
+        assert.equal(accepted.enabled, true);
+        assert.equal(Object.hasOwn(accepted, "interfaceDescription"), false);
+        for (const value of [null, 0, -1, 1.5, false, CANONICAL_NET_LUID, [NATIVE_NET_LUID]]) {
+            reject("NormalizeAdapters", {adapters: [{...adapter(), NetLuid: value}]}, /NetLuid|LUID|integer|schema/i);
         }
-        const caseDistinct = adapter();
-        caseDistinct.InterfaceGuid = "{22222222-2222-2222-2222-222222222222}";
-        caseDistinct.InterfaceDescription = "synthetic ethernet 0";
-        caseDistinct.ifIndex = 5;
-        assert.equal(run("NormalizeAdapters", {adapters: [adapter(), caseDistinct]}).length, 2);
+        const duplicate = {...adapter(), InterfaceGuid: "{22222222-2222-2222-2222-222222222222}", ifIndex: 5};
+        reject("NormalizeAdapters", {adapters: [adapter(), duplicate]}, /duplicated|identity/i);
     });
 
-    powershellIt("reports only bounded rejection metadata for malformed adapter descriptions", () => {
-        const privateMarker = "description-value-must-not-be-logged";
-        const cases = [
-            {value: null, kind: "null", length: -1, blank: false, control: false},
-            {value: false, kind: "other", length: -1, blank: false, control: false},
-            {value: [privateMarker], kind: "array", length: -1, blank: false, control: false},
-            {value: "   ", kind: "string", length: 3, blank: true, control: false},
-            {value: `${privateMarker}\n`, kind: "string", length: privateMarker.length + 1, blank: false, control: true},
-            {value: "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH + 1), kind: "string",
-                length: MAX_INTERFACE_DESCRIPTION_LENGTH + 1, blank: false, control: false}
-        ];
-        for (const {value, kind, length, blank, control} of cases) {
-            const result = invoke("NormalizeAdapters", {adapters: [{
-                InterfaceGuid: "{11111111-1111-1111-1111-111111111111}", InterfaceDescription: value,
-                Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4
-            }]});
-            assert.equal(result.error, undefined, result.error?.message);
-            assert.notEqual(result.status, 0);
-            const output = `${result.stdout}\n${result.stderr}`;
-            const metadata = `kind=${kind};length=${length};limit=${MAX_INTERFACE_DESCRIPTION_LENGTH};` +
-                `blank=${Number(blank)};control=${Number(control)}`;
-            assert.ok(output.includes(metadata), output);
-            assert.ok(!output.includes(privateMarker), "raw provider values must not enter diagnostics");
+    powershellIt("preserves every primitive integer NetLuid without floating-point conversion", () => {
+        const program = `
+. '${SCRIPT.replaceAll("'", "''")}' -Mode Library
+$valid=@(
+  @([sbyte]1,'0000000000000001'),@([byte]1,'0000000000000001'),
+  @([int16]1,'0000000000000001'),@([uint16]1,'0000000000000001'),
+  @([int32]1,'0000000000000001'),@([uint32]::MaxValue,'00000000ffffffff'),
+  @([int64]::MaxValue,'7fffffffffffffff'),@([uint64]::MaxValue,'ffffffffffffffff')
+)
+foreach($entry in $valid){
+  $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=$entry[0]
+    Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+  $snapshot=Get-MyspeedCanaryAdapterProviderSnapshot $raw
+  if($snapshot.inventory[0].netLuid -cne $entry[1]){throw 'Native LUID lost integer precision'}
+}
+$invalid=@($null,[int]0,[uint64]0,[int]-1,$true,[char]1,[decimal]1,[double]1,[single]1,
+  [double]::PositiveInfinity,'1',[object[]]@(1),[pscustomobject]@{value=1},
+  ([Numerics.BigInteger]::Parse('18446744073709551616')))
+foreach($value in $invalid){
+  $rejected=$false
+  try{[void](ConvertFrom-MyspeedCanaryNativeNetLuid $value 'Fixture')}catch{$rejected=$true}
+  if(-not $rejected){throw 'Coercible or out-of-range NetLuid was accepted'}
+}
+`;
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                Buffer.from(program, "utf16le").toString("base64")],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    });
+
+    powershellIt("accepts only nonzero canonical fixed-width NetLuid evidence", () => {
+        const maximum = boundary();
+        maximum.adapters[0].netLuid = "f".repeat(NET_LUID_HEX_LENGTH);
+        assert.equal(run("ClassifyBoundary", maximum).accepted, true);
+        for (const value of [null, 1, "", "0".repeat(NET_LUID_HEX_LENGTH), "000600000A000000",
+            "1", "1".repeat(NET_LUID_HEX_LENGTH + 1), `${CANONICAL_NET_LUID}\n`,
+            ` ${CANONICAL_NET_LUID}`, [CANONICAL_NET_LUID]]) {
+            const invalid = boundary(); invalid.adapters[0].netLuid = value;
+            reject("ClassifyBoundary", invalid, /NetLuid|LUID|canonical/i);
+        }
+        for (const legacyField of ["pnpDeviceId", "interfaceDescription"]) {
+            const invalid = boundary();
+            invalid.adapters[0][legacyField] = CANONICAL_NET_LUID;
+            reject("ClassifyBoundary", invalid, /schema/i);
         }
     });
 
     powershellIt("rejects a one-record nested adapter normalization result", () => {
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
-$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000;Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
 $badNormalizer={param([object]$Value)
-  $inner=[object[]]@([pscustomobject]@{interfaceGuid='{11111111-1111-1111-1111-111111111111}';interfaceDescription='Synthetic Ethernet 0';hidden=$false;interfaceType=6;interfaceAdminStatus=1;status='Up';interfaceIndex=7;loopback=$false;enabled=$true})
+  $inner=[object[]]@([pscustomobject]@{interfaceGuid='{11111111-1111-1111-1111-111111111111}';netLuid='0006000001000000';hidden=$false;interfaceType=6;interfaceAdminStatus=1;status='Up';interfaceIndex=7;loopback=$false;enabled=$true})
   $nested=New-Object object[] 1;$nested[0]=$inner;Write-Output -NoEnumerate $nested
 }
 $rejected=$false
@@ -746,8 +751,8 @@ if(-not $rejected){throw 'Nested one-record adapter snapshot was accepted'}
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
 $raw=[object[]]@(
-  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7},
-  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';InterfaceDescription='Synthetic Ethernet 1';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
+  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000;Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7},
+  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';NetLuid=[uint64]0x0006000002000000;Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
 )
 $reordered={param([object]$Value,[int64]$LoopbackType,[int64]$Enabled,[int64]$Disabled,[string[]]$Statuses)
   $normalized=ConvertTo-MyspeedCanaryAdapterInventory $Value $LoopbackType $Enabled $Disabled $Statuses
@@ -767,20 +772,20 @@ if(-not $rejected){throw 'Reordered normalized adapter snapshot was accepted'}
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     });
 
-    powershellIt("rejects culture-equivalent interface-description drift before provider selection", () => {
+    powershellIt("rejects changed LUIDs before provider selection", () => {
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
-$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000;Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
 $drifted={param([object]$Value,[int64]$LoopbackType,[int64]$Enabled,[int64]$Disabled,[string[]]$Statuses)
   $normalized=ConvertTo-MyspeedCanaryAdapterInventory $Value $LoopbackType $Enabled $Disabled $Statuses
-  $normalized[0].interfaceDescription='Synthetic${String.fromCharCode(0xad)} Ethernet 0'
+  $normalized[0].netLuid='0006000002000000'
   Write-Output -NoEnumerate ([object[]]$normalized)
 }
 $rejected=$false
 try{[void](Get-MyspeedCanaryAdapterProviderSnapshot $raw $null 24 1 2 @('Up','Disabled') $drifted)}catch{
   if($_.Exception.Message -cne 'Normalized adapter snapshot order differs'){throw};$rejected=$true
 }
-if(-not $rejected){throw 'Culture-equivalent adapter description drift was accepted'}
+if(-not $rejected){throw 'Adapter LUID drift was accepted'}
 `;
         const result = childProcess.spawnSync(POWERSHELL,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
@@ -793,7 +798,7 @@ if(-not $rejected){throw 'Culture-equivalent adapter description drift was accep
     powershellIt("projects the same strict all-compartment IP state before and after adapter disable", () => {
         const value = () => ({
             adapters: [{InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-                InterfaceDescription: "Synthetic Ethernet 0", Hidden: false, InterfaceType: 6,
+                NetLuid: 0x0006000001000000, Hidden: false, InterfaceType: 6,
                 InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4}],
             interfaces: [
                 {InterfaceIndex: 4, CompartmentId: 1, ConnectionState: 1},
@@ -816,7 +821,7 @@ if(-not $rejected){throw 'Culture-equivalent adapter description drift was accep
 
         const multiple = value();
         multiple.adapters.push({InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",
-            InterfaceDescription: "Synthetic Ethernet 1", Hidden: false, InterfaceType: 6,
+            NetLuid: 0x0006000002000000, Hidden: false, InterfaceType: 6,
             InterfaceAdminStatus: 2, Status: "Disabled", ifIndex: 5});
         multiple.interfaces.push({InterfaceIndex: 5, CompartmentId: 1, ConnectionState: 0});
         multiple.addresses.push({InterfaceIndex: 5, CompartmentId: 1, IPAddress: "10.0.0.6"});
@@ -894,12 +899,12 @@ if(-not $rejected){throw 'Culture-equivalent adapter description drift was accep
             value => { value.offlineTiming.clock = "DateTimeUtc"; },
             value => { value.adapters[0].enabled = true; value.adapters[0].status = "Up"; },
             value => { value.adapters[1].interfaceGuid = value.adapters[0].interfaceGuid; },
-            value => { value.adapters[1].interfaceDescription = value.adapters[0].interfaceDescription; },
+            value => { value.adapters[1].netLuid = value.adapters[0].netLuid; },
             value => {
-                value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription;
-                delete value.adapters[0].interfaceDescription;
+                value.adapters[0].pnpDeviceId = value.adapters[0].netLuid;
+                delete value.adapters[0].netLuid;
             },
-            value => { value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription; },
+            value => { value.adapters[0].pnpDeviceId = value.adapters[0].netLuid; },
             value => { value.ipState[2].loopback = false; value.ipState[2].routable = true; },
             value => { value.loopback[0].ownerPid = 0; },
             value => { value.loopback[0].address = "0.0.0.0"; },
