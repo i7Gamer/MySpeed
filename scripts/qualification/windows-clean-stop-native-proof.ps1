@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestActiveLogReader','TestCollectionGate','InvokeHostedProof')]
+    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestLauncherBridge','TestActiveLogReader','TestCollectionGate','InvokeHostedProof')]
     [string] $Mode='Library',
     [string] $InputJson='',
     [string] $ClosureRoot='',
@@ -92,6 +92,21 @@ function ConvertFrom-MyspeedProofJson {
     param([string]$Json,[string]$Label)
     if([string]::IsNullOrEmpty($Json)){throw "$Label JSON is absent"}
     try{return $Json|ConvertFrom-Json -ErrorAction Stop}catch{throw "$Label JSON is invalid"}
+}
+
+function Assert-MyspeedProofClockNumber {
+    param([object]$Value,[string]$Label,[double]$Minimum,[double]$Maximum)
+    if($null -eq $Value -or $Value.GetType().IsArray -or $Value -is [bool] -or $Value -is [char] -or
+        $Value -isnot [ValueType]){throw "$Label must be a finite number"}
+    $typeCode=[Type]::GetTypeCode($Value.GetType())
+    if($typeCode -notin @([TypeCode]::Byte,[TypeCode]::SByte,[TypeCode]::Int16,[TypeCode]::UInt16,
+        [TypeCode]::Int32,[TypeCode]::UInt32,[TypeCode]::Int64,[TypeCode]::UInt64,[TypeCode]::Single,
+        [TypeCode]::Double,[TypeCode]::Decimal)){throw "$Label must be a finite number"}
+    $number=[double]$Value
+    if([double]::IsNaN($number) -or [double]::IsInfinity($number) -or $number -lt $Minimum -or $number -gt $Maximum){
+        throw "$Label must be a bounded finite number"
+    }
+    return $number
 }
 
 function Invoke-MyspeedProofModuleCommand {
@@ -370,7 +385,7 @@ function Assert-MyspeedProofOuterLauncher {
         'wallDeadlineUnixMilliseconds','monotonicDeadlineMilliseconds','lastWallUnixMilliseconds',
         'lastMonotonicMilliseconds','postReturnWallUnixMilliseconds','postReturnMonotonicMilliseconds') 'Outer timing'
     $timing=[ordered]@{};foreach($name in @($Result.timing.PSObject.Properties.Name)){
-        $timing[$name]=Assert-MyspeedCleanInteger $Result.timing.$name "Outer timing $name" 0 9223372036854775807
+        $timing[$name]=Assert-MyspeedProofClockNumber $Result.timing.$name "Outer timing $name" 0 9223372036854775807
     }
     $wallAllowance=$timing.wallDeadlineUnixMilliseconds-$timing.initialWallUnixMilliseconds
     if($wallAllowance -le 0 -or $wallAllowance -gt $script:MaximumObservedMilliseconds -or
@@ -391,9 +406,9 @@ function Assert-MyspeedProofOuterLauncher {
         (Assert-MyspeedCleanBoolean $Result.observer.synchronousCancellationProven 'Outer observer cancellation')){
         throw 'Outer observer proof differs'
     }
-    $observerFirst=Assert-MyspeedCleanInteger $Result.observer.firstMonotonicMilliseconds 'Outer observer first monotonic' 0 9223372036854775807
-    $observerLast=Assert-MyspeedCleanInteger $Result.observer.lastMonotonicMilliseconds 'Outer observer last monotonic' 0 9223372036854775807
-    [void](Assert-MyspeedCleanInteger $Result.observer.maximumDurationMilliseconds 'Outer observer maximum duration' 0 $script:MaximumObservedMilliseconds)
+    $observerFirst=Assert-MyspeedProofClockNumber $Result.observer.firstMonotonicMilliseconds 'Outer observer first monotonic' 0 9223372036854775807
+    $observerLast=Assert-MyspeedProofClockNumber $Result.observer.lastMonotonicMilliseconds 'Outer observer last monotonic' 0 9223372036854775807
+    [void](Assert-MyspeedProofClockNumber $Result.observer.maximumDurationMilliseconds 'Outer observer maximum duration' 0 $script:MaximumObservedMilliseconds)
     if($observerFirst -lt $timing.initialMonotonicMilliseconds -or $observerLast -lt $observerFirst -or
         $observerLast -gt $timing.lastMonotonicMilliseconds){throw 'Outer observer timing differs'}
     $contextKeys=Assert-MyspeedCleanArray $Result.observer.contextKeys 'Outer observer context keys'
@@ -435,10 +450,10 @@ function Invoke-MyspeedProofObserverTick {
     [void](Assert-MyspeedCleanInteger $Context.schemaVersion 'Observer context schema' 1 1)
     [void](Assert-MyspeedCleanInteger $Context.tick 'Observer tick' 0 1000000)
     [void](Assert-MyspeedCleanInteger $Context.processId 'Observer process ID' 1 4294967295)
-    $wall=Assert-MyspeedCleanInteger $Context.wallUnixMilliseconds 'Observer wall time' 0 9223372036854775807
-    $mono=Assert-MyspeedCleanInteger $Context.monotonicMilliseconds 'Observer monotonic time' 0 9223372036854775807
-    $wallDeadline=Assert-MyspeedCleanInteger $Context.wallDeadlineUnixMilliseconds 'Observer wall deadline' 1 9223372036854775807
-    $monoDeadline=Assert-MyspeedCleanInteger $Context.monotonicDeadlineMilliseconds 'Observer monotonic deadline' 1 9223372036854775807
+    $wall=Assert-MyspeedProofClockNumber $Context.wallUnixMilliseconds 'Observer wall time' 0 9223372036854775807
+    $mono=Assert-MyspeedProofClockNumber $Context.monotonicMilliseconds 'Observer monotonic time' 0 9223372036854775807
+    $wallDeadline=Assert-MyspeedProofClockNumber $Context.wallDeadlineUnixMilliseconds 'Observer wall deadline' 1 9223372036854775807
+    $monoDeadline=Assert-MyspeedProofClockNumber $Context.monotonicDeadlineMilliseconds 'Observer monotonic deadline' 1 9223372036854775807
     if($wall -ge $wallDeadline -or $mono -ge $monoDeadline){throw 'Observer deadline expired'}
     if($null -eq $State.initialMonotonic){$State.initialMonotonic=$mono;$State.processId=$Context.processId}
     if($Context.processId -ne $State.processId -or $mono -lt $State.initialMonotonic){throw 'Observer context identity differs'}
@@ -771,6 +786,51 @@ function Invoke-MyspeedProofInjectedObserver {
     foreach($context in $contexts){$observerHarnessState.currentTick=$context.tick;[void]$responses.Add((& $observer $context))}
     return [pscustomobject][ordered]@{events=@($events);responses=@($responses);readiness=$writes['Stdout readiness'].value
         stop=if($writes.ContainsKey('Stop request')){$writes['Stop request'].value}else{$null}}
+}
+
+function Invoke-MyspeedProofInjectedLauncherBridge {
+    $launcherPath=Join-Path $PSScriptRoot 'media-job-launcher.ps1'
+    $launcherModule=New-MyspeedProofModule $launcherPath 'MyspeedCleanStopLauncherBridge'
+    try{
+        $executable=[Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+        $stream=[IO.File]::Open($executable,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+        try{$algorithm=[Security.Cryptography.SHA256]::Create();try{$executableSha=[BitConverter]::ToString(
+                    $algorithm.ComputeHash($stream)).Replace('-','').ToLowerInvariant()}finally{$algorithm.Dispose()}}finally{$stream.Dispose()}
+        $workingDirectory=[IO.Path]::GetDirectoryName($executable)
+        $launch=[pscustomobject]@{abiPath='C:\owned\abi.json';readyPath='C:\owned\ready.json';resultPath='C:\owned\result.json'
+            stdoutPath='C:\owned\stdout.log';stdoutReadinessPath='C:\owned\readiness.json';stopRequestPath='C:\owned\stop.json';caseId='handler'}
+        $operations=[pscustomobject]@{
+            Exists={param($path)return $false}
+            CanReadStable={param($path)return $true}
+            ReadDocument={param($path,$label)throw 'Injected bridge read is forbidden'}
+            ReadBytes={param($path)return ,([byte[]]@())}
+            WriteDocument={param($path,$value,$label)throw 'Injected bridge write is forbidden'}}
+        $observer=New-MyspeedCleanStopProofObserver $launch ('1'*64) $operations
+        $clockState=[pscustomobject]@{index=0};$clockValues=@(
+            @{w=[double]1000;m=[double]10},@{w=[double]1001;m=[double]11},@{w=[double]1002;m=[double]12},
+            @{w=[double]1003;m=[double]13},@{w=[double]1004;m=[double]14},@{w=[double]1005;m=[double]15})
+        $clock={
+            $selected=$clockValues[[Math]::Min($clockState.index,$clockValues.Count-1)];$clockState.index++
+            return @{WallUnixMilliseconds=[double]$selected.w;MonotonicMilliseconds=[double]$selected.m}
+        }.GetNewClosure()
+        $nativeState=[pscustomobject]@{exited=$false}
+        $native=@{
+            CreateJob={return 'job'};ConfigureKillOnClose={param($job)}
+            CreateSuspended={param($file,$command,$cwd)return @{ProcessHandle='process';ThreadHandle='thread';ProcessId=42}}
+            Assign={param($job,$process)};Resume={param($thread)}
+            Wait={param($process,$milliseconds)$nativeState.exited=$true;return 'Exited'}.GetNewClosure()
+            ExitCode={param($process)return 0};Terminate={param($process)}
+            ActiveProcesses={param($job)return 0};TerminateJob={param($job)};Sleep={param($milliseconds)};Close={param($handle)}}
+        $call=[pscustomobject]@{executable=$executable;sha256=$executableSha;arguments=[string[]]@('-NoLogo')
+            workingDirectory=$workingDirectory;observer=$observer;observerSha=(Get-MyspeedProofObserverSha256)
+            native=$native;clock=$clock}
+        return & $launcherModule {param($value)
+            Invoke-ObservedOwnedJobProcess -Executable $value.executable -ExpectedExecutableSha256 $value.sha256 `
+                -ArgumentList $value.arguments -WorkingDirectory $value.workingDirectory -WallDeadlineUnixMilliseconds 5000 `
+                -MaximumDurationMilliseconds 1000 -Observer $value.observer -ExpectedObserverSha256 $value.observerSha `
+                -NativeMethods $value.native -Clock $value.clock
+        } $call
+    }finally{Remove-Module $launcherModule -Force}
 }
 
 function Read-MyspeedProofBoundedFile {
@@ -1313,6 +1373,7 @@ try{
         'AssessMatrix' {Assert-MyspeedProofMatrix (ConvertFrom-MyspeedProofJson $InputJson 'Proof matrix')}
         'TestObserver' {Invoke-MyspeedProofInjectedObserver (ConvertFrom-MyspeedProofJson $InputJson 'Injected observer')}
         'TestDetachedObserver' {Invoke-MyspeedProofInjectedObserver (ConvertFrom-MyspeedProofJson $InputJson 'Detached observer') $true}
+        'TestLauncherBridge' {Invoke-MyspeedProofInjectedLauncherBridge}
         'TestActiveLogReader' {Invoke-MyspeedProofActiveLogReaderFixture (ConvertFrom-MyspeedProofJson $InputJson 'Active-log fixture')}
         'TestCollectionGate' {Assert-MyspeedProofCaseCollectionGate (ConvertFrom-MyspeedProofJson $InputJson 'Case collection gate')}
         'InvokeHostedProof' {Invoke-MyspeedHostedCleanStopProof}

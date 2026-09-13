@@ -301,7 +301,11 @@ describe("independent post-reconnect evidence consumer", {
             `  <name>MySpeed Offline Canary ${nonce}</name>`,
             "  <description>Candidate-neutral WinSW inheritance canary</description>",
             "  <executable>inert-child.exe</executable>", "  <startmode>Manual</startmode>",
-            "  <stoptimeout>5 sec</stoptimeout>", "</service>", ""].join("\r\n"));
+            "  <stoptimeout>5 sec</stoptimeout>",
+            '  <env name="AZURE_CONFIG_DIR" value=""/>',
+            '  <env name="AZURE_DEVOPS_CACHE_DIR" value=""/>',
+            '  <env name="AZURE_EXTENSION_DIR" value=""/>',
+            '  <env name="PGPASSWORD" value=""/>', "</service>", ""].join("\r\n"));
         return {bytes, record: {bytesBase64: bytes.toString("base64"), sha256: sha256(bytes)}};
     };
     const runContinuation = (context, mutate = () => {}) => {

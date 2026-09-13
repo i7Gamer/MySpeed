@@ -292,6 +292,10 @@ const winswConfiguration = nonce => {
         "  <executable>inert-child.exe</executable>",
         "  <startmode>Manual</startmode>",
         "  <stoptimeout>5 sec</stoptimeout>",
+        '  <env name="AZURE_CONFIG_DIR" value=""/>',
+        '  <env name="AZURE_DEVOPS_CACHE_DIR" value=""/>',
+        '  <env name="AZURE_EXTENSION_DIR" value=""/>',
+        '  <env name="PGPASSWORD" value=""/>',
         "</service>",
         ""
     ].join("\r\n");
@@ -954,6 +958,10 @@ if(-not $rejected){throw 'Adapter LUID drift was accepted'}
         assert.match(generated.source, /try \{ IAsyncResult pending=client\.BeginConnect/u);
         assert.match(generated.source, /using\(WaitHandle wait=pending\.AsyncWaitHandle\)/u);
         assert.doesNotMatch(generated.source, /Process\.Start|Dns\.|HttpClient|WebRequest/);
+        assert.match(generated.source, /Forbidden\(string name,object value\)/u);
+        assert.match(generated.source, /String\.Equals\(value as string,String\.Empty,StringComparison\.Ordinal\)/u);
+        assert.match(generated.source, /Forbidden\(Convert\.ToString\(entry\.Key\),entry\.Value\)/u);
+        assert.match(generated.source, /ClearedEnvironmentNames = new string\[\] \{\s*"AZURE_CONFIG_DIR", "AZURE_DEVOPS_CACHE_DIR", "AZURE_EXTENSION_DIR", "PGPASSWORD"\s*\}/u);
         for (const [name, value] of Object.entries(EXPECTED_ENVIRONMENT)) {
             assert.match(generated.source, new RegExp(name));
             assert.match(generated.source, new RegExp(value.replaceAll(".", "\\.")));
@@ -1030,6 +1038,21 @@ if(-not $rejected){throw 'Adapter LUID drift was accepted'}
             value => { value.childCreationFileTime = "2"; },
             value => { value.environment.SERVER_HOST = "0.0.0.0"; },
             value => { value.forbiddenNames.push("HTTP_PROXY"); },
+            value => { value.forbiddenNames.push("PGPASSWORD"); },
+            value => {
+                const xml = Buffer.from(value.configuration.bytesBase64, "base64").toString("utf8")
+                    .replace('name="PGPASSWORD" value=""', 'name="PGPASSWORD" value="synthetic-password"');
+                const bytes = Buffer.from(xml, "utf8");
+                value.configuration.bytesBase64 = bytes.toString("base64");
+                value.configuration.sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+            },
+            value => {
+                const xml = Buffer.from(value.configuration.bytesBase64, "base64").toString("utf8")
+                    .replace('  <env name="AZURE_CONFIG_DIR" value=""/>\r\n', '');
+                const bytes = Buffer.from(xml, "utf8");
+                value.configuration.bytesBase64 = bytes.toString("base64");
+                value.configuration.sha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+            },
             value => {
                 const xml = Buffer.from(value.configuration.bytesBase64, "base64").toString("utf8")
                     .replace("</service>", "  <env name=\"SERVER_HOST\" value=\"127.0.0.1\"/>\r\n</service>");

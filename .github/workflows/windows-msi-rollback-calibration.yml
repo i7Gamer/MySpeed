@@ -405,7 +405,8 @@ jobs:
           $inputJson = $input | ConvertTo-Json -Compress
           $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$nativePath,
             '-Mode','InvokeHostedCalibration','-InputJson',$inputJson)
-          $observer = { param($context) [pscustomobject]@{action='observe';observation='child-running'} }
+          $observer = { param($context) [pscustomobject]@{
+            schemaVersion=1;status='observed';action='observe';observation='child-running'} }
           $observerSha = Get-MediaJobScriptBlockSha256 $observer
           $deadline = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + $MAXIMUM_DURATION_MILLISECONDS
           $launch = Invoke-ObservedOwnedJobProcess -Executable $shellPath `

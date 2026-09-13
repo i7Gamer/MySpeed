@@ -211,6 +211,10 @@ describe("sacrificial MSI rollback transport workflow", () => {
         assert.match(invoke.run, /Invoke-ObservedOwnedJobProcess/);
         assert.match(invoke.run, /windows-msi-rollback-native\.ps1/);
         assert.match(invoke.run, /-Mode','InvokeHostedCalibration/);
+        assert.match(invoke.run,
+            /schemaVersion=1;status='observed';action='observe';observation='child-running'/u);
+        assert.doesNotMatch(invoke.run,
+            /\[pscustomobject\]@\{action='observe';observation='child-running'\}/);
         assert.match(invoke.run, /processTreeExitProven/);
         assert.match(confirm.run, /nativeExecutionAttempted/);
         assert.match(confirm.run, /releaseGatesCleared/);
@@ -220,6 +224,26 @@ describe("sacrificial MSI rollback transport workflow", () => {
         assert.ok(execute.steps.indexOf(validate) < execute.steps.indexOf(collision));
         assert.ok(execute.steps.indexOf(collision) < execute.steps.indexOf(invoke));
         assert.ok(execute.steps.indexOf(invoke) < execute.steps.indexOf(confirm));
+    });
+
+    it("passes the actual workflow observer through the real launcher protocol validator", {skip: !HAS_POWERSHELL}, () => {
+        const invoke = step(config().jobs.execute, "native_calibration");
+        const observer = invoke.run.match(/\$observer\s*=\s*([^]*?)\r?\n\s*\$observerSha/u)?.[1];
+        assert.ok(observer);
+        const command = [
+            `$module=New-Module -ScriptBlock {param($source). $source;Export-ModuleMember -Function Assert-MediaJobObserverResult} -ArgumentList ${quotePowerShell(path.resolve(LAUNCHER_SCRIPT))}`,
+            `$observer=${observer}`,
+            "$observed=& $observer ([pscustomobject]@{})",
+            "$accepted=$true;try{& $module {param($value)Assert-MediaJobObserverResult $value} $observed}catch{$accepted=$false}",
+            "$oldShapeRejected=$false;try{& $module {param($value)Assert-MediaJobObserverResult $value} ([pscustomobject]@{action='observe';observation='child-running'})}catch{$oldShapeRejected=$true}",
+            "[pscustomobject]@{accepted=$accepted;oldShapeRejected=$oldShapeRejected;value=$observed}|ConvertTo-Json -Compress -Depth 4"
+        ].join("\n");
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS});
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(JSON.parse(result.stdout), {accepted: true, oldShapeRejected: true,
+            value: {schemaVersion: 1, status: "observed", action: "observe", observation: "child-running"}});
     });
 
     it("retains only bounded nonqualifying executor evidence", () => {

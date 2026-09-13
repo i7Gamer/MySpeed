@@ -110,6 +110,16 @@ const invoke = (mode, value = null) => {
     return JSON.parse(result.stdout);
 };
 
+const invokeCommand = source => {
+    const encoded = Buffer.from(source, "utf16le").toString("base64");
+    const result = childProcess.spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+        {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+    assert.equal(result.error, undefined, result.error?.message);
+    if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    return JSON.parse(result.stdout.trim());
+};
+
 const manifest = () => ({
     schemaVersion: 1,
     kind: "myspeed-windows-clean-stop-native-proof-manifest",
@@ -350,6 +360,32 @@ describe("Windows clean-stop native proof coordinator", () => {
         assert.equal(invoke("GetContract").observerSha256, OBSERVER_SHA);
     });
 
+    powershellIt("passes integral-valued Double clocks through the actual launcher and returned observer", () => {
+        const result = invoke("TestLauncherBridge", {});
+        assert.equal(result.status, "completed");
+        assert.equal(result.exitCode, 0);
+        assert.equal(result.observer.tickCount, 1);
+        assert.equal(result.observer.lastObservation, "abi-absent");
+        assert.equal(result.processTreeExitProven, true);
+    });
+
+    powershellIt("accepts decimal clocks and rejects every non-finite or out-of-domain clock value", () => {
+        const escaped = SCRIPT.replaceAll("'", "''");
+        const result = invokeCommand(`
+. '${escaped}' -Mode Library
+$invalid=@(
+  [pscustomobject]@{value=[double]::NaN},[pscustomobject]@{value=[double]::PositiveInfinity},
+  [pscustomobject]@{value=[double]::NegativeInfinity},[pscustomobject]@{value=$null},
+  [pscustomobject]@{value=(,@(1))},[pscustomobject]@{value=[double]-1},[pscustomobject]@{value=[double]1e20}
+)
+$rejected=0
+foreach($case in $invalid){try{[void](Assert-MyspeedProofClockNumber $case.value 'clock' 0 9223372036854775807)}catch{$rejected++}}
+$valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
+[pscustomobject]@{rejected=$rejected;total=$invalid.Count;valid=$valid}|ConvertTo-Json -Compress
+`);
+        assert.deepEqual(result, {rejected: 7, total: 7, valid: 1.25});
+    });
+
     powershellIt("reports the outer failure before inspecting unpublished case files", () => {
         const files = {abi: false, ready: false, readiness: false, result: false, stdout: false, stderr: false};
         assert.throws(() => invoke("TestCollectionGate", {status: "failed",
@@ -543,6 +579,19 @@ describe("Windows clean-stop native proof coordinator", () => {
         ]});
         assert.equal(detached.responses[0].observation, "stop-created");
 
+        const fractionalClock = invoke("TestDetachedObserver", {case: value, abiPresentAtTick: 0,
+            resultPresentAtTick: null, contexts: [{schemaVersion: 1, tick: 0, processId: 4000,
+                wallUnixMilliseconds: 1_000.25, monotonicMilliseconds: 10.5,
+                wallDeadlineUnixMilliseconds: 311_000.75, monotonicDeadlineMilliseconds: 310_010.5}]});
+        assert.equal(fractionalClock.responses[0].observation, "stop-created");
+        for (const invalidClock of ["10", true]) {
+            const changed = {case: structuredClone(value), abiPresentAtTick: 0, resultPresentAtTick: null,
+                contexts: [{schemaVersion: 1, tick: 0, processId: 4000, wallUnixMilliseconds: 1_000,
+                    monotonicMilliseconds: invalidClock, wallDeadlineUnixMilliseconds: 311_000,
+                    monotonicDeadlineMilliseconds: 310_010}]};
+            assert.throws(() => invoke("TestDetachedObserver", changed), /finite number/i);
+        }
+
         const lateAbi = invoke("TestObserver", {case: value, abiPresentAtTick: 1, resultPresentAtTick: null, contexts: [
             {schemaVersion: 1, tick: 0, processId: 4000, wallUnixMilliseconds: 1_000,
                 monotonicMilliseconds: 10, wallDeadlineUnixMilliseconds: 311_000,
@@ -648,6 +697,20 @@ describe("Windows clean-stop native proof coordinator", () => {
         const expectedAbi = invoke("GetContract").abiExpected;
         const value = matrixValue(expectedAbi);
         assert.equal(invoke("AssessMatrix", value).allCasesObserved, true);
+
+        const fractional = boundCaseValue("handler", expectedAbi);
+        fractional.case.outerLauncherDocument = mutateDocument(fractional.case.outerLauncherDocument, record => {
+            for (const name of Object.keys(record.timing)) record.timing[name] += 0.25;
+            record.observer.firstMonotonicMilliseconds += 0.25;
+            record.observer.lastMonotonicMilliseconds += 0.25;
+        });
+        assert.equal(invoke("ValidateCase", fractional).classification, "handler-natural-exit-observed");
+        for (const invalidClock of ["1000", true]) {
+            const invalid = boundCaseValue("handler", expectedAbi);
+            invalid.case.outerLauncherDocument = mutateDocument(invalid.case.outerLauncherDocument,
+                record => { record.timing.initialMonotonicMilliseconds = invalidClock; });
+            assert.throws(() => invoke("ValidateCase", invalid), /finite number/i);
+        }
         const wrongExit = boundCaseValue("handler", expectedAbi);
         wrongExit.case.outerLauncherDocument = mutateDocument(wrongExit.case.outerLauncherDocument,
             record => { record.exitCode = 1; });

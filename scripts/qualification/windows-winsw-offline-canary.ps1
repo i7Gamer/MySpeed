@@ -88,6 +88,7 @@ $script:ExpectedEnvironment = [ordered]@{
     SERVER_HOST='127.0.0.1';SERVER_PORT='43127';HTTPS_REDIRECT='false';DB_TYPE='sqlite'
     RUN_TEST_ON_STARTUP='false';PREVIEW_MODE='false';ALLOW_NO_PASSWORD='false';ALLOW_LOCAL_NODES='false'
 }
+$script:ClearedServiceEnvironmentNames = @('AZURE_CONFIG_DIR','AZURE_DEVOPS_CACHE_DIR','AZURE_EXTENSION_DIR','PGPASSWORD')
 
 function Assert-MyspeedCanaryExactKeys {
     param([object]$Value,[string[]]$Expected,[string]$Label)
@@ -736,8 +737,9 @@ function New-MyspeedCanaryWinswConfiguration {
     [void](Assert-MyspeedCanaryString $Nonce 'WinSW configuration nonce' '^[0-9a-f]{32}$')
     $lines=@('<service>',"  <id>MySpeedOfflineCanary-$Nonce</id>",
         "  <name>MySpeed Offline Canary $Nonce</name>",'  <description>Candidate-neutral WinSW inheritance canary</description>',
-        '  <executable>inert-child.exe</executable>','  <startmode>Manual</startmode>','  <stoptimeout>5 sec</stoptimeout>',
-        '</service>','')
+        '  <executable>inert-child.exe</executable>','  <startmode>Manual</startmode>','  <stoptimeout>5 sec</stoptimeout>')
+    $lines += @($script:ClearedServiceEnvironmentNames | ForEach-Object { '  <env name="' + $_ + '" value=""/>' })
+    $lines += @('</service>','')
     return ($lines -join "`r`n")
 }
 
@@ -763,6 +765,9 @@ function Get-MyspeedCanaryInertChildSource {
         '        new string[] { ' + (ConvertTo-MyspeedCanaryCSharpLiteral $_.Key) + ', ' +
             (ConvertTo-MyspeedCanaryCSharpLiteral $_.Value) + ' }'
     }) -join ",`r`n"
+    $clearedEnvironmentNames=@($script:ClearedServiceEnvironmentNames | ForEach-Object {
+        ConvertTo-MyspeedCanaryCSharpLiteral $_
+    }) -join ', '
     $source=@"
 using System;
 using System.Collections;
@@ -786,6 +791,7 @@ internal static class InertChild
     private static readonly string[][] ExpectedEnvironment = new string[][] {
 $environmentRows
     };
+    private static readonly string[] ClearedEnvironmentNames = new string[] { $clearedEnvironmentNames };
     private static readonly object[] EndpointSpecs = new object[] {
         new object[] { "tcp", "ipv4", "127.0.0.1", 43128 }, new object[] { "tcp", "ipv6", "::1", 43129 },
         new object[] { "udp", "ipv4", "127.0.0.1", 43130 }, new object[] { "udp", "ipv6", "::1", 43131 }
@@ -823,7 +829,11 @@ $environmentRows
     private static string UdpTest(string address,int port) { try { using(UdpClient client=new UdpClient(address.Contains(":")?AddressFamily.InterNetworkV6:AddressFamily.InterNetwork)) {
         byte[] value=new byte[] { 77 }; client.Connect(IPAddress.Parse(address),port); client.Send(value,value.Length); return "sendAccepted"; } }
         catch(SocketException) { return "denied"; } }
-    private static bool Forbidden(string name) { string upper=name.ToUpperInvariant(); if(upper.Contains("TOKEN")||upper.Contains("SECRET")||upper.Contains("PASSWORD")||
+    private static bool Forbidden(string name,object value) {
+        // WinSW retains explicitly empty overrides as empty entries; no nonempty value is exempt.
+        foreach(string cleared in ClearedEnvironmentNames) if(String.Equals(cleared,name,StringComparison.OrdinalIgnoreCase) &&
+            String.Equals(value as string,String.Empty,StringComparison.Ordinal)) return false;
+        string upper=name.ToUpperInvariant(); if(upper.Contains("TOKEN")||upper.Contains("SECRET")||upper.Contains("PASSWORD")||
         upper.Contains("PROXY")||upper.Contains("API_KEY")||upper.StartsWith("AWS_")||upper.StartsWith("AZURE_")||upper.StartsWith("GOOGLE_")) {
         foreach(string[] pair in ExpectedEnvironment) if(String.Equals(pair[0],name,StringComparison.OrdinalIgnoreCase)) return false; return true; } return false; }
 
@@ -836,7 +846,7 @@ $environmentRows
         tcp4.Start(1); tcp6.Start(1); new Thread(TcpEcho){IsBackground=true}.Start(tcp4); new Thread(TcpEcho){IsBackground=true}.Start(tcp6);
         new Thread(UdpEcho){IsBackground=true}.Start(udp4); new Thread(UdpEcho){IsBackground=true}.Start(udp6);
         Process current=Process.GetCurrentProcess(); IDictionary all=Environment.GetEnvironmentVariables(); List<string> forbidden=new List<string>();
-        foreach(DictionaryEntry entry in all) if(Forbidden(Convert.ToString(entry.Key))) forbidden.Add(Convert.ToString(entry.Key)); forbidden.Sort(StringComparer.OrdinalIgnoreCase);
+        foreach(DictionaryEntry entry in all) if(Forbidden(Convert.ToString(entry.Key),entry.Value)) forbidden.Add(Convert.ToString(entry.Key)); forbidden.Sort(StringComparer.OrdinalIgnoreCase);
         StringBuilder json=new StringBuilder("{\"schemaVersion\":1,\"nonce\":").Append(Json(Nonce));
         json.Append(",\"sid\":").Append(Json(WindowsIdentity.GetCurrent().User.Value));
         json.Append(",\"pid\":").Append(current.Id).Append(",\"parentPid\":").Append(ParentPid((uint)current.Id));
