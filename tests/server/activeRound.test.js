@@ -140,11 +140,16 @@ describe("the round the shutdown waits for", () => {
     it("is waited for after the child and before the database closes", () => {
         const source = readSource("server/index.js");
         const cleanup = bodyOf(source, "onCleanup: async () =>");
+        assert.match(cleanup, /await runServerCleanup\(/);
+        assert.match(cleanup, /waitForProcessExit:\s*waitForActiveProcessExit/);
+        assert.match(cleanup, /waitForRound:\s*waitForActiveRound/);
+        assert.match(cleanup, /closeDatabase:\s*\(\) => db\.close\(\)/);
+        const ordered = bodyIn("server/util/shutdown.js", "export const runServerCleanup");
+        const child = ordered.indexOf("waitForProcessExit()");
+        const round = ordered.indexOf("waitForRound()");
+        const close = ordered.indexOf("closeDatabase()");
 
-        const child = cleanup.indexOf("waitForActiveProcessExit()");
-        const round = cleanup.indexOf("waitForActiveRound()");
-        const close = cleanup.indexOf("db.close()");
-
+        assert.notEqual(child, -1, "the cleanup does not wait for the child");
         assert.notEqual(round, -1, "the cleanup does not wait for the round");
         assert.ok(child < round, "the round is waited for before the child that is still measuring it");
         assert.ok(round < close, "the database closed while the round could still be writing into it");

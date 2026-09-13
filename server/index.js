@@ -19,7 +19,7 @@ import { requestInterfaces } from './util/loadInterfaces.js';
 import { load as loadCli } from './util/loadCli.js';
 import { removeOld } from './tasks/speedtest.js';
 import { markShutdown, terminateActiveProcess, waitForActiveProcessExit } from './util/speedtest.js';
-import { createShutdown } from './util/shutdown.js';
+import { createShutdown, runServerCleanup } from './util/shutdown.js';
 import { waitForActiveRound } from './util/activeRound.js';
 import {
     clearedReport, noConfigReport, RESET_NO_CONFIG, resetPassword, wantsPasswordReset
@@ -170,9 +170,8 @@ const shutdown = createShutdown({
      * had cause to look at.
      *
      * After the listeners, never before: a request still being served reads
-     * through this handle. Swallowed, because a database that has already gone
-     * away is exactly when this rejects, and there is nothing left to do about
-     * it at this point.
+     * through this handle. A failed close or expired wait still ends shutdown,
+     * but with an incomplete status rather than claiming successful cleanup.
      *
      * And after the child, which onStop only *signalled*: the SIGKILL
      * escalation is an unref'd one-second timer, and on a quiet shutdown the
@@ -183,9 +182,11 @@ const shutdown = createShutdown({
      * its result through the handle this closes.
      */
     onCleanup: async () => {
-        await waitForActiveProcessExit();
-        await waitForActiveRound();
-        await db.close().catch(() => undefined);
+        await runServerCleanup({
+            waitForProcessExit: waitForActiveProcessExit,
+            waitForRound: waitForActiveRound,
+            closeDatabase: () => db.close()
+        });
     }
 });
 
