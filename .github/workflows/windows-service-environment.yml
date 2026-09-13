@@ -1,0 +1,196 @@
+name: Windows service environment feasibility
+
+# Candidate-neutral, non-qualifying observation only. A completed negative
+# inheritance result is useful evidence; this does not qualify any release gate.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-service-environment.yml
+      - scripts/qualification/windows-service-environment.ps1
+      - tests/server/windowsServiceEnvironment*.test.js
+  push:
+    branches: [development]
+    paths:
+      - .github/workflows/windows-service-environment.yml
+      - scripts/qualification/windows-service-environment.ps1
+      - tests/server/windowsServiceEnvironment*.test.js
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Prepare inert service probe closure
+    if: github.repository == 'i7Gamer/MySpeed' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.closure.outputs.nonce }}
+    steps:
+      - name: Observe hosted capacity without provisioning
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $KIBIBYTE_BYTES = 1024
+          $system = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+          $volumes = @(Get-Volume -ErrorAction Stop | Where-Object { $_.DriveLetter -and $_.DriveType -eq 'Fixed' } |
+            Select-Object DriveLetter, FileSystemType, HealthStatus, Size, SizeRemaining)
+          $disks = @(Get-PhysicalDisk -ErrorAction Stop | Select-Object BusType, HealthStatus, Size)
+          $tools = @('qemu-system-x86_64', 'qemu-img') | ForEach-Object {
+            $command = Get-Command $_ -CommandType Application -ErrorAction SilentlyContinue
+            [pscustomobject]@{ name = $_; available = [bool]$command; path = $command.Source }
+          }
+          [pscustomobject]@{
+            kind = 'hosted-capacity-observation'; provisioningAuthorized = $false
+            imageOS = $env:ImageOS; imageVersion = $env:ImageVersion
+            runId = $env:EXPECTED_RUN_ID; runAttempt = $env:EXPECTED_RUN_ATTEMPT
+            availableMemoryBytes = [long]$system.FreePhysicalMemory * $KIBIBYTE_BYTES
+            volumes = $volumes; disks = $disks; tools = @($tools)
+          } | ConvertTo-Json -Compress -Depth 5
+
+      - name: Checkout exact probe source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Test pure and injected service helpers without native mutation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tests/server/windowsServiceEnvironment.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Service helper regression tests failed' }
+
+      - name: Seal script-only closure
+        id: closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-environment-closure'
+          if (Test-Path -LiteralPath $closureRoot) { throw 'Closure path already exists' }
+          New-Item -ItemType Directory -Path $closureRoot | Out-Null
+          $scriptPath = Join-Path $closureRoot 'windows-service-environment.ps1'
+          Copy-Item -LiteralPath 'scripts/qualification/windows-service-environment.ps1' -Destination $scriptPath
+          $nonce = [guid]::NewGuid().ToString('D')
+          & $scriptPath -Mode EmitCanaryClosureManifest -ExpectedRunId $env:EXPECTED_RUN_ID `
+            -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT `
+            -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA -ExpectedEventSha $env:EXPECTED_EVENT_SHA `
+            -Nonce $nonce -ManifestPath (Join-Path $closureRoot 'closure.json')
+          if (-not $?) { throw 'Closure generation failed' }
+          "nonce=$nonce" >> $env:GITHUB_OUTPUT
+
+      - name: Upload immutable inert closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-service-environment-closure
+          path: |
+            ${{ runner.temp }}/windows-environment-closure/windows-service-environment.ps1
+            ${{ runner.temp }}/windows-environment-closure/closure.json
+          if-no-files-found: error
+          retention-days: 7
+
+  canary:
+    name: Observe disposable LocalSystem environment
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+    steps:
+      # No checkout: the exact same-run producer artifact contains only the probe.
+      - name: Download exact inert closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/windows-environment-closure
+
+      - name: Validate closure and observe SCM inheritance
+        id: probe
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_SCRIPT_BYTES = 262144
+          $MAX_MANIFEST_BYTES = 4096
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-environment-closure'
+          $rootItem = Get-Item -LiteralPath $closureRoot -Force
+          if (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw 'Closure root is not a plain directory'
+          }
+          $entries = @(Get-ChildItem -LiteralPath $closureRoot -Force)
+          $expectedNames = @('closure.json', 'windows-service-environment.ps1')
+          if ($entries.Count -ne 2 -or (Compare-Object ($entries.Name | Sort-Object) $expectedNames -CaseSensitive)) {
+            throw 'Closure file set mismatch'
+          }
+          foreach ($entry in $entries) {
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Closure contains a directory or reparse point'
+            }
+            $limit = if ($entry.Name -ceq 'closure.json') { $MAX_MANIFEST_BYTES } else { $MAX_SCRIPT_BYTES }
+            if ($entry.Length -le 0 -or $entry.Length -gt $limit) { throw 'Closure file size is invalid' }
+          }
+          $manifest = Get-Content -LiteralPath (Join-Path $closureRoot 'closure.json') -Raw | ConvertFrom-Json -AsHashtable
+          $expectedKeys = @('expectedEventSha', 'expectedRunAttempt', 'expectedRunId', 'expectedSourceSha', 'nonce', 'schemaVersion', 'script')
+          if (Compare-Object ($manifest.Keys | Sort-Object) $expectedKeys -CaseSensitive) { throw 'Closure schema mismatch' }
+          if ($manifest.schemaVersion -ne 1 -or $manifest.expectedRunId -cne $env:EXPECTED_RUN_ID `
+            -or $manifest.expectedRunAttempt -cne $env:EXPECTED_RUN_ATTEMPT `
+            -or $manifest.expectedSourceSha -cne $env:EXPECTED_SOURCE_SHA `
+            -or $manifest.expectedEventSha -cne $env:EXPECTED_EVENT_SHA -or $manifest.nonce -cne $env:EXPECTED_NONCE) {
+            throw 'Closure event/source/run/nonce identity mismatch'
+          }
+          if (Compare-Object ($manifest.script.Keys | Sort-Object) @('bytes', 'name', 'sha256') -CaseSensitive) {
+            throw 'Closure script schema mismatch'
+          }
+          $scriptPath = Join-Path $closureRoot 'windows-service-environment.ps1'
+          $actualHash = (Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($manifest.script.name -cne 'windows-service-environment.ps1' `
+            -or $manifest.script.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $manifest.script.sha256 -cne $actualHash `
+            -or $manifest.script.bytes -ne (Get-Item -LiteralPath $scriptPath).Length) {
+            throw 'Closure script identity mismatch'
+          }
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP ('myspeed-service-environment-' + $env:EXPECTED_NONCE)
+          & $scriptPath -Mode InvokeHostedProbe -ExpectedRunId $env:EXPECTED_RUN_ID `
+            -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT `
+            -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA -ExpectedEventSha $env:EXPECTED_EVENT_SHA `
+            -Nonce $env:EXPECTED_NONCE -ManifestPath (Join-Path $closureRoot 'closure.json') `
+            -EvidencePath (Join-Path $evidenceRoot 'result.json')
+          if (-not $?) { throw 'Hosted service experiment failed' }
+
+      - name: Confirm runner continuation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $MAX_EVIDENCE_BYTES = 65536
+          $resultRoot = Join-Path $env:RUNNER_TEMP ('myspeed-service-environment-' + $env:EXPECTED_NONCE)
+          $resultPath = Join-Path $resultRoot 'result.json'
+          $item = Get-Item -LiteralPath $resultPath -Force
+          if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) `
+            -or $item.Length -le 0 -or $item.Length -gt $MAX_EVIDENCE_BYTES) { throw 'Invalid bounded evidence file' }
+          $result = Get-Content -LiteralPath $resultPath -Raw | ConvertFrom-Json
+          if ($result.status -cne 'completed') { throw 'Hosted service experiment did not complete' }
+          Write-Output 'Runner continued after the non-qualifying environment experiment.'
+
+      - name: Retain bounded non-qualifying observation
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-service-environment-evidence
+          path: ${{ runner.temp }}/myspeed-service-environment-${{ needs.prepare.outputs.nonce }}/result.json
+          if-no-files-found: error
+          retention-days: 7
