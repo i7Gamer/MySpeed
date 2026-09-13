@@ -34,6 +34,8 @@ const WIN_SW_BYTES = 18_286_774;
 const NET_LUID_HEX_LENGTH = 16;
 const NATIVE_NET_LUID = 0x0006000001000000;
 const CANONICAL_NET_LUID = "0006000001000000";
+const ADAPTER_ADMIN_UP = 1;
+const ADAPTER_ADMIN_DOWN = 2;
 const CHILD_SHA = "c".repeat(64);
 const OFFLINE_START_100NS = 100_000_000n;
 const OFFLINE_END_100NS = 550_000_000n;
@@ -650,6 +652,28 @@ Set-StrictMode -Version Latest
         assert.match(source, /function Get-MyspeedCanaryAdapterProviderSnapshot/u);
         assert.match(source, /\$snapshot=Get-MyspeedCanaryAdapterProviderSnapshot \$all/u);
         assert.match(source, /\$afterInventory=\(Get-MyspeedCanaryAdapterProviderSnapshot \$after/u);
+    });
+
+    powershellIt("does not confuse administrative down with the formatted Disabled status", () => {
+        // NetAdapter's Status getter reports these operational states independently
+        // of InterfaceAdminStatus; only operational Down + admin Down prints Disabled.
+        const adapter = (admin, status) => ({
+            InterfaceGuid: "{11111111-1111-1111-1111-111111111111}", NetLuid: NATIVE_NET_LUID,
+            Hidden: true, InterfaceType: 6, InterfaceAdminStatus: admin, Status: status, ifIndex: 4
+        });
+        for (const status of ["Not Present", "Lower Layer Down", "Unknown", "Dormant", "Disabled"]) {
+            const output = run("NormalizeAdapters", {adapters: [adapter(ADAPTER_ADMIN_DOWN, status)]});
+            const result = Array.isArray(output) ? output : [output];
+            assert.equal(result.length, 1);
+            assert.equal(result[0].enabled, false);
+            assert.equal(result[0].status, status);
+            assert.equal(result[0].hidden, true, "inactive hidden adapters must remain in the inventory");
+        }
+        for (const [admin, status] of [[ADAPTER_ADMIN_UP, "Disabled"], [ADAPTER_ADMIN_DOWN, "Up"],
+            [ADAPTER_ADMIN_DOWN, "Disconnected"]]) {
+            reject("NormalizeAdapters", {adapters: [adapter(admin, status)]},
+                new RegExp(`administrative status is inconsistent.*admin=${admin};status=${status}`, "iu"));
+        }
     });
 
     it("uses the documented native LUID instead of optional display properties", () => {

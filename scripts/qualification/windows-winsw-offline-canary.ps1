@@ -179,6 +179,7 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
     $guids=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     $luids=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
     $indices=[Collections.Generic.HashSet[uint32]]::new()
+    $administrativelyDownStatuses=@('Disabled','Not Present','Lower Layer Down','Unknown','Dormant')
     foreach($adapter in $adapters){
         Assert-MyspeedCanaryExactKeys $adapter @('interfaceGuid','netLuid','hidden','interfaceType',
             'interfaceAdminStatus','status','interfaceIndex') 'Native adapter'
@@ -196,8 +197,12 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
         $luid=Assert-MyspeedCanaryNetLuid $adapter.netLuid `
             'Native adapter NetLuid'
         $enabled=$adminStatus -eq $EnabledAdminStatus
-        if(($enabled -and $status -ceq 'Disabled') -or (-not $enabled -and $status -cne 'Disabled')){
-            throw 'Native adapter administrative status is inconsistent'
+        # NetAdapter.Status primarily describes operational state. Administrative
+        # Down does not imply its formatted value is Disabled (for example Not Present).
+        # Preserve inactive hidden rows, but reject contradictory formatted states.
+        if(($enabled -and $status -ceq 'Disabled') -or
+            (-not $enabled -and $administrativelyDownStatuses -cnotcontains $status)){
+            throw "Native adapter administrative status is inconsistent (admin=$adminStatus;status=$status)"
         }
         if(-not $guids.Add($guid) -or -not $luids.Add($luid) -or -not $indices.Add([uint32]$index)){
             throw 'Native adapter identity or index is duplicated'
