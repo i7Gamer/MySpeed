@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const SCRIPT = path.resolve("scripts/qualification/windows-winsw-offline-canary.ps1");
@@ -72,9 +73,11 @@ const reject = (mode, input, pattern) => {
     assert.match(`${result.stdout}\n${result.stderr}`, pattern);
 };
 
-const runFactoryFixture = (removeClosure = false, inspectAdapters = false) => {
+const runFactoryFixture = (removeClosure = false, inspectAdapters = false, separateScript = false) => {
     const program = `
 $ErrorActionPreference='Stop'
+Import-Module Microsoft.PowerShell.Utility -Global -ErrorAction Stop
+$global:PSModuleAutoLoadingPreference='None'
 Set-StrictMode -Version Latest
 $sourceFile='${SCRIPT.replaceAll("'", "''")}'
 . $sourceFile -Mode Library
@@ -105,36 +108,36 @@ if(${removeClosure ? "$true" : "$false"}){
 }
 $safeDefinition='function New-MyspeedNativeCanaryOperations {'+[Environment]::NewLine+
   $definition.Body.ParamBlock.Extent.Text+[Environment]::NewLine+$safeBody+[Environment]::NewLine+'}'
-function Add-Type {throw 'Native compilation forbidden in fixture'}
-function Import-Module {throw 'Native module import forbidden in fixture'}
-function Get-NetAdapter {
+function global:Add-Type {throw 'Native compilation forbidden in fixture'}
+function global:Import-Module {throw 'Native module import forbidden in fixture'}
+function global:Get-NetAdapter {
   [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0'
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7}
   [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';InterfaceDescription='Synthetic Ethernet 1'
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
 }
-function Get-NetTCPConnection {throw 'Native endpoint query forbidden in fixture'}
-function Get-NetUDPEndpoint {throw 'Native endpoint query forbidden in fixture'}
-function Get-NetIPInterface {
+function global:Get-NetTCPConnection {throw 'Native endpoint query forbidden in fixture'}
+function global:Get-NetUDPEndpoint {throw 'Native endpoint query forbidden in fixture'}
+function global:Get-NetIPInterface {
   [pscustomobject]@{InterfaceIndex=[uint32]7;CompartmentId=[uint32]1;ConnectionState=[byte]1}
   [pscustomobject]@{InterfaceIndex=[uint32]8;CompartmentId=[uint32]1;ConnectionState=[byte]0}
 }
-function Get-NetIPAddress {
+function global:Get-NetIPAddress {
   [pscustomobject]@{InterfaceIndex=[uint32]7;CompartmentId=[uint32]1;IPAddress='10.0.0.5'}
   [pscustomobject]@{InterfaceIndex=[uint32]8;CompartmentId=[uint32]1;IPAddress='10.0.0.6'}
 }
-function Get-NetRoute {
+function global:Get-NetRoute {
   [pscustomobject]@{InterfaceIndex=[uint32]7;CompartmentId=[uint32]1;State=[byte]0}
   [pscustomobject]@{InterfaceIndex=[uint32]8;CompartmentId=[uint32]1;State=[byte]1}
 }
 function Invoke-MyspeedCanaryTestNet { @() }
-function Get-CimInstance {throw 'Native CIM query forbidden in fixture'}
-function Get-ScheduledTask {throw 'Native task query forbidden in fixture'}
-function Disable-NetAdapter {throw 'Native mutation forbidden in fixture'}
-function Enable-NetAdapter {throw 'Native mutation forbidden in fixture'}
-function Register-ScheduledTask {throw 'Native mutation forbidden in fixture'}
-function Unregister-ScheduledTask {throw 'Native mutation forbidden in fixture'}
-function Stop-Process {throw 'Process mutation forbidden in fixture'}
+function global:Get-CimInstance {throw 'Native CIM query forbidden in fixture'}
+function global:Get-ScheduledTask {throw 'Native task query forbidden in fixture'}
+function global:Disable-NetAdapter {throw 'Native mutation forbidden in fixture'}
+function global:Enable-NetAdapter {throw 'Native mutation forbidden in fixture'}
+function global:Register-ScheduledTask {throw 'Native mutation forbidden in fixture'}
+function global:Unregister-ScheduledTask {throw 'Native mutation forbidden in fixture'}
+function global:Stop-Process {throw 'Process mutation forbidden in fixture'}
 function Get-MyspeedNativeOfflineBoundary {
   param([hashtable]$State)
   [void](Assert-MyspeedCanaryString $State.marker 'Factory marker' '^fixture-owned$')
@@ -181,12 +184,23 @@ if(${inspectAdapters ? "$true" : "$false"}){
 if(-not $fixture.state.boundaryCalled -or -not $fixture.state.probeCalled){throw 'Returned callback lost its factory state'}
 [pscustomobject]@{passed=$true;nativeOperations=0}|ConvertTo-Json -Compress
 `;
-    const result = childProcess.spawnSync(POWERSHELL,
-        ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-            Buffer.from(program, "utf16le").toString("base64")],
-        {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
-    assert.equal(result.error, undefined, result.error?.message);
-    return result;
+    const fixtureRoot = separateScript ? fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-canary-scope-")) : null;
+    try {
+        let command = program;
+        if (fixtureRoot) {
+            const fixturePath = path.join(fixtureRoot, "fixture.ps1");
+            fs.writeFileSync(fixturePath, program);
+            command = `& '${fixturePath.replaceAll("'", "''")}'`;
+        }
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand",
+                Buffer.from(command, "utf16le").toString("base64")],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
+        return result;
+    } finally {
+        if (fixtureRoot) fs.rmSync(fixtureRoot, {recursive: true, force: true});
+    }
 };
 
 const manifest = () => ({
@@ -380,6 +394,12 @@ describe("candidate-neutral WinSW offline canary contract", () => {
     powershellIt("preserves two ordered synthetic adapters through the actual native factory capture", () => {
         const result = runFactoryFixture(false, true);
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    });
+
+    powershellIt("retains native-factory constants when called from a separate script file", () => {
+        const result = runFactoryFixture(false, true, true);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+        assert.deepEqual(JSON.parse(result.stdout.trim()), {passed: true, nativeOperations: 0});
     });
 
     powershellIt("retains provider helpers inside nested closures from non-global script scope", () => {
@@ -672,6 +692,32 @@ Set-StrictMode -Version Latest
         caseDistinct.InterfaceDescription = "synthetic ethernet 0";
         caseDistinct.ifIndex = 5;
         assert.equal(run("NormalizeAdapters", {adapters: [adapter(), caseDistinct]}).length, 2);
+    });
+
+    powershellIt("reports only bounded rejection metadata for malformed adapter descriptions", () => {
+        const privateMarker = "description-value-must-not-be-logged";
+        const cases = [
+            {value: null, kind: "null", length: -1, blank: false, control: false},
+            {value: false, kind: "other", length: -1, blank: false, control: false},
+            {value: [privateMarker], kind: "array", length: -1, blank: false, control: false},
+            {value: "   ", kind: "string", length: 3, blank: true, control: false},
+            {value: `${privateMarker}\n`, kind: "string", length: privateMarker.length + 1, blank: false, control: true},
+            {value: "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH + 1), kind: "string",
+                length: MAX_INTERFACE_DESCRIPTION_LENGTH + 1, blank: false, control: false}
+        ];
+        for (const {value, kind, length, blank, control} of cases) {
+            const result = invoke("NormalizeAdapters", {adapters: [{
+                InterfaceGuid: "{11111111-1111-1111-1111-111111111111}", InterfaceDescription: value,
+                Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4
+            }]});
+            assert.equal(result.error, undefined, result.error?.message);
+            assert.notEqual(result.status, 0);
+            const output = `${result.stdout}\n${result.stderr}`;
+            const metadata = `kind=${kind};length=${length};limit=${MAX_INTERFACE_DESCRIPTION_LENGTH};` +
+                `blank=${Number(blank)};control=${Number(control)}`;
+            assert.ok(output.includes(metadata), output);
+            assert.ok(!output.includes(privateMarker), "raw provider values must not enter diagnostics");
+        }
     });
 
     powershellIt("rejects a one-record nested adapter normalization result", () => {

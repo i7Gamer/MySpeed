@@ -151,7 +151,12 @@ function Assert-MyspeedCanaryInterfaceDescription {
     param([object]$Value,[string]$Label)
     if($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or
         $Value.Length -gt $script:MaximumInterfaceDescriptionLength -or $Value -cmatch '[\x00-\x1f\x7f]'){
-        throw "$Label must be a bounded exact string"
+        $kind=if($null -eq $Value){'null'}elseif($Value -is [string]){'string'}elseif($Value -is [array]){'array'}else{'other'}
+        $length=if($Value -is [string]){$Value.Length}else{-1}
+        $blank=[int]($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value))
+        $control=[int]($Value -is [string] -and $Value -cmatch '[\x00-\x1f\x7f]')
+        $diagnostic="kind=$kind;length=$length;limit=$($script:MaximumInterfaceDescriptionLength);blank=$blank;control=$control"
+        throw "$Label must be a bounded exact string ($diagnostic)"
     }
     return [string]$Value
 }
