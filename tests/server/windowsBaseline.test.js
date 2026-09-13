@@ -11,6 +11,7 @@ const read = (name) => fs.readFileSync(path.join(WORKFLOWS, name), "utf8");
 
 const binaries = read("build-binaries.yml");
 const msi = read("build-msi.yml");
+const releaseManifest = readSource('scripts/release/qualification-manifest.mjs');
 
 // A job's own lines, so an assertion about the Windows job cannot be satisfied
 // by something the Linux job happens to say. Jobs sit at two spaces; the next
@@ -34,17 +35,18 @@ const windows = job(binaries, "build-windows");
 const installer = job(msi, "build-msi");
 
 /**
- * Bun's default x64 target compiles in AVX2. On a pre-Haswell / Atom-class CPU
- * the binary dies at startup with `Illegal instruction`, which is why #13 added
- * a baseline Linux build. `bun-windows-x64` carries the same assumption, so the
- * same-era Windows machines crash the same way - and under the MSI, which
- * registers this binary as a service, the crash surfaces as a service that
- * never starts rather than as an error anyone can read.
+ * Bun 1.4 removed the Haswell-only x64 build. Both default and baseline target
+ * names now select the Nehalem/SSE4.2 runtime, with newer AVX instructions
+ * dispatched at runtime. Keep both names for existing download and MSI URLs.
  */
 describe("the Windows binaries a release publishes", () => {
-    it("builds a baseline variant for CPUs without AVX2", () => {
-        assert.match(windows, /target: *bun-windows-x64-baseline\b/,
-            "nothing in the Windows job compiles the non-AVX2 target");
+    it("retains the baseline compatibility name", () => {
+        assert.match(windows, /artifact_name: *MySpeed-windows-x64-baseline\.exe\b/,
+            "the Windows baseline compatibility asset disappeared");
+    });
+
+    it("uses the unified native compiler target for both compatibility names", () => {
+        assert.deepEqual(matrixValues(windows, "target"), ['bun-windows-x64', 'bun-windows-x64']);
     });
 
     /**
@@ -63,8 +65,8 @@ describe("the Windows binaries a release publishes", () => {
 
     it("uploads each variant under the name its own leg carries", () => {
         for (const name of matrixValues(windows, "artifact_name"))
-            assert.ok(job(binaries, "publish-binaries").includes("['" + name + "', 'MySpeed.exe']"),
-                "the publication job does not map this variant to its own release asset");
+            assert.ok(releaseManifest.includes("['" + name + "', 'MySpeed.exe', '" + name + "']"),
+                "the immutable manifest does not map this variant to its own release asset");
         assert.match(windows, /name: \$\{\{ matrix\.artifact_name \}\}/,
             "the build artifact name is not the matrix's, so the two legs collide");
     });
@@ -86,34 +88,7 @@ describe("the Windows binaries a release publishes", () => {
     });
 });
 
-/**
- * The compile is run by a Bun that is already the target it compiles for.
- *
- * Asked to compile for a target it is not, Bun fetches that runtime itself -
- * and on windows-latest that fetch does not work. Three releases in a row died
- * on `Failed to extract executable for 'bun-windows-x64-baseline-v1.3.14'. The
- * download may be incomplete.`, roughly 0.6s after bundling 921 modules
- * cleanly, each one deleting its own tag and draft while the Docker jobs had
- * already pushed :latest.
- *
- * Diagnosed on the runner rather than guessed at, after two wrong guesses. The
- * message names a download, but nothing about it holds: Defender's real-time
- * protection is off there and an exclusion changed nothing; curl fetched the
- * same artifact in a second (38,023,440 bytes) and Expand-Archive unpacked it;
- * and Bun's cache was empty afterwards, so no partial file was ever written.
- * Retrying three times with the cache cleared in between failed identically
- * three times.
- *
- * What did work, first time, was compiling with the baseline Bun itself. That
- * is also why the default leg has never failed - the runner's Bun is
- * windows-x64, so that leg has nothing to fetch. Both legs now get a Bun
- * matching their own target, which puts the working leg's condition under the
- * broken one rather than adding a workaround to it.
- *
- * setup-bun stays for everything else in the job: it installs the host Bun that
- * runs bun install and the client build, neither of which cares about the
- * target.
- */
+/** Both compatibility names use Bun 1.4.2's already-installed native runtime. */
 describe("compiling the Windows binaries", () => {
     const stepNamed = (name) => {
         const start = windows.indexOf(`- name: ${name}`);
@@ -126,7 +101,6 @@ describe("compiling the Windows binaries", () => {
     // Looked up inside each test rather than once above them: resolved here,
     // a missing step fails the whole block with one message and the assertions
     // below never report at all.
-    const fetchStep = () => stepNamed("Fetch a Bun matching the target");
     const compileStep = () => stepNamed("Compile binary");
 
     it("still compiles the leg's own target", () => {
@@ -143,42 +117,24 @@ describe("compiling the Windows binaries", () => {
      * parts, the run number last, so a rebuild of one version is newer too -
      * an equal version is refused the same way a higher one is.
      */
-    it("stamps the exe with MySpeed's version, the run number after it", () => {
-        assert.match(compileStep(), /--windows-version="\$\{env:RELEASE_VERSION\}\.\$\{env:RUN_NUMBER\}"/,
+    it("stamps the exe with the frozen MySpeed qualification version", () => {
+        assert.match(compileStep(), /--windows-version="\$env:WINDOWS_STAMP"/,
             "the exe carries Bun's version resource, which an upgrade compares against and may find newer");
-        assert.match(compileStep(), /RELEASE_VERSION: \$\{\{ inputs\.version \}\}/,
-            "the stamp is not the release's version");
-        assert.match(compileStep(), /RUN_NUMBER: \$\{\{ github\.run_number \}\}/,
-            "the stamp has no run number, so a rebuild of one version is refused as an equal");
+        assert.match(compileStep(), /WINDOWS_STAMP: \$\{\{ inputs\.windows_stamp \}\}/,
+            "the stamp is not the exact four-part qualification input");
     });
 
-    /**
-     * Bun publishes its releases under the same names these targets carry, so
-     * the archive is the matrix value with .zip after it. Spelled from the
-     * matrix rather than restated, or the two legs fetch one runtime and the
-     * baseline leg is back to compiling for a target it is not.
-     */
-    it("fetches the runtime for the leg's own target", () => {
-        assert.match(fetchStep(), /\$\{\{ matrix\.target \}\}\.zip/,
-            "the fetched runtime is not the leg's target, so one leg compiles cross-target again");
+    it("does not download a redundant per-target runtime", () => {
+        assert.doesNotMatch(windows, /Fetch a Bun matching the target|target-bun\.zip|TARGET_BUN/);
     });
 
-    it("compiles with that runtime rather than the host one", () => {
-        assert.doesNotMatch(compileStep(), /^\s*bun build/m,
-            "the compile calls the host bun, which is what fetches a runtime it cannot extract");
-        assert.match(compileStep(), /TARGET_BUN/,
-            "the compile does not use the Bun the step before it fetched");
-        assert.match(fetchStep(), /TARGET_BUN=/, "nothing publishes the fetched Bun's path");
+    it("compiles using the already pinned native Bun", () => {
+        assert.match(compileStep(), /^\s*bun (?:build|scripts\/build-binary\.mjs)/m);
     });
 
-    /**
-     * A fetch that quietly produced no bun.exe would leave the compile calling
-     * an empty path, which is a far worse error to read at release time than
-     * the one it replaces.
-     */
-    it("fails the fetch rather than passing an empty path on", () => {
-        assert.match(fetchStep(), /--fail/, "curl reports a 404 body as a successful download");
-        assert.match(fetchStep(), /throw/, "an archive with no bun.exe in it is passed on as an empty path");
+    it("propagates the compiler's failure", () => {
+        assert.match(compileStep(), /\$LASTEXITCODE -ne 0/);
+        assert.match(compileStep(), /throw/);
     });
 });
 
@@ -222,7 +178,8 @@ describe("the MSI a release publishes", () => {
             "both installers upload under one asset name, so the second upload fails mid-release");
         assert.match(installer, /name: release-msi-\$\{\{ matrix\.asset_name \}\}/,
             "the installers are uploaded under a fixed name rather than their leg's");
-        for (const name of names) assert.ok(job(msi, "publish-msi").includes("'" + name + "'"));
+        for (const name of names)
+            assert.ok(releaseManifest.includes("'release-msi-" + name + "', 'MySpeed-installer.msi', '" + name + "'"));
     });
 
     /**
@@ -241,6 +198,20 @@ describe("the MSI a release publishes", () => {
             "installing the other variant of the same version leaves both registered");
         assert.equal(installer.match(/UpgradeCode="[^"]+"/g).length, 1,
             "the two installers no longer share one UpgradeCode");
+    });
+
+    /**
+     * WiX otherwise schedules RemoveExistingProducts before InstallInitialize.
+     * A later failure then leaves neither product installed because removal sat
+     * outside the transaction Windows Installer can roll back.
+     */
+    it("removes the predecessor inside the upgrade transaction", () => {
+        assert.match(installer, /<MajorUpgrade[^>]*Schedule="afterInstallInitialize"/,
+            "a failed major upgrade cannot roll the predecessor back");
+        assert.match(installer, /<ServiceControl[^>]*Start="install"[^>]*Stop="both"[^>]*Remove="uninstall"/,
+            "transactional removal no longer stops and restores the managed service");
+        assert.match(installer, /<Custom Action="MigrateLegacyData" Before="StartServices">NOT Installed<\/Custom>/,
+            "legacy data migration no longer completes before the replacement service starts");
     });
 
     /**
@@ -274,56 +245,51 @@ describe("the MSI a release publishes", () => {
     });
 });
 
-/**
- * The two x64 binaries a release publishes have to be two binaries.
- *
- * v1.5.2 shipped MySpeed-linux-x64 and MySpeed-linux-x64-baseline with one
- * SHA-256 between them, and the Windows pair the same - not a fault in this
- * workflow, which compiles each leg for its own target and says so in the
- * log, but in Bun 1.4.0, whose bun-linux-x64-baseline.zip carries the same
- * binary as bun-linux-x64.zip (byte-identical, checked). The baseline leg
- * exists for the CPUs that binary SIGILLs on, so under `bun-version: latest`
- * the fallback install.sh picks for them was the crash it exists to avoid.
- *
- * Two guards: the release compiles with a pinned Bun whose baseline is a
- * separate build, and the checksums job reports any digest its asset list
- * carries twice, after publishing SHA256SUMS so the assets stay verifiable
- * while somebody looks. The refusal itself lives in the release workflow -
- * releasePublishOrder.test.js says why - so it holds the publish back
- * without the cleanup deleting the assets it was meant to leave.
- */
-describe("the two x64 builds are two builds", () => {
+/** Bun 1.4.2 is the verified unified-baseline runtime for release artifacts. */
+describe("the unified x64 runtime contract", () => {
+    const BUN_RUNTIME_VERSION = "1.4.2";
+
     it("compiles with a pinned Bun rather than whatever is latest", () => {
         assert.doesNotMatch(binaries, /bun-version:\s*latest/,
-            "the release inherits whatever Bun ships that day, including a baseline that is not one");
-        assert.match(binaries, /bun-version:\s*"?1\.3\.14"?/, "the pin is not the last Bun with a distinct baseline");
+            "the release inherits whatever Bun ships that day");
+        assert.match(binaries, new RegExp(`bun-version:\\s*"?${BUN_RUNTIME_VERSION.replaceAll(".", "\\.")}"?`),
+            "the release does not use the verified unified-baseline Bun");
     });
 
-    it("reports a release whose assets share a digest", () => {
-        const publish = binaries.slice(binaries.indexOf("name: Publish SHA256SUMS"));
-        assert.notEqual(publish.indexOf("uploadReleaseAsset"), -1, "re-anchor: the checksums upload moved");
+    it("allows only the exact same-platform compatibility digest pairs", () => {
+        const aliases = /const ALLOWED_DUPLICATES = \[([\s\S]*?)\n];/.exec(releaseManifest)?.[1];
+        assert.ok(aliases, "the manifest no longer declares its narrow alias policy");
+        const pairs = [...aliases.matchAll(/new Set\(\[([^\]]+)\]\)/g)]
+            .map(([, names]) => [...names.matchAll(/'([^']+)'/g)].map(([, name]) => name));
+        assert.deepEqual(pairs, [
+            ["MySpeed-linux-x64", "MySpeed-linux-x64-baseline"],
+            ["MySpeed-windows-x64.exe", "MySpeed-windows-x64-baseline.exe"]
+        ]);
+    });
 
-        const afterUpload = publish.slice(publish.indexOf("uploadReleaseAsset"));
-        assert.match(afterUpload, /core\.setOutput\('duplicate-digests'/, "a repeated digest is published with nothing said");
-        assert.match(afterUpload, /new Set\(/, "nothing compares the digests to each other");
+    it("executes both Linux x64 artifacts with a Nehalem CPU before upload", () => {
+        const linux = job(binaries, "build-linux");
+        const verify = linux.indexOf("qemu-x86_64 -cpu Nehalem");
+        const upload = linux.indexOf("Upload verified build");
+
+        assert.notEqual(verify, -1, "the unified x64 runtime is never executed without AVX or AVX2");
+        assert.ok(verify < upload, "the Nehalem execution check runs after the artifact is uploaded");
+        assert.match(linux, /startsWith\(matrix\.target, 'bun-linux-x64'\)/,
+            "the Nehalem check does not cover both x64 compatibility names");
+        assert.match(linux, /unshare --net/,
+            "the CPU probe can contact production services while loading the candidate");
+        assert.match(linux, /mktemp -d/, "the CPU probe reuses persistent application data");
+        for (const provider of ["ookla", "librespeed"])
+            assert.match(linux, new RegExp(`data/servers/${provider}\\.json`),
+                `${provider} discovery is not disabled before the network-isolated probe`);
+        assert.match(linux, /--reset-password/,
+            "the CPU probe starts the supervisor and opens a listener instead of taking the bounded command path");
+        assert.match(linux, /RESET_NOTHING_TO_DO_EXIT:\s*113/,
+            "the CPU probe does not assert that the application reached its expected exit path");
     });
 });
 
-/**
- * The container carries the same conflation, one layer down.
- *
- * The image runs `bun run server/index.js` on the runtime the base image
- * ships rather than on a compiled binary, and the official Alpine image
- * installs Bun's x64-musl-baseline asset for x86_64 - which in 1.4.0, 1.4.1
- * and 1.4.2 is byte-identical to the AVX2 build (downloaded and hashed, and
- * the `bun` inside the pulled image matches). So a container on a pre-AVX2
- * host crashed at start with no fallback at all, where the native install
- * at least ships a real baseline binary, and verify-image.sh could not tell,
- * because the runners it boots the image on have AVX2. The tag is held to the
- * same Bun the binaries are compiled with, for the same reason and with the
- * same revisit rule: compare the two x64 zips on each Bun release, and move
- * both pins together when they differ again.
- */
+/** The image and compiled artifacts must ship the same verified Bun runtime. */
 describe("the container runs on the pinned Bun", () => {
     const dockerfile = readSource("Dockerfile");
     const pinned = binaries.match(/bun-version:\s*"?(\d+\.\d+\.\d+)"?/)?.[1];
@@ -344,6 +310,6 @@ describe("the container runs on the pinned Bun", () => {
     it("pins every stage to the binaries' Bun", () => {
         for (const tag of stages)
             assert.equal(tag, `${pinned}-alpine`,
-                `oven/bun:${tag} ships the AVX2 runtime under the baseline name; the binaries pin ${pinned}`);
+                `oven/bun:${tag} does not match the binaries' Bun ${pinned}`);
     });
 });

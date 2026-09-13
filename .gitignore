@@ -11,6 +11,7 @@
 /server/migrations/index.js
 /server/integrations/index.js
 /server/clientEmbed.js
+/client/public/third-party-notices.txt
 
 # production
 /build

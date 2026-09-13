@@ -1,9 +1,12 @@
 import {it} from "node:test";
 import {scenarios as mqttScenarios} from "../fixtures/outbound-transport/scenarios.js";
-import {smtpScenarios} from "../fixtures/outbound-transport/smtp/scenarios.js";
-import {resolverScenarios} from "../fixtures/outbound-transport/smtp/resolverScenarios.js";
+import {bootstrapNodemailer} from "../fixtures/outbound-transport/smtp/nodemailerHarness.js";
 import {lifecycleScenarios} from "../fixtures/outbound-transport/smtp/lifecycleScenarios.js";
 import {httpScenarios} from "../fixtures/outbound-transport/http/scenarios.js";
+
+await bootstrapNodemailer();
+const {smtpScenarios} = await import("../fixtures/outbound-transport/smtp/scenarios.js");
+const {resolverScenarios} = await import("../fixtures/outbound-transport/smtp/resolverScenarios.js");
 
 const scenarios = [...mqttScenarios, ...resolverScenarios, ...lifecycleScenarios, ...smtpScenarios, ...httpScenarios];
 

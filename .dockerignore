@@ -5,6 +5,7 @@ data
 .git
 .gitignore
 .idea
+.qa-release
 tests
 *.md
 *.lock

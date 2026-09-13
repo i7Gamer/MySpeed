@@ -35,9 +35,13 @@ export const createSmtpResolver = ({dnsApi = dns, networkInterfaces = defaultInt
     now = () => Date.now(), random = () => Math.random(), checkAddress = defaultPolicy,
     cache = new Map()} = {}) => {
     let lastCleanup = 0;
-    const supported = (family, allowInternal = false) => !networkInterfaces
-        || Object.values(networkInterfaces).flat().some(entry => (allowInternal || !entry.internal)
+    const supported = (family, allowInternal = false) => {
+        const addresses = Object.values(networkInterfaces || {}).flat();
+        // An empty snapshot is unknown, not evidence that both DNS families
+        // are unavailable. Match Nodemailer 10 while still filtering answers.
+        return !addresses.length || addresses.some(entry => (allowInternal || !entry.internal)
             && (entry.family === `IPv${family}` || entry.family === family));
+    };
     const permitted = addresses => addresses.filter(address => net.isIP(address) && checkAddress(address));
 
     const lookup = (configuredHost, options, callback) => {

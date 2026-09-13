@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readSource, runBodies, withoutHashComments } from "../helpers/source.js";
+import {parse} from 'yaml';
 
 // Comments stripped before anything is asserted, for the reason the shared
 // helper states: a comment naming verify-binary.ps1 is found by an indexOf
@@ -31,22 +32,21 @@ const jobOf = (name) => {
  * The boot check is not a Windows-only concern.
  *
  * build-windows runs verify-binary.ps1 between the compile and the upload, and
- * its comment gives the reason: "a green compile says nothing about whether the
- * binary runs, which is the whole premise of the baseline leg". Every word of
- * that applies to MySpeed-linux-x64-baseline, which exists for exactly the same
- * CPUs - and install.sh selects it automatically and silently on any x86_64 host
- * without the avx2 flag, under a Restart=always unit.
+ * its comment gives the reason: a green compile says nothing about whether the
+ * binary runs. MySpeed-linux-x64-baseline is now a compatibility alias for the
+ * same qualified runtime, but it remains an independently built release asset
+ * that install.sh selects on x86_64 hosts without the avx2 flag.
  *
- * So the one artifact most likely to be picked up by someone who cannot debug it
- * was the one shipped without ever having been run.
+ * Both names therefore have to be executed before upload; an alias name is not
+ * evidence that the independently compiled bytes are sound.
  *
- * arm64 is exempt and says so in the matrix: pwsh is not on the arm runner image.
+ * The shared Node/Bun verifier also runs on ARM, without a PowerShell exemption.
  */
 describe("the Linux binaries are proven to boot", () => {
     const linux = jobOf("build-linux");
 
     it("verifies before uploading, as the Windows job does", () => {
-        const verify = linux.indexOf("verify-binary.ps1");
+        const verify = linux.indexOf("verify-standalone.mjs");
         const upload = linux.indexOf("Upload verified build");
 
         assert.notEqual(verify, -1, "the Linux binaries are uploaded without ever having been run");
@@ -56,7 +56,7 @@ describe("the Linux binaries are proven to boot", () => {
 
     it("verifies the artifact by the name it was renamed to", () => {
         const rename = linux.indexOf("Rename binary");
-        const verify = linux.indexOf("verify-binary.ps1");
+        const verify = linux.indexOf("verify-standalone.mjs");
 
         assert.ok(rename < verify, "the check runs against a file the rename has already moved");
     });
@@ -65,12 +65,17 @@ describe("the Linux binaries are proven to boot", () => {
         const flags = [...linux.matchAll(/verify:\s*(true|false)/g)].map(([, value]) => value);
 
         assert.equal(flags.length, 3, "every Linux leg has to state whether it is verified");
-        assert.deepEqual(flags.filter((value) => value === "true").length, 2,
-            "both x64 legs - the ones install.sh picks between - must be verified");
+        assert.deepEqual(flags, ['true', 'true', 'true'],
+            "every native Linux leg, including ARM, must be verified");
     });
 
-    it("only runs the check on the legs that declare it", () => {
-        assert.match(linux, /if:\s*\$\{\{\s*matrix\.verify\s*\}\}/);
+    it("runs the architecture-independent check unconditionally", () => {
+        const check = parse(workflow).jobs['build-linux'].steps
+            .find(step => step.name === 'Verify binary boots and serves');
+        assert.ok(check);
+        assert.equal(check.if, undefined);
+        assert.match(check.run, /verify-standalone\.mjs/);
+        assert.match(readSource('scripts/qualification/verify-standalone.mjs'), /'--network', 'none'/);
     });
 });
 
@@ -138,22 +143,17 @@ describe("the macOS binaries are proven to boot", () => {
  * them: a leg that produces a release asset either boots it first or is one of
  * the legs known not to be able to.
  *
- * Written as an allowlist rather than a count so that adding a platform is a
- * decision somebody has to write down. The Linux arm64 leg is the only standing
- * exemption, and the matrix says why: pwsh, which verify-binary.ps1 needs, is
- * not on the arm runner image.
+ * Linux uses an architecture-independent checker. Windows and macOS still
+ * require native runtime evidence beyond their listener-free rehearsal.
  */
 describe("every binary leg", () => {
-    const UNVERIFIABLE = ["MySpeed-linux-arm64"];
-
-    it("either boots its artifact or is a documented exception", () => {
+    it("executes its artifact before qualification handoff", () => {
         const unverified = ["build-windows", "build-linux", "build-macos"].flatMap((name) => {
             const job = jobOf(name);
             const legs = [...job.matchAll(/artifact_name:\s*(\S+)/g)].map(([, value]) => value);
-            const verified = job.includes("verify-binary.ps1");
+            const verified = /verify-binary\.ps1|verify-standalone\.mjs/.test(job);
 
             return legs
-                .filter((leg) => !UNVERIFIABLE.includes(leg))
                 .filter(() => !verified);
         });
 
@@ -180,8 +180,8 @@ describe("every binary leg", () => {
 describe("no workflow interpolates untrusted input into a shell body", () => {
     const FILES = [
         "build-binaries.yml", "build-docker.yml", "publish-docker.yml", "create_release.yml",
-        "finalize-release.yml", "build-msi.yml", "deploy_docker_dev.yml", "test.yml",
-        "merge-dependabot.yml"
+        "finalize-release.yml", "build-msi.yml", "test.yml",
+        "merge-dependabot.yml", "qualify-release.yml"
     ];
 
     // The classic injection carriers: a dispatch input, and the parts of an
@@ -290,11 +290,14 @@ describe("CI compiles the client", () => {
      * workflow that cannot merge a fix.
      */
     it("packages the build into the embed", () => {
-        const embed = tests.indexOf("bun run generate-client-embed");
-
-        assert.notEqual(embed, -1,
-            "no PR ever runs the embed generator, so its first run on a change is during the release");
-        assert.ok(tests.indexOf("run: bun run build") < embed,
-            "the embed step runs before the client is built, so it packages a stale or missing tree");
+        const jobs = Object.values(parse(tests).jobs);
+        const generators = jobs.filter(job => job.steps?.some(step => step.run?.includes('generate-client-embed')));
+        assert.ok(generators.length, 'CI must exercise the actual client embed generator');
+        for (const job of generators) {
+            const commands = job.steps.map(step => step.run ?? '').join('\n');
+            const build = commands.search(/\bbun run(?: --cwd client)? build\b/);
+            const embed = commands.indexOf('bun run generate-client-embed');
+            assert.ok(build >= 0 && build < embed, 'The job must build its own fresh client assets before embedding');
+        }
     });
 });

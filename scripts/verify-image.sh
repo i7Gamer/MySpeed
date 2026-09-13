@@ -1,109 +1,245 @@
 #!/usr/bin/env bash
-#
-# Smoke-tests a built MySpeed image before it is published.
-#
-# Boots the image, waits for the health endpoint, then confirms that the api and
-# the bundled client are actually served and that the container's own healthcheck
-# agrees. Exits non-zero - after dumping the container log - if any of that fails,
-# so a broken image never reaches the registry.
-#
-# Usage: scripts/verify-image.sh <image> [port]
+# Verifies an image entirely inside its own network-none container. No host
+# ports are published and every HTTP request is made by the shared checker to
+# the child process's literal loopback listener.
 set -euo pipefail
 
-IMAGE="${1:?usage: verify-image.sh <image> [port]}"
+IMAGE="${1:?usage: verify-image.sh <image> [internal-port]}"
 PORT="${2:-5216}"
-CONTAINER="myspeed-verify-$$"
-BASE="http://127.0.0.1:${PORT}"
+PREFIX="myspeed-verify"
+RANDOM_BYTES=16
+EXPECTED_HEX_LENGTH=$((RANDOM_BYTES * 2))
+RUN_ID="$(LC_ALL=C od -An -N"$RANDOM_BYTES" -tx1 /dev/urandom | tr -d ' \n')"
+[ "${#RUN_ID}" -eq "$EXPECTED_HEX_LENGTH" ] || {
+    echo "::error::Could not create a cryptographically random verification ID."
+    exit 1
+}
+CONTAINER="${PREFIX}-${RUN_ID}"
+DATA_VOLUME="${CONTAINER}-data"
+BIN_VOLUME="${CONTAINER}-bin"
+DOCKER="${DOCKER_CLI:-docker}"
+OWNERSHIP_LABEL="org.myspeed.qualification.run"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+QUALIFICATION_DIR="${SCRIPT_DIR}/qualification"
+COLLECTOR="${QUALIFICATION_DIR}/collect-summary.mjs"
+EVIDENCE_ROOT="${QUALIFICATION_EVIDENCE_DIRECTORY:-${RUNNER_TEMP:-${PWD}}/myspeed-image-evidence-${RUN_ID}}"
+MAX_ATTEMPTS="${VERIFY_MAX_ATTEMPTS:-900}"
+SLEEP_SECONDS="${VERIFY_SLEEP_SECONDS:-0.1}"
+CFSPEEDTEST_VERSION="2.2.2"
+status="starting"
+saw_healthy=0
+container_created=0
+data_volume_created=0
+bin_volume_created=0
+SOURCE_ARGUMENTS=()
+if [ -n "${QUALIFICATION_SOURCE_SHA:-}" ]; then
+    SOURCE_ARGUMENTS=(--source-sha "$QUALIFICATION_SOURCE_SHA")
+fi
 
-# The first boot downloads the Ookla and librespeed CLIs before the server
-# listens; the Cloudflare one ships in the image.
-# Overridable so the wait can be tightened on a fast network or in a test.
-MAX_ATTEMPTS="${VERIFY_MAX_ATTEMPTS:-60}"
-SLEEP_SECONDS="${VERIFY_SLEEP_SECONDS:-5}"
+if [ -e "$EVIDENCE_ROOT" ] && { [ ! -d "$EVIDENCE_ROOT" ] || [ -n "$(ls -A "$EVIDENCE_ROOT")" ]; }; then
+    echo "::error::Refusing nonempty qualification evidence directory: $EVIDENCE_ROOT"
+    exit 1
+fi
+mkdir -p "$EVIDENCE_ROOT"
+EVIDENCE_MOUNT_DIR="$EVIDENCE_ROOT"
+# Git Bash otherwise rewrites container paths (including /myspeed/data) into
+# Windows paths. Convert just the host sources, then forward Docker arguments.
+case "$(uname -s)" in
+    MINGW*|MSYS*)
+        QUALIFICATION_DIR="$(cygpath -m "$QUALIFICATION_DIR")"
+        EVIDENCE_MOUNT_DIR="$(cygpath -m "$EVIDENCE_ROOT")"
+        COLLECTOR="$(cygpath -m "$COLLECTOR")"
+        export MSYS2_ARG_CONV_EXCL='*'
+        ;;
+esac
+"$DOCKER" image inspect "$IMAGE" > "$EVIDENCE_ROOT/image-inspect.json"
+
+container_exists() {
+    "$DOCKER" inspect "$CONTAINER" >/dev/null 2>&1
+}
+
+volume_exists() {
+    "$DOCKER" volume inspect "$1" >/dev/null 2>&1
+}
+
+container_is_owned() {
+    [ "$("$DOCKER" inspect --format "{{ index .Config.Labels \"${OWNERSHIP_LABEL}\" }}" "$CONTAINER" 2>/dev/null || true)" = "$RUN_ID" ]
+}
+
+volume_is_owned() {
+    [ "$("$DOCKER" volume inspect --format "{{ index .Labels \"${OWNERSHIP_LABEL}\" }}" "$1" 2>/dev/null || true)" = "$RUN_ID" ]
+}
 
 cleanup() {
-    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    original_status=$?
+    cleanup_failed=0
+    trap - EXIT
+
+    if [ "$container_created" -eq 1 ]; then
+        if container_exists; then
+            if container_is_owned; then
+                "$DOCKER" logs "$CONTAINER" > "$EVIDENCE_ROOT/container.log" 2>&1 || true
+                "$DOCKER" rm -f "$CONTAINER" >/dev/null 2>&1 || cleanup_failed=1
+            else
+                cleanup_failed=1
+            fi
+        fi
+    fi
+    if [ "$data_volume_created" -eq 1 ]; then
+        if volume_exists "$DATA_VOLUME"; then
+            if volume_is_owned "$DATA_VOLUME"; then
+                "$DOCKER" volume rm "$DATA_VOLUME" >/dev/null 2>&1 || cleanup_failed=1
+            else
+                cleanup_failed=1
+            fi
+        fi
+    fi
+    if [ "$bin_volume_created" -eq 1 ]; then
+        if volume_exists "$BIN_VOLUME"; then
+            if volume_is_owned "$BIN_VOLUME"; then
+                "$DOCKER" volume rm "$BIN_VOLUME" >/dev/null 2>&1 || cleanup_failed=1
+            else
+                cleanup_failed=1
+            fi
+        fi
+    fi
+
+    if [ "$cleanup_failed" -ne 0 ]; then
+        echo "::error::Could not remove every task-owned verification container or volume."
+        exit 1
+    fi
+    exit "$original_status"
 }
 trap cleanup EXIT
 
 fail() {
     echo "::error::$1"
-    echo "--- container log (last 50 lines) ---"
-    docker logs "$CONTAINER" 2>&1 | tail -50 || true
+    if [ "$container_created" -eq 1 ] && container_is_owned; then
+        echo "--- container log (last 50 lines) ---"
+        "$DOCKER" logs "$CONTAINER" 2>&1 | tail -50 || true
+    fi
     exit 1
 }
 
-echo "Starting $IMAGE as $CONTAINER on port $PORT ..."
-docker run -d --name "$CONTAINER" -p "${PORT}:5216" "$IMAGE" >/dev/null
+if container_exists; then
+    fail "Docker container $CONTAINER already exists; refusing to reuse it."
+fi
+if volume_exists "$DATA_VOLUME"; then
+    fail "Docker volume $DATA_VOLUME already exists; refusing to reuse it."
+fi
+if volume_exists "$BIN_VOLUME"; then
+    fail "Docker volume $BIN_VOLUME already exists; refusing to reuse it."
+fi
 
-echo "Waiting for ${BASE}/api/health ..."
-healthy=0
+if ! "$DOCKER" volume create --label "${OWNERSHIP_LABEL}=${RUN_ID}" "$DATA_VOLUME" >/dev/null; then
+    if volume_is_owned "$DATA_VOLUME"; then
+        data_volume_created=1
+    fi
+    fail "Could not create task-owned Docker volume $DATA_VOLUME."
+fi
+volume_is_owned "$DATA_VOLUME" || fail "Docker did not preserve the ownership label on $DATA_VOLUME."
+data_volume_created=1
+if ! "$DOCKER" volume create --label "${OWNERSHIP_LABEL}=${RUN_ID}" "$BIN_VOLUME" >/dev/null; then
+    if volume_is_owned "$BIN_VOLUME"; then
+        bin_volume_created=1
+    fi
+    fail "Could not create task-owned Docker volume $BIN_VOLUME."
+fi
+volume_is_owned "$BIN_VOLUME" || fail "Docker did not preserve the ownership label on $BIN_VOLUME."
+bin_volume_created=1
+
+# Prove fresh volumes are empty from the Docker daemon's filesystem, before
+# the image's normal volume copy-up supplies its baked provider executable.
+if ! "$DOCKER" run \
+    --name "$CONTAINER" \
+    --label "${OWNERSHIP_LABEL}=${RUN_ID}" \
+    --network none \
+    --mount "type=volume,source=${DATA_VOLUME},target=/myspeed/data,volume-nocopy" \
+    --mount "type=volume,source=${BIN_VOLUME},target=/myspeed/bin,volume-nocopy" \
+    --entrypoint bun "$IMAGE" -e \
+    'const fs = require("fs"); for (const directory of ["/myspeed/data", "/myspeed/bin"]) { if (fs.readdirSync(directory).length !== 0) throw new Error("Refusing nonempty qualification volume: " + directory); } console.log("Both task-owned volumes are empty");' \
+    > "$EVIDENCE_ROOT/volume-preflight.log" 2>&1; then
+    if container_is_owned; then container_created=1; fi
+    fail "Fresh volume preflight failed."
+fi
+container_is_owned || fail "Volume preflight container ownership could not be proved."
+container_created=1
+"$DOCKER" rm "$CONTAINER" >/dev/null || fail "Could not remove the completed volume preflight container."
+container_created=0
+
+echo "Starting isolated verification container $CONTAINER ..."
+if ! "$DOCKER" run -d \
+    --name "$CONTAINER" \
+    --label "${OWNERSHIP_LABEL}=${RUN_ID}" \
+    --network none \
+    --cap-add SYS_PTRACE \
+    --env SERVER_PORT="$PORT" \
+    --health-interval 1s \
+    --health-timeout 2s \
+    --health-start-period 1s \
+    --health-retries 10 \
+    --mount "type=volume,source=${DATA_VOLUME},target=/myspeed/data" \
+    --mount "type=volume,source=${BIN_VOLUME},target=/myspeed/bin" \
+    --mount "type=bind,source=${QUALIFICATION_DIR},target=/qualification,readonly" \
+    --mount "type=bind,source=${EVIDENCE_MOUNT_DIR},target=/evidence" \
+    --entrypoint bun \
+    "$IMAGE" \
+    /qualification/check-artifact.mjs \
+    --command /usr/local/bin/docker-entrypoint.sh \
+    --artifact /usr/local/bin/bun \
+    --repo /myspeed \
+    "${SOURCE_ARGUMENTS[@]}" \
+    --work /myspeed \
+    --keep-work \
+    --expected-uid 1000 \
+    --expected-cfspeedtest-version "$CFSPEEDTEST_VERSION" \
+    --port "$PORT" \
+    --evidence-dir /evidence \
+    --healthcheck-handshake /evidence \
+    --arg bun \
+    --arg run \
+    --arg /myspeed/server/index.js >/dev/null; then
+    if container_is_owned; then
+        container_created=1
+    fi
+    fail "Could not start task-owned verification container $CONTAINER."
+fi
+container_is_owned || fail "Docker did not preserve the ownership label on $CONTAINER."
+container_created=1
+"$DOCKER" inspect "$CONTAINER" > "$EVIDENCE_ROOT/container-inspect.json"
+
+[ "$("$DOCKER" inspect --format '{{.HostConfig.NetworkMode}}' "$CONTAINER")" = "none" ] \
+    || fail "The verifier container is not in Docker's network-none mode."
+[ -z "$("$DOCKER" port "$CONTAINER")" ] \
+    || fail "The verifier container unexpectedly publishes a host port."
+
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-    if curl -fsS --max-time 5 "${BASE}/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
-        echo "  healthy after ~$(( attempt * SLEEP_SECONDS ))s"
-        healthy=1
-        break
+    status="$("$DOCKER" inspect --format '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || true)"
+    if [ "$status" != "starting" ] && [ "$status" = "healthy" ]; then
+        saw_healthy=1
+        if [ -f "$EVIDENCE_ROOT/healthcheck-request.json" ] && [ ! -e "$EVIDENCE_ROOT/healthcheck-ack.json" ]; then
+            # Same-directory rename makes the acknowledgement visible whole.
+            # Never overwrite an acknowledgement from another request/run.
+            ack_temp="$(mktemp "$EVIDENCE_ROOT/healthcheck-ack.XXXXXX")"
+            cp "$EVIDENCE_ROOT/healthcheck-request.json" "$ack_temp"
+            mv -n "$ack_temp" "$EVIDENCE_ROOT/healthcheck-ack.json"
+        fi
     fi
 
-    if [ "$(docker inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" != "true" ]; then
-        fail "The container exited before becoming healthy."
-    fi
-
+    running="$("$DOCKER" inspect --format '{{.State.Running}}' "$CONTAINER" 2>/dev/null || true)"
+    [ "$running" != "true" ] && break
     sleep "$SLEEP_SECONDS"
 done
 
-[ "$healthy" -eq 1 ] || fail "The image never reported healthy; refusing to publish it."
+[ "$saw_healthy" -eq 1 ] \
+    || fail "The image's own healthcheck never reported healthy (last status: ${status:-none})."
 
-# Health only proves the process is up and the database opened; make sure the
-# things users actually consume are served as well.
-#
-# The image ships with no password, and a fresh instance deliberately refuses
-# requests that did not arrive on loopback. These come through the published
-# port, so from inside the container they arrive from the bridge gateway - which
-# means the api check needs the setup token the server prints at boot. That the
-# refusal happens at all is worth pinning here too: it is the whole reason a
-# fresh install is not an open admin API.
-echo "Checking that an unauthenticated caller is refused ..."
-[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE}/api/speedtests/status")" = "401" ] \
-    || fail "A password-less instance served the api to an unauthenticated caller."
+exit_code="$("$DOCKER" inspect --format '{{.State.ExitCode}}' "$CONTAINER")"
+[ "$exit_code" = "0" ] \
+    || fail "The isolated artifact verifier exited with code $exit_code."
 
-echo "Checking the api ..."
-TOKEN="$(docker logs "$CONTAINER" 2>&1 | sed -n 's/.*Setup token: \([0-9a-f]\{16,\}\).*/\1/p' | tail -1)"
-[ -n "$TOKEN" ] || fail "The server never printed a setup token, so a first run could not be completed."
+node "$COLLECTOR" \
+    --evidence-dir "$EVIDENCE_MOUNT_DIR" --output "$EVIDENCE_MOUNT_DIR/qualification-summary.json" \
+    --mode full "${SOURCE_ARGUMENTS[@]}"
 
-curl -fsS --max-time 10 -H "x-password: ${TOKEN}" "${BASE}/api/speedtests/status" | grep -q '"running"' \
-    || fail "The api did not answer as expected."
-
-echo "Checking the bundled client ..."
-[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "${BASE}/")" = "200" ] \
-    || fail "The bundled client was not served."
-
-echo "Checking the container healthcheck ..."
-# Waited for, not read once. Docker keeps the status at "starting" until the
-# first probe succeeds, and the first probe runs one --interval after start -
-# so a single read only ever saw "healthy" because a first boot downloads two
-# CLIs before the server listens, which happens to take longer than that.
-#
-# `|| true` because the script runs under set -e and a bare assignment carries
-# its substitution's exit status: an inspect that fails - an image with no
-# HEALTHCHECK errors the template on the missing field - would otherwise kill
-# the script here, before fail() below can print the reason and the log.
-status="starting"
-for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
-    status="$(docker inspect --format '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || true)"
-    [ "$status" != "starting" ] && break
-    sleep "$SLEEP_SECONDS"
-done
-
-[ "$status" = "healthy" ] \
-    || fail "The container's own healthcheck did not report healthy (last status: ${status:-none})."
-
-# The baked Cloudflare CLI has to *execute*, not merely exist: the bug it
-# replaces was a glibc binary the musl kernel loader refused with ENOENT, which
-# no file-presence check can see. Each matrix job runs on a runner native to
-# its platform, so this proves the amd64 and arm64 musl builds for real.
-echo "Checking the baked Cloudflare CLI ..."
-docker exec "$CONTAINER" /myspeed/bin/cfspeedtest --version | grep -q "cfspeedtest" \
-    || fail "The baked musl cfspeedtest does not execute in this image."
-
-echo "Image verified."
+echo "Image verified. Evidence: $EVIDENCE_ROOT"

@@ -2,6 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { withBasePathMeta } from "../../server/util/indexMeta.js";
 
 const HTML = [
@@ -45,10 +46,17 @@ describe("withBasePathMeta", () => {
  * path, should retire this file rather than leave it running over nothing.
  */
 describe("the built index.html", () => {
-    const built = path.join(process.cwd(), "client", "build", "index.html");
+    const root = fileURLToPath(new URL("../../", import.meta.url));
+    const packaged = path.join(root, "build", "index.html");
+    const beforePackaging = path.join(root, "client", "build", "index.html");
+    const compiledTestRequired = typeof process.env.MYSPEED_BUN_BINARY === "string"
+        && process.env.MYSPEED_BUN_BINARY !== "";
+    const built = fs.existsSync(packaged) ? packaged
+        : !compiledTestRequired && fs.existsSync(beforePackaging) ? beforePackaging : null;
 
     it("still carries a rooted OpenGraph reference the bundler did not rewrite",
-        {skip: fs.existsSync(built) ? false : "the client has not been built here"}, () => {
+        {skip: built || compiledTestRequired ? false : "the client has not been built here"}, () => {
+        assert.notEqual(built, null, "the required packaged build/index.html is absent");
         assert.match(fs.readFileSync(built, "utf-8"), /<meta[^>]*content="\/api\/opengraph\/image"/);
     });
 });

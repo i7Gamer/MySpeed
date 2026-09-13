@@ -526,23 +526,33 @@ describe("runTrace", () => {
     // Linux offers two tools, and a first that ends on its own with no table
     // falls through to the second - so a deadline handed to each tool let one
     // trace hold the round's latch for two of them.
-    it("shares one deadline between the tools it falls through", async () => {
+    it("shares one deadline between the tools it falls through", async (t) => {
+        const timeoutMs = 50;
+        const firstToolDurationMs = 30;
+        const boundaryStepMs = 1;
+        const started = Date.now();
+        t.mock.timers.enable({apis: ["Date", "setTimeout"], now: started});
         let second;
         const spawn = fakeSpawn({
-            traceroute: (child) => setTimeout(() => child.finish("", 0), 30),
+            traceroute: (child) => setTimeout(() => child.finish("", 0), firstToolDurationMs),
             tracepath: (child) => { second = child; }
         });
 
-        const started = Date.now();
-        const pending = runTrace("fra.example.net", {spawn, platform: "linux", timeoutMs: 50});
+        const pending = runTrace("fra.example.net", {spawn, platform: "linux", timeoutMs});
 
-        await new Promise((resolve) => setTimeout(resolve, 80));
+        // Drain spawn/close microtasks independently of wall-clock scheduling.
+        await new Promise(setImmediate);
+        t.mock.timers.tick(firstToolDurationMs);
+        await new Promise(setImmediate);
         assert.ok(second, "the second tool was never asked");
+        t.mock.timers.tick(timeoutMs - firstToolDurationMs - boundaryStepMs);
+        assert.deepEqual(second.signals, [], "the second tool was stopped before the shared deadline");
+        t.mock.timers.tick(boundaryStepMs);
         assert.deepEqual(second.signals, ["SIGTERM"], "the second tool was given a whole deadline of its own");
 
         second.finish("", null);
         assert.equal(await pending, null);
-        assert.ok(Date.now() - started < 100, "the trace outlived its one deadline");
+        assert.equal(Date.now() - started, timeoutMs, "the trace outlived its one deadline");
     });
 
     it("spawns no second tool once the deadline has passed", async () => {

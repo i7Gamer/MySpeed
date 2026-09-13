@@ -14,10 +14,13 @@ import { fileURLToPath } from "node:url";
  * person downloading the same file by hand had nothing to compare it against.
  *
  * Read as text rather than run. These are release-time steps on runners this
- * suite has no access to - a Windows host with chocolatey, an uploader holding
- * a release id - and the alternative to reading them is not testing them.
+ * suite has no access to - a Windows packager, an uploader holding release
+ * authority - and the alternative to reading them is not testing them.
  */
 const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
+const WIX_VERSION = "3.14.1";
+const WIX_ARCHIVE_SHA256 = "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31";
+const WIX_ARCHIVE_URL = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip";
 
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
@@ -80,26 +83,20 @@ const from = (source, anchor) => source.slice(at(source, anchor));
 
 describe("the release publishes what a download can be checked against", () => {
     const workflow = read(".github/workflows/build-binaries.yml");
+    const manifest = read("scripts/release/qualification-manifest.mjs");
 
-    it("hashes the assets after every job that uploads one", () => {
-        const checksums = from(workflow, "\n  checksums:");
-
-        assert.match(checksums, /needs: \[publish-binaries\]/,
-            "SHA256SUMS can be written before an asset it is supposed to cover exists");
-        assert.match(jobIn(workflow, "publish-binaries"), /needs: \[build-windows, build-linux, build-macos, build-zip\]/);
-        assert.match(checksums, /listReleaseAssets/,
-            "the sums are taken from something other than the published assets");
-        assert.match(checksums, /createHash\('sha256'\)/);
-        assert.match(checksums, /name: 'SHA256SUMS'/);
+    it("hashes every build output before sealing one checksum list", () => {
+        for (const job of ["build-windows", "build-linux", "build-macos", "build-zip"])
+            assert.match(jobIn(workflow, job), /\.sha256/);
+        assert.match(manifest, /createHash\('sha256'\)/);
+        assert.match(manifest, /'SHA256SUMS'/);
     });
 
     // The documented install command fetches these from the release, so the
     // release has to carry them.
     it("uploads the install scripts it tells people to run", () => {
-        const checksums = from(workflow, "\n  checksums:");
-
         for (const script of ["install.sh", "docker-install.sh", "chooser.sh"])
-            assert.ok(checksums.includes(`'${script}'`), `${script} is not published with the release`);
+            assert.ok(manifest.includes(`'${script}'`), `${script} is not published with the release`);
     });
 
     /**
@@ -287,47 +284,47 @@ describe("the MSI is built from things that are pinned", () => {
             "the digest is computed and then not acted on");
     });
 
-    /**
-     * The package used to be whatever the feed served and the path was asserted
-     * to be v3.11. The same package ships 3.14, which installs beside a
-     * differently named directory: candle would not be on PATH, build-msi would
-     * fail, and the release would stop with the tag cut and the version bumped.
-     */
-    it("pins the toolset and finds its bin directory rather than assuming one", () => {
-        assert.match(workflow, /choco install wixtoolset -y --version=\d+\.\d+/,
-            "the WiX version is whatever the feed serves that day");
-        assert.doesNotMatch(workflow, /echo "C:\\Program Files \(x86\)\\WiX Toolset v3\.11\\bin"/,
-            "the bin directory is asserted rather than discovered");
-        assert.match(workflow, /Get-ChildItem "C:\\Program Files \(x86\)\\WiX Toolset v\*/);
+    it("downloads one exact portable WiX archive and verifies it before extraction", () => {
+        const step = stepIn(workflow, "Download pinned portable WiX Toolset");
+
+        assert.ok(step.includes(`WIX_VERSION: "${WIX_VERSION}"`));
+        assert.ok(step.includes(`WIX_URL: "${WIX_ARCHIVE_URL}"`));
+        assert.ok(step.includes(`WIX_SHA256: "${WIX_ARCHIVE_SHA256}"`));
+        assert.match(step, /Get-FileHash[^\n]*-Algorithm SHA256/);
+        assert.match(step, /-ne \$env:WIX_SHA256[\s\S]{0,200}throw/,
+            "a WiX archive digest mismatch does not fail closed");
+        assert.ok(at(step, "Get-FileHash") < at(step, "Expand-Archive"),
+            "the unverified archive is extracted");
     });
 
-    /**
-     * And the pin cannot be the thing that fails the step. The runner image
-     * ships 3.14 now, so asking for 3.11.2 is a downgrade and chocolatey
-     * refuses one: it exits 1 saying a newer version is already installed,
-     * while the toolset sits exactly where the discovery below finds it. 1.5.2
-     * stopped there with the tag cut, the version bumped, no MSI and no Docker
-     * tag published - on a step that had already printed the path it wanted.
-     *
-     * The discovery is the gate, and it exits 1 itself when no bin directory
-     * exists. What chocolatey did with a request the image had already
-     * satisfied is not the step's verdict.
-     */
-    it("survives a chocolatey that will not install over what the image ships", () => {
-        const step = stepIn(workflow, "Install WiX Toolset");
+    it("uses only explicit tools from that archive and records their identity", () => {
+        const download = stepIn(workflow, "Download pinned portable WiX Toolset");
+        const build = stepIn(workflow, "Build MSI");
+        const provenance = stepIn(workflow, "Hash installer");
 
-        assert.match(step, /\$LASTEXITCODE -ne 0/,
-            "chocolatey's exit code is the step's, so a refused downgrade stops the release");
-        assert.match(step, /LASTEXITCODE = 0/,
-            "the refusal is reported and then still handed back as the step's status");
-        assert.match(step, /-not \$bin[\s\S]{0,200}exit 1/,
-            "nothing fails the step when the toolset really is missing");
+        assert.doesNotMatch(withoutComments(workflow), /choco(?:latey)?|Program Files \(x86\)\\WiX Toolset/i,
+            "the build still depends on mutable runner-installed WiX state");
+        assert.match(download, /\$candle = Join-Path \$directory "candle\.exe"/);
+        assert.match(download, /\$light = Join-Path \$directory "light\.exe"/);
+        assert.match(download, /WIX_CANDLE=\$candle/);
+        assert.match(download, /WIX_LIGHT=\$light/);
+        assert.match(build, /& \$env:WIX_CANDLE/);
+        assert.match(build, /& \$env:WIX_LIGHT/);
+        assert.doesNotMatch(build, /^\s*(?:&\s+)?(?:candle|light)(?:\.exe)?\b/m,
+            "a PATH-resolved WiX tool can shadow the verified archive");
+        assert.match(build, /(?:^|\s)-v(?:\s|$)/m, "ICE execution is not recorded in verbose output");
+        for (const field of ["wixArchiveUrl", "wixArchiveSha256", "wixCandleSha256", "wixLightSha256",
+            "wixCandleVersion", "wixLightVersion"])
+            assert.match(provenance, new RegExp(`\\b${field}\\b`), field);
+        assert.match(provenance,
+            /wixCandleSha256 = \(Get-FileHash -LiteralPath \$env:WIX_CANDLE -Algorithm SHA256\)/);
+        assert.match(provenance,
+            /wixLightSha256 = \(Get-FileHash -LiteralPath \$env:WIX_LIGHT -Algorithm SHA256\)/);
     });
 });
 
-describe("two releases cannot run over each other", () => {
+describe("release promotion concurrency", () => {
     const release = read(".github/workflows/create_release.yml");
-    const deploy = read(".github/workflows/deploy_docker_dev.yml");
 
     /**
      * Both workflows move :latest, and the release also bumps package.json and
@@ -335,11 +332,8 @@ describe("two releases cannot run over each other", () => {
      * whichever finishes last, and the second push can be rejected after its own
      * tag guard has already passed.
      */
-    it("holds the release and the manual deploy in one group", () => {
-        for (const [name, source] of [["create_release", release], ["deploy_docker_dev", deploy]]) {
-            assert.match(source, /^concurrency:\n {2}group: release-and-registry\n {2}cancel-in-progress: false$/m,
-                `${name} can run beside the other one`);
-        }
+    it("queues concurrent release promotions instead of cancelling either one", () => {
+        assert.match(release, /^concurrency:\n {2}group: release-and-registry\n {2}cancel-in-progress: false$/m);
     });
 
     /**
@@ -348,12 +342,12 @@ describe("two releases cannot run over each other", () => {
      * cut left a tag, a draft and a version bump with nothing said, and the next
      * dispatch of that version was refused with no explanation.
      */
-    it("says what a cancelled run left behind", () => {
-        const job = jobIn(release, "report-cancelled-release");
+    it("preserves and reports failed partial promotion instead of deleting forensic state", () => {
+        const job = jobIn(release, "report-failure");
 
-        assert.match(job, /if: cancelled\(\) && needs\.create-release\.result == 'success'/);
-        assert.match(job, /gh release delete v\$VERSION --cleanup-tag/,
-            "the recovery command the other report prints is missing from this one");
+        assert.match(job, /if: \$\{\{ failure\(\) \}\}/);
+        assert.match(job, /preserved for review/i);
+        assert.doesNotMatch(job, /deleteRelease|deleteRef|gh release delete/);
     });
 });
 
@@ -369,7 +363,7 @@ describe("verify-image.sh waits for the container's own healthcheck", () => {
     const verify = withoutComments(read("scripts/verify-image.sh"));
 
     it("polls the status until it leaves starting", () => {
-        assert.match(verify, /status="?\$\(docker inspect --format '\{\{\.State\.Health\.Status\}\}'/,
+        assert.match(verify, /status="?\$\("\$DOCKER" inspect --format '\{\{\.State\.Health\.Status\}\}'/,
             "the health status is read once rather than polled");
         assert.match(verify, /"\$status" != "starting"/, "a container still in its start period is judged");
         assert.match(verify, /"\$status" = "healthy"/, "the final status is not asserted");
@@ -385,7 +379,7 @@ describe("verify-image.sh waits for the container's own healthcheck", () => {
      * keep the same protection.
      */
     it("reports a failing inspect rather than dying silently under set -e", () => {
-        assert.match(verify, /status="\$\(docker inspect --format '\{\{\.State\.Health\.Status\}\}' "\$CONTAINER" 2>\/dev\/null \|\| true\)"/,
+        assert.match(verify, /status="\$\("\$DOCKER" inspect --format '\{\{\.State\.Health\.Status\}\}' "\$CONTAINER" 2>\/dev\/null \|\| true\)"/,
             "a failing docker inspect exits the script before fail() can say why");
     });
 });

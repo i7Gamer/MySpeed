@@ -3,9 +3,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { get } from 'node:https';
 import { createHash, randomBytes } from 'node:crypto';
-import decompress from 'decompress';
-import decompressTarGz from 'decompress-targz';
-import decompressUnzip from 'decompress-unzip';
+import decompress from '@xhmikosr/decompress';
+import decompressTarGz from '@xhmikosr/decompress-targz';
+import decompressUnzip from '@xhmikosr/decompress-unzip';
 
 /**
  * What a refused download is, as its own type.
@@ -214,7 +214,8 @@ export const downloadToFile = (url, destPath, {redirectsLeft = MAX_DOWNLOAD_REDI
  * cleanup can be tested without a real archive or the network.
  */
 export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputName, sha256,
-    client = get, extract = extractBinary, tmp = tmpFile, suffix = ''} = {}) => {
+    client = get, extract = extractBinary, tmp = tmpFile, suffix = '', requiredFiles,
+    operations} = {}) => {
 
     const archivePath = tmp(suffix);
 
@@ -225,7 +226,7 @@ export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputNam
         // and removing it afterwards is not the same as never having written it -
         // the file the loader is about to spawn would have existed in between.
         await verifyDigest(archivePath, sha256);
-        await extract(archivePath, outputDir, binaryRegex, outputName);
+        await extract(archivePath, outputDir, binaryRegex, outputName, {requiredFiles, operations});
     } finally {
         await fs.promises.unlink(archivePath).catch(() => undefined);
     }
@@ -240,6 +241,304 @@ export const downloadAndExtract = async (url, {outputDir, binaryRegex, outputNam
  * carries its mode inside the archive.
  */
 export const EXECUTABLE_MODE = 0o755;
+
+// Runtime libraries are data, not entry points. Neither mode is taken from the
+// archive: release metadata must not get to add privilege bits.
+export const RUNTIME_LIBRARY_MODE = 0o644;
+const PRIVILEGED_MODE_BITS = 0o7000;
+const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+const DRIVE_PREFIX = /^[a-z]:/i;
+const ARCHIVE_PLUGINS = [decompressTarGz(), decompressUnzip()];
+const installLocks = new Map();
+
+const lockKey = (outputDir) => path.resolve(outputDir);
+
+/** Waits until this process has finished publishing into an install directory. */
+export const waitForInstall = async (outputDir) => {
+    const key = lockKey(outputDir);
+
+    // A second publication may be appended while this waiter is behind the
+    // first one. Re-read the tail after every completion; snapshotting it once
+    // lets a consumer run while that later publication is between pair members.
+    while (true) {
+        const install = installLocks.get(key);
+        if (!install) return;
+        await install.catch(() => undefined);
+    }
+};
+
+const serializeInstall = (outputDir, task) => {
+    const key = lockKey(outputDir);
+    const previous = installLocks.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(task);
+    installLocks.set(key, current);
+
+    return current.finally(() => {
+        if (installLocks.get(key) === current) installLocks.delete(key);
+    });
+};
+
+const defaultOperations = {
+    chmod: fs.promises.chmod.bind(fs.promises),
+    copyFile: fs.promises.copyFile.bind(fs.promises),
+    lstat: fs.promises.lstat.bind(fs.promises),
+    mkdir: fs.promises.mkdir.bind(fs.promises),
+    mkdtemp: fs.promises.mkdtemp.bind(fs.promises),
+    realpath: fs.promises.realpath.bind(fs.promises),
+    rename: fs.promises.rename.bind(fs.promises),
+    rm: fs.promises.rm.bind(fs.promises),
+    unlink: fs.promises.unlink.bind(fs.promises),
+    writeFile: fs.promises.writeFile.bind(fs.promises)
+};
+
+const operationsFor = (overrides) => ({...defaultOperations, ...overrides});
+
+const optionalLstat = async (target, operations) => {
+    try {
+        return await operations.lstat(target);
+    } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+    }
+};
+
+const assertSafeArchivePath = (entryPath) => {
+    if (typeof entryPath !== 'string' || entryPath.length === 0 || entryPath.includes('\0'))
+        throw new Error('Extraction failed: selected member has an unsafe empty or NUL path');
+    if (entryPath.includes('\\'))
+        throw new Error(`Extraction failed: selected member has an unsafe backslash path: ${entryPath}`);
+    if (path.posix.isAbsolute(entryPath) || entryPath.startsWith('//') || DRIVE_PREFIX.test(entryPath))
+        throw new Error(`Extraction failed: selected member has an unsafe absolute path: ${entryPath}`);
+
+    const segments = entryPath.split('/');
+    if (segments.some((segment) => segment === '..' || segment === ''))
+        throw new Error(`Extraction failed: selected member has an unsafe traversal path: ${entryPath}`);
+    if (segments.some((segment) => segment.includes(':') || WINDOWS_RESERVED_NAME.test(segment)
+        || segment.endsWith('.') || segment.endsWith(' ')))
+        throw new Error(`Extraction failed: selected member has a path unsafe on Windows: ${entryPath}`);
+};
+
+const assertSafeOutputName = (name) => {
+    assertSafeArchivePath(name);
+    if (path.posix.basename(name) !== name)
+        throw new Error(`Extraction failed: output name must be a basename: ${name}`);
+};
+
+const regexMatches = (regex, value) => {
+    regex.lastIndex = 0;
+    return regex.test(value);
+};
+
+const decodeSelected = async (archivePath, fileRegex, outputName, requiredFiles) => {
+    const entries = await decompress(archivePath, {plugins: ARCHIVE_PLUGINS});
+    const matches = entries.filter((entry) => regexMatches(fileRegex, entry.path));
+
+    if (matches.length === 0)
+        throw new Error(`Extraction failed: nothing matching ${fileRegex} was found in ${archivePath}`
+            + ' - the archive may be in a format this build cannot unpack, or the download may not be an archive at all');
+
+    const requiredByKey = requiredFiles
+        ? new Map(requiredFiles.map((name) => {
+            assertSafeOutputName(name);
+            return [name.toLowerCase(), name];
+        })) : null;
+    const selected = [];
+    const seenNames = new Set();
+
+    for (const entry of matches) {
+        assertSafeArchivePath(entry.path);
+        if (entry.type !== 'file')
+            throw new Error(`Extraction failed: selected member ${entry.path} is not an ordinary regular file`);
+        if (!Buffer.isBuffer(entry.data) || entry.data.length === 0)
+            throw new Error(`Extraction failed: selected member ${entry.path} is empty`);
+        if ((entry.mode & PRIVILEGED_MODE_BITS) !== 0)
+            throw new Error(`Extraction failed: selected member ${entry.path} has unsafe privilege mode bits`);
+
+        const archiveBasename = path.posix.basename(entry.path);
+        const candidate = outputName ?? archiveBasename;
+        const canonicalName = requiredByKey?.get(candidate.toLowerCase()) ?? candidate;
+        assertSafeOutputName(canonicalName);
+
+        if (requiredByKey && !requiredByKey.has(candidate.toLowerCase()))
+            throw new Error(`Extraction failed: unexpected selected member ${entry.path}`);
+
+        const key = canonicalName.toLowerCase();
+        if (seenNames.has(key))
+            throw new Error(`Extraction failed: ambiguous duplicate output name ${canonicalName}`);
+        seenNames.add(key);
+        selected.push({data: entry.data, name: canonicalName});
+    }
+
+    if (requiredByKey) {
+        const missing = [...requiredByKey]
+            .filter(([key]) => !seenNames.has(key))
+            .map(([, name]) => name);
+        if (missing.length > 0)
+            throw new Error(`Extraction failed: archive is missing required ${missing.join(' and ')}`);
+
+        selected.sort((left, right) => requiredFiles.indexOf(left.name) - requiredFiles.indexOf(right.name));
+    }
+
+    return selected;
+};
+
+const pathIsWithin = (root, target) => {
+    const relative = path.relative(root, target);
+    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..'
+        && !path.isAbsolute(relative));
+};
+
+const samePath = (left, right) => process.platform === 'win32'
+    ? left.toLowerCase() === right.toLowerCase() : left === right;
+
+const trustedInstallRoot = (outputDir) => {
+    const target = path.resolve(outputDir);
+    const candidates = [process.cwd(), os.tmpdir()]
+        .map((candidate) => path.resolve(candidate))
+        .filter((candidate) => pathIsWithin(candidate, target))
+        .sort((left, right) => right.length - left.length);
+
+    if (candidates.length === 0)
+        throw new Error(`Refusing to install outside untrusted process and temporary roots: ${outputDir}`);
+    return candidates[0];
+};
+
+/**
+ * Creates an output directory without following links below a canonical root.
+ *
+ * Canonicalizing the root itself intentionally accepts platform aliases such
+ * as macOS /var -> /private/var. Every component beneath that already-trusted
+ * process or temporary root is lstat'd separately rather than trusting an
+ * arbitrary nearest ancestor chosen by the caller-controlled output path.
+ */
+const assertSafeOutputDirectory = async (outputDir, operations) => {
+    const resolvedOutput = path.resolve(outputDir);
+    const resolvedRoot = trustedInstallRoot(resolvedOutput);
+    const canonicalRoot = await operations.realpath(resolvedRoot);
+    const relative = path.relative(resolvedRoot, resolvedOutput);
+    let current = canonicalRoot;
+
+    for (const component of relative.split(path.sep).filter(Boolean)) {
+        current = path.join(current, component);
+        let stats = await optionalLstat(current, operations);
+        if (!stats) {
+            try {
+                await operations.mkdir(current);
+            } catch (error) {
+                if (error.code !== 'EEXIST') throw error;
+            }
+            stats = await operations.lstat(current);
+        }
+        if (stats.isSymbolicLink())
+            throw new Error(`Refusing to install through linked parent or output directory ${current}`);
+        if (!stats.isDirectory())
+            throw new Error(`Refusing to install because output path component is not a directory: ${current}`);
+    }
+
+    const actual = await operations.realpath(resolvedOutput);
+    if (!samePath(actual, current))
+        throw new Error(`Refusing output-directory escape from ${resolvedOutput} to ${actual}`);
+    return current;
+};
+
+const assertReplaceableDestination = async (destination, operations) => {
+    const stats = await optionalLstat(destination, operations);
+    if (!stats) return false;
+    if (stats.isSymbolicLink())
+        throw new Error(`Refusing to replace destination symlink ${destination}`);
+    if (!stats.isFile())
+        throw new Error(`Refusing to replace non-file destination ${destination}`);
+    if (stats.nlink > 1)
+        throw new Error(`Refusing to replace hardlinked destination ${destination} with link count ${stats.nlink}`);
+    return true;
+};
+
+const modeFor = (name) => name.toLowerCase().endsWith('.dll')
+    ? RUNTIME_LIBRARY_MODE : EXECUTABLE_MODE;
+
+const validateStagedFile = async (stagedPath, expectedMode, operations) => {
+    const stats = await operations.lstat(stagedPath);
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.nlink !== 1 || stats.size === 0)
+        throw new Error(`Extraction failed: staged output is not a nonempty unlinked regular file: ${stagedPath}`);
+    if (process.platform !== 'win32' && (stats.mode & 0o777) !== expectedMode)
+        throw new Error(`Extraction failed: staged output has unsafe mode: ${stagedPath}`);
+};
+
+const publishSelected = async (selected, outputDir, operationOverrides) => {
+    const operations = operationsFor(operationOverrides);
+    const canonicalOutputDir = await assertSafeOutputDirectory(outputDir, operations);
+    const destinations = selected.map((entry) => path.join(canonicalOutputDir, entry.name));
+    for (const destination of destinations)
+        await assertReplaceableDestination(destination, operations);
+
+    const stageDirectory = await operations.mkdtemp(path.join(canonicalOutputDir, '.myspeed-install-'));
+    const staged = [];
+    let keepEvidence = false;
+
+    try {
+        for (const entry of selected) {
+            const stagedPath = path.join(stageDirectory, `${entry.name}.new`);
+            const mode = modeFor(entry.name);
+            await operations.writeFile(stagedPath, entry.data, {flag: 'wx', mode});
+            if (process.platform !== 'win32') await operations.chmod(stagedPath, mode);
+            await validateStagedFile(stagedPath, mode, operations);
+            staged.push(stagedPath);
+        }
+
+        // A single rename is the atomic replacement primitive. The finite
+        // Windows pair needs backups because the second rename can still fail.
+        if (selected.length === 1) {
+            await assertReplaceableDestination(destinations[0], operations);
+            await operations.rename(staged[0], destinations[0]);
+            return selected;
+        }
+
+        const backups = new Map();
+        const published = [];
+        try {
+            for (let index = 0; index < destinations.length; index++) {
+                const destination = destinations[index];
+                if (await assertReplaceableDestination(destination, operations)) {
+                    const backup = path.join(stageDirectory, `${selected[index].name}.previous`);
+                    await operations.rename(destination, backup);
+                    backups.set(destination, backup);
+                }
+            }
+            for (let index = 0; index < destinations.length; index++) {
+                await operations.rename(staged[index], destinations[index]);
+                published.push(destinations[index]);
+            }
+        } catch (publicationError) {
+            const rollbackErrors = [];
+            for (const destination of published.toReversed()) {
+                try {
+                    await operations.unlink(destination);
+                } catch (error) {
+                    if (error.code !== 'ENOENT') rollbackErrors.push(error);
+                }
+            }
+            for (const [destination, backup] of backups) {
+                try {
+                    await operations.rename(backup, destination);
+                } catch (error) {
+                    rollbackErrors.push(error);
+                }
+            }
+            if (rollbackErrors.length > 0) {
+                keepEvidence = true;
+                throw new AggregateError([publicationError, ...rollbackErrors],
+                    `Installation failed and rollback also failed; evidence retained in ${stageDirectory}`,
+                    {cause: publicationError});
+            }
+            throw publicationError;
+        }
+
+        return selected;
+    } finally {
+        if (!keepEvidence)
+            await operations.rm(stageDirectory, {recursive: true, force: true}).catch(() => undefined);
+    }
+};
 
 /**
  * Fetches a release asset that is the executable itself, rather than an
@@ -259,33 +558,45 @@ export const EXECUTABLE_MODE = 0o755;
  * the copy fallback is not optional.
  */
 export const downloadBinary = async (url, {outputPath, sha256, client = get, tmp = tmpFile,
-    mode = EXECUTABLE_MODE} = {}) => {
+    mode = EXECUTABLE_MODE, operations: operationOverrides} = {}) => {
 
-    const staged = tmp('');
+    const downloaded = tmp('');
+    const operations = operationsFor(operationOverrides);
+    let stageDirectory;
 
     try {
-        await downloadToFile(url, staged, {client});
-        await verifyDigest(staged, sha256);
+        await downloadToFile(url, downloaded, {client});
+        await verifyDigest(downloaded, sha256);
+        if (!Number.isInteger(mode) || mode < 0 || mode > 0o777
+            || (mode & PRIVILEGED_MODE_BITS) !== 0)
+            throw new Error(`Refusing executable mode with unsafe privilege bits: ${mode}`);
 
-        // Before it is in place, so the file the runner can reach is never one
-        // that is not yet executable.
-        if (process.platform !== "win32") await fs.promises.chmod(staged, mode);
+        const outputDir = path.dirname(outputPath);
+        const outputName = path.basename(outputPath);
+        assertSafeOutputName(outputName);
+        const canonicalOutputDir = await assertSafeOutputDirectory(outputDir, operations);
+        const destination = path.join(canonicalOutputDir, outputName);
+        await assertReplaceableDestination(destination, operations);
+        stageDirectory = await operations.mkdtemp(path.join(canonicalOutputDir, '.myspeed-binary-'));
+        const staged = path.join(stageDirectory, 'download.new');
 
-        await fs.promises.mkdir(path.dirname(outputPath), {recursive: true});
-
+        // Moving avoids a second full write when temp and bin share a filesystem.
+        // EXDEV copies only to a fresh same-directory staging path, never final.
         try {
-            await fs.promises.rename(staged, outputPath);
-            return;
+            await operations.rename(downloaded, staged);
         } catch (error) {
-            // EXDEV: os.tmpdir() and ./bin are on different filesystems, which
-            // is the normal case in a container with a mounted data volume.
             if (error.code !== "EXDEV") throw error;
+            await operations.copyFile(downloaded, staged, fs.constants.COPYFILE_EXCL);
         }
 
-        await fs.promises.copyFile(staged, outputPath);
-        if (process.platform !== "win32") await fs.promises.chmod(outputPath, mode);
+        if (process.platform !== 'win32') await operations.chmod(staged, mode);
+        await validateStagedFile(staged, mode, operations);
+        await assertReplaceableDestination(destination, operations);
+        await operations.rename(staged, destination);
     } finally {
-        await fs.promises.unlink(staged).catch(() => undefined);
+        await fs.promises.unlink(downloaded).catch(() => undefined);
+        if (stageDirectory)
+            await operations.rm(stageDirectory, {recursive: true, force: true}).catch(() => undefined);
     }
 };
 
@@ -303,22 +614,12 @@ export const downloadBinary = async (url, {outputPath, sha256, client = get, tmp
  * the first run failed with a missing-file message instead of the download that
  * never worked.
  */
-export const extractBinary = async (archivePath, outputDir, binaryRegex, outputName) => {
-    const extracted = await decompress(archivePath, outputDir, {
-        plugins: [decompressTarGz(), decompressUnzip()],
-        filter: file => binaryRegex.test(file.path),
-        map: file => {
-            file.path = outputName;
-            return file;
-        }
+export const extractBinary = async (archivePath, outputDir, binaryRegex, outputName,
+    {operations} = {}) => serializeInstall(outputDir, async () => {
+        assertSafeOutputName(outputName);
+        const selected = await decodeSelected(archivePath, binaryRegex, outputName);
+        return publishSelected(selected, outputDir, operations);
     });
-
-    if (extracted.length === 0)
-        throw new Error(`Extraction failed: nothing matching ${binaryRegex} was found in ${archivePath}`
-            + " - the archive may be in a format this build cannot unpack, or the download may not be an archive at all");
-
-    return extracted;
-};
 
 /**
  * Takes several members out of an archive, each under its own name.
@@ -337,19 +638,8 @@ export const extractBinary = async (archivePath, outputDir, binaryRegex, outputN
  * The fourth parameter is ignored and present so this can be handed to
  * downloadAndExtract in place of extractBinary.
  */
-export const extractFiles = async (archivePath, outputDir, fileRegex) => {
-    const extracted = await decompress(archivePath, outputDir, {
-        plugins: [decompressTarGz(), decompressUnzip()],
-        filter: file => fileRegex.test(file.path),
-        map: file => {
-            file.path = path.basename(file.path);
-            return file;
-        }
+export const extractFiles = async (archivePath, outputDir, fileRegex, _outputName,
+    {requiredFiles, operations} = {}) => serializeInstall(outputDir, async () => {
+        const selected = await decodeSelected(archivePath, fileRegex, null, requiredFiles);
+        return publishSelected(selected, outputDir, operations);
     });
-
-    if (extracted.length === 0)
-        throw new Error(`Extraction failed: nothing matching ${fileRegex} was found in ${archivePath}`
-            + " - the archive may be in a format this build cannot unpack, or the download may not be an archive at all");
-
-    return extracted;
-};
