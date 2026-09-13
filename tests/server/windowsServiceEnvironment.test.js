@@ -8,6 +8,7 @@ import {spawnSync} from "node:child_process";
 const SCRIPT = path.resolve("scripts/qualification/windows-service-environment.ps1");
 const POWERSHELL_TIMEOUT_MS = 15_000;
 const POWERSHELL_BATCH_TIMEOUT_MS = POWERSHELL_TIMEOUT_MS * 2;
+const POLL_INTERVAL_MILLISECONDS = 100;
 const MAX_SCRIPT_BYTES = 262_144;
 const MAX_MANIFEST_BYTES = 4_096;
 const SOURCE_SHA = "a".repeat(40);
@@ -37,11 +38,11 @@ const powershell = process.platform === "win32"
 
 const quote = value => `'${String(value).replaceAll("'", "''")}'`;
 
-const runPowerShell = body => {
+const runPowerShell = (body, loadScript = true) => {
     assert.ok(powershell, "PowerShell is required to test the hosted Windows service canary");
     const command = [
         `$ErrorActionPreference = 'Stop'`,
-        `. ${quote(SCRIPT)}`,
+        ...(loadScript ? [`. ${quote(SCRIPT)}`] : []),
         body
     ].join("\n");
     const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
@@ -54,6 +55,7 @@ const runPowerShell = body => {
 };
 
 const runJson = body => JSON.parse(runPowerShell(`& { ${body} } | ConvertTo-Json -Compress -Depth 12`));
+const runBareJson = body => JSON.parse(runPowerShell(`& { ${body} } | ConvertTo-Json -Compress -Depth 12`, false));
 const powershellIt = powershell ? it : it.skip;
 
 const emitCanaryClosure = root => {
@@ -234,6 +236,134 @@ describe("hosted Windows SCM environment canary", () => {
             assert.match(result.compilerSha256, /^[a-f0-9]{64}$/);
             assert.ok(fs.statSync(executablePath).size > 0);
             assert.equal(fs.existsSync(resultPath), false, "compile-only test must not run the service probe");
+        } finally {
+            fs.rmSync(root, {recursive: true, force: true});
+        }
+    });
+
+    powershellIt("keeps every returned native callback bound to its script-local ownership helpers", () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-native-closure-test-"));
+        try {
+            const sourcePath = path.join(root, "probe.cs");
+            const executablePath = path.join(root, "probe.exe");
+            const resultPath = path.join(root, "probe-result.json");
+            const serviceName = "MySpeedQualificationEnv123e4567e89b42d3a456426614174000";
+            const processId = 4242;
+            const creationDate = "20260913123456.000000+000";
+            fs.writeFileSync(resultPath, JSON.stringify({
+                status: "completed",
+                nonce: NONCE,
+                serviceName,
+                sid: "S-1-5-18",
+                processId,
+                projection: EXPECTED_ENVIRONMENT,
+                forbiddenNames: []
+            }));
+
+            const outcome = runBareJson(`
+                $global:MyspeedClosureState = [ordered]@{
+                    Exists = $false; State = 'Stopped'; ProcessId = 0; ProcessExists = $false
+                    ServiceName = ${quote(serviceName)}; ExecutablePath = ${quote(executablePath)}
+                    CreationDate = ${quote(creationDate)}
+                    Calls = [System.Collections.Generic.List[string]]::new(); DisposeCount = 0; SleepCount = 0
+                }
+                function global:Get-CimInstance {
+                    [CmdletBinding()] param([Parameter(Position=0)][string]$ClassName, [string]$Filter)
+                    if ($ClassName -ceq 'Win32_Service') {
+                        if (-not $global:MyspeedClosureState.Exists) { return }
+                        $observedState = $global:MyspeedClosureState.State
+                        if ($observedState -ceq 'StartPending') {
+                            $global:MyspeedClosureState.State = 'Running'
+                        }
+                        return [pscustomobject]@{
+                            Name = $global:MyspeedClosureState.ServiceName
+                            PathName = '"' + $global:MyspeedClosureState.ExecutablePath + '"'
+                            StartName = 'LocalSystem'; ProcessId = $global:MyspeedClosureState.ProcessId
+                            State = $observedState
+                        }
+                    }
+                    if ($ClassName -ceq 'Win32_Process') {
+                        if ($Filter -like 'ParentProcessId=*' -or -not $global:MyspeedClosureState.ProcessExists) { return }
+                        return [pscustomobject]@{
+                            ProcessId = $global:MyspeedClosureState.ProcessId
+                            ExecutablePath = $global:MyspeedClosureState.ExecutablePath
+                            CreationDate = $global:MyspeedClosureState.CreationDate
+                        }
+                    }
+                    throw "Unexpected synthetic CIM class: $ClassName"
+                }
+                function global:New-Service {
+                    [CmdletBinding()] param([string]$Name, [string]$BinaryPathName,
+                        [string]$DisplayName, [string]$StartupType)
+                    [void]$global:MyspeedClosureState.Calls.Add('create')
+                    $global:MyspeedClosureState.Exists = $true
+                }
+                function global:Get-Service {
+                    [CmdletBinding()] param([string]$Name)
+                    $controller = [pscustomobject]@{}
+                    $controller | Add-Member ScriptMethod Start {
+                        [void]$global:MyspeedClosureState.Calls.Add('start')
+                        $global:MyspeedClosureState.State = 'StartPending'
+                        $global:MyspeedClosureState.ProcessId = ${processId}
+                        $global:MyspeedClosureState.ProcessExists = $true
+                    }
+                    $controller | Add-Member ScriptMethod Stop {
+                        [void]$global:MyspeedClosureState.Calls.Add('stop')
+                        $global:MyspeedClosureState.State = 'Stopped'
+                        $global:MyspeedClosureState.ProcessId = 0
+                        $global:MyspeedClosureState.ProcessExists = $false
+                    }
+                    $controller | Add-Member ScriptMethod Dispose {
+                        [void]$global:MyspeedClosureState.Calls.Add('dispose')
+                        $global:MyspeedClosureState.DisposeCount++
+                    }
+                    return $controller
+                }
+                function global:Remove-Service {
+                    [CmdletBinding()] param([string]$Name)
+                    [void]$global:MyspeedClosureState.Calls.Add('remove')
+                    $global:MyspeedClosureState.Exists = $false
+                }
+                function global:Get-NetTCPConnection { [CmdletBinding()] param() return }
+                function global:Get-NetUDPEndpoint { [CmdletBinding()] param() return }
+                function global:Start-Sleep {
+                    [CmdletBinding()] param([int]$Milliseconds)
+                    if ($Milliseconds -ne ${POLL_INTERVAL_MILLISECONDS}) {
+                        throw "Unexpected synthetic poll interval: $Milliseconds"
+                    }
+                    $global:MyspeedClosureState.SleepCount++
+                }
+
+                $factoryModule = New-Module {
+                    . ${quote(SCRIPT)}
+                    Export-ModuleMember -Function New-MyspeedNativeOperations
+                }
+                $operations = & $factoryModule {
+                    $factoryArguments = @{
+                        ServiceName = ${quote(serviceName)}; SourcePath = ${quote(sourcePath)}
+                        ExecutablePath = ${quote(executablePath)}; ProbeResultPath = ${quote(resultPath)}
+                        ProbeSource = 'synthetic'; Nonce = ${quote(NONCE)}
+                    }
+                    New-MyspeedNativeOperations @factoryArguments
+                }
+                & $operations.CreateService
+                $process = & $operations.StartService
+                $probe = & $operations.ReadProbe $process
+                $activity = & $operations.InspectProbeActivity $process
+                $cleanup = & $operations.CleanupOwnedService $process
+                [pscustomobject]@{
+                    probeNonce = $probe.nonce; activity = $activity; cleanup = $cleanup
+                    calls = @($global:MyspeedClosureState.Calls)
+                    disposeCount = $global:MyspeedClosureState.DisposeCount
+                    sleepCount = $global:MyspeedClosureState.SleepCount
+                }
+            `);
+            assert.equal(outcome.probeNonce, NONCE);
+            assert.deepEqual(outcome.activity, {childCount: 0, tcpEndpointCount: 0, udpEndpointCount: 0});
+            assert.deepEqual(outcome.cleanup, {serviceStopped: true, serviceDeleted: true, processGone: true});
+            assert.deepEqual(outcome.calls, ["create", "start", "dispose", "stop", "dispose", "remove"]);
+            assert.equal(outcome.disposeCount, 2);
+            assert.equal(outcome.sleepCount, 1);
         } finally {
             fs.rmSync(root, {recursive: true, force: true});
         }

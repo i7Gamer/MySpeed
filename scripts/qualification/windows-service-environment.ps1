@@ -660,6 +660,11 @@ function New-MyspeedNativeOperations {
     $serviceResultDeadlineSeconds = $script:SERVICE_RESULT_DEADLINE_SECONDS
     $serviceStopDeadlineSeconds = $script:SERVICE_STOP_DEADLINE_SECONDS
     $maximumProbeResultBytes = $script:MAX_PROBE_RESULT_BYTES
+    # GetNewClosure creates a dynamic module. Bare references from the returned
+    # callbacks cannot see helpers private to this script's session state, so
+    # retain the actual function scriptblocks and invoke those explicitly.
+    $assertOwnedService = ${function:Assert-MyspeedOwnedService}
+    $waitCondition = ${function:Wait-MyspeedCondition}
 
     $compile = {
         $compiler = Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
@@ -709,16 +714,16 @@ function New-MyspeedNativeOperations {
         if (& $serviceExists) { throw "Owned service name already exists: $ServiceName" }
         New-Service -Name $ServiceName -BinaryPathName ('"{0}"' -f $ExecutablePath) `
             -DisplayName $ServiceName -StartupType Manual -ErrorAction Stop | Out-Null
-        Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
+        & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
     }.GetNewClosure()
     $start = {
-        Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
+        & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
         $controller = Get-Service -Name $ServiceName -ErrorAction Stop
         try { $controller.Start() }
         finally { $controller.Dispose() }
-        $service = Wait-MyspeedCondition -DeadlineSeconds $serviceStartDeadlineSeconds `
+        $service = & $waitCondition -DeadlineSeconds $serviceStartDeadlineSeconds `
             -FailureMessage "Owned service did not start before its deadline: $ServiceName" -Condition {
-                $candidate = Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
+                $candidate = & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
                 if ($candidate.State -eq 'Running' -and [int]$candidate.ProcessId -gt 0) { return $candidate }
                 return $null
             }
@@ -735,7 +740,7 @@ function New-MyspeedNativeOperations {
     }.GetNewClosure()
     $readProbe = {
         param([object]$ExpectedProcess)
-        Wait-MyspeedCondition -DeadlineSeconds $serviceResultDeadlineSeconds `
+        & $waitCondition -DeadlineSeconds $serviceResultDeadlineSeconds `
             -FailureMessage 'LocalSystem probe did not produce its bounded result' -Condition {
                 if (Test-Path -LiteralPath $ProbeResultPath -PathType Leaf) { return $true }
                 return $false
@@ -754,7 +759,7 @@ function New-MyspeedNativeOperations {
     $inspectActivity = {
         param([object]$ExpectedProcess)
         $ExpectedProcessId = [int]$ExpectedProcess.processId
-        $service = Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath `
+        $service = & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath `
             -ExpectedProcessId $ExpectedProcessId
         $process = Get-CimInstance Win32_Process -Filter "ProcessId=$ExpectedProcessId" -ErrorAction Stop
         if (-not [string]::Equals([IO.Path]::GetFullPath([string]$process.ExecutablePath),
@@ -786,7 +791,7 @@ function New-MyspeedNativeOperations {
             }
         }
         if ($null -ne $service) {
-            $owned = Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
+            $owned = & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
             $observedPid = [int]$owned.ProcessId
             if ($ExpectedProcessId -gt 0 -and $observedPid -gt 0 -and $observedPid -ne $ExpectedProcessId) {
                 throw 'Refusing cleanup after owned service PID drift'
@@ -796,25 +801,25 @@ function New-MyspeedNativeOperations {
                 $controller = Get-Service -Name $ServiceName -ErrorAction Stop
                 try { $controller.Stop() }
                 finally { $controller.Dispose() }
-                Wait-MyspeedCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
+                & $waitCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
                     -FailureMessage "Owned service did not stop before its deadline: $ServiceName" -Condition {
-                        $candidate = Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
+                        $candidate = & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath
                         if ($candidate.State -eq 'Stopped') { return $true }
                         return $false
                     } | Out-Null
             }
         }
         if ($ownedPid -gt 0) {
-            Wait-MyspeedCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
+            & $waitCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
                 -FailureMessage 'Owned service process remained after stop' -Condition {
                     return $null -eq (Get-CimInstance Win32_Process -Filter "ProcessId=$ownedPid" `
                         -ErrorAction Stop)
                 } | Out-Null
         }
         if ($null -ne (Get-CimInstance Win32_Service -Filter "Name='$escapedServiceName'" -ErrorAction Stop)) {
-            Assert-MyspeedOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
+            & $assertOwnedService -ServiceName $ServiceName -ExecutablePath $ExecutablePath | Out-Null
             Remove-Service -Name $ServiceName -ErrorAction Stop
-            Wait-MyspeedCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
+            & $waitCondition -DeadlineSeconds $serviceStopDeadlineSeconds `
                 -FailureMessage "Owned service remained after delete: $ServiceName" -Condition {
                     return $null -eq (Get-CimInstance Win32_Service -Filter "Name='$escapedServiceName'" `
                         -ErrorAction Stop)
