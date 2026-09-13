@@ -1,0 +1,691 @@
+name: Windows WinSW offline canary
+
+# Candidate-neutral, nonqualifying feasibility evidence only. This workflow
+# never packages, installs, or executes MySpeed and never clears a release gate.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-winsw-offline-canary.yml
+      - scripts/qualification/windows-winsw-offline-canary.ps1
+      - tests/server/windowsWinswOfflineCanary.test.js
+      - tests/server/windowsWinswOfflineCanaryWorkflow.test.js
+  push:
+    branches: [development]
+    paths:
+      - .github/workflows/windows-winsw-offline-canary.yml
+      - scripts/qualification/windows-winsw-offline-canary.ps1
+      - tests/server/windowsWinswOfflineCanary.test.js
+      - tests/server/windowsWinswOfflineCanaryWorkflow.test.js
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Seal inert WinSW canary closure
+    if: github.repository == 'i7Gamer/MySpeed' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.closure.outputs.nonce }}
+    steps:
+      - name: Checkout exact canary source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun for locked test dependencies
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked canary test dependencies
+        shell: pwsh
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'Canary test dependency installation failed' }
+
+      - name: Test pure and injected canary helpers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tests/server/windowsWinswOfflineCanary.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Canary helper regression tests failed' }
+          node --test tests/server/windowsWinswOfflineCanaryWorkflow.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Canary workflow regression tests failed' }
+
+      - name: Acquire and authenticate pinned WinSW
+        id: acquire
+        shell: pwsh
+        env:
+          WINSW_URL: "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe"
+          WINSW_SHA256: "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20"
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_WINSW_BYTES = 20971520
+          $EXPECTED_WINSW_BYTES = 18286774
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          if (Test-Path -LiteralPath $closureRoot) { throw 'Closure root already exists' }
+          New-Item -ItemType Directory -Path $closureRoot -ErrorAction Stop | Out-Null
+          $winswPath = Join-Path $closureRoot 'WinSW-x64.exe'
+          Invoke-WebRequest -Uri $env:WINSW_URL -OutFile $winswPath -UseBasicParsing
+          $item = Get-Item -LiteralPath $winswPath -Force
+          if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $item.Length -ne $EXPECTED_WINSW_BYTES -or $item.Length -gt $MAX_WINSW_BYTES) { throw 'WinSW file is invalid' }
+          $actualHash = (Get-FileHash -LiteralPath $winswPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -cne $env:WINSW_SHA256) { throw 'WinSW does not match its pinned digest' }
+          $signature = Get-AuthenticodeSignature -LiteralPath $winswPath
+          $signatureStatus = [string]$signature.Status
+          $signerSubject = if ($null -eq $signature.SignerCertificate) { '<none>' } else { $signature.SignerCertificate.Subject }
+          $version = [Diagnostics.FileVersionInfo]::GetVersionInfo($winswPath)
+          if ([string]::IsNullOrWhiteSpace($version.FileVersion) -or
+            [string]::IsNullOrWhiteSpace($version.ProductVersion)) { throw 'WinSW version metadata is missing' }
+          Write-Output "Hash-authenticated pinned WinSW $actualHash ($($version.FileVersion); $($version.ProductVersion)); Authenticode observation: $signatureStatus, $signerSubject."
+
+      - name: Seal exact closure
+        id: closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          $scriptPath = Join-Path $closureRoot 'windows-winsw-offline-canary.ps1'
+          Copy-Item -LiteralPath 'scripts/qualification/windows-winsw-offline-canary.ps1' -Destination $scriptPath -ErrorAction Stop
+          $nonce = [guid]::NewGuid().ToString('N')
+          & $scriptPath -Mode EmitClosureManifest -ExpectedRunId $env:EXPECTED_RUN_ID `
+            -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA `
+            -ExpectedEventSha $env:EXPECTED_EVENT_SHA -Nonce $nonce -ClosureRoot $closureRoot `
+            -ManifestPath (Join-Path $closureRoot 'closure.json')
+          if (-not $?) { throw 'Closure generation failed' }
+          "nonce=$nonce" >> $env:GITHUB_OUTPUT
+
+      - name: Upload immutable canary closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-winsw-offline-canary-closure
+          path: |
+            ${{ runner.temp }}/winsw-offline-closure/windows-winsw-offline-canary.ps1
+            ${{ runner.temp }}/winsw-offline-closure/WinSW-x64.exe
+            ${{ runner.temp }}/winsw-offline-closure/closure.json
+          if-no-files-found: error
+          retention-days: 7
+
+  canary:
+    name: Observe WinSW with the runner offline
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+    steps:
+      # No checkout: only the exact same-run immutable closure is accepted.
+      - name: Download exact canary closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/winsw-offline-closure
+
+      - name: Assert exact hosted Windows PowerShell context
+        id: host
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $expectedPowerShell = [IO.Path]::GetFullPath((Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'))
+          $actualPowerShell = [IO.Path]::GetFullPath((Get-Process -Id $PID -ErrorAction Stop).Path)
+          if ($env:GITHUB_ACTIONS -cne 'true' -or $env:CI -cne 'true' -or
+            $env:GITHUB_REPOSITORY -cne 'i7Gamer/MySpeed' -or $env:RUNNER_OS -cne 'Windows' -or
+            $env:RUNNER_ARCH -cne 'X64' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
+            $env:ImageOS -cne 'win25-vs2026' -or $env:ImageVersion -cnotmatch '^[0-9A-Za-z._-]+$' -or
+            $PSVersionTable.PSEdition -cne 'Desktop' -or $PSVersionTable.PSVersion.Major -ne 5 -or
+            -not [string]::Equals($actualPowerShell, $expectedPowerShell, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Hosted Windows PowerShell context differs'
+          }
+
+      - name: Validate exact immutable closure
+        id: validate
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_SCRIPT_BYTES = 262144
+          $MAX_WINSW_BYTES = 20971520
+          $EXPECTED_WINSW_BYTES = 18286774
+          $MAX_MANIFEST_BYTES = 65536
+          $PINNED_WINSW_SHA256 = 'a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          $root = Get-Item -LiteralPath $closureRoot -Force -ErrorAction Stop
+          if (-not $root.PSIsContainer -or ($root.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $root.LinkType) {
+            throw 'Closure root is not an ordinary directory'
+          }
+          $ancestor = $root.Parent
+          while ($null -ne $ancestor) {
+            if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Closure ancestor is not an ordinary directory'
+            }
+            $ancestor = $ancestor.Parent
+          }
+          $entries = @(Get-ChildItem -LiteralPath $closureRoot -Force -ErrorAction Stop)
+          $expectedNames = @('WinSW-x64.exe', 'closure.json', 'windows-winsw-offline-canary.ps1' | Sort-Object)
+          if ($entries.Count -ne 3 -or (Compare-Object ($entries.Name | Sort-Object) $expectedNames -CaseSensitive)) {
+            throw 'Closure membership differs'
+          }
+          foreach ($entry in $entries) {
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+              throw 'Closure contains a non-ordinary file'
+            }
+            $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*' -ErrorAction Stop)
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Closure contains alternate streams' }
+            $maximum = switch -CaseSensitive ($entry.Name) {
+              'closure.json' { $MAX_MANIFEST_BYTES }
+              'windows-winsw-offline-canary.ps1' { $MAX_SCRIPT_BYTES }
+              'WinSW-x64.exe' { $MAX_WINSW_BYTES }
+              default { throw 'Closure filename differs' }
+            }
+            if ($entry.Length -le 0 -or $entry.Length -gt $maximum) { throw 'Closure file size differs' }
+          }
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
+          $manifestKeys = @('expectedEventSha','expectedRunAttempt','expectedRunId','expectedSourceSha','files','kind','nonce','schemaVersion')
+          if (Compare-Object @($manifest.PSObject.Properties.Name | Sort-Object) $manifestKeys -CaseSensitive) {
+            throw 'Closure manifest schema differs'
+          }
+          if (($manifest.schemaVersion -isnot [int] -and $manifest.schemaVersion -isnot [long]) -or
+            $manifest.schemaVersion -ne 1 -or $manifest.kind -isnot [string] -or
+            $manifest.kind -cne 'myspeed-winsw-offline-canary-closure' -or
+            $manifest.expectedRunId -isnot [string] -or $manifest.expectedRunId -cnotmatch '^[1-9][0-9]*$' -or
+            $manifest.expectedRunId -cne $env:EXPECTED_RUN_ID -or
+            $manifest.expectedRunAttempt -isnot [string] -or $manifest.expectedRunAttempt -cnotmatch '^[1-9][0-9]*$' -or
+            $manifest.expectedRunAttempt -cne $env:EXPECTED_RUN_ATTEMPT -or
+            $manifest.expectedSourceSha -isnot [string] -or $manifest.expectedSourceSha -cnotmatch '^[a-f0-9]{40}$' -or
+            $manifest.expectedSourceSha -cne $env:EXPECTED_SOURCE_SHA -or
+            $manifest.expectedEventSha -isnot [string] -or $manifest.expectedEventSha -cnotmatch '^[a-f0-9]{40}$' -or
+            $manifest.expectedEventSha -cne $env:EXPECTED_EVENT_SHA -or
+            $manifest.nonce -isnot [string] -or $manifest.nonce -cne $env:EXPECTED_NONCE -or
+            $manifest.nonce -cnotmatch '^[a-f0-9]{32}$' -or $manifest.files -isnot [array]) {
+            throw 'Closure identity differs'
+          }
+          $files = @($manifest.files)
+          $fileNames = @('windows-winsw-offline-canary.ps1', 'WinSW-x64.exe')
+          if ($files.Count -ne $fileNames.Count) { throw 'Closure manifest file count differs' }
+          for ($index = 0; $index -lt $files.Count; $index++) {
+            $record = $files[$index]
+            if (Compare-Object @($record.PSObject.Properties.Name | Sort-Object) @('bytes','name','sha256') -CaseSensitive) {
+              throw 'Closure file schema differs'
+            }
+            $filePath = Join-Path $closureRoot $fileNames[$index]
+            $fileItem = Get-Item -LiteralPath $filePath -Force -ErrorAction Stop
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($record.name -isnot [string] -or $record.name -cne $fileNames[$index] -or
+              ($record.bytes -isnot [int] -and $record.bytes -isnot [long]) -or
+              $record.bytes -ne $fileItem.Length -or $record.sha256 -isnot [string] -or
+              $record.sha256 -cnotmatch '^[a-f0-9]{64}$' -or $record.sha256 -cne $actualHash) {
+              throw 'Closure file identity differs'
+            }
+          }
+          if ($files[1].bytes -ne $EXPECTED_WINSW_BYTES -or $files[1].sha256 -cne $PINNED_WINSW_SHA256) {
+            throw 'WinSW closure pin differs'
+          }
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "trusted=true`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Run bounded candidate-neutral offline canary
+        id: canary
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          $scriptPath = Join-Path $closureRoot 'windows-winsw-offline-canary.ps1'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP ('myspeed-winsw-offline-' + $env:EXPECTED_NONCE)
+          & $scriptPath -Mode InvokeHostedCanary -ExpectedRunId $env:EXPECTED_RUN_ID `
+            -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA `
+            -ExpectedEventSha $env:EXPECTED_EVENT_SHA -ExpectedImageVersion $env:ImageVersion `
+            -Nonce $env:EXPECTED_NONCE -ClosureRoot $closureRoot -ManifestPath (Join-Path $closureRoot 'closure.json') `
+            -EvidencePath (Join-Path $evidenceRoot 'result.json')
+          if (-not $?) { throw 'Hosted WinSW offline canary failed' }
+
+      - name: Always perform post-reconnect owned cleanup
+        id: cleanup
+        if: always() && steps.host.outcome == 'success' && steps.validate.outputs.trusted == 'true'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_REQUEST_BYTES = 65536
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          $scriptPath = Join-Path $closureRoot 'windows-winsw-offline-canary.ps1'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP ('myspeed-winsw-offline-' + $env:EXPECTED_NONCE)
+          $requestPath = Join-Path $evidenceRoot 'recovery.request.json'
+          if (-not (Test-Path -LiteralPath $requestPath -PathType Leaf)) {
+            Write-Output 'No immutable recovery request exists; the reviewed controller must not mutate before creating it.'
+            return
+          }
+          $requestItem = Get-Item -LiteralPath $requestPath -Force -ErrorAction Stop
+          if ($requestItem.PSIsContainer -or ($requestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $requestItem.LinkType -or $requestItem.Length -le 0 -or $requestItem.Length -gt $MAX_REQUEST_BYTES) {
+            throw 'Recovery request is unsafe'
+          }
+          $requestSha = (Get-FileHash -LiteralPath $requestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          & $scriptPath -Mode InvokePostReconnect -ExpectedRunId $env:EXPECTED_RUN_ID `
+            -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA `
+            -ExpectedEventSha $env:EXPECTED_EVENT_SHA -ExpectedImageVersion $env:ImageVersion `
+            -Nonce $env:EXPECTED_NONCE -ClosureRoot $closureRoot -ManifestPath (Join-Path $closureRoot 'closure.json') `
+            -EvidencePath (Join-Path $evidenceRoot 'result.json') `
+            -RequestPath $requestPath -ExpectedRequestSha256 $requestSha
+          if (-not $?) { throw 'Post-reconnect cleanup failed' }
+
+      - name: Confirm successful runner continuation
+        id: continuation
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_RESULT_BYTES = 262144
+          $MAX_REQUEST_BYTES = 65536
+          $MAX_SOURCE_BYTES = 262144
+          $MAX_CONFIGURATION_BYTES = 4096
+          $MAX_COMPILER_BYTES = 16777216
+          $MAX_WINSW_BYTES = 20971520
+          $PINNED_WINSW_SHA256 = 'a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20'
+          $EXPECTED_EVENTS = @('prepare','armRecovery','disableAdapters','verifyOffline','startService','probe',
+            'teardownService','restoreAdapters','disarmRecovery','restoreEnvironment')
+          $EXPECTED_RECOVERY_ORDER = @('teardownService','restoreAdapters','disarmRecovery','restoreEnvironment')
+          $root = Join-Path $env:RUNNER_TEMP ('myspeed-winsw-offline-' + $env:EXPECTED_NONCE)
+          $resultPath = Join-Path $root 'result.json'
+          $cleanupPath = Join-Path $root 'cleanup.result.json'
+          $requestPath = Join-Path $root 'recovery.request.json'
+          $recoveryResultPath = Join-Path $root 'recovery.result.json'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'winsw-offline-closure'
+          $scriptPath = Join-Path $closureRoot 'windows-winsw-offline-canary.ps1'
+          Write-Output 'The Actions runner continued after the offline interval and cleanup step.'
+
+          function Assert-ExactKeys([object]$Value, [string[]]$Expected, [string]$Label) {
+            if ($null -eq $Value -or $Value -isnot [psobject] -or
+              (Compare-Object @($Value.PSObject.Properties.Name | Sort-Object) @($Expected | Sort-Object) -CaseSensitive)) {
+              throw "$Label schema differs"
+            }
+          }
+          function Assert-String([object]$Value, [string]$Expected, [string]$Label) {
+            if ($Value -isnot [string] -or $Value -cne $Expected) { throw "$Label differs" }
+          }
+          function Assert-Boolean([object]$Value, [bool]$Expected, [string]$Label) {
+            if ($Value -isnot [bool] -or $Value -ne $Expected) { throw "$Label differs" }
+          }
+          function Assert-Integer([object]$Value, [long]$Minimum, [long]$Maximum, [string]$Label) {
+            if (($Value -isnot [int] -and $Value -isnot [long]) -or $Value -lt $Minimum -or $Value -gt $Maximum) {
+              throw "$Label is not an exact bounded integer"
+            }
+          }
+          function Assert-Array([object]$Value, [string]$Label) {
+            if ($Value -isnot [array]) { throw "$Label is not an array" }
+            return @($Value)
+          }
+          function Assert-OrderedStrings([object]$Value, [string[]]$Expected, [string]$Label) {
+            $actual = @(Assert-Array $Value $Label)
+            if ($actual.Count -ne $Expected.Count) { throw "$Label count differs" }
+            for ($index = 0; $index -lt $Expected.Count; $index++) {
+              Assert-String $actual[$index] $Expected[$index] "$Label entry"
+            }
+          }
+          function Read-BoundedJson([string]$Path, [long]$Maximum, [string]$Label) {
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              $item.LinkType -or $item.Length -le 0 -or $item.Length -gt $Maximum) {
+              throw "$Label is not a bounded ordinary file"
+            }
+            $streams = @(Get-Item -LiteralPath $Path -Stream '*' -ErrorAction Stop)
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw "$Label has alternate streams" }
+            return Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json
+          }
+          function Assert-Hash([string]$Path, [long]$Maximum, [string]$Expected, [string]$Label,
+            [bool]$AllowSystemHardLink = $false) {
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              ($item.LinkType -and (-not $AllowSystemHardLink -or $item.LinkType -cne 'HardLink')) -or
+              $item.Length -le 0 -or $item.Length -gt $Maximum) { throw "$Label is unsafe" }
+            $streams = @(Get-Item -LiteralPath $Path -Stream '*' -ErrorAction Stop)
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw "$Label has alternate streams" }
+            $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($Expected -isnot [string] -or $Expected -cnotmatch '^[a-f0-9]{64}$' -or $hash -cne $Expected) {
+              throw "$Label digest differs"
+            }
+          }
+          function Invoke-PureValidator([string]$Mode, [object]$Value, [string]$Label) {
+            $json = $Value | ConvertTo-Json -Compress -Depth 12
+            $lines = @(& $scriptPath -Mode $Mode -InputJson $json)
+            if (-not $? -or $lines.Count -ne 1) { throw "$Label invocation differed" }
+            $assessment = $lines[0] | ConvertFrom-Json
+            $expectedKeys = if ($Mode -ceq 'ClassifyBoundary') { @('accepted','qualifying','udpSendAccepted') } `
+              else { @('accepted','qualifying') }
+            Assert-ExactKeys $assessment $expectedKeys "$Label response"
+            Assert-Boolean $assessment.accepted $true "$Label acceptance"
+            Assert-Boolean $assessment.qualifying $false "$Label qualification"
+            if ($Mode -ceq 'ClassifyBoundary') {
+              if ($assessment.udpSendAccepted -isnot [bool]) { throw "$Label UDP observation differs" }
+            }
+          }
+
+          $rootItem = Get-Item -LiteralPath $root -Force -ErrorAction Stop
+          if (-not $rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $rootItem.LinkType) { throw 'Canary evidence root is unsafe' }
+          $ancestor = $rootItem.Parent
+          while ($null -ne $ancestor) {
+            if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Canary evidence ancestor is unsafe'
+            }
+            $ancestor = $ancestor.Parent
+          }
+          if (Test-Path -LiteralPath $recoveryResultPath) { throw 'Emergency recovery result forbids canary acceptance' }
+          $result = Read-BoundedJson $resultPath $MAX_RESULT_BYTES 'Canary result'
+          $request = Read-BoundedJson $requestPath $MAX_REQUEST_BYTES 'Recovery request'
+          $cleanup = Read-BoundedJson $cleanupPath $MAX_REQUEST_BYTES 'Cleanup result'
+          $requestSha = (Get-FileHash -LiteralPath $requestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          $requestValidationLines = @(& $scriptPath -Mode ValidateRecoveryRequest -InputJson `
+            ($request | ConvertTo-Json -Compress -Depth 12))
+          if (-not $? -or $requestValidationLines.Count -ne 1) { throw 'Recovery request validation invocation differed' }
+          $requestValidation = $requestValidationLines[0] | ConvertFrom-Json
+          Assert-ExactKeys $requestValidation @('accepted') 'Recovery request validation'
+          Assert-Boolean $requestValidation.accepted $true 'Recovery request acceptance'
+          if ((Get-FileHash -LiteralPath $requestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $requestSha) {
+            throw 'Recovery request changed during validation'
+          }
+          foreach ($binding in @(
+            @('expectedRunId',$env:EXPECTED_RUN_ID), @('expectedRunAttempt',$env:EXPECTED_RUN_ATTEMPT),
+            @('expectedSourceSha',$env:EXPECTED_SOURCE_SHA), @('expectedEventSha',$env:EXPECTED_EVENT_SHA),
+            @('expectedImageVersion',$env:ImageVersion), @('nonce',$env:EXPECTED_NONCE),
+            @('scriptPath',$scriptPath), @('taskRoot',$root))) {
+            Assert-String $request.($binding[0]) $binding[1] "Recovery request $($binding[0])"
+          }
+          Assert-Hash $scriptPath $MAX_SOURCE_BYTES $request.scriptSha256 'Recovery script'
+
+          Assert-ExactKeys $result @('schemaVersion','kind','status','qualifying','canaryPassed','offlineCanaryPassed',
+            'sourceSha','eventSha','runId','runAttempt','imageVersion','nonce','preDisable','boundary','probe','recovery','events',
+            'failures','build','operations','releaseGatesCleared') 'Canary result'
+          Assert-Integer $result.schemaVersion 1 1 'Canary result schema'
+          foreach ($binding in @(
+            @('kind','myspeed-winsw-offline-canary'), @('status','completed'),
+            @('sourceSha',$env:EXPECTED_SOURCE_SHA), @('eventSha',$env:EXPECTED_EVENT_SHA),
+            @('runId',$env:EXPECTED_RUN_ID), @('runAttempt',$env:EXPECTED_RUN_ATTEMPT),
+            @('imageVersion',$env:ImageVersion), @('nonce',$env:EXPECTED_NONCE))) {
+            Assert-String $result.($binding[0]) $binding[1] "Canary result $($binding[0])"
+          }
+          Assert-Boolean $result.qualifying $false 'Canary qualifying flag'
+          Assert-Boolean $result.canaryPassed $false 'Canary pre-continuation pass flag'
+          Assert-Boolean $result.offlineCanaryPassed $true 'Canary offline pass flag'
+          if (@(Assert-Array $result.failures 'Canary failures').Count -ne 0 -or
+            @(Assert-Array $result.releaseGatesCleared 'Canary release gates').Count -ne 0) {
+            throw 'Canary result contains failures or release-gate claims'
+          }
+          Assert-OrderedStrings $result.events $EXPECTED_EVENTS 'Canary events'
+
+          Assert-ExactKeys $result.recovery @('schemaVersion','classification','emergencyRestore','serviceTeardownProven',
+            'adapterRestoreProven','recoveryTaskGoneProven','environmentRestoredProven','continuationObserved',
+            'cleanupAfterReconnectProven','phaseOrder') 'Canary recovery'
+          Assert-Integer $result.recovery.schemaVersion 1 1 'Canary recovery schema'
+          Assert-String $result.recovery.classification 'awaitingContinuation' 'Canary recovery classification'
+          foreach ($proof in @('serviceTeardownProven','adapterRestoreProven','recoveryTaskGoneProven','environmentRestoredProven')) {
+            Assert-Boolean $result.recovery.$proof $true "Canary recovery $proof"
+          }
+          foreach ($proof in @('emergencyRestore','continuationObserved','cleanupAfterReconnectProven')) {
+            Assert-Boolean $result.recovery.$proof $false "Canary recovery $proof"
+          }
+          Assert-OrderedStrings $result.recovery.phaseOrder $EXPECTED_RECOVERY_ORDER 'Canary recovery order'
+
+          Assert-ExactKeys $result.preDisable @('providers','adapters','ipState') 'Pre-disable state'
+          Assert-ExactKeys $result.preDisable.providers @('adapters','ipInterfaces','ipAddresses','routes') `
+            'Pre-disable providers'
+          foreach ($provider in @('adapters','ipInterfaces','ipAddresses','routes')) {
+            Assert-Boolean $result.preDisable.providers.$provider $true "Pre-disable provider $provider"
+          }
+          $preAdapters = @(Assert-Array $result.preDisable.adapters 'Pre-disable adapters')
+          if ($preAdapters.Count -eq 0) { throw 'Pre-disable adapter inventory is empty' }
+          $preIdentities = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          $preGuids = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          $prePnps = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          $enabledNonLoopback = [Collections.Generic.List[object]]::new()
+          foreach ($adapter in $preAdapters) {
+            Assert-ExactKeys $adapter @('interfaceGuid','pnpDeviceId','hidden','loopback','enabled','status') `
+              'Pre-disable adapter'
+            if ($adapter.interfaceGuid -isnot [string] -or
+              $adapter.interfaceGuid -cnotmatch '^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$' -or
+              $adapter.pnpDeviceId -isnot [string] -or [string]::IsNullOrWhiteSpace($adapter.pnpDeviceId) -or
+              $adapter.status -isnot [string] -or [string]::IsNullOrWhiteSpace($adapter.status)) {
+              throw 'Pre-disable adapter identity differs'
+            }
+            Assert-Boolean $adapter.hidden ([bool]$adapter.hidden) 'Pre-disable hidden flag'
+            Assert-Boolean $adapter.loopback ([bool]$adapter.loopback) 'Pre-disable loopback flag'
+            Assert-Boolean $adapter.enabled ([bool]$adapter.enabled) 'Pre-disable enabled flag'
+            $identity = "$($adapter.interfaceGuid)`n$($adapter.pnpDeviceId)"
+            if (-not $preIdentities.Add($identity) -or -not $preGuids.Add($adapter.interfaceGuid) -or
+              -not $prePnps.Add($adapter.pnpDeviceId)) { throw 'Pre-disable adapter identity is duplicated' }
+            if (-not $adapter.loopback -and $adapter.enabled) { [void]$enabledNonLoopback.Add($adapter) }
+          }
+          $requestAdapters = @(Assert-Array $request.adapters 'Recovery adapters')
+          if ($requestAdapters.Count -ne $enabledNonLoopback.Count) { throw 'Recovery adapter snapshot differs' }
+          foreach ($adapter in $enabledNonLoopback) {
+            $matches = @($requestAdapters | Where-Object { $_.interfaceGuid -ieq $adapter.interfaceGuid -and
+              $_.pnpDeviceId -ieq $adapter.pnpDeviceId })
+            if ($matches.Count -ne 1) { throw 'Recovery adapter is not bound to pre-disable state' }
+          }
+          $preKinds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+          foreach ($state in @(Assert-Array $result.preDisable.ipState 'Pre-disable IP state')) {
+            Assert-ExactKeys $state @('kind','compartmentId','loopback','routable') 'Pre-disable IP state'
+            if ($state.kind -isnot [string] -or @('interface','address','route') -cnotcontains $state.kind) {
+              throw 'Pre-disable IP state kind differs'
+            }
+            [void]$preKinds.Add($state.kind)
+            Assert-Integer $state.compartmentId 0 4294967295 'Pre-disable IP compartment'
+            Assert-Boolean $state.loopback ([bool]$state.loopback) 'Pre-disable IP loopback flag'
+            Assert-Boolean $state.routable ([bool]$state.routable) 'Pre-disable IP routable flag'
+          }
+          foreach ($kind in @('interface','address','route')) {
+            if (-not $preKinds.Contains($kind)) { throw "Pre-disable IP state is missing $kind" }
+          }
+          $boundaryAdapters = @($result.boundary.adapters)
+          if ($boundaryAdapters.Count -ne $preAdapters.Count) { throw 'Offline adapter inventory differs from pre-disable state' }
+          foreach ($adapter in $preAdapters) {
+            $matches = @($boundaryAdapters | Where-Object { $_.interfaceGuid -ieq $adapter.interfaceGuid -and
+              $_.pnpDeviceId -ieq $adapter.pnpDeviceId -and $_.hidden -eq $adapter.hidden -and
+              $_.loopback -eq $adapter.loopback })
+            if ($matches.Count -ne 1) { throw 'Offline adapter is not bound to pre-disable state' }
+          }
+          Invoke-PureValidator 'ClassifyBoundary' $result.boundary 'Boundary'
+          Invoke-PureValidator 'ValidateProbe' $result.probe 'Probe'
+          Assert-String $result.boundary.offlineTiming.start100ns $request.offlineStart100ns 'Boundary offline start'
+          Assert-String $result.boundary.offlineTiming.watchdogDeadline100ns $request.watchdogDeadline100ns `
+            'Boundary watchdog deadline'
+          Assert-String $result.probe.nonce $env:EXPECTED_NONCE 'Probe nonce'
+          Assert-String $result.probe.serviceName $request.serviceName 'Probe service name'
+
+          Assert-ExactKeys $result.build @('sourcePath','sourceSha256','compiler','childPath','childSha256',
+            'configurationSha256','winswAuthenticodeStatus') 'Canary build'
+          Assert-ExactKeys $result.build.compiler @('path','sha256','fileVersion') 'Canary compiler'
+          foreach ($field in @('sourcePath','childPath','winswAuthenticodeStatus')) {
+            if ($result.build.$field -isnot [string] -or [string]::IsNullOrWhiteSpace($result.build.$field)) {
+              throw "Canary build $field is empty"
+            }
+          }
+          foreach ($field in @('path','fileVersion')) {
+            if ($result.build.compiler.$field -isnot [string] -or [string]::IsNullOrWhiteSpace($result.build.compiler.$field)) {
+              throw "Canary compiler $field is empty"
+            }
+          }
+          Assert-String $result.build.sourcePath (Join-Path $root 'inert-child.cs') 'Canary source path'
+          Assert-String $result.build.childPath $request.childPath 'Canary child path'
+          Assert-String $result.build.compiler.path `
+            (Join-Path $env:SystemRoot 'Microsoft.NET\Framework64\v4.0.30319\csc.exe') 'Canary compiler path'
+          Assert-Hash $result.build.sourcePath $MAX_SOURCE_BYTES $result.build.sourceSha256 'Canary source'
+          Assert-Hash $result.build.childPath $MAX_SOURCE_BYTES $result.build.childSha256 'Canary child'
+          Assert-Hash $request.serviceXmlPath $MAX_CONFIGURATION_BYTES $result.build.configurationSha256 'Canary configuration'
+          Assert-Hash $result.build.compiler.path $MAX_COMPILER_BYTES $result.build.compiler.sha256 'Canary compiler' $true
+          Assert-Hash $request.serviceExecutablePath $MAX_WINSW_BYTES $PINNED_WINSW_SHA256 'Canary WinSW copy'
+          Assert-String $result.build.compiler.fileVersion `
+            ([Diagnostics.FileVersionInfo]::GetVersionInfo($result.build.compiler.path).FileVersion) 'Canary compiler version'
+          Assert-String $result.build.winswAuthenticodeStatus `
+            ([string](Get-AuthenticodeSignature -LiteralPath $request.serviceExecutablePath -ErrorAction Stop).Status) `
+            'Canary WinSW Authenticode observation'
+          Assert-String $result.probe.childSha256 $result.build.childSha256 'Probe child digest'
+          Assert-String $result.probe.configuration.sha256 $result.build.configurationSha256 'Probe configuration digest'
+          Assert-String $result.probe.winswSha256 $PINNED_WINSW_SHA256 'Probe WinSW digest'
+
+          $operations = @(Assert-Array $result.operations 'Canary operations')
+          $expectedOperations = @(
+            [pscustomobject]@{file=$result.build.compiler.path;arguments=[string[]]@('/nologo','/target:exe','/platform:x64',
+              '/optimize+',('/out:' + $request.childPath),$result.build.sourcePath)},
+            [pscustomobject]@{file=$request.serviceExecutablePath;arguments=[string[]]@('install')},
+            [pscustomobject]@{file=$request.serviceExecutablePath;arguments=[string[]]@('start')},
+            [pscustomobject]@{file=$request.serviceExecutablePath;arguments=[string[]]@('stop')},
+            [pscustomobject]@{file=$request.serviceExecutablePath;arguments=[string[]]@('uninstall')})
+          if ($operations.Count -ne $expectedOperations.Count) { throw 'Canary operation count differs' }
+          for ($index = 0; $index -lt $operations.Count; $index++) {
+            $operation = $operations[$index]
+            Assert-ExactKeys $operation @('file','arguments','processId','exitCode','jobAssignedBeforeResume',
+              'processTreeExitProven','outputCaptured') 'Canary operation'
+            Assert-String $operation.file $expectedOperations[$index].file 'Canary operation executable'
+            Assert-OrderedStrings $operation.arguments $expectedOperations[$index].arguments 'Canary operation arguments'
+            Assert-Integer $operation.processId 1 4294967295 'Canary operation PID'
+            Assert-Integer $operation.exitCode 0 0 'Canary operation exit code'
+            Assert-Boolean $operation.jobAssignedBeforeResume $true 'Canary operation Job proof'
+            Assert-Boolean $operation.processTreeExitProven $true 'Canary operation tree proof'
+            Assert-Boolean $operation.outputCaptured $false 'Canary operation output flag'
+          }
+
+          Assert-ExactKeys $cleanup @('schemaVersion','status','classification','qualifying','canaryPassed','emergencyRestore',
+            'serviceTeardownProven','adapterRestoreProven','recoveryTaskGoneProven','environmentRestoredProven',
+            'continuationObserved','cleanupAfterReconnectProven','requestSha256','sourceSha','eventSha','runId','runAttempt',
+            'nonce','releaseGatesCleared') 'Cleanup result'
+          Assert-Integer $cleanup.schemaVersion 1 1 'Cleanup result schema'
+          foreach ($binding in @(
+            @('status','completed'), @('classification','completed'), @('requestSha256',$requestSha),
+            @('sourceSha',$env:EXPECTED_SOURCE_SHA), @('eventSha',$env:EXPECTED_EVENT_SHA),
+            @('runId',$env:EXPECTED_RUN_ID), @('runAttempt',$env:EXPECTED_RUN_ATTEMPT), @('nonce',$env:EXPECTED_NONCE))) {
+            Assert-String $cleanup.($binding[0]) $binding[1] "Cleanup result $($binding[0])"
+          }
+          foreach ($proof in @('canaryPassed','serviceTeardownProven','adapterRestoreProven','recoveryTaskGoneProven',
+            'environmentRestoredProven','continuationObserved','cleanupAfterReconnectProven')) {
+            Assert-Boolean $cleanup.$proof $true "Cleanup result $proof"
+          }
+          foreach ($proof in @('qualifying','emergencyRestore')) {
+            Assert-Boolean $cleanup.$proof $false "Cleanup result $proof"
+          }
+          if (@(Assert-Array $cleanup.releaseGatesCleared 'Cleanup release gates').Count -ne 0) {
+            throw 'Cleanup result contains release-gate claims'
+          }
+
+      - name: Bound physically safe evidence
+        id: bound_evidence
+        if: always()
+        shell: powershell
+        env:
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_EVIDENCE_BYTES = 33554432
+          $MAX_EVIDENCE_FILES = 64
+          $MAX_JSON_BYTES = 262144
+          $RETAINABLE_EXTENSIONS = @('.cs', '.err', '.json', '.log', '.out', '.xml')
+          if ($env:EXPECTED_NONCE -cnotmatch '^[a-f0-9]{32}$') { throw 'Evidence nonce is invalid' }
+          $root = Join-Path $env:RUNNER_TEMP ('myspeed-winsw-offline-' + $env:EXPECTED_NONCE)
+          $uploadRoot = Join-Path $env:RUNNER_TEMP ('myspeed-winsw-offline-upload-' + $env:EXPECTED_NONCE)
+          $uploadAncestor = Get-Item -LiteralPath $env:RUNNER_TEMP -Force -ErrorAction Stop
+          while ($null -ne $uploadAncestor) {
+            if ($uploadAncestor -isnot [IO.DirectoryInfo] -or
+              ($uploadAncestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Upload-root ancestor is unsafe'
+            }
+            $uploadAncestor = $uploadAncestor.Parent
+          }
+          if (Test-Path -LiteralPath $uploadRoot) { throw 'Bounded upload root already exists' }
+          New-Item -ItemType Directory -Path $uploadRoot -ErrorAction Stop | Out-Null
+          function Write-WorkflowDiagnostic([string]$Reason) {
+            $diagnostic = [ordered]@{schemaVersion=1;kind='myspeed-winsw-offline-workflow-diagnostic';qualifying=$false
+              reason=$Reason;sourceSha=$env:EXPECTED_SOURCE_SHA;eventSha=$env:EXPECTED_EVENT_SHA
+              runId=$env:EXPECTED_RUN_ID;runAttempt=$env:EXPECTED_RUN_ATTEMPT;nonce=$env:EXPECTED_NONCE}
+            $diagnosticBytes = [Text.UTF8Encoding]::new($false).GetBytes(($diagnostic | ConvertTo-Json -Compress))
+            if ($diagnosticBytes.Length -le 0 -or $diagnosticBytes.Length -gt $MAX_JSON_BYTES) {
+              throw 'Workflow diagnostic exceeds its bound'
+            }
+            $diagnosticPath = Join-Path $uploadRoot 'workflow-diagnostic.json'
+            $stream = [IO.FileStream]::new($diagnosticPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($diagnosticBytes, 0, $diagnosticBytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+          }
+          if ($env:CLEANUP_OUTCOME -cne 'success') {
+            Write-WorkflowDiagnostic 'post-reconnect-cleanup-not-proven'
+            [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "safe=true`n", [Text.UTF8Encoding]::new($false))
+            return
+          }
+          $rootExists = Test-Path -LiteralPath $root
+          if (-not $rootExists) {
+            Write-WorkflowDiagnostic 'controller-result-root-absent'
+          } else {
+            $physicalValidationFailed = $false
+            $entries = @()
+            try {
+              $ancestor = Get-Item -LiteralPath $root -Force -ErrorAction Stop
+              while ($null -ne $ancestor) {
+                if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                  throw 'Evidence ancestor is unsafe'
+                }
+                $ancestor = $ancestor.Parent
+              }
+              $entries = @(Get-ChildItem -LiteralPath $root -Force -ErrorAction Stop)
+              if ($entries.Count -gt $MAX_EVIDENCE_FILES) { throw 'Evidence file count exceeds its bound' }
+              $bytes = [long]0
+              foreach ($entry in $entries) {
+                if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+                  throw 'Evidence membership is unsafe'
+                }
+                $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*' -ErrorAction Stop)
+                if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Evidence has alternate streams' }
+                $bytes += $entry.Length
+                if ($bytes -gt $MAX_EVIDENCE_BYTES) { throw 'Evidence bytes exceed their bound' }
+                if ($entry.Extension -ieq '.json' -and $entry.Length -gt $MAX_JSON_BYTES) { throw 'Evidence JSON exceeds its bound' }
+              }
+            } catch {
+              $physicalValidationFailed = $true
+            }
+            if ($physicalValidationFailed) {
+              Write-WorkflowDiagnostic 'native-evidence-physical-validation-failed'
+            } else {
+              foreach ($entry in @($entries | Where-Object { $RETAINABLE_EXTENSIONS -ccontains $_.Extension.ToLowerInvariant() })) {
+                Copy-Item -LiteralPath $entry.FullName -Destination (Join-Path $uploadRoot $entry.Name) -ErrorAction Stop
+              }
+              if (-not (Test-Path -LiteralPath (Join-Path $root 'result.json'))) {
+                if ($entries.Count -ge $MAX_EVIDENCE_FILES -or $bytes -ge $MAX_EVIDENCE_BYTES) {
+                  throw 'No capacity remains for the workflow diagnostic'
+                }
+                Write-WorkflowDiagnostic 'controller-result-absent'
+              }
+            }
+          }
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "safe=true`n", [Text.UTF8Encoding]::new($false))
+          Write-Output 'Evidence is physically safe to retain; its contents remain nonqualifying.'
+
+      - name: Retain bounded nonqualifying evidence
+        if: always() && steps.bound_evidence.outputs.safe == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-winsw-offline-canary-evidence
+          path: ${{ runner.temp }}/myspeed-winsw-offline-upload-${{ needs.prepare.outputs.nonce }}/
+          if-no-files-found: error
+          retention-days: 7
