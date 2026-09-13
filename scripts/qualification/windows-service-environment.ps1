@@ -351,10 +351,11 @@ function Assert-MyspeedCanaryClosure {
     }
     $files = @(Get-ChildItem -LiteralPath $directory -Force -File)
     $directories = @(Get-ChildItem -LiteralPath $directory -Force -Directory)
+    $actualFileNames = @($files.Name | Sort-Object)
+    $expectedFileNames = @($script:CANARY_SCRIPT_NAME, [IO.Path]::GetFileName($manifestFullPath) | Sort-Object)
     if ($files.Count -ne 2 -or $directories.Count -ne 0 -or
         @($files | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }).Count -ne 0 -or
-        @($files.Name | Sort-Object) -join "`n" -cne
-            @($script:CANARY_SCRIPT_NAME, [IO.Path]::GetFileName($manifestFullPath) | Sort-Object) -join "`n") {
+        ($actualFileNames -join "`n") -cne ($expectedFileNames -join "`n")) {
         throw 'Canary closure membership is not exactly one script and one manifest'
     }
     $manifestBytes = [IO.File]::ReadAllBytes($manifestFullPath)
@@ -362,9 +363,11 @@ function Assert-MyspeedCanaryClosure {
         throw 'Canary manifest size is outside its bound'
     }
     $manifest = [Text.UTF8Encoding]::new($false, $true).GetString($manifestBytes) | ConvertFrom-Json -Depth 8
-    if (@($manifest.PSObject.Properties.Name) -join ',' -cne
+    $manifestSchema = @($manifest.PSObject.Properties.Name) -join ','
+    $scriptSchema = @($manifest.script.PSObject.Properties.Name) -join ','
+    if ($manifestSchema -cne
         'schemaVersion,expectedRunId,expectedRunAttempt,expectedSourceSha,expectedEventSha,nonce,script' -or
-        @($manifest.script.PSObject.Properties.Name) -join ',' -cne 'name,bytes,sha256' -or
+        $scriptSchema -cne 'name,bytes,sha256' -or
         $manifest.schemaVersion -ne 1 -or $manifest.expectedRunId -cne $ExpectedRunId -or
         $manifest.expectedRunAttempt -cne $ExpectedRunAttempt -or
         $manifest.expectedSourceSha -cne $ExpectedSourceSha -or $manifest.expectedEventSha -cne $ExpectedEventSha -or

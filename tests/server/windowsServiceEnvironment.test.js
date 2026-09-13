@@ -7,6 +7,7 @@ import {spawnSync} from "node:child_process";
 
 const SCRIPT = path.resolve("scripts/qualification/windows-service-environment.ps1");
 const POWERSHELL_TIMEOUT_MS = 15_000;
+const POWERSHELL_BATCH_TIMEOUT_MS = POWERSHELL_TIMEOUT_MS * 2;
 const MAX_SCRIPT_BYTES = 262_144;
 const MAX_MANIFEST_BYTES = 4_096;
 const SOURCE_SHA = "a".repeat(40);
@@ -14,6 +15,7 @@ const EVENT_SHA = "b".repeat(40);
 const RUN_ID = "123456789";
 const RUN_ATTEMPT = "2";
 const NONCE = "123e4567-e89b-42d3-a456-426614174000";
+const MANIFEST_NAME = "manifest.json";
 const EXPECTED_ENVIRONMENT = {
     SERVER_HOST: "127.0.0.1",
     SERVER_PORT: "43127",
@@ -54,6 +56,44 @@ const runPowerShell = body => {
 const runJson = body => JSON.parse(runPowerShell(`& { ${body} } | ConvertTo-Json -Compress -Depth 12`));
 const powershellIt = powershell ? it : it.skip;
 
+const emitCanaryClosure = root => {
+    const copiedScript = path.join(root, "windows-service-environment.ps1");
+    const manifest = path.join(root, MANIFEST_NAME);
+    fs.copyFileSync(SCRIPT, copiedScript);
+    const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", copiedScript,
+        "-Mode", "EmitCanaryClosureManifest", "-ExpectedRunId", RUN_ID,
+        "-ExpectedRunAttempt", RUN_ATTEMPT,
+        "-ExpectedSourceSha", SOURCE_SHA, "-ExpectedEventSha", EVENT_SHA,
+        "-Nonce", NONCE, "-ManifestPath", manifest], {
+        encoding: "utf8", timeout: POWERSHELL_TIMEOUT_MS, env: {...process.env}
+    });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    return {copiedScript, manifest};
+};
+
+const assertCanaryClosure = ({copiedScript, manifest}, overrides = {}) => {
+    const expected = {
+        runId: RUN_ID,
+        runAttempt: RUN_ATTEMPT,
+        sourceSha: SOURCE_SHA,
+        eventSha: EVENT_SHA,
+        nonce: NONCE,
+        ...overrides
+    };
+    const command = [
+        `$ErrorActionPreference = 'Stop'`,
+        `. ${quote(copiedScript)}`,
+        `Assert-MyspeedCanaryClosure -ExpectedRunId ${quote(expected.runId)} `
+            + `-ExpectedRunAttempt ${quote(expected.runAttempt)} -ExpectedSourceSha ${quote(expected.sourceSha)} `
+            + `-ExpectedEventSha ${quote(expected.eventSha)} -Nonce ${quote(expected.nonce)} `
+            + `-ManifestPath ${quote(manifest)} | Out-Null`,
+        `'accepted'`
+    ].join("\n");
+    return spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+        encoding: "utf8", timeout: POWERSHELL_TIMEOUT_MS, env: {...process.env}
+    });
+};
+
 describe("hosted Windows SCM environment canary", () => {
     powershellIt("is import-safe and defines the exact eight-value projection", () => {
         const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", SCRIPT], {
@@ -84,7 +124,8 @@ describe("hosted Windows SCM environment canary", () => {
         assert.doesNotMatch(output, /secret-not-for-output/);
     });
 
-    powershellIt("accepts only the exact hosted repository/run/event/source/nonce identity", () => {
+    powershellIt("accepts only the exact hosted repository/run/event/source/nonce identity",
+        {timeout: POWERSHELL_BATCH_TIMEOUT_MS}, () => {
         const context = `@{
             GITHUB_ACTIONS = 'true'; CI = 'true'; RUNNER_OS = 'Windows'; RUNNER_ARCH = 'X64';
             RUNNER_ENVIRONMENT = 'github-hosted'; GITHUB_REPOSITORY = 'i7Gamer/MySpeed';
@@ -122,7 +163,7 @@ describe("hosted Windows SCM environment canary", () => {
             assert.equal(rejected.rejected, true, field);
             assert.match(rejected.message, /hosted|identity|context|source|run|repository|image/i, field);
         }
-    });
+        });
 
     powershellIt("reports a completed mismatch without clearing the environment gate", () => {
         const actual = {...EXPECTED_ENVIRONMENT, SERVER_HOST: null};
@@ -313,17 +354,7 @@ describe("hosted Windows SCM environment canary", () => {
     powershellIt("emits the exact bounded one-script closure manifest", () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-manifest-test-"));
         try {
-            const copiedScript = path.join(root, "windows-service-environment.ps1");
-            const manifest = path.join(root, "manifest.json");
-            fs.copyFileSync(SCRIPT, copiedScript);
-            const result = spawnSync(powershell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", copiedScript,
-                "-Mode", "EmitCanaryClosureManifest", "-ExpectedRunId", RUN_ID,
-                "-ExpectedRunAttempt", RUN_ATTEMPT,
-                "-ExpectedSourceSha", SOURCE_SHA, "-ExpectedEventSha", EVENT_SHA,
-                "-Nonce", NONCE, "-ManifestPath", manifest], {
-                encoding: "utf8", timeout: POWERSHELL_TIMEOUT_MS, env: {...process.env}
-            });
-            assert.equal(result.status, 0, result.stderr || result.stdout);
+            const {copiedScript, manifest} = emitCanaryClosure(root);
             const parsed = JSON.parse(fs.readFileSync(manifest, "utf8"));
             assert.deepEqual(Object.keys(parsed), [
                 "schemaVersion", "expectedRunId", "expectedRunAttempt", "expectedSourceSha",
@@ -344,6 +375,77 @@ describe("hosted Windows SCM environment canary", () => {
             fs.rmSync(root, {recursive: true, force: true});
         }
     });
+
+    powershellIt("accepts an actual emitted copied closure through the execution-side validator", () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-closure-roundtrip-"));
+        try {
+            const closure = emitCanaryClosure(root);
+            const result = assertCanaryClosure(closure);
+            assert.equal(result.status, 0, result.stderr || result.stdout);
+            assert.equal(result.stdout.trim(), "accepted");
+        } finally {
+            fs.rmSync(root, {recursive: true, force: true});
+        }
+    });
+
+    powershellIt("rejects actual copied closure schema, membership, hash, run, and attempt drift",
+        {timeout: POWERSHELL_BATCH_TIMEOUT_MS}, () => {
+            const cases = [
+                {
+                    name: "manifest-schema",
+                    mutate: ({manifest}) => {
+                        const value = JSON.parse(fs.readFileSync(manifest, "utf8"));
+                        value.unexpected = true;
+                        fs.writeFileSync(manifest, JSON.stringify(value));
+                    }
+                },
+                {
+                    name: "schema-order",
+                    mutate: ({manifest}) => {
+                        const value = JSON.parse(fs.readFileSync(manifest, "utf8"));
+                        const reordered = {script: value.script};
+                        for (const [name, entry] of Object.entries(value))
+                            if (name !== "script") reordered[name] = entry;
+                        fs.writeFileSync(manifest, JSON.stringify(reordered));
+                    }
+                },
+                {
+                    name: "script-schema",
+                    mutate: ({manifest}) => {
+                        const value = JSON.parse(fs.readFileSync(manifest, "utf8"));
+                        value.script.unexpected = true;
+                        fs.writeFileSync(manifest, JSON.stringify(value));
+                    }
+                },
+                {
+                    name: "membership",
+                    mutate: ({manifest}) => fs.writeFileSync(path.join(path.dirname(manifest), "unexpected.txt"), "x")
+                },
+                {
+                    name: "directory-membership",
+                    mutate: ({manifest}) => fs.mkdirSync(path.join(path.dirname(manifest), "unexpected"))
+                },
+                {
+                    name: "hash",
+                    mutate: ({copiedScript}) => fs.appendFileSync(copiedScript, "\n# synthetic drift\n")
+                },
+                {name: "run", overrides: {runId: "987654321"}},
+                {name: "attempt", overrides: {runAttempt: "3"}}
+            ];
+            for (const testCase of cases) {
+                const root = fs.mkdtempSync(path.join(os.tmpdir(), `myspeed-closure-${testCase.name}-`));
+                try {
+                    const closure = emitCanaryClosure(root);
+                    testCase.mutate?.(closure);
+                    const result = assertCanaryClosure(closure, testCase.overrides);
+                    assert.notEqual(result.status, 0, `${testCase.name} was accepted`);
+                    assert.match(result.stderr + result.stdout, /closure|manifest|identity|schema|size|sha-256/i,
+                        testCase.name);
+                } finally {
+                    fs.rmSync(root, {recursive: true, force: true});
+                }
+            }
+        });
 
     it("keeps all native mutation behind the hosted-context and closure gates", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
