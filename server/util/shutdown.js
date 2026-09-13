@@ -6,6 +6,25 @@
  */
 export const SHUTDOWN_GRACE_MS = 5000;
 
+export const SHUTDOWN_SUCCESS_EXIT_CODE = 0;
+export const SHUTDOWN_INCOMPLETE_EXIT_CODE = 1;
+const INCOMPLETE_CLEANUP_MESSAGE = "Server shutdown cleanup was incomplete";
+
+/**
+ * The bounded waits resolve true on completion and false on timeout. Keep
+ * their child -> round -> database order, including attempting the close after
+ * a wait times out, but never report that incomplete sequence as successful.
+ * Database-close rejection is also part of the shutdown failure contract.
+ */
+export const runServerCleanup = async ({waitForProcessExit, waitForRound, closeDatabase}) => {
+    const processExited = await waitForProcessExit();
+    const roundCompleted = await waitForRound();
+    await closeDatabase();
+    if (processExited !== true || roundCompleted !== true) {
+        throw new Error(INCOMPLETE_CLEANUP_MESSAGE);
+    }
+};
+
 /**
  * Ends the process on a signal, closing what it holds open first.
  *
@@ -40,10 +59,10 @@ export const createShutdown = ({
     // The deadline reaches this directly: a cleanup that never comes back must
     // not be able to hold the container open, which is the exact failure this
     // module exists to end.
-    const leave = () => {
+    const leave = (code) => {
         if (left) return;
         left = true;
-        exit(0);
+        exit(code);
     };
 
     /**
@@ -55,16 +74,19 @@ export const createShutdown = ({
      * Without a hook this exits in the same tick, which is what every caller
      * but index.js gets and what the shape of this module was before: an exit
      * deferred by a promise nobody needed is a behaviour change for no reason.
-     * With one, the failure of the cleanup is not the process's problem - the
-     * handle it could not close is about to be dropped by the exit regardless.
+     * With one, failure still ends the process within the same deadline, but
+     * its status must distinguish that departure from completed cleanup.
      */
     const finish = () => {
         if (finished) return;
         finished = true;
 
-        if (!onCleanup) return leave();
+        if (!onCleanup) return leave(SHUTDOWN_SUCCESS_EXIT_CODE);
 
-        Promise.resolve().then(onCleanup).catch(() => undefined).then(leave);
+        Promise.resolve().then(onCleanup).then(
+            () => leave(SHUTDOWN_SUCCESS_EXIT_CODE),
+            () => leave(SHUTDOWN_INCOMPLETE_EXIT_CODE)
+        );
     };
 
     return (signal) => {
@@ -75,8 +97,10 @@ export const createShutdown = ({
 
         onStop();
 
-        const deadline = setTimer(leave, graceMs);
-        deadline?.unref?.();
+        // Keep the deadline referenced: a pending promise alone does not keep
+        // the runtime alive, and an early natural exit would falsely report 0.
+        // Completed cleanup still calls process.exit immediately.
+        setTimer(() => leave(SHUTDOWN_INCOMPLETE_EXIT_CODE), graceMs);
 
         let pending = listeners.length;
         if (pending === 0) return finish();

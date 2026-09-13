@@ -3,7 +3,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { createShutdown } from "../../server/util/shutdown.js";
+import * as shutdownModule from "../../server/util/shutdown.js";
+import { bodyOf } from "../helpers/source.js";
+
+const SUCCESS_EXIT_CODE = 0;
+const INCOMPLETE_EXIT_CODE = 1;
+const SYNTHETIC_GRACE_MS = 50;
+const SYNTHETIC_PROCESS_TIMEOUT_MS = 10000;
 
 /** Lets whatever the cleanup hook chained onto settle before anything is asserted. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -101,7 +109,7 @@ describe("createShutdown", () => {
 
     // A request that never finishes must not keep the container alive - that is
     // the very thing this replaces.
-    it("gives up after the grace period", () => {
+    it("reports incomplete shutdown after the grace period", () => {
         const {shutdown, exited, timers} = harness({listeners: [listener({closes: false})]});
 
         shutdown("SIGTERM");
@@ -110,7 +118,7 @@ describe("createShutdown", () => {
         assert.equal(timers.length, 1);
         timers[0].fn();
 
-        assert.deepEqual(exited, [0]);
+        assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
     });
 
     it("exits once, however many signals arrive", () => {
@@ -144,6 +152,29 @@ describe("createShutdown", () => {
 
         assert.deepEqual(exited, [0]);
     });
+
+    for (const [name, configuration, expectedCode] of [
+        ["unresolved cleanup", "onCleanup: () => new Promise(() => undefined)", INCOMPLETE_EXIT_CODE],
+        ["unresolved listener", "listeners: [{close: () => undefined}]", INCOMPLETE_EXIT_CODE],
+        ["completed cleanup", "onCleanup: async () => undefined", SUCCESS_EXIT_CODE]
+    ]) {
+        it(`keeps truthful status for ${name} when the process has no other handles`, () => {
+            const moduleUrl = new URL("../../server/util/shutdown.js", import.meta.url).href;
+            const script = `import {createShutdown} from ${JSON.stringify(moduleUrl)};
+                createShutdown({${configuration}, graceMs: ${SYNTHETIC_GRACE_MS},
+                    log: () => undefined})("SIGTERM");`;
+            const arguments_ = process.versions.bun ? ["--eval", script]
+                : ["--input-type=module", "--eval", script];
+            const result = spawnSync(process.execPath, arguments_, {
+                encoding: "utf8", timeout: SYNTHETIC_PROCESS_TIMEOUT_MS, windowsHide: true,
+                env: {PATH: process.env.PATH, SystemRoot: process.env.SystemRoot,
+                    TEMP: process.env.TEMP, TMP: process.env.TMP}
+            });
+            assert.equal(result.error, undefined);
+            assert.equal(result.signal, null);
+            assert.equal(result.status, expectedCode, result.stderr);
+        });
+    }
 });
 
 /**
@@ -198,22 +229,22 @@ describe("createShutdown with a cleanup hook", () => {
 
     // A database that has already gone away rejects here, and an exit that
     // waits for a clean close it will never get is the hang this replaced.
-    it("still exits when the cleanup rejects", async () => {
+    it("reports incomplete shutdown when the cleanup rejects", async () => {
         const {shutdown, exited} = withCleanup(async () => { throw new Error("Connection lost"); });
 
         shutdown("SIGTERM");
         await settle();
 
-        assert.deepEqual(exited, [0]);
+        assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
     });
 
-    it("still exits when the cleanup throws synchronously", async () => {
+    it("reports incomplete shutdown when the cleanup throws synchronously", async () => {
         const {shutdown, exited} = withCleanup(() => { throw new Error("no handle"); });
 
         shutdown("SIGTERM");
         await settle();
 
-        assert.deepEqual(exited, [0]);
+        assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
     });
 
     /**
@@ -223,7 +254,7 @@ describe("createShutdown with a cleanup hook", () => {
      * the grace period - that is the entire failure this module exists to end,
      * and a hook that hangs would have reintroduced it one layer down.
      */
-    it("gives up on a cleanup that never finishes", async () => {
+    it("reports incomplete shutdown when cleanup never finishes", async () => {
         const {shutdown, exited, timers} = withCleanup(() => new Promise(() => undefined));
 
         shutdown("SIGTERM");
@@ -232,7 +263,7 @@ describe("createShutdown with a cleanup hook", () => {
 
         timers[0].fn();
 
-        assert.deepEqual(exited, [0]);
+        assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
     });
 
     it("does not close the database twice, however many signals arrive", async () => {
@@ -268,6 +299,112 @@ describe("createShutdown with a cleanup hook", () => {
         shutdown("SIGTERM");
 
         assert.deepEqual(exited, [0], "an absent hook made the exit asynchronous");
+    });
+
+    for (const outcome of ["resolve", "reject"]) {
+        it(`ignores cleanup ${outcome} after the deadline`, async () => {
+            let complete;
+            const cleanup = new Promise((resolve, reject) => {
+                complete = outcome === "resolve" ? resolve : () => reject(new Error("late cleanup"));
+            });
+            const {shutdown, exited, timers, ran} = withCleanup(() => cleanup);
+            shutdown("SIGTERM");
+            shutdown("SIGINT");
+            await settle();
+            timers[0].fn();
+            complete();
+            await settle();
+            timers[0].fn();
+            assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
+            assert.deepEqual(ran, [true]);
+        });
+    }
+
+    it("does not replace a listener timeout with late successful cleanup", async () => {
+        let closeListener;
+        const lateListener = {close: done => { closeListener = done; }};
+        const {shutdown, exited, timers} = withCleanup(async () => undefined, [lateListener]);
+        shutdown("SIGTERM");
+        timers[0].fn();
+        closeListener();
+        await settle();
+        assert.deepEqual(exited, [INCOMPLETE_EXIT_CODE]);
+    });
+});
+
+describe("runServerCleanup", () => {
+    it("exports distinct named success and incomplete exit codes", () => {
+        assert.equal(shutdownModule.SHUTDOWN_SUCCESS_EXIT_CODE, SUCCESS_EXIT_CODE);
+        assert.equal(shutdownModule.SHUTDOWN_INCOMPLETE_EXIT_CODE, INCOMPLETE_EXIT_CODE);
+    });
+
+    const arrange = ({processExited = true, roundCompleted = true, closeError} = {}) => {
+        const calls = [];
+        return {
+            calls,
+            cleanup: () => shutdownModule.runServerCleanup({
+                waitForProcessExit: async () => { calls.push("process"); return processExited; },
+                waitForRound: async () => { calls.push("round"); return roundCompleted; },
+                closeDatabase: async () => {
+                    calls.push("database");
+                    if (closeError) throw closeError;
+                }
+            })
+        };
+    };
+
+    it("completes only after child, round and database cleanup in order", async () => {
+        const state = arrange();
+        await state.cleanup();
+        assert.deepEqual(state.calls, ["process", "round", "database"]);
+    });
+
+    it("awaits each stage and does not finish before the database close settles", async () => {
+        const calls = [];
+        const releases = [];
+        const stage = name => () => {
+            calls.push(name);
+            return new Promise(resolve => releases.push(resolve));
+        };
+        let finished = false;
+        const cleanup = shutdownModule.runServerCleanup({
+            waitForProcessExit: stage("process"),
+            waitForRound: stage("round"),
+            closeDatabase: stage("database")
+        }).then(() => { finished = true; });
+        assert.deepEqual(calls, ["process"]);
+        releases.shift()(true);
+        await settle();
+        assert.deepEqual(calls, ["process", "round"]);
+        releases.shift()(true);
+        await settle();
+        assert.deepEqual(calls, ["process", "round", "database"]);
+        assert.equal(finished, false);
+        releases.shift()();
+        await cleanup;
+        assert.equal(finished, true);
+    });
+
+    for (const [name, options] of [
+        ["child timeout", {processExited: false}],
+        ["round timeout", {roundCompleted: false}],
+        ["both timeouts", {processExited: false, roundCompleted: false}],
+        ["truthy child observation", {processExited: "true"}],
+        ["truthy round observation", {roundCompleted: 1}],
+        ["missing observation", {processExited: null}]
+    ]) {
+        it(`still closes the database before rejecting ${name}`, async () => {
+            const state = arrange(options);
+            await assert.rejects(async () => state.cleanup(), /cleanup was incomplete/);
+            assert.deepEqual(state.calls, ["process", "round", "database"]);
+        });
+    }
+
+    it("propagates database close failure", async () => {
+        const closeError = new Error("database close failed");
+        const state = arrange({closeError});
+        await assert.rejects(async () => state.cleanup(), error => error === closeError);
+        assert.deepEqual(state.calls, ["process", "round", "database"]);
     });
 });
 
@@ -311,4 +448,34 @@ describe("the server's own shutdown", () => {
         assert.ok(call.indexOf("waitForActiveProcessExit") < call.indexOf("db.close()"),
             "the database closed while the child could still be writing into it");
     });
+
+    // Execute only this extracted callback with injected synthetic dependencies,
+    // never import index.js or open any server, database or production resource.
+    const cleanupBody = bodyOf(source, "onCleanup: async () =>");
+    const makeCleanup = new Function("runServerCleanup", "waitForActiveProcessExit", "waitForActiveRound", "db",
+        `return async () => ${cleanupBody}`);
+    for (const [name, processExited, roundCompleted, closeFails] of [
+        ["complete cleanup", true, true, false],
+        ["child timeout", false, true, false],
+        ["round timeout", true, false, false],
+        ["both timeouts", false, false, false],
+        ["database rejection", true, true, true]
+    ]) {
+        it(`reports the real callback outcome for ${name}`, async () => {
+            const calls = [];
+            const cleanup = makeCleanup(shutdownModule.runServerCleanup,
+                async () => { calls.push("process"); return processExited; },
+                async () => { calls.push("round"); return roundCompleted; },
+                {close: async () => {
+                    calls.push("database");
+                    if (closeFails) throw new Error("database close failed");
+                }});
+            const state = harness({overrides: {onCleanup: cleanup}});
+            state.shutdown("SIGTERM");
+            await settle();
+            const expected = processExited && roundCompleted && !closeFails ? SUCCESS_EXIT_CODE : INCOMPLETE_EXIT_CODE;
+            assert.deepEqual(state.exited, [expected]);
+            assert.deepEqual(calls, ["process", "round", "database"]);
+        });
+    }
 });
