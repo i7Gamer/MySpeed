@@ -365,11 +365,12 @@ function ConvertTo-MyspeedCanaryIpState {
 
 function New-MyspeedCanaryProviderProjectionOperations {
     $normalizeAdapters=${function:ConvertTo-MyspeedCanaryAdapterInventory}
+    $normalizeProviderAdapters=${function:ConvertFrom-MyspeedCanaryNetAdapterProviderInventory}
     $projectIpState=${function:ConvertTo-MyspeedCanaryIpState}
     return [pscustomobject]@{
         normalizeAdapters={
             param([object]$Raw)
-            ConvertFrom-MyspeedCanaryNetAdapterProviderInventory $Raw -NormalizeAdapters $normalizeAdapters
+            & $normalizeProviderAdapters $Raw -NormalizeAdapters $normalizeAdapters
         }.GetNewClosure()
         projectIpState={
             param([object[]]$Inventory,[object]$Interfaces,[object]$Addresses,[object]$Routes)

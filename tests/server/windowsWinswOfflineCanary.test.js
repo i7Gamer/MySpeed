@@ -16,6 +16,15 @@ const HAS_POWERSHELL = childProcess.spawnSync(POWERSHELL,
     {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS}).status === 0;
 const powershellIt = (name, fn) => it(name,
     {timeout: TEST_TIMEOUT_MS, skip: !HAS_POWERSHELL && "PowerShell unavailable"}, fn);
+const WINDOWS_PATH_SKIP_REASON = "requires Windows filesystem path semantics";
+const windowsPathSkipReason = (platform, hasPowerShell) => {
+    if (!hasPowerShell) return "PowerShell unavailable";
+    return platform === "win32" ? false : WINDOWS_PATH_SKIP_REASON;
+};
+const windowsFilesystemPowershellIt = (name, fn) => it(name, {
+    timeout: TEST_TIMEOUT_MS,
+    skip: windowsPathSkipReason(process.platform, HAS_POWERSHELL)
+}, fn);
 const SOURCE_SHA = "a".repeat(40);
 const EVENT_SHA = "b".repeat(40);
 const NONCE = "0123456789abcdef0123456789abcdef";
@@ -315,6 +324,21 @@ const recoveryRequest = () => ({
 });
 
 describe("candidate-neutral WinSW offline canary contract", () => {
+    it("gates only fixtures that require Windows canonical-path semantics", () => {
+        assert.equal(windowsPathSkipReason("linux", true),
+            WINDOWS_PATH_SKIP_REASON);
+        assert.equal(windowsPathSkipReason("win32", true), false);
+        assert.equal(windowsPathSkipReason("linux", false), "PowerShell unavailable");
+        const testSource = fs.readFileSync(import.meta.filename, "utf8");
+        assert.deepEqual([...testSource.matchAll(/windowsFilesystemPowershellIt\("([^"]+)"/gu)]
+            .map(match => match[1]), [
+            "validates the immutable restoration request and exact owned path derivation",
+            "strictly binds the SYSTEM watchdog readiness used by every exit proof",
+            "requires the whole owned WinSW executable path set gone before normal adapter restore",
+            "generates an inert no-spawn child bound to exact loopback and TEST-NET literals"
+        ]);
+    });
+
     it("keeps native mutations behind the hosted guard and exposes all three cleanup entries", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
         for (const term of ["Disable-NetAdapter", "Enable-NetAdapter", "Register-ScheduledTask",
@@ -353,6 +377,33 @@ describe("candidate-neutral WinSW offline canary contract", () => {
 
     powershellIt("preserves two ordered synthetic adapters through the actual native factory capture", () => {
         const result = runFactoryFixture(false, true);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    });
+
+    powershellIt("retains provider helpers inside nested closures from non-global script scope", () => {
+        // A global dot-source masks missing function captures in hosted script invocation.
+        const program = `
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+& {
+  . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
+  $projection=New-MyspeedCanaryProviderProjectionOperations
+  $outer={
+    $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';PnPDeviceID='ROOT\\NET\\0000';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+    $inventory=& $projection.normalizeAdapters $raw
+    if($inventory.Count -ne $raw.Count -or -not $inventory[0].enabled){throw 'Projection differs'}
+    $emptyRows=@()
+    $ip=& $projection.projectIpState $inventory $emptyRows $emptyRows $emptyRows
+    if($ip.Count -ne $emptyRows.Count){throw 'IP projection differs'}
+  }.GetNewClosure()
+  & $outer
+}
+`;
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                Buffer.from(program, "utf16le").toString("base64")],
+            {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     });
 
@@ -407,7 +458,7 @@ describe("candidate-neutral WinSW offline canary contract", () => {
         assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /not implemented/i);
     });
 
-    powershellIt("validates the immutable restoration request and exact owned path derivation", () => {
+    windowsFilesystemPowershellIt("validates the immutable restoration request and exact owned path derivation", () => {
         assert.equal(run("ValidateRecoveryRequest", recoveryRequest()).accepted, true);
         for (const mutate of [
             value => { value.extra = true; },
@@ -447,7 +498,7 @@ describe("candidate-neutral WinSW offline canary contract", () => {
         assert.doesNotMatch(source, /taskOwnershipEligible=\$true;probe=\$null/u);
     });
 
-    powershellIt("strictly binds the SYSTEM watchdog readiness used by every exit proof", () => {
+    windowsFilesystemPowershellIt("strictly binds the SYSTEM watchdog readiness used by every exit proof", () => {
         const request = recoveryRequest();
         const ready = {schemaVersion: 1, sid: "S-1-5-18", pid: 321,
             creationFileTime: "0000000000000001", requestSha256: "e".repeat(64),
@@ -489,7 +540,7 @@ describe("candidate-neutral WinSW offline canary contract", () => {
         assert.doesNotMatch(source, /Stop-ScheduledTask/u);
     });
 
-    powershellIt("requires the whole owned WinSW executable path set gone before normal adapter restore", () => {
+    windowsFilesystemPowershellIt("requires the whole owned WinSW executable path set gone before normal adapter restore", () => {
         const ownedPaths = [
             `${recoveryRequest().taskRoot}\\MySpeedOfflineCanary-${NONCE}.exe`,
             `${recoveryRequest().taskRoot}\\inert-child.exe`
@@ -665,7 +716,7 @@ if(-not $rejected){throw 'Reordered normalized adapter snapshot was accepted'}
         assert.doesNotMatch(source, /\$(?:ip|preIp)=@\(& \$(?:ProjectIpState|projectIpState)/u);
     });
 
-    powershellIt("generates an inert no-spawn child bound to exact loopback and TEST-NET literals", () => {
+    windowsFilesystemPowershellIt("generates an inert no-spawn child bound to exact loopback and TEST-NET literals", () => {
         const generated = run("GetInertChildSource", {nonce: NONCE, resultPath: `${recoveryRequest().taskRoot}\\probe.json`});
         assert.equal(generated.sha256.length, 64);
         assert.match(generated.source, /127\.0\.0\.1/);
