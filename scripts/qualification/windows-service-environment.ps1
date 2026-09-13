@@ -22,6 +22,7 @@ $script:POLL_INTERVAL_MILLISECONDS = 100
 $script:MILLISECONDS_PER_SECOND = 1000
 $script:EXPECTED_LOCALSYSTEM_SID = 'S-1-5-18'
 $script:EXPECTED_REPOSITORY = 'i7Gamer/MySpeed'
+$script:EXPECTED_IMAGE_OS = 'win25-vs2026'
 $script:WORK_DIRECTORY_PREFIX = 'myspeed-service-environment-'
 $script:RESULT_FILENAME = 'result.json'
 $script:PROBE_SOURCE_FILENAME = 'probe.cs'
@@ -233,7 +234,7 @@ function Assert-MyspeedHostedContext {
         GITHUB_RUN_ID = $ExpectedRunId
         GITHUB_RUN_ATTEMPT = $ExpectedRunAttempt
         GITHUB_SHA = $ExpectedEventSha
-        ImageOS = 'win25'
+        ImageOS = $script:EXPECTED_IMAGE_OS
     }
     foreach ($entry in $required.GetEnumerator()) {
         if (-not $Context.Contains($entry.Key) -or [string]$Context[$entry.Key] -cne $entry.Value) {

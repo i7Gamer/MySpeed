@@ -89,8 +89,8 @@ describe("hosted Windows SCM environment canary", () => {
             GITHUB_ACTIONS = 'true'; CI = 'true'; RUNNER_OS = 'Windows'; RUNNER_ARCH = 'X64';
             RUNNER_ENVIRONMENT = 'github-hosted'; GITHUB_REPOSITORY = 'i7Gamer/MySpeed';
             GITHUB_RUN_ID = '${RUN_ID}'; GITHUB_RUN_ATTEMPT = '${RUN_ATTEMPT}';
-            GITHUB_SHA = '${EVENT_SHA}'; ImageOS = 'win25';
-            ImageVersion = '20260907.255.1'; RUNNER_TEMP = 'C:\\a\\_temp'
+            GITHUB_SHA = '${EVENT_SHA}'; ImageOS = 'win25-vs2026';
+            ImageVersion = '20260907.229.1'; RUNNER_TEMP = 'C:\\a\\_temp'
         }`;
         assert.equal(runPowerShell(`Assert-MyspeedHostedContext -Context ${context} -ExpectedRunId ${quote(RUN_ID)} `
             + `-ExpectedRunAttempt ${quote(RUN_ATTEMPT)} `
@@ -104,7 +104,9 @@ describe("hosted Windows SCM environment canary", () => {
             ["GITHUB_RUN_ID", "987654321"],
             ["GITHUB_RUN_ATTEMPT", "3"],
             ["GITHUB_SHA", "c".repeat(40)],
-            ["ImageOS", "win22"]
+            ["ImageOS", "win22"],
+            ["ImageOS", "win25"],
+            ["ImageOS", "win25-vs2026-custom"]
         ]) {
             const rejected = runJson(`
                 $context = ${context}
