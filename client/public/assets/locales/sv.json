@@ -355,6 +355,7 @@
     "connection_refused": "Testet kunde inte genomföras eftersom anslutningen nekades",
     "timed_out": "Internetanslutningen var instabil under testet",
     "config": "Konfigurationsfilen kunde inte läsas in",
+    "ookla_configuration_unavailable": "Begäran om konfiguration av hastighetstestet returnerade HTTP 503 (tjänsten är inte tillgänglig). Försök igen senare",
     "cannot_open_socket": "Det gick inte att öppna en anslutning till testservern. Den kanske inte kan nås från det valda nätverksgränssnittet.",
     "latency_failed": "Latenstestet misslyckades, så ingen hastighet kunde mätas.",
     "rate_limited": "Leverantören nekade testet eftersom för många har körts nyligen. Nästa test fördröjs automatiskt.",

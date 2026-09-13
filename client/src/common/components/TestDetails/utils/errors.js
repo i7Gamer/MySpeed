@@ -8,6 +8,9 @@ export const errors = () => ({
     "No route to host": t("errors.no_route"),
     "Connection refused": t("errors.connection_refused"),
     "timed out": t("errors.timed_out"),
+    // #56 includes both this HTTP status and the generic configuration line.
+    // Explain the specific failure first without replacing the stored raw log.
+    "Configuration - Cannot retrieve configuration document (503)": t("errors.ookla_configuration_unavailable"),
     "Could not retrieve or read configuration": t("errors.config"),
     // What the Ookla CLI reports when it cannot reach the chosen server from the
     // address it was bound to - most often a server that answers over IPv6 while

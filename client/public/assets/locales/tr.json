@@ -355,6 +355,7 @@
     "connection_refused": "Bağlantı reddedildiği için test yapılamadı",
     "timed_out": "Testin yapıldığı sırada internet bağlantısı dengesizdi",
     "config": "Konfigürasyon dosyası yüklenemedi",
+    "ookla_configuration_unavailable": "Hız testi yapılandırma isteği HTTP 503 (hizmet kullanılamıyor) yanıtı döndürdü. Lütfen daha sonra tekrar deneyin",
     "cannot_open_socket": "Test sunucusuna bağlantı açılamadı. Seçilen ağ arayüzünden erişilemiyor olabilir.",
     "latency_failed": "Gecikme testi başarısız oldu, bu yüzden hiçbir hız ölçülemedi.",
     "rate_limited": "Sağlayıcı testi reddetti, çünkü kısa süre içinde çok fazla test çalıştırıldı. Sonraki otomatik olarak ertelenir.",

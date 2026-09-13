@@ -355,6 +355,7 @@
     "connection_refused": "Testen kunne ikke utføres fordi tilkoblingen ble avvist",
     "timed_out": "Internettforbindelsen var ustabil under testen",
     "config": "Konfigurasjonsfilen kunne ikke lastes inn",
+    "ookla_configuration_unavailable": "Forespørselen om konfigurasjon av hastighetstesten returnerte HTTP 503 (tjenesten er utilgjengelig). Prøv igjen senere",
     "cannot_open_socket": "Kunne ikke åpne en tilkobling til testserveren. Den kan være utilgjengelig fra det valgte nettverksgrensesnittet.",
     "latency_failed": "Forsinkelsestesten mislyktes, så ingen hastighet kunne måles.",
     "rate_limited": "Leverandøren avviste testen fordi det er kjørt for mange i det siste. Den neste utsettes automatisk.",

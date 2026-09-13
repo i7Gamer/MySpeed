@@ -361,6 +361,7 @@
     "connection_refused": "O teste não pôde ser realizado porque a conexão foi rejeitada",
     "timed_out": "A conexão com a Internet estava instável durante o período do teste",
     "config": "O arquivo de configuração não pôde ser carregado",
+    "ookla_configuration_unavailable": "A solicitação de configuração do teste de velocidade retornou HTTP 503 (serviço indisponível). Tente novamente mais tarde",
     "cannot_open_socket": "Não foi possível abrir uma conexão com o servidor de teste. Talvez ele esteja inacessível pela interface de rede selecionada.",
     "latency_failed": "O teste de latência falhou, então nenhuma velocidade pôde ser medida.",
     "rate_limited": "O provedor recusou o teste porque muitos foram executados recentemente. O próximo é adiado automaticamente.",

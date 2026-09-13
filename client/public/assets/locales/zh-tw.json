@@ -355,6 +355,7 @@
     "connection_refused": "由於連線遭到拒絕，無法執行測試",
     "timed_out": "測試期間網際網路連線不穩定",
     "config": "無法載入設定檔",
+    "ookla_configuration_unavailable": "速度測試設定要求傳回 HTTP 503（服務無法使用）。請稍後再試",
     "cannot_open_socket": "無法與測試伺服器建立連線。所選的網路介面可能無法連上它。",
     "latency_failed": "延遲測試失敗，因此無法測量速度。",
     "rate_limited": "由於近期執行的測試過多，供應商拒絕了本次測試。下一次測試將自動延後。",

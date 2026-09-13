@@ -385,6 +385,7 @@
     "connection_refused": "Test nebylo možné provést, protože připojení bylo odmítnuto",
     "timed_out": "Internetové připojení bylo během testu nestabilní",
     "config": "Konfigurační soubor se nepodařilo načíst",
+    "ookla_configuration_unavailable": "Požadavek na konfiguraci testu rychlosti vrátil HTTP 503 (služba není dostupná). Zkuste to prosím znovu později",
     "cannot_open_socket": "Nepodařilo se otevřít spojení s testovacím serverem. Ze zvoleného síťového rozhraní může být nedostupný.",
     "latency_failed": "Test odezvy selhal, takže rychlost nebylo možné změřit.",
     "rate_limited": "Poskytovatel test odmítl, protože jich v poslední době proběhlo příliš mnoho. Další test je automaticky odložen.",
