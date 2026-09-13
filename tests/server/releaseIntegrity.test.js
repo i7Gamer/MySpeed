@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,10 @@ const root = path.resolve(fileURLToPath(import.meta.url), "..", "..", "..");
 const WIX_VERSION = "3.14.1";
 const WIX_ARCHIVE_SHA256 = "6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31";
 const WIX_ARCHIVE_URL = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip";
+const WINSW_LICENSE_SOURCE = "scripts/licenses/winsw-3.0.0-alpha.11.txt";
+const WINSW_LICENSE_CHECKOUT = "winsw-license-source";
+const WINSW_LICENSE_TEXT_SHA256 =
+    "1cdf703c10a70e5973bf3acf2a5eeabe7746237155b92db2034aeae26fdf7802";
 
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
@@ -80,6 +85,68 @@ const stepIn = (workflow, name) => {
 
 /** The same file from `anchor` onwards, or a failure that says it is gone. */
 const from = (source, anchor) => source.slice(at(source, anchor));
+
+describe("the MSI carries the exact WinSW accompanying notice", () => {
+    const workflow = read(".github/workflows/build-msi.yml");
+
+    it("installs the exact tagged WinSW notice beside the service wrapper", () => {
+        const notice = read(WINSW_LICENSE_SOURCE);
+        const normalized = notice.replaceAll("\r\n", "\n");
+        assert.doesNotMatch(normalized, /\r/u,
+            "the maintained notice contains a non-CRLF carriage return");
+        assert.equal(crypto.createHash("sha256").update(normalized, "utf8").digest("hex"),
+            WINSW_LICENSE_TEXT_SHA256,
+            "the maintained WinSW notice differs from the reviewed tag");
+
+        const checkout = stepIn(workflow, "Checkout exact WinSW notice source");
+        assert.match(checkout, /uses: actions\/checkout@[0-9a-f]{40}/u);
+        assert.ok(checkout.includes("ref: ${{ inputs.source_sha }}"));
+        assert.ok(checkout.includes(`path: ${WINSW_LICENSE_CHECKOUT}`));
+        assert.match(checkout, new RegExp(
+            `sparse-checkout: \\|\\r?\\n {12}${WINSW_LICENSE_SOURCE.replaceAll(".", "\\.")}` +
+            "\\r?\\n {10}sparse-checkout-cone-mode: false"));
+        assert.ok(checkout.includes("sparse-checkout-cone-mode: false"));
+        assert.ok(checkout.includes("persist-credentials: false"));
+        assert.ok(checkout.includes("fetch-depth: 1"));
+
+        const stagedSource = `${WINSW_LICENSE_CHECKOUT}/${WINSW_LICENSE_SOURCE}`;
+        const download = stepIn(workflow,
+            "Download WinSW service wrapper and stage its notice");
+        assert.ok(download.includes(`WINSW_LICENSE_SOURCE: "${stagedSource}"`));
+        assert.ok(download.includes(
+            `WINSW_LICENSE_TEXT_SHA256: "${WINSW_LICENSE_TEXT_SHA256}"`));
+        assert.ok(download.includes("SOURCE_SHA: ${{ inputs.source_sha }}"));
+        assert.match(download,
+            /git -C \$env:WINSW_LICENSE_CHECKOUT rev-parse HEAD/u);
+        assert.match(download, /-cne \$env:SOURCE_SHA[\s\S]{0,160}throw/u,
+            "the notice checkout is not rebound to the requested candidate");
+        assert.ok(at(download, "rev-parse HEAD") < at(download, "Get-Content"));
+        assert.ok(download.includes(
+            "ComputeHash($licenseEncoding.GetBytes($normalizedLicenseText))"));
+        assert.ok(at(download, "ComputeHash") < at(download, "Copy-Item"));
+        assert.ok(at(download, "-ne $env:WINSW_LICENSE_TEXT_SHA256") <
+            at(download, "Copy-Item"));
+        assert.match(download,
+            /Copy-Item -LiteralPath \$env:WINSW_LICENSE_SOURCE -Destination "installer\\WinSW-LICENSE\.txt"/u);
+
+        const group = from(workflow, '<ComponentGroup Id="ProductComponents"');
+        const componentClose = "</Component>";
+        const componentStart = from(group, '<Component Id="WinSWLicenseNotice"');
+        const component = componentStart.slice(
+            0, at(componentStart, componentClose) + componentClose.length);
+        assert.match(component,
+            /<File Id="WinSWLicense" Source="WinSW-LICENSE\.txt" KeyPath="yes" \/>/u,
+            "the verified notice is not installed beside the service wrapper");
+        assert.equal(component.match(/<File\b/gu)?.length, 1,
+            "the notice component must own exactly one file");
+        const serviceStart = from(group, '<Component Id="ServiceWrapper"');
+        const serviceComponent = serviceStart.slice(
+            0, at(serviceStart, componentClose) + componentClose.length);
+        assert.doesNotMatch(serviceComponent, /WinSWLicense|WinSW-LICENSE/u,
+            "adding the notice changed the established service component's resource set");
+    });
+});
+
 
 describe("the release publishes what a download can be checked against", () => {
     const workflow = read(".github/workflows/build-binaries.yml");

@@ -11,7 +11,6 @@ const POWERSHELL = process.platform === "win32"
     : "pwsh";
 const PROCESS_TIMEOUT_MS = 10_000;
 const TEST_TIMEOUT_MS = 30_000;
-const MAX_ADAPTER_CIM_PROPERTIES = 256;
 const HAS_POWERSHELL = childProcess.spawnSync(POWERSHELL,
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
     {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS}).status === 0;
@@ -31,6 +30,7 @@ const EVENT_SHA = "b".repeat(40);
 const NONCE = "0123456789abcdef0123456789abcdef";
 const WIN_SW_SHA = "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20";
 const WIN_SW_BYTES = 18_286_774;
+const MAX_INTERFACE_DESCRIPTION_LENGTH = 1024;
 const CHILD_SHA = "c".repeat(64);
 const OFFLINE_START_100NS = 100_000_000n;
 const OFFLINE_END_100NS = 550_000_000n;
@@ -52,11 +52,6 @@ const TEST_NET_ENDPOINTS = Object.freeze([
     {transport: "udp", addressFamily: "ipv4", address: "192.0.2.1", port: 43_134},
     {transport: "udp", addressFamily: "ipv6", address: "2001:db8::1", port: 43_135}
 ]);
-
-const providerPnpProperties = value => [
-    {Name: "PNPDeviceID", Value: null},
-    {Name: "PnPDeviceID", Value: value}
-];
 
 const invoke = (mode, input = {}) => childProcess.spawnSync(POWERSHELL, [
     "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
@@ -113,11 +108,9 @@ $safeDefinition='function New-MyspeedNativeCanaryOperations {'+[Environment]::Ne
 function Add-Type {throw 'Native compilation forbidden in fixture'}
 function Import-Module {throw 'Native module import forbidden in fixture'}
 function Get-NetAdapter {
-  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';CimInstanceProperties=[object[]]@(
-      [pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0000'})
+  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0'
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7}
-  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';CimInstanceProperties=[object[]]@(
-      [pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0001'})
+  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';InterfaceDescription='Synthetic Ethernet 1'
     Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
 }
 function Get-NetTCPConnection {throw 'Native endpoint query forbidden in fixture'}
@@ -173,11 +166,11 @@ if(${inspectAdapters ? "$true" : "$false"}){
   if($observed.raw.Count -ne 2 -or $observed.inventory.Count -ne 2 -or $observed.inventory[0] -is [array]){
     throw 'Actual native factory nested the normalized adapter inventory'
   }
-  if($observed.inventory[0].pnpDeviceId -cne 'ROOT\\NET\\0000' -or
-     $observed.inventory[1].pnpDeviceId -cne 'ROOT\\NET\\0001' -or
+  if($observed.inventory[0].interfaceDescription -cne 'Synthetic Ethernet 0' -or
+     $observed.inventory[1].interfaceDescription -cne 'Synthetic Ethernet 1' -or
      -not $observed.inventory[0].enabled -or $observed.inventory[1].enabled){throw 'Native ordinal/state mapping differs'}
   $projection=New-MyspeedCanaryProviderProjectionOperations
-  $boundary=& $actualOfflineBoundary -State @{request=[pscustomobject]@{offlineStart100ns='100';watchdogDeadline100ns='600000100'}} -Clock {'200'} -NormalizeProviderAdapters $projection.normalizeAdapters -NormalizeAdapters (Get-Command ConvertTo-MyspeedCanaryAdapterInventory).ScriptBlock -GetAdapterSnapshot (Get-Command Get-MyspeedCanaryAdapterProviderSnapshot).ScriptBlock -GetProviderPnpDeviceId $projection.getProviderPnpDeviceId -ProjectIpState $projection.projectIpState -GetElapsed (Get-Command Get-MyspeedCanaryElapsedMilliseconds).ScriptBlock -LoopbackType 24 -EnabledAdminStatus 1 -DisabledAdminStatus 2 -KnownStatuses $script:KnownAdapterStatuses
+  $boundary=& $actualOfflineBoundary -State @{request=[pscustomobject]@{offlineStart100ns='100';watchdogDeadline100ns='600000100'}} -Clock {'200'} -NormalizeProviderAdapters $projection.normalizeAdapters -NormalizeAdapters (Get-Command ConvertTo-MyspeedCanaryAdapterInventory).ScriptBlock -GetAdapterSnapshot (Get-Command Get-MyspeedCanaryAdapterProviderSnapshot).ScriptBlock -ProjectIpState $projection.projectIpState -GetElapsed (Get-Command Get-MyspeedCanaryElapsedMilliseconds).ScriptBlock -LoopbackType 24 -EnabledAdminStatus 1 -DisabledAdminStatus 2 -KnownStatuses $script:KnownAdapterStatuses
   if($boundary.adapters.Count -ne 2 -or $boundary.adapters[0] -is [array] -or $boundary.ipState.Count -ne 6){
     throw "Actual offline boundary shape differs: adapters=$($boundary.adapters.Count); first=$($boundary.adapters[0].GetType().FullName); ip=$($boundary.ipState.Count)"
   }
@@ -221,9 +214,9 @@ const boundary = () => ({
     },
     providers: {adapters: true, ipInterfaces: true, ipAddresses: true, routes: true},
     adapters: [
-        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", pnpDeviceId: "ROOT\\NET\\0000",
+        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", interfaceDescription: "Synthetic Ethernet 0",
             hidden: false, loopback: false, enabled: false, status: "Disabled"},
-        {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", pnpDeviceId: "ROOT\\LOOPBACK\\0000",
+        {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", interfaceDescription: "Synthetic Loopback 0",
             hidden: true, loopback: true, enabled: true, status: "Up"}
     ],
     ipState: [
@@ -325,7 +318,8 @@ const recoveryRequest = () => ({
     childPath: `C:\\runner\\temp\\myspeed-winsw-offline-${NONCE}\\inert-child.exe`,
     environment: {...EXPECTED_ENVIRONMENT},
     adapters: [
-        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", pnpDeviceId: "PCI\\VEN_1234&DEV_5678"}
+        {interfaceGuid: "{11111111-1111-1111-1111-111111111111}",
+            interfaceDescription: "Synthetic Ethernet 0"}
     ],
     offlineStart100ns: OFFLINE_START_100NS.toString(),
     watchdogDeadline100ns: WATCHDOG_DEADLINE_100NS.toString()
@@ -343,7 +337,6 @@ describe("candidate-neutral WinSW offline canary contract", () => {
             "validates the immutable restoration request and exact owned path derivation",
             "strictly binds the SYSTEM watchdog readiness used by every exit proof",
             "requires the whole owned WinSW executable path set gone before normal adapter restore",
-            "reads the exact derived property from an in-memory CIM base collection",
             "generates an inert no-spawn child bound to exact loopback and TEST-NET literals"
         ]);
     });
@@ -398,8 +391,7 @@ Set-StrictMode -Version Latest
   . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
   $projection=New-MyspeedCanaryProviderProjectionOperations
   $outer={
-    $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';CimInstanceProperties=[object[]]@(
-      [pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0000'});Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+    $raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
     $inventory=& $projection.normalizeAdapters $raw
     if($inventory.Count -ne $raw.Count -or -not $inventory[0].enabled){throw 'Projection differs'}
     $emptyRows=@()
@@ -470,9 +462,24 @@ Set-StrictMode -Version Latest
 
     windowsFilesystemPowershellIt("validates the immutable restoration request and exact owned path derivation", () => {
         assert.equal(run("ValidateRecoveryRequest", recoveryRequest()).accepted, true);
+        const caseDistinct = recoveryRequest();
+        caseDistinct.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
+            interfaceDescription: "synthetic ethernet 0"});
+        assert.equal(run("ValidateRecoveryRequest", caseDistinct).accepted, true);
         for (const mutate of [
             value => { value.extra = true; },
             value => { value.adapters[0].interfaceGuid = "bad"; },
+            value => { value.adapters[0].interfaceDescription = null; },
+            value => { value.adapters[0].interfaceDescription = "Synthetic\nEthernet"; },
+            value => {
+                value.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
+                    interfaceDescription: value.adapters[0].interfaceDescription});
+            },
+            value => {
+                value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription;
+                delete value.adapters[0].interfaceDescription;
+            },
+            value => { value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription; },
             value => { value.adapters.push({...value.adapters[0]}); },
             value => { value.lockPath = "C:\\unowned\\recovery.lock"; },
             value => { value.serviceName = "OtherService"; },
@@ -529,7 +536,7 @@ Set-StrictMode -Version Latest
         assert.match(source, /Owned recovery process remained after task stop/u);
         assert.match(source, /StartTime\.ToUniversalTime\(\)\.ToFileTimeUtc/u);
         assert.match(source, /cancelRecoveryWhenAdaptersEnabled/u);
-        assert.match(source, /\$_\.pnpDeviceId -ieq \$target\.pnpDeviceId -and \$_\.enabled/u);
+        assert.match(source, /\[string\]::Equals\(\$_\.interfaceDescription,\$target\.interfaceDescription,\[StringComparison\]::Ordinal\) -and \$_\.enabled/u);
         assert.doesNotMatch(source, /Stop-ScheduledTask/u);
     });
 
@@ -581,13 +588,13 @@ Set-StrictMode -Version Latest
     powershellIt("rejects malformed native adapter DTOs before deriving mutation state", () => {
         const adapters = () => ({adapters: [
             {InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-                CimInstanceProperties: providerPnpProperties("PCI\\VEN_1234&DEV_5678"),
+                InterfaceDescription: "Synthetic Ethernet 0",
                 Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4},
             {InterfaceGuid: "{22222222-2222-2222-2222-222222222222}",
-                CimInstanceProperties: providerPnpProperties("ROOT\\LOOPBACK\\0000"),
+                InterfaceDescription: "Synthetic Loopback 0",
                 Hidden: true, InterfaceType: 24, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 1},
             {InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",
-                CimInstanceProperties: providerPnpProperties("PCI\\VEN_1234&DEV_9999"),
+                InterfaceDescription: "Synthetic Ethernet 1",
                 Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 2, Status: "Disabled", ifIndex: 5}
         ]});
         const accepted = run("NormalizeAdapters", adapters());
@@ -606,101 +613,73 @@ Set-StrictMode -Version Latest
             value => { value.adapters[0].Status = "Unexpected"; },
             value => { value.adapters[0].ifIndex = 0; },
             value => { value.adapters[0].ifIndex = 4.5; },
-            value => { value.adapters[0].CimInstanceProperties[1].Value = ""; },
+            value => { value.adapters[0].InterfaceDescription = ""; },
             value => { value.adapters[1].InterfaceGuid = value.adapters[0].InterfaceGuid; },
-            value => { value.adapters[1].CimInstanceProperties[1].Value =
-                value.adapters[0].CimInstanceProperties[1].Value; },
+            value => { value.adapters[1].InterfaceDescription = value.adapters[0].InterfaceDescription; },
             value => { value.adapters[1].ifIndex = value.adapters[0].ifIndex; }
         ]) {
             const value = adapters(); mutate(value);
             reject("NormalizeAdapters", value, /adapter|Boolean|integer|status|identity|index/i);
         }
         const source = fs.readFileSync(SCRIPT, "utf8");
-        assert.doesNotMatch(source, /pnpDeviceId=\[string\]\$_\.PnPDeviceID|hidden=\[bool\]\$_\.Hidden/u);
+        assert.doesNotMatch(source, /pnpDeviceId|hidden=\[bool\]\$_\.Hidden/u);
         assert.ok(source.match(/ConvertFrom-MyspeedCanaryNetAdapterProviderInventory/gu)?.length >= 3);
         assert.match(source, /function Get-MyspeedCanaryAdapterProviderSnapshot/u);
         assert.match(source, /\$snapshot=Get-MyspeedCanaryAdapterProviderSnapshot \$all/u);
-        assert.match(source, /\$afterInventory=\(Get-MyspeedCanaryAdapterProviderSnapshot \$after -GetProviderPnpDeviceId/u);
+        assert.match(source, /\$afterInventory=\(Get-MyspeedCanaryAdapterProviderSnapshot \$after/u);
     });
 
-    powershellIt("selects only the exact-case derived CIM PnP property", () => {
+    it("uses the documented stable interface description instead of nullable PnP identity", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /interfaceDescription/u);
+        assert.doesNotMatch(source, /pnpDeviceId|Get-MyspeedCanaryExactProviderPnpDeviceId/u);
+    });
+
+    powershellIt("accepts only bounded exact interface descriptions", () => {
         const adapter = () => ({
             InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-            CimInstanceProperties: providerPnpProperties("PCI\\VEN_1234&DEV_5678"),
+            InterfaceDescription: "Synthetic Ethernet 0",
             Hidden: false, InterfaceType: 6, InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4
         });
         const accepted = run("NormalizeAdapters", {adapters: [adapter()]});
-        assert.equal(accepted.pnpDeviceId, "PCI\\VEN_1234&DEV_5678");
+        assert.equal(accepted.interfaceDescription, "Synthetic Ethernet 0");
+        const providerWithExtraProperty = adapter();
+        providerWithExtraProperty.pnpDeviceId = null;
+        assert.equal(run("NormalizeAdapters", {adapters: [providerWithExtraProperty]}).interfaceDescription,
+            "Synthetic Ethernet 0", "unrelated raw provider properties do not replace the stable identity");
+        const maximumLength = adapter();
+        maximumLength.InterfaceDescription = "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH);
+        assert.equal(run("NormalizeAdapters", {adapters: [maximumLength]}).interfaceDescription.length,
+            MAX_INTERFACE_DESCRIPTION_LENGTH);
 
         for (const mutate of [
-            value => { value.CimInstanceProperties = value.CimInstanceProperties.slice(0, 1); },
-            value => { value.CimInstanceProperties.push({Name: "PnPDeviceID", Value: "ROOT\\NET\\OTHER"}); },
-            value => { value.CimInstanceProperties[1].Value = null; },
-            value => { value.CimInstanceProperties[1].Value = ""; },
-            value => { value.CimInstanceProperties[1].Value = false; },
-            value => { value.CimInstanceProperties[1] = {Name: "PnPDeviceID"}; },
-            value => { value.CimInstanceProperties = [{Name: "PNPDeviceID", Value: "ROOT\\NET\\INHERITED"}]; },
-            value => {
-                value.CimInstanceProperties.push(...Array.from({length: MAX_ADAPTER_CIM_PROPERTIES - 1},
-                    (_, index) => ({Name: `Synthetic${index}`, Value: null})));
-            }
+            value => { delete value.InterfaceDescription; },
+            value => { value.InterfaceDescription = null; },
+            value => { value.InterfaceDescription = ""; },
+            value => { value.InterfaceDescription = "   "; },
+            value => { value.InterfaceDescription = false; },
+            value => { value.InterfaceDescription = ["Synthetic Ethernet 0"]; },
+            value => { value.InterfaceDescription = {value: "Synthetic Ethernet 0"}; },
+            value => { value.InterfaceDescription = "Synthetic\nEthernet"; },
+            value => { value.InterfaceDescription = `Synthetic${String.fromCharCode(0x7f)}Ethernet`; },
+            value => { value.InterfaceDescription = "x".repeat(MAX_INTERFACE_DESCRIPTION_LENGTH + 1); }
         ]) {
             const value = adapter(); mutate(value);
-            reject("NormalizeAdapters", {adapters: [value]}, /derived CIM PnP|property|exact string/i);
+            reject("NormalizeAdapters", {adapters: [value]}, /interface description|InterfaceDescription|schema|bounded exact string/i);
         }
-    });
-
-    windowsFilesystemPowershellIt("reads the exact derived property from an in-memory CIM base collection", () => {
-        const program = `
-. '${SCRIPT.replaceAll("'", "''")}' -Mode Library
-$instance=[Microsoft.Management.Infrastructure.CimInstance]::new('SyntheticAdapter','root/test')
-$property=[Microsoft.Management.Infrastructure.CimProperty]::Create('PnPDeviceID','ROOT\\NET\\SYNTHETIC',
-  [Microsoft.Management.Infrastructure.CimType]::String,[Microsoft.Management.Infrastructure.CimFlags]::None)
-$instance.CimInstanceProperties.Add($property)
-$value=Get-MyspeedCanaryExactProviderPnpDeviceId $instance
-if($value -cne 'ROOT\\NET\\SYNTHETIC'){throw 'CIM PSBase projection differs'}
-`;
-        const result = childProcess.spawnSync(POWERSHELL,
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
-                Buffer.from(program, "utf16le").toString("base64")],
-            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
-        assert.equal(result.error, undefined, result.error?.message);
-        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    });
-
-    powershellIt("reports bounded adapter metadata without disclosing rejected PnP values", () => {
-        const privateValue = "do-not-log-this-device-value";
-        const MAX_METADATA_LENGTH = 256;
-        const adapter = {InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-            CimInstanceProperties: providerPnpProperties("ROOT\\NET\\0000"), Hidden: true, InterfaceType: 24,
-            InterfaceAdminStatus: 1, Status: "Up", ifIndex: 7};
-        const accepted = run("NormalizeAdapters", {adapters: [adapter]});
-        assert.equal(accepted.pnpDeviceId, adapter.CimInstanceProperties[1].Value);
-        for (const [value, kind] of [[null, "null"], ["", "empty-string"],
-            [[privateValue], "array"], [{privateValue}, "object"], [false, "other"],
-            [`${privateValue}\nadditional-data`, "string"]]) {
-            const malformed = structuredClone(adapter);
-            malformed.CimInstanceProperties[1].Value = value;
-            const result = invoke("NormalizeAdapters", {adapters: [malformed]});
-            assert.equal(result.error, undefined, result.error?.message);
-            assert.notEqual(result.status, 0);
-            const output = `${result.stdout}\n${result.stderr}`;
-            const compactOutput = output.replace(/\s+/gu, "");
-            assert.match(output, /MSFT_NetAdapter derived CIM PnP property/);
-            assert.ok(compactOutput.includes(`pnpKind=${kind}`));
-            assert.match(compactOutput, /properties=2;derived=1;inherited=1/);
-            const metadata = compactOutput.match(/\[properties=[^\]]+\]/u)?.[0];
-            assert.ok(metadata && metadata.length <= MAX_METADATA_LENGTH);
-            assert.ok(!compactOutput.includes(privateValue), "rejected PnP data must never be logged");
-        }
+        const caseDistinct = adapter();
+        caseDistinct.InterfaceGuid = "{22222222-2222-2222-2222-222222222222}";
+        caseDistinct.InterfaceDescription = "synthetic ethernet 0";
+        caseDistinct.ifIndex = 5;
+        assert.equal(run("NormalizeAdapters", {adapters: [adapter(), caseDistinct]}).length, 2);
     });
 
     powershellIt("rejects a one-record nested adapter normalization result", () => {
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
-$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';CimInstanceProperties=[object[]]@([pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0000'});Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
 $badNormalizer={param([object]$Value)
-  $inner=[object[]]@([pscustomobject]@{interfaceGuid='{11111111-1111-1111-1111-111111111111}';pnpDeviceId='ROOT\\NET\\0000';hidden=$false;interfaceType=6;interfaceAdminStatus=1;status='Up';interfaceIndex=7;loopback=$false;enabled=$true})
+  $inner=[object[]]@([pscustomobject]@{interfaceGuid='{11111111-1111-1111-1111-111111111111}';interfaceDescription='Synthetic Ethernet 0';hidden=$false;interfaceType=6;interfaceAdminStatus=1;status='Up';interfaceIndex=7;loopback=$false;enabled=$true})
   $nested=New-Object object[] 1;$nested[0]=$inner;Write-Output -NoEnumerate $nested
 }
 $rejected=$false
@@ -721,8 +700,8 @@ if(-not $rejected){throw 'Nested one-record adapter snapshot was accepted'}
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
 $raw=[object[]]@(
-  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';CimInstanceProperties=[object[]]@([pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0000'});Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7},
-  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';CimInstanceProperties=[object[]]@([pscustomobject]@{Name='PNPDeviceID';Value=$null},[pscustomobject]@{Name='PnPDeviceID';Value='ROOT\\NET\\0001'});Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
+  [pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7},
+  [pscustomobject]@{InterfaceGuid=[guid]'22222222-2222-2222-2222-222222222222';InterfaceDescription='Synthetic Ethernet 1';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]2;Status='Disabled';ifIndex=[uint32]8}
 )
 $reordered={param([object]$Value,[int64]$LoopbackType,[int64]$Enabled,[int64]$Disabled,[string[]]$Statuses)
   $normalized=ConvertTo-MyspeedCanaryAdapterInventory $Value $LoopbackType $Enabled $Disabled $Statuses
@@ -742,10 +721,33 @@ if(-not $rejected){throw 'Reordered normalized adapter snapshot was accepted'}
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     });
 
+    powershellIt("rejects culture-equivalent interface-description drift before provider selection", () => {
+        const program = `
+. '${SCRIPT.replaceAll("'", "''")}' -Mode Library
+$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';InterfaceDescription='Synthetic Ethernet 0';Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]7})
+$drifted={param([object]$Value,[int64]$LoopbackType,[int64]$Enabled,[int64]$Disabled,[string[]]$Statuses)
+  $normalized=ConvertTo-MyspeedCanaryAdapterInventory $Value $LoopbackType $Enabled $Disabled $Statuses
+  $normalized[0].interfaceDescription='Synthetic${String.fromCharCode(0xad)} Ethernet 0'
+  Write-Output -NoEnumerate ([object[]]$normalized)
+}
+$rejected=$false
+try{[void](Get-MyspeedCanaryAdapterProviderSnapshot $raw $null 24 1 2 @('Up','Disabled') $drifted)}catch{
+  if($_.Exception.Message -cne 'Normalized adapter snapshot order differs'){throw};$rejected=$true
+}
+if(-not $rejected){throw 'Culture-equivalent adapter description drift was accepted'}
+`;
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                Buffer.from(program, "utf16le").toString("base64")],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    });
+
     powershellIt("projects the same strict all-compartment IP state before and after adapter disable", () => {
         const value = () => ({
             adapters: [{InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
-                CimInstanceProperties: providerPnpProperties("PCI\\VEN_1234&DEV_5678"), Hidden: false, InterfaceType: 6,
+                InterfaceDescription: "Synthetic Ethernet 0", Hidden: false, InterfaceType: 6,
                 InterfaceAdminStatus: 1, Status: "Up", ifIndex: 4}],
             interfaces: [
                 {InterfaceIndex: 4, CompartmentId: 1, ConnectionState: 1},
@@ -768,7 +770,7 @@ if(-not $rejected){throw 'Reordered normalized adapter snapshot was accepted'}
 
         const multiple = value();
         multiple.adapters.push({InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",
-            CimInstanceProperties: providerPnpProperties("PCI\\VEN_1234&DEV_9999"), Hidden: false, InterfaceType: 6,
+            InterfaceDescription: "Synthetic Ethernet 1", Hidden: false, InterfaceType: 6,
             InterfaceAdminStatus: 2, Status: "Disabled", ifIndex: 5});
         multiple.interfaces.push({InterfaceIndex: 5, CompartmentId: 1, ConnectionState: 0});
         multiple.addresses.push({InterfaceIndex: 5, CompartmentId: 1, IPAddress: "10.0.0.6"});
@@ -846,7 +848,12 @@ if(-not $rejected){throw 'Reordered normalized adapter snapshot was accepted'}
             value => { value.offlineTiming.clock = "DateTimeUtc"; },
             value => { value.adapters[0].enabled = true; value.adapters[0].status = "Up"; },
             value => { value.adapters[1].interfaceGuid = value.adapters[0].interfaceGuid; },
-            value => { value.adapters[1].pnpDeviceId = value.adapters[0].pnpDeviceId; },
+            value => { value.adapters[1].interfaceDescription = value.adapters[0].interfaceDescription; },
+            value => {
+                value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription;
+                delete value.adapters[0].interfaceDescription;
+            },
+            value => { value.adapters[0].pnpDeviceId = value.adapters[0].interfaceDescription; },
             value => { value.ipState[2].loopback = false; value.ipState[2].routable = true; },
             value => { value.loopback[0].ownerPid = 0; },
             value => { value.loopback[0].address = "0.0.0.0"; },

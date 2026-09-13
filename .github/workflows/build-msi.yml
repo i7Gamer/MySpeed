@@ -89,10 +89,25 @@ jobs:
       # at that address changing under a tag that is still an alpha.
       #
       # Verified against the published asset on 2026-09-03.
-      - name: Download WinSW service wrapper
+      - name: Checkout exact WinSW notice source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: winsw-license-source
+          sparse-checkout: |
+            scripts/licenses/winsw-3.0.0-alpha.11.txt
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Download WinSW service wrapper and stage its notice
         env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
           WINSW_URL: "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe"
           WINSW_SHA256: "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20"
+          WINSW_LICENSE_CHECKOUT: "winsw-license-source"
+          WINSW_LICENSE_SOURCE: "winsw-license-source/scripts/licenses/winsw-3.0.0-alpha.11.txt"
+          WINSW_LICENSE_TEXT_SHA256: "1cdf703c10a70e5973bf3acf2a5eeabe7746237155b92db2034aeae26fdf7802"
         run: |
           Invoke-WebRequest -Uri $env:WINSW_URL -OutFile "installer\MySpeedService.exe"
 
@@ -104,6 +119,29 @@ jobs:
           }
 
           Write-Host "WinSW verified: $actual"
+
+          $checkedOutSha = (git -C $env:WINSW_LICENSE_CHECKOUT rev-parse HEAD).Trim()
+          if ($checkedOutSha -cne $env:SOURCE_SHA) {
+            throw "WinSW notice checkout differs from the qualified source"
+          }
+          $licenseText = Get-Content -LiteralPath $env:WINSW_LICENSE_SOURCE -Raw
+          $normalizedLicenseText = $licenseText.Replace("`r`n", "`n")
+          if ($normalizedLicenseText.Contains("`r")) {
+            throw "WinSW license contains an unexpected carriage return"
+          }
+          $licenseEncoding = [System.Text.UTF8Encoding]::new($false)
+          $licenseHasher = [System.Security.Cryptography.SHA256]::Create()
+          try {
+            $licenseHash = [BitConverter]::ToString(
+              $licenseHasher.ComputeHash($licenseEncoding.GetBytes($normalizedLicenseText))
+            ).Replace("-", "").ToLowerInvariant()
+          } finally {
+            $licenseHasher.Dispose()
+          }
+          if ($licenseHash -ne $env:WINSW_LICENSE_TEXT_SHA256) {
+            throw "WinSW license text does not match its reviewed digest"
+          }
+          Copy-Item -LiteralPath $env:WINSW_LICENSE_SOURCE -Destination "installer\WinSW-LICENSE.txt" -ErrorAction Stop
 
       # The working directory is what decides where MySpeed keeps its database:
       # the server resolves data/ against the current directory, so pointing it at
@@ -283,6 +321,9 @@ jobs:
                                         ResetPeriodInDays="1" />
                   </ServiceInstall>
                   <ServiceControl Id="MySpeedServiceControl" Name="MySpeed" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+                </Component>
+                <Component Id="WinSWLicenseNotice" Guid="*">
+                  <File Id="WinSWLicense" Source="WinSW-LICENSE.txt" KeyPath="yes" />
                 </Component>
               </ComponentGroup>
           
