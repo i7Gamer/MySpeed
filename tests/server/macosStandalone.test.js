@@ -4,10 +4,13 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {spawnSync} from "node:child_process";
 import {
     buildMacosSeedProfile,
     buildMacosRuntimeProfile,
+    collectFailureLogSnapshots,
     createMacosRuntimeIsolationRecord,
+    formatMacosStandaloneFailure,
     parseArguments,
     runMacosStandaloneVerification
 } from "../../scripts/qualification/verify-macos-standalone.mjs";
@@ -22,6 +25,9 @@ const ARCHITECTURE = "x64";
 const ARTIFACT_NAME = "MySpeed-macos-x64";
 const WRITABLE_DIRECTORY_MODE = 0o700;
 const RETAINED_RUNTIME_DIRECTORY = "runtime";
+const FAILURE_LOG_LIMIT_BYTES = 8 * 1024;
+const DIAGNOSTIC_ENTRY_LIMIT = 64;
+const WRAPPER_SCRIPT = path.resolve("scripts/qualification/verify-macos-standalone.mjs");
 const VERIFIER_FILES = [
     "check-artifact.mjs",
     "fixture.mjs",
@@ -92,6 +98,67 @@ const makeRetainedRuntimeRemovable = ({retained, runnerTemp, randomId}) => {
     assert.equal(runtimeStats.isDirectory(), true);
     assert.equal(runtimeStats.isSymbolicLink(), false);
     fs.chmodSync(runtime, WRITABLE_DIRECTORY_MODE);
+};
+
+const runRetainedRuntimeFailure = (context, {randomId, prepareEvidence, dependencies = {}}) => {
+    const paths = setup(context);
+    const profile = Buffer.from(buildSandboxProfile());
+    const canary = {
+        schemaVersion: 1,
+        status: "passed",
+        architecture: ARCHITECTURE,
+        platform: "darwin",
+        sourceRoot: paths.sourceRoot,
+        sourceRootPreSandboxReadable: true,
+        sourceSentinel: {path: path.join(paths.sourceRoot, "package.json"), preSandboxReadable: true},
+        profile: {sha256: sha256(profile)},
+        probe: fullProbe(),
+        sandbox: {status: 0, signal: null},
+        cleanup: {temporaryFilesRemoved: true, processTreeExitProven: true}
+    };
+    let sandboxCalls = 0;
+    let thrown;
+    try {
+        runMacosStandaloneVerification(options(paths), {
+            environment: {
+                CI: "true", GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted",
+                RUNNER_ARCH: "X64", RUNNER_TEMP: paths.runnerTemp
+            },
+            platform: "darwin",
+            architecture: ARCHITECTURE,
+            qualificationDirectory: paths.qualificationDirectory,
+            runCanary: canaryOptions => {
+                fs.mkdirSync(canaryOptions.evidenceDir);
+                fs.writeFileSync(path.join(canaryOptions.evidenceDir, "macos-isolation.sb"), profile);
+                fs.writeFileSync(path.join(canaryOptions.evidenceDir, "macos-isolation.json"),
+                    JSON.stringify(canary) + "\n");
+                return canary;
+            },
+            runSandbox: (_command, args) => {
+                sandboxCalls += 1;
+                if (sandboxCalls === 1) return {status: 0, signal: null,
+                    stdout: JSON.stringify(denialProbe()) + "\n", stderr: ""};
+                if (sandboxCalls === 2) {
+                    fs.mkdirSync(args[args.indexOf("--work") + 1], {recursive: true});
+                    fs.mkdirSync(args[args.indexOf("--reset-work") + 1], {recursive: true});
+                    fs.writeFileSync(args[args.indexOf("--manifest") + 1], "{}\n");
+                    return {status: 0, signal: null, stdout: "", stderr: ""};
+                }
+                prepareEvidence?.(args[args.indexOf("--evidence-dir") + 1], paths);
+                return {status: 1, signal: null, stdout: "checker stdout", stderr: "checker failed"};
+            },
+            randomId: () => randomId,
+            ...dependencies
+        });
+    } catch (error) {
+        thrown = error;
+    }
+    assert.ok(thrown, "synthetic runtime failure was not thrown");
+    return {
+        paths,
+        thrown,
+        retained: path.join(paths.runnerTemp, `myspeed-macos-standalone-${randomId}`)
+    };
 };
 
 describe("macOS standalone wrapper inputs", () => {
@@ -522,5 +589,202 @@ describe("macOS standalone orchestration", () => {
                     runnerTemp: paths.runnerTemp, randomId});
             }
         }
+    });
+
+    it("captures only exact bounded untrusted checker logs on a retained runtime failure", context => {
+        const randomId = "7".repeat(48);
+        const oversizedPrefix = "x".repeat(FAILURE_LOG_LIMIT_BYTES + 127);
+        const {paths, thrown, retained} = runRetainedRuntimeFailure(context, {
+            randomId,
+            prepareEvidence: checkerEvidence => {
+                const raw = path.join(checkerEvidence, "myspeed-evidence-Ab12Z9");
+                fs.mkdirSync(raw);
+                fs.writeFileSync(path.join(raw, "summary.json"), "{\"status\":\"failed\"}\n");
+                fs.writeFileSync(path.join(raw, "artifact.stdout.log"), `${oversizedPrefix}stdout-tail`);
+                fs.writeFileSync(path.join(raw, "artifact.stderr.log"),
+                    "stderr\u0000line\n::error::from-child\u2028separator");
+                fs.writeFileSync(path.join(raw, "fixture.log"), "fixture-tail\n");
+                fs.writeFileSync(path.join(raw, "unapproved.log"), "must not be read\n");
+            }
+        });
+        try {
+            assert.match(thrown.message, /sandbox-exec failed.*checker failed/i);
+            const failure = JSON.parse(fs.readFileSync(path.join(paths.evidenceDir,
+                "macos-wrapper-failure.json"), "utf8"));
+            assert.equal(failure.diagnostics.trust, "untrusted-failure-only");
+            assert.equal(failure.diagnostics.bestEffort, true);
+            assert.deepEqual(Object.keys(failure.diagnostics.files).sort(), [
+                "artifact.stderr.log", "artifact.stdout.log", "fixture.log", "summary.json"
+            ]);
+            assert.equal(failure.diagnostics.files["artifact.stdout.log"].truncated, true);
+            assert.equal(failure.diagnostics.files["artifact.stdout.log"].capturedBytes,
+                FAILURE_LOG_LIMIT_BYTES);
+            assert.match(failure.diagnostics.files["artifact.stdout.log"].tail, /stdout-tail$/);
+            assert.equal(failure.diagnostics.files["artifact.stderr.log"].tail,
+                "stderr\u0000line\n::error::from-child\u2028separator");
+            const formatted = formatMacosStandaloneFailure(thrown);
+            assert.equal(formatted.split(/\r?\n/).length, 1);
+            assert.equal(formatted.includes("\u2028"), false);
+            const formattedRecord = JSON.parse(formatted);
+            assert.equal(formattedRecord.diagnosticsBestEffort, true);
+            assert.equal(formattedRecord.diagnostics.files["fixture.log"].tail, "fixture-tail\n");
+            assert.deepEqual(failure.cleanup, {processTreeExitProven: false, taskRootRetained: true});
+            assert.equal(fs.existsSync(retained), true);
+        } finally {
+            makeRetainedRuntimeRemovable({retained, runnerTemp: paths.runnerTemp, randomId});
+        }
+    });
+
+    it("refuses hard-linked diagnostic files and reports mutation without hiding the original failure", context => {
+        const randomId = "8".repeat(48);
+        const {paths, thrown, retained} = runRetainedRuntimeFailure(context, {
+            randomId,
+            prepareEvidence: (checkerEvidence, fixturePaths) => {
+                const raw = path.join(checkerEvidence, "myspeed-evidence-LnK123");
+                fs.mkdirSync(raw);
+                const outside = path.join(fixturePaths.root, "outside.log");
+                fs.writeFileSync(outside, "outside\n");
+                fs.linkSync(outside, path.join(raw, "artifact.stderr.log"));
+            }
+        });
+        try {
+            assert.match(thrown.message, /sandbox-exec failed.*checker failed/i);
+            assert.doesNotMatch(thrown.message, /diagnostic capture failed/i);
+            const failure = JSON.parse(fs.readFileSync(path.join(paths.evidenceDir,
+                "macos-wrapper-failure.json"), "utf8"));
+            assert.equal(failure.diagnostics.status, "rejected");
+            assert.match(failure.diagnostics.error, /unlinked regular file|symbolic link/i);
+            assert.deepEqual(failure.cleanup, {processTreeExitProven: false, taskRootRetained: true});
+        } finally {
+            makeRetainedRuntimeRemovable({retained, runnerTemp: paths.runnerTemp, randomId});
+        }
+
+        const mutationPaths = setup(context);
+        const mutationId = "6".repeat(48);
+        const taskRoot = path.join(mutationPaths.runnerTemp, `myspeed-macos-standalone-${mutationId}`);
+        const checkerEvidence = path.join(taskRoot, "checker-evidence");
+        const raw = path.join(checkerEvidence, "myspeed-evidence-MuT456");
+        fs.mkdirSync(raw, {recursive: true});
+        fs.writeFileSync(path.join(taskRoot, ".myspeed-macos-standalone.json"), JSON.stringify({
+            schemaVersion: 1, randomId: mutationId, taskRoot
+        }) + "\n");
+        const target = path.join(raw, "summary.json");
+        fs.writeFileSync(target, "before\n");
+        let targetDescriptor;
+        let targetFstats = 0;
+        const fileSystem = Object.create(fs);
+        fileSystem.openSync = (...args) => {
+            const descriptor = fs.openSync(...args);
+            if (args[0] === target) targetDescriptor = descriptor;
+            return descriptor;
+        };
+        fileSystem.fstatSync = (...args) => {
+            if (args[0] === targetDescriptor) {
+                targetFstats += 1;
+                if (targetFstats === 2) fs.appendFileSync(target, "changed\n");
+            }
+            return fs.fstatSync(...args);
+        };
+        assert.throws(() => collectFailureLogSnapshots({
+            taskRoot, runnerTemp: mutationPaths.runnerTemp, randomId: mutationId, checkerEvidence
+        }, {fileSystem}), /changed while being read/i);
+    });
+
+    it("rejects malformed ownership, aliases, symlinks, and unbounded directory inspection", context => {
+        const paths = setup(context);
+        const createDiagnosticFixture = randomId => {
+            const taskRoot = path.join(paths.runnerTemp, `myspeed-macos-standalone-${randomId}`);
+            const checkerEvidence = path.join(taskRoot, "checker-evidence");
+            fs.mkdirSync(checkerEvidence, {recursive: true});
+            fs.writeFileSync(path.join(taskRoot, ".myspeed-macos-standalone.json"), JSON.stringify({
+                schemaVersion: 1, randomId, taskRoot
+            }) + "\n");
+            return {taskRoot, checkerEvidence};
+        };
+
+        const malformedId = "a".repeat(48);
+        const malformed = createDiagnosticFixture(malformedId);
+        assert.throws(() => collectFailureLogSnapshots({...malformed, runnerTemp: paths.runnerTemp,
+            randomId: "../escape"}), /task identity is malformed/i);
+        assert.throws(() => collectFailureLogSnapshots({...malformed,
+            runnerTemp: `${paths.runnerTemp}${path.sep}.`, randomId: malformedId}), /canonical owned path/i);
+
+        const multipleId = "b".repeat(48);
+        const multiple = createDiagnosticFixture(multipleId);
+        fs.mkdirSync(path.join(multiple.checkerEvidence, "myspeed-evidence-AbC123"));
+        fs.mkdirSync(path.join(multiple.checkerEvidence, "myspeed-evidence-XyZ789"));
+        assert.throws(() => collectFailureLogSnapshots({...multiple, runnerTemp: paths.runnerTemp,
+            randomId: multipleId}), /exactly one raw checker evidence directory/i);
+
+        const aliasId = "c".repeat(48);
+        const aliased = createDiagnosticFixture(aliasId);
+        const raw = path.join(aliased.checkerEvidence, "myspeed-evidence-DeF456");
+        fs.mkdirSync(raw);
+        const fileSystem = Object.create(fs);
+        fileSystem.realpathSync = value => value === raw ? `${raw}-alias` : fs.realpathSync(value);
+        assert.throws(() => collectFailureLogSnapshots({...aliased, runnerTemp: paths.runnerTemp,
+            randomId: aliasId}, {fileSystem}), /plain non-aliased directory/i);
+
+        const symlinkId = "d".repeat(48);
+        const symlinked = createDiagnosticFixture(symlinkId);
+        const symlinkRaw = path.join(symlinked.checkerEvidence, "myspeed-evidence-GhI789");
+        const symlinkFile = path.join(symlinkRaw, "summary.json");
+        fs.mkdirSync(symlinkRaw);
+        fs.writeFileSync(symlinkFile, "{}\n");
+        const symlinkFileSystem = Object.create(fs);
+        symlinkFileSystem.lstatSync = (value, options) => {
+            const info = fs.lstatSync(value, options);
+            if (value !== symlinkFile) return info;
+            return {
+                ...info,
+                isFile: () => true,
+                isSymbolicLink: () => true
+            };
+        };
+        assert.throws(() => collectFailureLogSnapshots({...symlinked, runnerTemp: paths.runnerTemp,
+            randomId: symlinkId}, {fileSystem: symlinkFileSystem}), /unlinked regular file/i);
+
+        const boundedId = "e".repeat(48);
+        const bounded = createDiagnosticFixture(boundedId);
+        for (let index = 0; index <= DIAGNOSTIC_ENTRY_LIMIT; index += 1)
+            fs.writeFileSync(path.join(bounded.checkerEvidence, `ignored-${index}`), "");
+        assert.throws(() => collectFailureLogSnapshots({...bounded, runnerTemp: paths.runnerTemp,
+            randomId: boundedId}), /too many entries/i);
+    });
+
+    it("keeps the verification error primary when diagnostic collection itself fails", context => {
+        const randomId = "5".repeat(48);
+        const {paths, thrown, retained} = runRetainedRuntimeFailure(context, {
+            randomId,
+            dependencies: {collectFailureDiagnostics: () => { throw new Error("diagnostic exploded"); }}
+        });
+        try {
+            assert.match(thrown.message, /sandbox-exec failed.*checker failed/i);
+            assert.doesNotMatch(thrown.message, /diagnostic exploded/i);
+            const rendered = JSON.parse(formatMacosStandaloneFailure(thrown));
+            assert.match(rendered.error, /sandbox-exec failed.*checker failed/i);
+            assert.match(rendered.diagnosticError, /diagnostic exploded/i);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(paths.evidenceDir,
+                "macos-wrapper-failure.json"), "utf8")).cleanup,
+            {processTreeExitProven: false, taskRootRetained: true});
+        } finally {
+            makeRetainedRuntimeRemovable({retained, runnerTemp: paths.runnerTemp, randomId});
+        }
+    });
+
+    it("emits one JSON-escaped bounded error line at the direct CLI boundary", () => {
+        const invalidName = "--bad\n::error::\u001b[31m-control\u2028separator\u2029end";
+        const result = spawnSync(process.execPath, [WRAPPER_SCRIPT, invalidName, "value"], {
+            encoding: "utf8",
+            maxBuffer: 1_048_576
+        });
+        assert.equal(result.status, 1);
+        assert.equal(result.stderr.trim().split(/\r?\n/).length, 1);
+        const rendered = JSON.parse(result.stderr.trim());
+        assert.equal(rendered.status, "failed");
+        assert.equal(rendered.error.includes(invalidName), true);
+        assert.equal(result.stderr.includes("\u2028"), false);
+        assert.equal(result.stderr.includes("\u2029"), false);
+        assert.ok(Buffer.byteLength(result.stderr) < 64 * 1024);
     });
 });

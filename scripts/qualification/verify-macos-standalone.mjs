@@ -42,6 +42,12 @@ const READONLY_DIRECTORY_MODE = 0o500;
 const PROCESS_TIMEOUT_MS = 15 * 60 * 1000;
 const MAX_OUTPUT_BYTES = 1024 * 1024;
 const MAX_FAILURE_TEXT_BYTES = 16 * 1024;
+const MAX_FAILURE_LOG_BYTES = 8 * 1024;
+const MAX_OWNERSHIP_FILE_BYTES = 4 * 1024;
+const MAX_DIAGNOSTIC_DIRECTORY_ENTRIES = 64;
+const FAILURE_DIAGNOSTICS_TRUST = "untrusted-failure-only";
+const FAILURE_RAW_DIRECTORY_PATTERN = /^myspeed-evidence-[A-Za-z0-9]{6}$/;
+const FAILURE_LOG_FILES = ["summary.json", "artifact.stdout.log", "artifact.stderr.log", "fixture.log"];
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const REPOSITORY_PATTERN = /^[^/\s]+\/[^/\s]+$/;
@@ -58,6 +64,7 @@ const VERIFIER_FILES = [
     "safety.mjs",
     "sqlite-check.mjs"
 ];
+const failureDetails = new WeakMap();
 const SAFE_ENVIRONMENT_KEYS = ["PATH", "LANG", "LC_ALL", "TZ"];
 const REQUIRED_OPTIONS = [
     "artifact", "artifactSha256", "repo", "evidenceDir", "sourceSha", "expectedArch",
@@ -285,10 +292,153 @@ const moveRawEvidence = ({checkerEvidence, evidenceDir}) => {
     return true;
 };
 
-const boundedText = value => String(value ?? "").slice(0, MAX_FAILURE_TEXT_BYTES);
+const boundedText = (value, maximumBytes = MAX_FAILURE_TEXT_BYTES) => {
+    const bytes = Buffer.from(String(value ?? ""));
+    return bytes.subarray(0, maximumBytes).toString("utf8");
+};
 
-const writeFailureEvidence = ({evidenceDir, stage, error, result, processTreeExitProven, taskRoot}) => {
-    if (!fs.existsSync(evidenceDir) || fs.existsSync(path.join(evidenceDir, FAILURE_FILE))) return;
+const boundedTailText = (value, maximumBytes = MAX_FAILURE_TEXT_BYTES) => {
+    const bytes = Buffer.from(String(value ?? ""));
+    return bytes.subarray(Math.max(0, bytes.length - maximumBytes)).toString("utf8");
+};
+
+const statIdentity = info => ["dev", "ino", "size", "mtimeMs", "ctimeMs", "nlink"]
+    .map(key => String(info[key])).join(":");
+
+const assertSameIdentity = (before, after, label) => {
+    if (statIdentity(before) !== statIdentity(after)) throw new Error(`${label} changed while being read`);
+};
+
+const assertPlainDirectory = ({directory, expected, label, fileSystem}) => {
+    if (directory !== expected || !path.isAbsolute(directory) || path.resolve(directory) !== directory)
+        throw new Error(`${label} path is not the exact canonical owned path`);
+    const info = fileSystem.lstatSync(directory, {bigint: true});
+    if (!info.isDirectory() || info.isSymbolicLink() || fileSystem.realpathSync(directory) !== directory)
+        throw new Error(`${label} must be a plain non-aliased directory`);
+    return info;
+};
+
+const openVerifiedFile = ({file, label, maximumBytes, tail, fileSystem}) => {
+    const before = fileSystem.lstatSync(file, {bigint: true});
+    if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1n)
+        throw new Error(`${label} must be an unlinked regular file`);
+    if (fileSystem.realpathSync(file) !== file) throw new Error(`${label} must not be aliased`);
+    if (before.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error(`${label} is too large to inspect safely`);
+    if (!tail && before.size > BigInt(maximumBytes)) throw new Error(`${label} exceeds its size limit`);
+
+    const flags = fileSystem.constants.O_RDONLY | (fileSystem.constants.O_NOFOLLOW ?? 0);
+    const descriptor = fileSystem.openSync(file, flags);
+    try {
+        const opened = fileSystem.fstatSync(descriptor, {bigint: true});
+        if (!opened.isFile() || opened.nlink !== 1n || statIdentity(before) !== statIdentity(opened))
+            throw new Error(`${label} identity changed before it was read`);
+        const byteLength = Number(opened.size);
+        const capturedBytes = tail ? Math.min(byteLength, maximumBytes) : byteLength;
+        const bytes = Buffer.alloc(capturedBytes);
+        const position = tail ? byteLength - capturedBytes : 0;
+        let offset = 0;
+        while (offset < capturedBytes) {
+            const bytesRead = fileSystem.readSync(descriptor, bytes, offset, capturedBytes - offset, position + offset);
+            if (bytesRead === 0) throw new Error(`${label} ended while it was being read`);
+            offset += bytesRead;
+        }
+        const afterRead = fileSystem.fstatSync(descriptor, {bigint: true});
+        assertSameIdentity(opened, afterRead, label);
+        const afterPath = fileSystem.lstatSync(file, {bigint: true});
+        assertSameIdentity(opened, afterPath, label);
+        if (fileSystem.realpathSync(file) !== file) throw new Error(`${label} became aliased while being read`);
+        return {bytes, byteLength, capturedBytes, truncated: byteLength > capturedBytes};
+    } finally {
+        fileSystem.closeSync(descriptor);
+    }
+};
+
+const boundedDirectoryNames = ({directory, label, fileSystem}) => {
+    const names = [];
+    const handle = fileSystem.opendirSync(directory);
+    try {
+        for (let entry = handle.readSync(); entry; entry = handle.readSync()) {
+            names.push(entry.name);
+            if (names.length > MAX_DIAGNOSTIC_DIRECTORY_ENTRIES)
+                throw new Error(`${label} contains too many entries to inspect safely`);
+        }
+    } finally {
+        handle.closeSync();
+    }
+    return names;
+};
+
+export const collectFailureLogSnapshots = ({taskRoot, runnerTemp, randomId, checkerEvidence},
+    {fileSystem = fs} = {}) => {
+    if (!new RegExp(`^[0-9a-f]{${NONCE_HEX_LENGTH}}$`).test(randomId ?? ""))
+        throw new Error("Diagnostic task identity is malformed");
+    const runnerInfo = assertPlainDirectory({directory: runnerTemp, expected: runnerTemp,
+        label: "Diagnostic runner temporary root", fileSystem});
+    const expectedTaskRoot = path.join(runnerTemp, `${TASK_PREFIX}${randomId}`);
+    const taskInfo = assertPlainDirectory({directory: taskRoot, expected: expectedTaskRoot,
+        label: "Diagnostic task root", fileSystem});
+    const ownershipFile = path.join(taskRoot, OWNERSHIP_FILE);
+    const ownershipRead = openVerifiedFile({file: ownershipFile, label: "Diagnostic ownership marker",
+        maximumBytes: MAX_OWNERSHIP_FILE_BYTES, tail: false, fileSystem});
+    let ownership;
+    try {
+        ownership = JSON.parse(ownershipRead.bytes.toString("utf8"));
+    } catch (error) {
+        throw new Error("Diagnostic ownership marker is malformed", {cause: error});
+    }
+    if (ownership?.schemaVersion !== SCHEMA_VERSION || ownership.randomId !== randomId
+        || ownership.taskRoot !== taskRoot)
+        throw new Error("Diagnostic ownership marker does not match the owned task root");
+
+    const expectedCheckerEvidence = path.join(taskRoot, CHECKER_EVIDENCE_DIRECTORY);
+    const checkerInfo = assertPlainDirectory({directory: checkerEvidence, expected: expectedCheckerEvidence,
+        label: "Checker evidence", fileSystem});
+    const matchingNames = boundedDirectoryNames({directory: checkerEvidence,
+        label: "Checker evidence", fileSystem}).filter(name => FAILURE_RAW_DIRECTORY_PATTERN.test(name));
+    if (matchingNames.length === 0) return {
+        status: "unavailable", trust: FAILURE_DIAGNOSTICS_TRUST, bestEffort: true,
+        reason: "No raw checker evidence directory exists"
+    };
+    if (matchingNames.length !== 1) throw new Error("Expected exactly one raw checker evidence directory");
+
+    const rawDirectory = path.join(checkerEvidence, matchingNames[0]);
+    const rawInfo = assertPlainDirectory({directory: rawDirectory, expected: rawDirectory,
+        label: "Raw checker evidence", fileSystem});
+    const rawNames = new Set(boundedDirectoryNames({directory: rawDirectory,
+        label: "Raw checker evidence", fileSystem}));
+    const files = {};
+    for (const name of FAILURE_LOG_FILES) {
+        if (!rawNames.has(name)) {
+            files[name] = {present: false};
+            continue;
+        }
+        const snapshot = openVerifiedFile({file: path.join(rawDirectory, name),
+            label: `Diagnostic ${name}`, maximumBytes: MAX_FAILURE_LOG_BYTES, tail: true, fileSystem});
+        files[name] = {
+            present: true,
+            byteLength: snapshot.byteLength,
+            capturedBytes: snapshot.capturedBytes,
+            truncated: snapshot.truncated,
+            tail: snapshot.bytes.toString("utf8")
+        };
+    }
+    assertSameIdentity(rawInfo, fileSystem.lstatSync(rawDirectory, {bigint: true}), "Raw checker evidence");
+    assertSameIdentity(checkerInfo, fileSystem.lstatSync(checkerEvidence, {bigint: true}), "Checker evidence");
+    assertSameIdentity(taskInfo, fileSystem.lstatSync(taskRoot, {bigint: true}), "Diagnostic task root");
+    assertSameIdentity(runnerInfo, fileSystem.lstatSync(runnerTemp, {bigint: true}),
+        "Diagnostic runner temporary root");
+    return {
+        status: "captured",
+        trust: FAILURE_DIAGNOSTICS_TRUST,
+        bestEffort: true,
+        evidenceDirectory: matchingNames[0],
+        files
+    };
+};
+
+const writeFailureEvidence = ({evidenceDir, stage, error, result, processTreeExitProven, taskRoot,
+    diagnostics}) => {
+    if (!fs.existsSync(evidenceDir) || fs.existsSync(path.join(evidenceDir, FAILURE_FILE))) return null;
     const record = {
         schemaVersion: SCHEMA_VERSION,
         status: "failed",
@@ -298,15 +448,43 @@ const writeFailureEvidence = ({evidenceDir, stage, error, result, processTreeExi
             processTreeExitProven,
             taskRootRetained: Boolean(taskRoot && !processTreeExitProven)
         },
+        diagnostics,
         sandbox: result ? {
             status: result.status ?? null,
             signal: result.signal ?? null,
-            stdout: boundedText(result.stdout),
-            stderr: boundedText(result.stderr),
+            stdout: boundedTailText(result.stdout),
+            stderr: boundedTailText(result.stderr),
             error: result.error ? boundedText(result.error.message ?? result.error) : null
         } : null
     };
     writeWithDigest(path.join(evidenceDir, FAILURE_FILE), Buffer.from(JSON.stringify(record, null, 2) + "\n"));
+    return record;
+};
+
+const rememberFailureDetails = (error, details) => {
+    if ((typeof error === "object" && error !== null) || typeof error === "function")
+        failureDetails.set(error, details);
+};
+
+const stringifySingleLine = value => JSON.stringify(value)
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+
+export const formatMacosStandaloneFailure = error => {
+    const details = ((typeof error === "object" && error !== null) || typeof error === "function")
+        ? failureDetails.get(error) : null;
+    const diagnosticError = details?.diagnosticErrors?.length
+        ? boundedText(details.diagnosticErrors.map(item => item?.stack ?? item).join("\n")) : null;
+    return stringifySingleLine({
+        schemaVersion: SCHEMA_VERSION,
+        status: "failed",
+        trust: FAILURE_DIAGNOSTICS_TRUST,
+        diagnosticsBestEffort: true,
+        error: boundedText(error?.stack ?? error),
+        diagnostics: details?.failureRecord?.diagnostics ?? details?.diagnostics ?? null,
+        cleanup: details?.failureRecord?.cleanup ?? null,
+        diagnosticError
+    });
 };
 
 const removeOwnedTaskRoot = ({taskRoot, runnerTemp, randomId, runtimeDirectory}) => {
@@ -339,6 +517,7 @@ export const runMacosStandaloneVerification = (options, dependencies = {}) => {
     const runCanary = dependencies.runCanary ?? runMacosIsolationCanary;
     const runSandbox = dependencies.runSandbox ?? spawnSync;
     const collectSummary = dependencies.collectSummary ?? collectQualificationSummary;
+    const collectFailureDiagnostics = dependencies.collectFailureDiagnostics ?? collectFailureLogSnapshots;
     const randomId = (dependencies.randomId ?? (() => crypto.randomBytes(NONCE_HEX_LENGTH / 2).toString("hex")))();
     let taskRoot;
     let runtimeDirectory;
@@ -547,13 +726,40 @@ export const runMacosStandaloneVerification = (options, dependencies = {}) => {
             Buffer.from(JSON.stringify(isolationRecord, null, 2) + "\n"));
         return {evidenceDir: options.evidenceDir, isolationRecord, summary: collected.summary};
     } catch (error) {
+        let diagnostics = {
+            status: "unavailable",
+            trust: FAILURE_DIAGNOSTICS_TRUST,
+            bestEffort: true,
+            reason: "No owned checker evidence directory was created"
+        };
+        const diagnosticErrors = [];
+        if (taskRoot && checkerEvidence) {
+            try {
+                diagnostics = collectFailureDiagnostics({taskRoot, runnerTemp: context.runnerTemp,
+                    randomId, checkerEvidence});
+            } catch (diagnosticError) {
+                diagnosticErrors.push(diagnosticError);
+                diagnostics = {
+                    status: "rejected",
+                    trust: FAILURE_DIAGNOSTICS_TRUST,
+                    bestEffort: true,
+                    error: boundedText(diagnosticError?.stack ?? diagnosticError)
+                };
+            }
+        }
+        let failureRecord = null;
         try {
             if (processTreeExitProven) moveRawEvidence({checkerEvidence, evidenceDir: options.evidenceDir});
-            writeFailureEvidence({evidenceDir: options.evidenceDir, stage, error, result: lastSandboxResult,
-                processTreeExitProven, taskRoot});
         } catch (diagnosticError) {
-            throw new AggregateError([error, diagnosticError], "macOS verification and diagnostic capture failed");
+            diagnosticErrors.push(diagnosticError);
         }
+        try {
+            failureRecord = writeFailureEvidence({evidenceDir: options.evidenceDir, stage, error,
+                result: lastSandboxResult, processTreeExitProven, taskRoot, diagnostics});
+        } catch (diagnosticError) {
+            diagnosticErrors.push(diagnosticError);
+        }
+        rememberFailureDetails(error, {diagnostics, diagnosticErrors, failureRecord});
         throw error;
     } finally {
         if (taskRootCreated && processTreeExitProven)
@@ -568,7 +774,7 @@ if (invokedDirectly) {
         const result = runMacosStandaloneVerification(parseArguments(process.argv.slice(2)));
         process.stdout.write(`${JSON.stringify(result.isolationRecord)}\n`);
     } catch (error) {
-        console.error(error?.stack ?? error);
+        process.stderr.write(`${formatMacosStandaloneFailure(error)}\n`);
         process.exitCode = 1;
     }
 }

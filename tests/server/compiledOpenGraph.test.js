@@ -6,10 +6,10 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {fileURLToPath} from "node:url";
 import {generateThirdPartyNotices} from "../../scripts/generate-third-party-notices.mjs";
+import {OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS} from "../../scripts/qualification/safety.mjs";
 
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const BUN_BINARY = process.env.MYSPEED_BUN_BINARY;
-const COMPILED_RENDER_TIMEOUT_MS = 120_000;
 const WINDOWS_TEST_VERSION = "1.6.0.1";
 const BUILD_INPUTS = ["package.json", "bun.lock", "server", "scripts", "node_modules", "build"];
 const PROBE_SOURCE = path.join(ROOT, "tests", "fixtures", "compiledOpenGraphProbe.mjs");
@@ -62,7 +62,7 @@ describe("the compiled production OpenGraph renderer", {skip: !BUN_BINARY}, () =
             cwd: snapshot,
             encoding: "utf8",
             env: environment,
-            timeout: COMPILED_RENDER_TIMEOUT_MS,
+            timeout: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
         });
         assert.equal(embedded.status, 0, `${embedded.stdout}\n${embedded.stderr}`);
 
@@ -79,7 +79,7 @@ describe("the compiled production OpenGraph renderer", {skip: !BUN_BINARY}, () =
             cwd: snapshot,
             encoding: "utf8",
             env: environment,
-            timeout: COMPILED_RENDER_TIMEOUT_MS,
+            timeout: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
         });
 
         assert.equal(built.status, 0, `${built.stdout}\n${built.stderr}`);
@@ -89,7 +89,7 @@ describe("the compiled production OpenGraph renderer", {skip: !BUN_BINARY}, () =
             cwd: runtime,
             encoding: "utf8",
             env: environment,
-            timeout: COMPILED_RENDER_TIMEOUT_MS,
+            timeout: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
         });
 
         assert.equal(rendered.status, 0, `${rendered.stdout}\n${rendered.stderr}`);

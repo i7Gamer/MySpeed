@@ -11,6 +11,9 @@ export const PNG_WIDTH = 1_200;
 export const PNG_HEIGHT = 600;
 export const MIN_PNG_BYTES = 32;
 export const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
+// Cold compiled rendering may initialize HarfBuzz WASM and load resvg's native
+// binding. This is a qualification ceiling, not an application response-time SLO.
+export const OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS = 120_000;
 export const DEFAULT_STOP_TIMEOUT_MS = 15_000;
 
 const PNG_SIGNATURE = Buffer.from("89504e470d0a1a0a", "hex");

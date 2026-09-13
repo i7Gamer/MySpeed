@@ -19,7 +19,7 @@ const cert = fs.readFileSync(path.join(certificateDir, "cert.pem"));
 const key = fs.readFileSync(path.join(certificateDir, "key.pem"));
 const sockets = new Set();
 const peers = [];
-const seen = {connects: [], posts: [], sni: [], connections: 0, unsafe: []};
+const seen = {connects: [], posts: [], sni: [], connections: 0, unsafe: [], trickleStarts: 0};
 const concurrent = new Map();
 const track = socket => {
     sockets.add(socket);
@@ -45,8 +45,10 @@ const origin = https.createServer(originTls, (request, response) => {
         body += chunk.toString();
         if (Buffer.byteLength(body) > MAX_BODY_BYTES) request.destroy();
     });
-    request.on("end", () => {
+    request.on("end", async () => {
         seen.posts.push({url: request.url, headers: request.headers, body, servername: request.socket.servername});
+        if (options.headerDelayMs) await new Promise(resolve => setTimeout(resolve, options.headerDelayMs));
+        if (response.destroyed) return;
         if (request.url === "/close") return request.socket.destroy();
         if (request.url === "/stall-headers") return;
         if (request.url === "/concurrent-abort" || request.url === "/concurrent-ok") {
@@ -65,6 +67,7 @@ const origin = https.createServer(originTls, (request, response) => {
         }
         response.writeHead(options.status || 200, options.redirect ? {location: "https://169.254.169.254/blocked"} : {});
         if (request.url === "/trickle") {
+            seen.trickleStarts += 1;
             response.write("start");
             const timer = setInterval(() => response.write("chunk"), TRICKLE_MS);
             response.on("close", () => clearInterval(timer));

@@ -13,6 +13,8 @@ import {
     buildLocalOrigin,
     checkJsonResponse,
     checkPng,
+    DEFAULT_REQUEST_TIMEOUT_MS,
+    OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
     requestLocal,
     sanitizedEnvironment,
     stopOwnedProcess,
@@ -22,6 +24,7 @@ import {
 import {
     awaitHealthcheckHandshake,
     assertRuntimeIdentity,
+    checkOpenGraphImage,
     checkCfspeedtestVersion,
     clientScriptTargets,
     createEvidenceDirectory,
@@ -312,6 +315,63 @@ describe("local HTTP checks", () => {
         assert.deepEqual(checkPng(png()), {width: PNG_WIDTH, height: PNG_HEIGHT, bytes: 64});
         assert.throws(() => checkPng(Buffer.from("not png")), /PNG/i);
         assert.throws(() => checkPng(png({width: 1})), /1200x600/i);
+    });
+
+    it("gives only the cold OpenGraph render its qualified deadline and records elapsed time", async () => {
+        const calls = [];
+        const times = [100, 12_445.6];
+        const headers = {cookie: "session=synthetic"};
+        const result = await checkOpenGraphImage(origin, headers, {
+            request: async (...args) => {
+                calls.push(args);
+                return {
+                    status: 200,
+                    headers: new Headers({"content-type": "image/png"}),
+                    bytes: png()
+                };
+            },
+            now: () => times.shift()
+        });
+
+        assert.deepEqual(result, {elapsedMs: 12_346});
+        assert.deepEqual(calls, [[origin, "/api/opengraph/image", {
+            headers,
+            timeoutMs: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS
+        }]]);
+        assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 10_000);
+        assert.equal(OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS, 120_000);
+    });
+
+    it("rejects failed, non-PNG, malformed, or invalidly timed OpenGraph responses", async () => {
+        const response = (status, type, bytes = png()) => ({
+            status,
+            headers: new Headers({"content-type": type}),
+            bytes
+        });
+        const run = (reply, times = [10, 20]) => checkOpenGraphImage(origin, {}, {
+            request: async () => reply,
+            now: () => times.shift()
+        });
+
+        await assert.rejects(run(response(503, "image/png")), /HTTP 503/);
+        await assert.rejects(run(response(200, "text/plain")), /did not return PNG/);
+        await assert.rejects(run(response(200, "image/png", Buffer.from("not png"))), /PNG/i);
+        await assert.rejects(run(response(200, "image/png"), [20, 10]), /elapsed time/i);
+        await assert.rejects(run(response(200, "image/png"), [10, Number.NaN]), /elapsed time/i);
+        await assert.rejects(checkOpenGraphImage(origin, {}, {
+            request: async () => { throw new Error("render deadline"); },
+            now: () => 10
+        }), /render deadline/);
+    });
+
+    it("records the qualified cold-render duration for both populated boots", () => {
+        const source = fs.readFileSync(path.join(REPOSITORY, "scripts", "qualification",
+            "check-artifact.mjs"), "utf8");
+        const scenarios = [...source.matchAll(/summary\.openGraphChecks\.push\(\{\s*scenario: "([^"]+)",\s*\.\.\.await checkPopulatedInstance\(origin\)\s*\}\)/g)]
+            .map(match => match[1]);
+
+        assert.match(source, /openGraphChecks:\s*\[\]/);
+        assert.deepEqual(scenarios, ["populated-first-boot", "populated-restart"]);
     });
 
     it("normalizes and checks every root-relative or dot-relative client script", () => {

@@ -14,6 +14,7 @@ import {
     buildLocalOrigin,
     checkJsonResponse,
     checkPng,
+    OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
     requestLocal,
     sanitizedEnvironment,
     stopOwnedProcess,
@@ -333,6 +334,24 @@ const checkClient = async (origin) => {
     }
 };
 
+export const checkOpenGraphImage = async (origin, headers, {
+    request = requestLocal,
+    now = () => performance.now()
+} = {}) => {
+    const startedAt = now();
+    const image = await request(origin, "/api/opengraph/image", {
+        headers,
+        timeoutMs: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS
+    });
+    if (image.status !== 200 || !contentType(image).includes("image/png"))
+        throw new Error(`Populated OpenGraph endpoint did not return PNG (HTTP ${image.status})`);
+    checkPng(image.bytes);
+    const elapsed = now() - startedAt;
+    if (!Number.isFinite(elapsed) || elapsed < 0)
+        throw new Error("OpenGraph qualification elapsed time is invalid");
+    return {elapsedMs: Math.round(elapsed)};
+};
+
 const checkPopulatedInstance = async (origin) => {
     const health = await requestLocal(origin, "/api/health");
     checkJsonResponse(health, {status: "ok", database: "up"});
@@ -354,10 +373,7 @@ const checkPopulatedInstance = async (origin) => {
 
     await checkClient(origin);
 
-    const image = await requestLocal(origin, "/api/opengraph/image", {headers});
-    if (image.status !== 200 || !contentType(image).includes("image/png"))
-        throw new Error(`Populated OpenGraph endpoint did not return PNG (HTTP ${image.status})`);
-    checkPng(image.bytes);
+    return checkOpenGraphImage(origin, headers);
 };
 
 const ensureListenerGone = (child, host, port) => {
@@ -534,6 +550,7 @@ const main = async () => {
         originalBuildRoot: options.originalBuildRoot ? path.resolve(options.originalBuildRoot) : null,
         processes: [],
         databaseChecks: [],
+        openGraphChecks: [],
         fixtures: null,
         healthcheckHandshake: null,
         networkIsolation: null
@@ -636,7 +653,10 @@ const main = async () => {
             summary.processes.push({scenario: "populated-first-boot", pid: activeChild.pid});
             await waitForOwnedListener({child: activeChild, host, port, timeoutMs: LISTEN_TIMEOUT_MS});
             assertRuntimeIdentity({child: activeChild, expectedUid: options.expectedUid, work});
-            await checkPopulatedInstance(origin);
+            summary.openGraphChecks.push({
+                scenario: "populated-first-boot",
+                ...await checkPopulatedInstance(origin)
+            });
             if (handshakeDirectory)
                 summary.healthcheckHandshake = await awaitHealthcheckHandshake({
                     directory: handshakeDirectory,
@@ -654,7 +674,10 @@ const main = async () => {
             summary.processes.push({scenario: "populated-restart", pid: activeChild.pid});
             await waitForOwnedListener({child: activeChild, host, port, timeoutMs: LISTEN_TIMEOUT_MS});
             assertRuntimeIdentity({child: activeChild, expectedUid: options.expectedUid, work});
-            await checkPopulatedInstance(origin);
+            summary.openGraphChecks.push({
+                scenario: "populated-restart",
+                ...await checkPopulatedInstance(origin)
+            });
             await stopCleanly(activeChild, host, port);
             activeChild = null;
 
