@@ -164,7 +164,6 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
         else {$guid=Assert-MyspeedCanaryString $adapter.interfaceGuid 'Native adapter GUID' `
             '^\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}$'
             $guid=([guid]$guid).ToString('B')}
-        $pnp=Assert-MyspeedCanaryString $adapter.pnpDeviceId 'Native adapter PnP identity'
         $hidden=Assert-MyspeedCanaryBoolean $adapter.hidden 'Native adapter hidden flag'
         $interfaceType=Assert-MyspeedCanaryInteger $adapter.interfaceType 'Native adapter interface type' 1 4294967295
         $adminStatus=Assert-MyspeedCanaryInteger $adapter.interfaceAdminStatus 'Native adapter administrative status' `
@@ -172,6 +171,15 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
         $status=Assert-MyspeedCanaryString $adapter.status 'Native adapter status'
         if($KnownStatuses -cnotcontains $status){throw 'Native adapter status is unknown'}
         $index=Assert-MyspeedCanaryInteger $adapter.interfaceIndex 'Native adapter interface index' 1 4294967295
+        # Keep rejection strict while identifying unsupported hosted adapter rows without logging PnP values.
+        $pnpKind=if($null -eq $adapter.pnpDeviceId){'null'}
+            elseif($adapter.pnpDeviceId -is [string]){if($adapter.pnpDeviceId.Length -eq 0){'empty-string'}else{'string'}}
+            elseif($adapter.pnpDeviceId -is [array]){'array'}
+            elseif($adapter.pnpDeviceId -is [pscustomobject] -or $adapter.pnpDeviceId -is [Collections.IDictionary]){'object'}
+            else{'other'}
+        $pnpLabel='Native adapter PnP identity [ordinal='+$normalized.Count+';guid='+$guid+';hidden='+$hidden+
+            ';type='+$interfaceType+';admin='+$adminStatus+';status='+$status+';index='+$index+';pnpKind='+$pnpKind+']'
+        $pnp=Assert-MyspeedCanaryString $adapter.pnpDeviceId $pnpLabel
         $enabled=$adminStatus -eq $EnabledAdminStatus
         if(($enabled -and $status -ceq 'Disabled') -or (-not $enabled -and $status -cne 'Disabled')){
             throw 'Native adapter administrative status is inconsistent'

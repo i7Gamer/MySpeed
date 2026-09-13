@@ -609,6 +609,31 @@ Set-StrictMode -Version Latest
         assert.match(source, /\$afterInventory=\(Get-MyspeedCanaryAdapterProviderSnapshot \$after\)\.inventory/u);
     });
 
+    powershellIt("reports bounded adapter metadata without disclosing rejected PnP values", () => {
+        const privateValue = "do-not-log-this-device-value";
+        const MAX_METADATA_LENGTH = 256;
+        const adapter = {InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
+            PnPDeviceID: "ROOT\\NET\\0000", Hidden: true, InterfaceType: 24,
+            InterfaceAdminStatus: 1, Status: "Up", ifIndex: 7};
+        const accepted = run("NormalizeAdapters", {adapters: [adapter]});
+        assert.equal(accepted.pnpDeviceId, adapter.PnPDeviceID);
+        for (const [value, kind] of [[null, "null"], ["", "empty-string"],
+            [[privateValue], "array"], [{privateValue}, "object"], [false, "other"],
+            [`${privateValue}\nadditional-data`, "string"]]) {
+            const result = invoke("NormalizeAdapters", {adapters: [{...adapter, PnPDeviceID: value}]});
+            assert.equal(result.error, undefined, result.error?.message);
+            assert.notEqual(result.status, 0);
+            const output = `${result.stdout}\n${result.stderr}`;
+            const compactOutput = output.replace(/\s+/gu, "");
+            assert.match(output, /Native adapter PnP identity/);
+            assert.ok(compactOutput.includes(`pnpKind=${kind}`));
+            assert.match(compactOutput, /ordinal=0;guid=\{11111111-1111-1111-1111-111111111111\};hidden=True;type=24;admin=1;status=Up;index=7/);
+            const metadata = compactOutput.match(/\[ordinal=[^\]]+\]/u)?.[0];
+            assert.ok(metadata && metadata.length <= MAX_METADATA_LENGTH);
+            assert.ok(!compactOutput.includes(privateValue), "rejected PnP data must never be logged");
+        }
+    });
+
     powershellIt("rejects a one-record nested adapter normalization result", () => {
         const program = `
 . '${SCRIPT.replaceAll("'", "''")}' -Mode Library
