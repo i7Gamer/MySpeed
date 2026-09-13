@@ -60,7 +60,14 @@ export async function runHttpChild() {
     const results = [];
     const send = async (pathname = "/notify", overrides = {}) => {
         const result = {};
-        const signal = overrides.controller?.signal || AbortSignal.timeout(options.timeout || REQUEST_MS);
+        const bodyDeadlineController = options.bodyDeadlineMs ? new AbortController() : undefined;
+        // Keep the existing end-to-end setup ceiling. The separately armed body
+        // clock below proves that the same request signal still owns the stream after headers.
+        const signal = overrides.controller?.signal || (bodyDeadlineController
+            ? AbortSignal.any([AbortSignal.timeout(options.timeout || REQUEST_MS), bodyDeadlineController.signal])
+            : AbortSignal.timeout(options.timeout || REQUEST_MS));
+        let bodyDeadlineSignal;
+        let forwardBodyDeadline;
         try {
             const init = {
                 headers: {"content-type": "text/plain; charset=utf-8", "x-fixture": "synthetic"}, body: BODY, signal
@@ -78,12 +85,21 @@ export async function runHttpChild() {
             result.status = response.status;
             result.ok = response.ok;
             overrides.controller?.abort(new Error("synthetic concurrent cancellation"));
+            if (bodyDeadlineController) {
+                bodyDeadlineSignal = AbortSignal.timeout(options.bodyDeadlineMs);
+                forwardBodyDeadline = () => bodyDeadlineController.abort(bodyDeadlineSignal.reason);
+                bodyDeadlineSignal.addEventListener("abort", forwardBodyDeadline, {once: true});
+            }
             try {
                 if (options.cancelBody) await response.body.cancel(new Error("synthetic body cancellation"));
                 else await response.body.pipeTo(new WritableStream());
             }
             catch (error) {result.drainError = error.code || error.name;}
         } catch (error) {result.error = error.code || error.name; result.message = error.message;}
+        finally {
+            bodyDeadlineSignal?.removeEventListener("abort", forwardBodyDeadline);
+            if (bodyDeadlineController) result.bodyDeadlineFired = bodyDeadlineController.signal.aborted;
+        }
         results.push(result);
         return result;
     };
@@ -103,7 +119,7 @@ export async function runHttpChild() {
         }
     } else await send(options.pathname);
     if (options.expiry) await pause(EXPIRY_WAIT_MS);
-    await pause(CLEANUP_MS);
+    await pause(options.cleanupMs || CLEANUP_MS);
     // Parent snapshots live peers before terminating this owned child. Keeping
     // it alive prevents process exit from masking missing cancellation cleanup.
     console.log(JSON.stringify({results, lookupCalls, nativeIpIdentityError, runtime: process.versions.bun ? "bun" : "node"}));

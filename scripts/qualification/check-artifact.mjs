@@ -14,6 +14,7 @@ import {
     buildLocalOrigin,
     checkJsonResponse,
     checkPng,
+    OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS,
     requestLocal,
     sanitizedEnvironment,
     stopOwnedProcess,
@@ -48,6 +49,69 @@ const HEALTHCHECK_REQUEST = "healthcheck-request.json";
 const HEALTHCHECK_ACKNOWLEDGEMENT = "healthcheck-ack.json";
 const WORK_PREFIX = "myspeed-qualification-";
 const EVIDENCE_PREFIX = "myspeed-evidence-";
+const MACOS_ISOLATION_MODULE = "./macos-isolation.mjs";
+
+const isStrictDescendant = (parent, candidate) => {
+    const relative = path.relative(parent, candidate);
+    return relative !== "" && relative !== ".." && !relative.startsWith(`..${path.sep}`)
+        && !path.isAbsolute(relative);
+};
+
+export const assertFullIsolationPlatform = ({platform = process.platform, preseededFixtureManifest}, {
+    assertLinuxIsolation = assertLinuxNetworkIsolation
+} = {}) => {
+    if (platform === "linux") {
+        assertLinuxIsolation();
+        return {kind: "linux-network-namespace"};
+    }
+    if (platform === "darwin") {
+        if (!preseededFixtureManifest)
+            throw new Error("macOS full verification requires a preseeded fixture handoff");
+        return null;
+    }
+    throw new Error(`Cannot prove full runtime isolation on platform ${platform}`);
+};
+
+export const runMacosRuntimeIsolation = async ({platform = process.platform, originalBuildRoot,
+    sourceSentinel, work, handoff}, {
+    assertSourceUnavailable = assertOriginalBuildUnavailable,
+    loadIsolationProbe = () => import(MACOS_ISOLATION_MODULE)
+} = {}) => {
+    if (platform !== "darwin") return null;
+    if (!originalBuildRoot || !path.isAbsolute(originalBuildRoot)
+        || path.resolve(originalBuildRoot) !== originalBuildRoot)
+        throw new Error("macOS full verification requires a canonical absolute --original-build-root");
+    if (!sourceSentinel || !path.isAbsolute(sourceSentinel)
+        || path.resolve(sourceSentinel) !== sourceSentinel)
+        throw new Error("macOS full verification requires a canonical absolute --macos-source-sentinel");
+    if (!isStrictDescendant(originalBuildRoot, sourceSentinel))
+        throw new Error("--macos-source-sentinel must be a strict descendant of --original-build-root");
+    if (!work || !path.isAbsolute(work) || path.resolve(work) !== work
+        || path.resolve(handoff?.populated?.root ?? "") !== work)
+        throw new Error("macOS full verification requires the validated owned populated handoff work root");
+    if (isStrictDescendant(originalBuildRoot, work) || isStrictDescendant(work, originalBuildRoot)
+        || originalBuildRoot === work)
+        throw new Error("macOS source and owned work roots must be separate directory trees");
+
+    assertSourceUnavailable(originalBuildRoot);
+    const module = await loadIsolationProbe();
+    if (typeof module?.runIsolationProbe !== "function")
+        throw new Error("macOS isolation probe module does not export runIsolationProbe");
+    if (typeof module.validateProbeResult !== "function")
+        throw new Error("macOS isolation probe module does not export validateProbeResult");
+    const probe = module.validateProbeResult(await module.runIsolationProbe({
+        sourceRoot: originalBuildRoot,
+        sourceSentinel,
+        workRoot: work
+    }));
+    return {
+        kind: "macos-seatbelt",
+        sourceRoot: originalBuildRoot,
+        sourceSentinel,
+        workRoot: work,
+        probe
+    };
+};
 
 export const parseArguments = (values) => {
     const options = {args: [], mode: "full", keepWork: false};
@@ -270,6 +334,24 @@ const checkClient = async (origin) => {
     }
 };
 
+export const checkOpenGraphImage = async (origin, headers, {
+    request = requestLocal,
+    now = () => performance.now()
+} = {}) => {
+    const startedAt = now();
+    const image = await request(origin, "/api/opengraph/image", {
+        headers,
+        timeoutMs: OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS
+    });
+    if (image.status !== 200 || !contentType(image).includes("image/png"))
+        throw new Error(`Populated OpenGraph endpoint did not return PNG (HTTP ${image.status})`);
+    checkPng(image.bytes);
+    const elapsed = now() - startedAt;
+    if (!Number.isFinite(elapsed) || elapsed < 0)
+        throw new Error("OpenGraph qualification elapsed time is invalid");
+    return {elapsedMs: Math.round(elapsed)};
+};
+
 const checkPopulatedInstance = async (origin) => {
     const health = await requestLocal(origin, "/api/health");
     checkJsonResponse(health, {status: "ok", database: "up"});
@@ -291,10 +373,7 @@ const checkPopulatedInstance = async (origin) => {
 
     await checkClient(origin);
 
-    const image = await requestLocal(origin, "/api/opengraph/image", {headers});
-    if (image.status !== 200 || !contentType(image).includes("image/png"))
-        throw new Error(`Populated OpenGraph endpoint did not return PNG (HTTP ${image.status})`);
-    checkPng(image.bytes);
+    return checkOpenGraphImage(origin, headers);
 };
 
 const ensureListenerGone = (child, host, port) => {
@@ -471,13 +550,18 @@ const main = async () => {
         originalBuildRoot: options.originalBuildRoot ? path.resolve(options.originalBuildRoot) : null,
         processes: [],
         databaseChecks: [],
+        openGraphChecks: [],
         fixtures: null,
-        healthcheckHandshake: null
+        healthcheckHandshake: null,
+        networkIsolation: null
     };
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2) + "\n", {mode: EVIDENCE_FILE_MODE});
 
     try {
-        if (options.mode === "full") assertLinuxNetworkIsolation();
+        if (options.mode === "full") summary.networkIsolation = assertFullIsolationPlatform({
+            platform: process.platform,
+            preseededFixtureManifest: options.preseededFixtureManifest
+        });
         if (options.originalBuildRoot) {
             if (!path.isAbsolute(options.originalBuildRoot))
                 throw new Error("--original-build-root must be absolute");
@@ -555,13 +639,24 @@ const main = async () => {
             if (options.expectedUid !== undefined)
                 makeFixtureAccessibleToUid({work, nonce: handoff?.populated.nonce ?? nonce,
                     uid: options.expectedUid});
+            if (process.platform === "darwin")
+                summary.networkIsolation = await runMacosRuntimeIsolation({
+                    platform: process.platform,
+                    originalBuildRoot: options.originalBuildRoot,
+                    sourceSentinel: options.macosSourceSentinel,
+                    work,
+                    handoff
+                });
             await assertPortFree({host, port});
 
             activeChild = startArtifact({command, args: options.args, work, environment, stdoutLog, stderrLog});
             summary.processes.push({scenario: "populated-first-boot", pid: activeChild.pid});
             await waitForOwnedListener({child: activeChild, host, port, timeoutMs: LISTEN_TIMEOUT_MS});
             assertRuntimeIdentity({child: activeChild, expectedUid: options.expectedUid, work});
-            await checkPopulatedInstance(origin);
+            summary.openGraphChecks.push({
+                scenario: "populated-first-boot",
+                ...await checkPopulatedInstance(origin)
+            });
             if (handshakeDirectory)
                 summary.healthcheckHandshake = await awaitHealthcheckHandshake({
                     directory: handshakeDirectory,
@@ -579,7 +674,10 @@ const main = async () => {
             summary.processes.push({scenario: "populated-restart", pid: activeChild.pid});
             await waitForOwnedListener({child: activeChild, host, port, timeoutMs: LISTEN_TIMEOUT_MS});
             assertRuntimeIdentity({child: activeChild, expectedUid: options.expectedUid, work});
-            await checkPopulatedInstance(origin);
+            summary.openGraphChecks.push({
+                scenario: "populated-restart",
+                ...await checkPopulatedInstance(origin)
+            });
             await stopCleanly(activeChild, host, port);
             activeChild = null;
 

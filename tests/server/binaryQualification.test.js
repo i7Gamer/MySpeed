@@ -65,13 +65,43 @@ it('asserts actual Windows file and product versions before recording the frozen
     assert.match(steps[stamp].run, /windows-version\.json/);
 });
 
-it('labels Windows and macOS listener-free runs as rehearsal, not full qualification', () => {
-    for (const name of ['build-windows', 'build-macos']) {
-        const verify = workflow.jobs[name].steps.find(step => step.run?.includes('verify-binary.ps1'));
-        assert.match(verify.name, /listener-free rehearsal/i);
-        assert.match(verify.run, /-ListenerFree\b/);
-        assert.match(verify.run, /-EvidenceDirectory/);
+it('keeps Windows listener-free runs labelled rehearsal until native evidence is implemented', () => {
+    const verify = workflow.jobs['build-windows'].steps.find(step => step.run?.includes('verify-binary.ps1'));
+    assert.match(verify.name, /listener-free rehearsal/i);
+    assert.match(verify.run, /-ListenerFree\b/);
+    assert.match(verify.run, /-EvidenceDirectory/);
+});
+
+it('runs full macOS qualification on both proven native images and uploads bound isolation evidence', () => {
+    const job = workflow.jobs['build-macos'];
+    assert.deepEqual(job.strategy.matrix.include.map(({arch, runner}) => ({arch, runner})), [
+        {arch: 'x64', runner: 'macos-15-intel'}, {arch: 'arm64', runner: 'macos-15'}
+    ]);
+    const steps = job.steps;
+    const verifyIndex = steps.findIndex(step => step.name === 'Verify macOS artifact with enforced isolation');
+    const uploadIndex = steps.findIndex(step => step.uses?.startsWith('actions/upload-artifact@'));
+    assert.ok(verifyIndex >= 0 && verifyIndex < uploadIndex);
+    const verify = steps[verifyIndex];
+    assert.equal(verify.if, undefined);
+    assert.equal(verify.shell, 'bash');
+    assert.deepEqual(verify.env, {SOURCE_SHA: '${{ inputs.ref }}', ASSET_PATH: '${{ matrix.artifact_name }}',
+        EXPECTED_ARCH: '${{ matrix.arch }}'});
+    assert.match(verify.run, /node scripts\/qualification\/verify-macos-standalone\.mjs/);
+    for (const argument of ['artifact', 'artifact-sha256', 'repo', 'evidence-dir', 'source-sha',
+        'expected-arch', 'run-id', 'run-attempt', 'repository'])
+        assert.ok(verify.run.includes(`--${argument} `), argument);
+    assert.doesNotMatch(verify.run, /\$\{\{|ListenerFree|listener-free-reset/);
+    const node = steps.find(step => step.uses?.startsWith('actions/setup-node@'));
+    assert.equal(node.with['node-version'], '22.19.0');
+    for (const file of ['qualification-summary.json', 'macos-runtime-isolation.json',
+        'macos-runtime-profile.sb', 'macos-canary.json', 'macos-canary-profile.sb']) {
+        assert.ok(steps[uploadIndex].with.path.includes(file));
+        assert.ok(steps[uploadIndex].with.path.includes(`${file}.sha256`));
     }
+    assert.ok(steps[uploadIndex].with.path.includes('macos-full-evidence/qualification-evidence/'));
+    for (const file of steps[uploadIndex].with.path.trim().split('\n'))
+        assert.ok(file.startsWith('${{ runner.temp }}/macos-full-evidence/'),
+            'all uploaded paths must share one root so release filenames remain flat');
 });
 
 it('the Windows compile uses the frozen qualification stamp rather than a new run number', () => {

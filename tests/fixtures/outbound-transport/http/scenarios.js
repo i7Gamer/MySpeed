@@ -7,6 +7,8 @@ const HOST = "outbound-fixture.invalid";
 const LOCAL = "127.0.0.1";
 const CHILD_TIMEOUT_MS = 9000;
 const SHORT_REQUEST_MS = 150;
+const BODY_HEADER_DELAY_MS = SHORT_REQUEST_MS * 2;
+const DELAYED_HEADER_OBSERVATION_MS = BODY_HEADER_DELAY_MS + SHORT_REQUEST_MS;
 const IDLE_LEASE_LIMIT = 16;
 const SOCKETS_PER_TUNNEL = 3;
 const REUSE_REQUESTS = 3;
@@ -181,9 +183,12 @@ for (const [name, options] of [
     ["proxy TLS", {secureProxy: true, stallProxyTls: true}],
     ["CONNECT", {stallConnect: true}],
     ["TLS", {stallTls: true}],
-    ["headers", {pathname: "/stall-headers"}]
+    ["headers", {pathname: "/trickle", headerDelayMs: BODY_HEADER_DELAY_MS,
+        cleanupMs: DELAYED_HEADER_OBSERVATION_MS, expectNoTrickleStart: true}]
 ]) scenario(`deadline during ${name} closes owned sockets`, {...options, timeout: SHORT_REQUEST_MS}, ({results}, seen) => {
     assert.ok(results[0].error, "deadline must settle before response headers");
+    if (options.expectNoTrickleStart) assert.equal(seen.trickleStarts, 0,
+        "a response canceled before headers must not start a body timer after close");
     assert.equal(seen.openSockets, 0, "child is still alive when socket closure is checked");
 });
 
@@ -260,14 +265,18 @@ scenario("concurrent abort does not destroy another active lease", {concurrent: 
 });
 
 for (const [label, options] of [
-    ["trickling body deadline", {pathname: "/trickle", timeout: SHORT_REQUEST_MS}],
+    ["trickling body deadline", {
+        pathname: "/trickle", bodyDeadlineMs: SHORT_REQUEST_MS, headerDelayMs: BODY_HEADER_DELAY_MS
+    }],
     ["body socket loss", {pathname: "/body-close"}],
     ["body cancellation", {pathname: "/trickle", cancelBody: true}]
 ]) scenario(`${label} retains settled status and destroys lease`, options, ({results}, seen) => {
     assert.equal(results[0].status, 200);
+    if (options.bodyDeadlineMs) assert.equal(results[0].bodyDeadlineFired, true);
     if (!options.cancelBody) assert.ok(results[0].drainError);
     assert.equal(seen.posts.length, 1);
     assert.equal(seen.openSockets, 0);
+    if (options.pathname === "/trickle") assert.equal(seen.trickleStarts, 1);
 });
 
 scenario("idle cache evicts overflow without retaining sockets", {eviction: true}, ({results}, seen) => {

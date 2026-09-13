@@ -333,7 +333,7 @@ jobs:
             verify: true
           - arch: arm64
             target: bun-darwin-arm64
-            runner: macos-latest
+            runner: macos-15
             artifact_name: MySpeed-macos-arm64
             verify: true
 
@@ -390,35 +390,45 @@ jobs:
       - name: Rename binary
         run: mv MySpeed ${{ matrix.artifact_name }}
 
-      # Listener-free rehearsal is not full native runtime qualification.
-      # Promotion remains blocked until trusted, network-isolated evidence exists.
-      - name: macOS listener-free rehearsal
-        if: ${{ matrix.verify }}
-        shell: pwsh
-        run: ./scripts/verify-binary.ps1 -Binary ./${{ matrix.artifact_name }} -ListenerFree -EvidenceDirectory ./qualification-evidence
+      - name: Set up minimum supported Node for isolated verification
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
 
-      - name: Collect verifier summary
-        env:
-          SOURCE_SHA: ${{ inputs.ref }}
-        run: bun scripts/qualification/collect-summary.mjs --evidence-dir qualification-evidence --output qualification-summary.json --source-sha "$SOURCE_SHA" --mode listener-free-reset
-
-      - name: Hash verified binary
+      - name: Verify macOS artifact with enforced isolation
         shell: bash
         env:
+          SOURCE_SHA: ${{ inputs.ref }}
           ASSET_PATH: ${{ matrix.artifact_name }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
         run: |
-          bun -e 'const fs = require("fs"); const {createHash} = require("crypto"); const file = process.env.ASSET_PATH; fs.writeFileSync(file + ".sha256", createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "\n");'
+          set -euo pipefail
+          ARTIFACT_SHA256="$(node -e 'const fs = require("fs"); const {createHash} = require("crypto"); process.stdout.write(createHash("sha256").update(fs.readFileSync(process.env.ASSET_PATH)).digest("hex"));')"
+          node scripts/qualification/verify-macos-standalone.mjs \
+            --artifact "$GITHUB_WORKSPACE/$ASSET_PATH" --artifact-sha256 "$ARTIFACT_SHA256" \
+            --repo "$GITHUB_WORKSPACE" --evidence-dir "$RUNNER_TEMP/macos-full-evidence" \
+            --source-sha "$SOURCE_SHA" --expected-arch "$EXPECTED_ARCH" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --repository "$GITHUB_REPOSITORY"
 
       - name: Upload verified build
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.artifact_name }}
           path: |
-            ${{ matrix.artifact_name }}
-            ${{ matrix.artifact_name }}.sha256
-            qualification-summary.json
-            qualification-summary.json.sha256
-            qualification-evidence/
+            ${{ runner.temp }}/macos-full-evidence/${{ matrix.artifact_name }}
+            ${{ runner.temp }}/macos-full-evidence/${{ matrix.artifact_name }}.sha256
+            ${{ runner.temp }}/macos-full-evidence/qualification-summary.json
+            ${{ runner.temp }}/macos-full-evidence/qualification-summary.json.sha256
+            ${{ runner.temp }}/macos-full-evidence/macos-runtime-isolation.json
+            ${{ runner.temp }}/macos-full-evidence/macos-runtime-isolation.json.sha256
+            ${{ runner.temp }}/macos-full-evidence/macos-runtime-profile.sb
+            ${{ runner.temp }}/macos-full-evidence/macos-runtime-profile.sb.sha256
+            ${{ runner.temp }}/macos-full-evidence/macos-canary.json
+            ${{ runner.temp }}/macos-full-evidence/macos-canary.json.sha256
+            ${{ runner.temp }}/macos-full-evidence/macos-canary-profile.sb
+            ${{ runner.temp }}/macos-full-evidence/macos-canary-profile.sb.sha256
+            ${{ runner.temp }}/macos-full-evidence/qualification-evidence/
           if-no-files-found: error
 
   build-zip:

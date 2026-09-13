@@ -4,6 +4,7 @@ import {createHash} from 'node:crypto';
 import {fileURLToPath} from 'node:url';
 import {inspectCombinedOciArchive, inspectOciArchive} from './inspect-oci-archive.mjs';
 import {inspectDockerRuntimeEvidence} from './docker-runtime-evidence.mjs';
+import {inspectMacosRuntimeEvidence} from './macos-runtime-evidence.mjs';
 
 const MANIFEST_SCHEMA_VERSION = 1;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -23,10 +24,12 @@ const EVIDENCE_FILE_LIMIT = MEBIBYTE;
 const FULL_MODE = 'full';
 const RESET_MODE = 'listener-free-reset';
 const LINUX_STANDALONE_COMMAND = '/candidate';
+const MACOS_NATIVE_BLOCKER = 'macOS native full verification with enforced outbound denial';
+const MACOS_ARCHITECTURES = ['x64', 'arm64'];
 const REQUIRED_EVIDENCE_FIELDS = ['tests', 'binaries', 'msi', 'docker', 'dockerIndex', 'ice'];
 const PROMOTION_BLOCKERS = [
     'Windows native full verification with enforced outbound denial',
-    'macOS native full verification with enforced outbound denial',
+    MACOS_NATIVE_BLOCKER,
     'Windows native CPU-floor verification',
     'Disposable Windows MSI lifecycle acceptance'
 ];
@@ -60,8 +63,8 @@ const BINARY_VERIFICATIONS = [
     ['MySpeed-linux-x64', 'MySpeed-linux-x64', 'linux', 'x64', FULL_MODE],
     ['MySpeed-linux-x64-baseline', 'MySpeed-linux-x64-baseline', 'linux', 'x64', FULL_MODE],
     ['MySpeed-linux-arm64', 'MySpeed-linux-arm64', 'linux', 'arm64', FULL_MODE],
-    ['MySpeed-macos-x64', 'MySpeed-macos-x64', 'darwin', 'x64', RESET_MODE],
-    ['MySpeed-macos-arm64', 'MySpeed-macos-arm64', 'darwin', 'arm64', RESET_MODE]
+    ['MySpeed-macos-x64', 'MySpeed-macos-x64', 'darwin', 'x64', FULL_MODE],
+    ['MySpeed-macos-arm64', 'MySpeed-macos-arm64', 'darwin', 'arm64', FULL_MODE]
 ];
 
 const SOURCE_VERIFICATIONS = [
@@ -260,6 +263,7 @@ const buildManifest = async (options) => {
     validateReleaseDigestPolicy(releaseAssets);
 
     const runtimeVerification = {docker: [], linux: [], macos: [], source: {}, windows: [], wixIce: []};
+    const macosNativeVerifications = [];
     for (const [artifact, payload, platform, architecture, mode] of BINARY_VERIFICATIONS) {
         const asset = releaseAssets.find((candidate) => candidate.artifact === artifact
             && candidate.path === payload);
@@ -284,6 +288,16 @@ const buildManifest = async (options) => {
             verification.versionEvidencePath = versionFile.path;
             verification.versionEvidenceSha256 = versionFile.sha256;
         }
+        if (platform === 'darwin') macosNativeVerifications.push(await inspectMacosRuntimeEvidence({
+            directory: path.join(options.root, artifact),
+            sourceSha: options.candidateSha,
+            artifactSha256: asset.sha256,
+            summarySha256: verification.summarySha256,
+            architecture,
+            runId: options.runId,
+            runAttempt: options.runAttempt,
+            repository: options.repository
+        }));
         const group = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : 'linux';
         runtimeVerification[group].push(verification);
     }
@@ -291,6 +305,10 @@ const buildManifest = async (options) => {
         runtimeVerification.source[runtime] = await checkedVerificationSummary(options,
             'MySpeed.zip', file, {architecture: 'x64', command: runtime, mode: FULL_MODE,
                 platform: 'linux', runtime});
+
+    if (JSON.stringify(macosNativeVerifications.map(({architecture}) => architecture))
+        !== JSON.stringify(MACOS_ARCHITECTURES))
+        throw new Error('Both native macOS architecture verifications are required');
 
     for (const [artifact, binaryArtifact] of MSI_VERIFICATIONS) {
         const ice = await checkedFile(options.root, artifact, 'ice-validation.log', EVIDENCE_FILE_LIMIT);
@@ -378,8 +396,9 @@ const buildManifest = async (options) => {
                 mode: 'content-addressed-combination', result: options.evidence.dockerIndex}},
         promotion: {
             eligible: false,
-            evidence: {macosNative: null, msiLifecycle: null, windowsCpuFloor: null, windowsNative: null},
-            blockers: PROMOTION_BLOCKERS
+            evidence: {macosNative: {status: 'passed', verifications: macosNativeVerifications},
+                msiLifecycle: null, windowsCpuFloor: null, windowsNative: null},
+            blockers: PROMOTION_BLOCKERS.filter((blocker) => blocker !== MACOS_NATIVE_BLOCKER)
         },
         actionsArtifacts,
         releaseAssets,

@@ -12,6 +12,9 @@ import {validateQualificationInputs} from "../../scripts/release/validate-inputs
 import {inspectOciLayout} from "../../scripts/release/inspect-oci.mjs";
 import {inspectCombinedOciArchive} from "../../scripts/release/inspect-oci-archive.mjs";
 import {combineOciLayouts} from "../../scripts/release/combine-oci-layouts.mjs";
+import {buildSandboxProfile} from "../../scripts/qualification/macos-isolation.mjs";
+import {buildMacosRuntimeProfile, buildMacosSeedProfile, createMacosRuntimeIsolationRecord}
+    from "../../scripts/qualification/verify-macos-standalone.mjs";
 import {readSource} from "../helpers/source.js";
 
 const SHA = "a".repeat(40);
@@ -25,6 +28,12 @@ const SUCCESS_EVIDENCE = {tests: "success", binaries: "success", msi: "success",
     docker: "success", dockerIndex: "success", ice: "success"};
 const FULL_MODE = "full";
 const RESET_MODE = "listener-free-reset";
+const MAC_SOURCE_ROOT = "/Users/runner/work/MySpeed/MySpeed";
+const MAC_SOURCE_SENTINEL = `${MAC_SOURCE_ROOT}/package.json`;
+const MAC_WORK_ROOT = "/Users/runner/work/_temp/myspeed-macos-standalone/runtime/populated";
+const MAC_RESET_ROOT = "/Users/runner/work/_temp/myspeed-macos-standalone/runtime/reset";
+const VERIFIER_FILES = ["check-artifact.mjs", "fixture.mjs", "macos-isolation.mjs", "safety.mjs",
+    "sqlite-check.mjs"];
 
 const artifacts = [
     ["MySpeed-windows-x64.exe", "MySpeed.exe"],
@@ -89,6 +98,92 @@ const writeCheckedFile = (directory, file, contents) => {
     fs.writeFileSync(path.join(directory, `${file}.sha256`), `${digest(bytes)}\n`);
 };
 
+const rewriteCheckedJson = (directory, file, update) => {
+    const value = JSON.parse(fs.readFileSync(path.join(directory, file), "utf8"));
+    update(value);
+    writeCheckedFile(directory, file, JSON.stringify(value));
+};
+
+const rewriteBoundCanary = (directory, update) => {
+    rewriteCheckedJson(directory, "macos-canary.json", update);
+    const canarySha256 = digest(fs.readFileSync(path.join(directory, "macos-canary.json")));
+    rewriteCheckedJson(directory, "macos-runtime-isolation.json", value => {
+        value.canarySha256 = canarySha256;
+    });
+};
+
+const rewriteBoundSummary = (directory, update) => {
+    rewriteCheckedJson(directory, "qualification-summary.json", update);
+    const summarySha256 = digest(fs.readFileSync(path.join(directory, "qualification-summary.json")));
+    rewriteCheckedJson(directory, "macos-runtime-isolation.json", value => {
+        value.summarySha256 = summarySha256;
+    });
+};
+
+const denied = (code = "EPERM") => ({denied: true, code, timedOut: false});
+const forbidden = () => ({tcp4: denied(), tcp6: denied("EACCES"), udp4: denied(), udp6: denied()});
+const denialProbe = () => ({inherited: true, forbidden: forbidden()});
+const isolationProbe = () => ({
+    schemaVersion: 1,
+    loopback: {roundTrip: true, host: "127.0.0.1"},
+    temporaryFile: {roundTrip: true},
+    sourceRoot: denied(),
+    sourceSentinel: denied("EACCES"),
+    forbidden: forbidden(),
+    helper: denialProbe()
+});
+
+const writeMacosEvidence = ({directory, architecture, artifactSha256, summary}) => {
+    const canaryProfile = Buffer.from(buildSandboxProfile());
+    const runtimeProfile = Buffer.from(buildMacosRuntimeProfile());
+    const sourceSentinel = fs.readFileSync(path.join(process.cwd(), "package.json"));
+    const probe = isolationProbe();
+    const canary = {
+        schemaVersion: 1,
+        status: "passed",
+        runId: architecture === "x64" ? "1".repeat(48) : "2".repeat(48),
+        architecture,
+        platform: "darwin",
+        os: {version: "Darwin synthetic", release: "24.0.0"},
+        runnerImage: {os: "macos15", version: "synthetic"},
+        sourceRoot: MAC_SOURCE_ROOT,
+        sourceRootPreSandboxReadable: true,
+        sourceSentinel: {path: MAC_SOURCE_SENTINEL, byteLength: sourceSentinel.length,
+            sha256: digest(sourceSentinel), preSandboxReadable: true},
+        sandboxExecutable: {path: "/usr/bin/sandbox-exec", sha256: digest("sandbox-exec")},
+        profile: {path: "macos-isolation.sb", sha256: digest(canaryProfile)},
+        probeScriptSha256: digest(fs.readFileSync(path.join(process.cwd(), "scripts", "qualification",
+            "macos-isolation.mjs"))),
+        sandbox: {status: 0, signal: null, stdout: `${JSON.stringify(probe)}\n`, stderr: "", error: null},
+        probe,
+        cleanup: {temporaryFilesRemoved: true, processTreeExitProven: true}
+    };
+    writeCheckedFile(directory, "macos-canary-profile.sb", canaryProfile);
+    writeCheckedFile(directory, "macos-canary.json", JSON.stringify(canary));
+    writeCheckedFile(directory, "macos-runtime-profile.sb", runtimeProfile);
+    const verifierFiles = Object.fromEntries(VERIFIER_FILES.map(file => [file,
+        digest(fs.readFileSync(path.join(process.cwd(), "scripts", "qualification", file)))]));
+    const record = createMacosRuntimeIsolationRecord({
+        sourceSha: SHA,
+        artifactSha256,
+        architecture,
+        runId: RUN_ID,
+        runAttempt: RUN_ATTEMPT,
+        repository: REPOSITORY,
+        summarySha256: digest(Buffer.from(JSON.stringify(summary))),
+        profileSha256: digest(runtimeProfile),
+        canarySha256: digest(Buffer.from(JSON.stringify(canary))),
+        canaryProfileSha256: digest(canaryProfile),
+        handoffSha256: summary.fixtureManifest.sha256,
+        seed: {profileSha256: digest(Buffer.from(buildMacosSeedProfile())), sandboxStatus: 0,
+            sandboxSignal: null, probe: denialProbe()},
+        canaryHelper: canary.probe.helper,
+        candidateFile: {name: `MySpeed-macos-${architecture}`, sha256: artifactSha256},
+        verifierFiles
+    });
+    writeCheckedFile(directory, "macos-runtime-isolation.json", JSON.stringify(record));
+};
+
 describe("qualification manifest", () => {
     let root;
     let output;
@@ -114,20 +209,34 @@ describe("qualification manifest", () => {
             ["MySpeed-linux-x64", "linux", "x64", FULL_MODE],
             ["MySpeed-linux-x64-baseline", "linux", "x64", FULL_MODE],
             ["MySpeed-linux-arm64", "linux", "arm64", FULL_MODE],
-            ["MySpeed-macos-x64", "darwin", "x64", RESET_MODE],
-            ["MySpeed-macos-arm64", "darwin", "arm64", RESET_MODE]
+            ["MySpeed-macos-x64", "darwin", "x64", FULL_MODE],
+            ["MySpeed-macos-arm64", "darwin", "arm64", FULL_MODE]
         ];
         for (const [artifact, platform, architecture, mode] of binaryEvidence) {
             const [payload] = artifacts.filter(([name]) => name === artifact).map(([, file]) => file);
             const payloadDigest = digest(fs.readFileSync(path.join(root, artifact, payload)));
-            writeCheckedFile(path.join(root, artifact), "qualification-summary.json", JSON.stringify({
+            const summary = {
                 status: "passed", exit: 0, mode, sourceSha: SHA, commit: SHA, platform, architecture,
                 artifactSha256: payloadDigest, command: [platform === "linux" ? "/candidate" : `/${payload}`],
                 processes: mode === FULL_MODE
                     ? [{scenario: "populated-first-boot"}, {scenario: "populated-restart"},
                         {scenario: "fresh-no-config-reset"}]
-                    : [{scenario: "listener-free-reset"}]
-            }));
+                    : [{scenario: "listener-free-reset"}],
+                ...(platform === "darwin" ? {
+                    originalBuildRoot: MAC_SOURCE_ROOT,
+                    work: MAC_WORK_ROOT,
+                    packageSha256: digest(fs.readFileSync(path.join(process.cwd(), "package.json"))),
+                    fixtureManifest: {path: "/synthetic/fixture-handoff.json",
+                        sha256: digest(`handoff-${architecture}`)},
+                    fixtures: {populated: {root: MAC_WORK_ROOT}, reset: {root: MAC_RESET_ROOT}},
+                    networkIsolation: {kind: "macos-seatbelt", sourceRoot: MAC_SOURCE_ROOT,
+                        sourceSentinel: MAC_SOURCE_SENTINEL, workRoot: MAC_WORK_ROOT,
+                        probe: isolationProbe()}
+                } : {})
+            };
+            writeCheckedFile(path.join(root, artifact), "qualification-summary.json", JSON.stringify(summary));
+            if (platform === "darwin") writeMacosEvidence({directory: path.join(root, artifact),
+                architecture, artifactSha256: payloadDigest, summary});
             if (platform === "win32") writeCheckedFile(path.join(root, artifact),
                 "windows-version.json", JSON.stringify({fileVersion: WINDOWS_STAMP,
                     productVersion: WINDOWS_STAMP, windowsStamp: WINDOWS_STAMP,
@@ -219,10 +328,13 @@ describe("qualification manifest", () => {
             windowsStamp: WINDOWS_STAMP});
         assert.deepEqual(manifest.run, {id: RUN_ID, attempt: RUN_ATTEMPT});
         assert.equal(manifest.promotion.eligible, false);
-        assert.deepEqual(manifest.promotion.evidence, {
+        assert.equal(manifest.promotion.evidence.macosNative.status, "passed");
+        assert.deepEqual(manifest.promotion.evidence.macosNative.verifications.map(({architecture}) => architecture),
+            ["x64", "arm64"]);
+        assert.deepEqual({...manifest.promotion.evidence, macosNative: null}, {
             macosNative: null, msiLifecycle: null, windowsCpuFloor: null, windowsNative: null
         });
-        assert.equal(manifest.promotion.blockers.length, 4);
+        assert.equal(manifest.promotion.blockers.length, 3);
         assert.equal(manifest.runtimeVerification.linux.length, 3);
         assert.equal(manifest.runtimeVerification.windows.length, 2);
         assert.equal(manifest.runtimeVerification.macos.length, 2);
@@ -237,9 +349,11 @@ describe("qualification manifest", () => {
         assert.ok(manifest.runtimeVerification.linux.every(({mode, summarySha256}) =>
             mode === FULL_MODE && /^[a-f0-9]{64}$/.test(summarySha256)));
         assert.ok(manifest.runtimeVerification.windows.every(({mode}) => mode === RESET_MODE));
+        assert.ok(manifest.runtimeVerification.macos.every(({mode}) => mode === FULL_MODE));
         assert.ok(manifest.runtimeVerification.windows.every(({versionEvidenceSha256}) =>
             /^[a-f0-9]{64}$/.test(versionEvidenceSha256)));
         assert.equal(manifest.actionsArtifacts.length, artifactMetadata.artifacts.length);
+        assert.equal(manifest.actionsArtifacts.length, 14);
         assert.equal(manifest.releaseAssets.length, 13);
         assert.equal(manifest.containers.length, 2);
         assert.ok(manifest.actionsArtifacts.every(({id, archiveDigest}) => id > 0 && archiveDigest === ARCHIVE_DIGEST));
@@ -339,6 +453,96 @@ describe("qualification manifest", () => {
                 /evidence|summary|digest|mode|status|artifact/i);
         });
     }
+
+    const macosEvidenceDefects = [
+        ["missing architecture evidence", directory => {
+            fs.unlinkSync(path.join(directory, "macos-runtime-isolation.json"));
+        }],
+        ["tampered evidence sidecar", directory => {
+            fs.writeFileSync(path.join(directory, "macos-runtime-isolation.json.sha256"), `${"0".repeat(64)}\n`);
+        }],
+        ["non-file evidence sidecar", directory => {
+            const sidecar = path.join(directory, "macos-canary.json.sha256");
+            fs.unlinkSync(sidecar);
+            fs.mkdirSync(sidecar);
+        }],
+        ["stale source identity", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.sourceSha = "b".repeat(40); })],
+        ["swapped architecture identity", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.architecture = "arm64"; })],
+        ["stale run identity", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.runAttempt = RUN_ATTEMPT + 1; })],
+        ["substituted runtime profile", directory => writeCheckedFile(directory,
+            "macos-runtime-profile.sb", `${buildMacosRuntimeProfile()}(allow network*)\n`)],
+        ["substituted canary profile", directory => writeCheckedFile(directory,
+            "macos-canary-profile.sb", `${buildSandboxProfile()}(allow network*)\n`)],
+        ["untrusted verifier code", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => {
+                value.verifierFiles["safety.mjs"] = "0".repeat(64);
+            })],
+        ["substituted candidate binding", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => {
+                value.candidateFile.sha256 = "0".repeat(64);
+            })],
+        ["incomplete canary cleanup", directory => rewriteCheckedJson(directory,
+            "macos-canary.json", value => { value.cleanup.processTreeExitProven = false; })],
+        ["missing pre-sandbox source read", directory => rewriteCheckedJson(directory,
+            "macos-canary.json", value => { value.sourceRootPreSandboxReadable = false; })],
+        ["missing pre-sandbox sentinel read", directory => rewriteCheckedJson(directory,
+            "macos-canary.json", value => { value.sourceSentinel.preSandboxReadable = false; })],
+        ["stale but well-formed source sentinel", directory => rewriteBoundCanary(directory,
+            value => {
+                value.sourceSentinel.sha256 = "3".repeat(64);
+                value.sourceSentinel.byteLength += 1;
+            })],
+        ["failed canary sandbox", directory => rewriteCheckedJson(directory,
+            "macos-canary.json", value => { value.sandbox.status = 1; })],
+        ["non-string canary output", directory => rewriteBoundCanary(directory,
+            value => { value.sandbox.stdout = null; })],
+        ["retained probe differing from sandbox output", directory => rewriteBoundCanary(directory,
+            value => { value.probe.forbidden.tcp4.code = "EACCES"; })],
+        ["non-policy canary denial", directory => rewriteCheckedJson(directory,
+            "macos-canary.json", value => { value.probe.forbidden.tcp4.code = "ECONNREFUSED"; })],
+        ["non-policy seed denial", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.seed.probe.forbidden.udp6.timedOut = true; })],
+        ["substituted handoff digest", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.handoffSha256 = "4".repeat(64); })],
+        ["wrong seed profile hash", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.seed.profileSha256 = "0".repeat(64); })],
+        ["substituted retained canary helper", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.canaryHelper.forbidden.tcp4.code = "EACCES"; })],
+        ["non-policy runtime denial", directory => rewriteCheckedJson(directory,
+            "qualification-summary.json", value => {
+                value.networkIsolation.probe.forbidden.udp4.code = "ECONNREFUSED";
+            })],
+        ["overlapping runtime source context", directory => rewriteBoundSummary(directory,
+            value => { value.networkIsolation.workRoot = `${MAC_SOURCE_ROOT}/work`; })],
+        ["transplanted runtime work context", directory => rewriteBoundSummary(directory,
+            value => {
+                value.networkIsolation.workRoot = "/Users/runner/work/_temp/other-work";
+            })],
+        ["missing trusted package binding", directory => rewriteBoundSummary(directory,
+            value => { delete value.packageSha256; })],
+        ["stale trusted package binding", directory => rewriteBoundSummary(directory,
+            value => { value.packageSha256 = "5".repeat(64); })],
+        ["transplanted reset work context", directory => rewriteBoundSummary(directory,
+            value => { value.fixtures.reset.root = "/Users/runner/work/_temp/other-reset"; })],
+        ["transplanted runtime source context", directory => rewriteBoundSummary(directory,
+            value => {
+                value.networkIsolation.sourceRoot = "/Users/runner/work/Other/Other";
+                value.networkIsolation.sourceSentinel = "/Users/runner/work/Other/Other/package.json";
+            })],
+        ["stale summary binding", directory => rewriteCheckedJson(directory,
+            "qualification-summary.json", value => { value.retainedAfterRun = true; })],
+        ["unexpected isolation record fields", directory => rewriteCheckedJson(directory,
+            "macos-runtime-isolation.json", value => { value.unreviewed = true; })]
+    ];
+    for (const [defect, mutate] of macosEvidenceDefects)
+        it(`rejects macOS native evidence with ${defect}`, async () => {
+            mutate(path.join(root, "MySpeed-macos-x64"));
+            await assert.rejects(createQualificationManifest(options()),
+                /macOS|canary|profile|evidence|isolation|source|candidate|verifier|sandbox|denial|runtime|package|reset/i);
+        });
 
     it("rejects missing or tampered ICE evidence", async () => {
         const log = path.join(root, "release-msi-MySpeed-installer.msi", "ice-validation.log");
