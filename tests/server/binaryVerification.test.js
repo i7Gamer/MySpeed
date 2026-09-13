@@ -103,7 +103,7 @@ describe("the macOS binaries are proven to boot", () => {
     const macos = jobOf("build-macos");
 
     it("verifies before uploading, as the Windows and Linux jobs do", () => {
-        const verify = macos.indexOf("verify-binary.ps1");
+        const verify = macos.indexOf("verify-macos-standalone.mjs");
         const upload = macos.indexOf("Upload verified build");
 
         assert.notEqual(verify, -1, "the macOS binaries are uploaded without ever having been run");
@@ -111,7 +111,7 @@ describe("the macOS binaries are proven to boot", () => {
     });
 
     it("verifies the artifact by the name it was renamed to", () => {
-        assert.ok(macos.indexOf("Rename binary") < macos.indexOf("verify-binary.ps1"),
+        assert.ok(macos.indexOf("Rename binary") < macos.indexOf("verify-macos-standalone.mjs"),
             "the check runs against a file the rename has already moved");
     });
 
@@ -133,8 +133,11 @@ describe("the macOS binaries are proven to boot", () => {
             "a macOS leg that is not verified has to say so, and say why in the matrix comment");
     });
 
-    it("only runs the check on the legs that declare it", () => {
-        assert.match(macos, /if:\s*\$\{\{\s*matrix\.verify\s*\}\}/);
+    it("runs full isolated verification unconditionally on every native leg", () => {
+        const check = parse(workflow).jobs['build-macos'].steps
+            .find(step => step.run?.includes('verify-macos-standalone.mjs'));
+        assert.ok(check);
+        assert.equal(check.if, undefined);
     });
 });
 
@@ -143,15 +146,15 @@ describe("the macOS binaries are proven to boot", () => {
  * them: a leg that produces a release asset either boots it first or is one of
  * the legs known not to be able to.
  *
- * Linux uses an architecture-independent checker. Windows and macOS still
- * require native runtime evidence beyond their listener-free rehearsal.
+ * Linux and macOS use isolated full verifiers. Windows still requires native
+ * runtime evidence beyond its listener-free rehearsal.
  */
 describe("every binary leg", () => {
     it("executes its artifact before qualification handoff", () => {
         const unverified = ["build-windows", "build-linux", "build-macos"].flatMap((name) => {
             const job = jobOf(name);
             const legs = [...job.matchAll(/artifact_name:\s*(\S+)/g)].map(([, value]) => value);
-            const verified = /verify-binary\.ps1|verify-standalone\.mjs/.test(job);
+            const verified = /verify-binary\.ps1|verify-(?:macos-)?standalone\.mjs/.test(job);
 
             return legs
                 .filter(() => !verified);
