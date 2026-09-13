@@ -34,6 +34,8 @@ $script:EnabledInterfaceAdminStatus = 1
 $script:DisabledInterfaceAdminStatus = 2
 $script:KnownAdapterStatuses = @('Up','Disconnected','Disabled','Not Present','Lower Layer Down','Unknown','Dormant')
 $script:MaximumConfigurationBytes = 4096
+$script:MaximumReportedEnvironmentNames = 8
+$script:MaximumReportedEnvironmentNameCharacters = 64
 $script:MaximumRequestBytes = 65536
 $script:MaximumEvidenceBytes = 262144
 $script:MaximumOwnedAggregateBytes = 33554432
@@ -694,7 +696,14 @@ function Assert-MyspeedWinswProbe {
         }
     }
     $forbidden=Assert-MyspeedCanaryArray $Probe.forbiddenNames 'Probe forbidden names'
-    if ($forbidden.Count -ne 0) { throw 'Probe forbidden environment names are present' }
+    if ($forbidden.Count -ne 0) {
+        # Report identifiers only, never environment values or malformed payloads.
+        $reportedNames=@($forbidden | Select-Object -First $script:MaximumReportedEnvironmentNames | ForEach-Object {
+            if ($_ -is [string] -and $_.Length -le $script:MaximumReportedEnvironmentNameCharacters -and
+                $_ -cmatch '\A[A-Za-z_][A-Za-z0-9_]*\z') { $_ } else { '<invalid-name>' }
+        })
+        throw "Probe forbidden environment names are present (count=$($forbidden.Count); names=$($reportedNames -join ','))"
+    }
     Assert-MyspeedCanaryExactKeys $Probe.configuration @('bytesBase64','sha256') 'Probe WinSW configuration'
     if ($Probe.configuration.bytesBase64 -isnot [string]) { throw 'Probe WinSW configuration bytes must be a string' }
     try { $configurationBytes=[Convert]::FromBase64String($Probe.configuration.bytesBase64) }

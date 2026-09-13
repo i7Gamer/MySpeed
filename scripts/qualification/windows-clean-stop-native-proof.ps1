@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestActiveLogReader','InvokeHostedProof')]
+    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestActiveLogReader','TestCollectionGate','InvokeHostedProof')]
     [string] $Mode='Library',
     [string] $InputJson='',
     [string] $ClosureRoot='',
@@ -43,6 +43,7 @@ $script:ReviewedToolChildSha256='51febe43711a3bcf9f2527493496eafc268abc187393f25
 $script:ReviewedFileIdentitySha256='4e1f39d98f08606ac53f314d105e918e0b1080c5363ce23e16ae50ab3ac5265f'
 $script:EvidenceInventoryKind='myspeed-windows-clean-stop-evidence-inventory'
 $script:MaximumAggregateEvidenceBytes=33554432
+$script:MaximumFailureMessageLength=1024
 $script:NativeMode='InvokeHostedProof'
 
 function Assert-MyspeedProofEarlyHostedContext {
@@ -363,9 +364,8 @@ function Assert-MyspeedProofOuterLauncher {
     foreach($name in @('job','process','thread')){if((Assert-MyspeedCleanString $Result.handles.$name "Outer $name handle") -cne 'closed'){
         throw 'Outer handle proof differs'}}
     $expectedExit=if($Launch.caseId -ceq 'handler'){0}else{1}
-    if((Assert-MyspeedCleanInteger $Result.exitCode 'Outer exit code' -2147483648 2147483647) -ne $expectedExit){
-        throw 'Outer exit code differs'
-    }
+    $actualExit=Assert-MyspeedCleanInteger $Result.exitCode 'Outer exit code' -2147483648 2147483647
+    if($actualExit -ne $expectedExit){throw "Outer exit code differs: actual=$actualExit; expected=$expectedExit"}
     Assert-MyspeedCleanExactKeys $Result.timing @('initialWallUnixMilliseconds','initialMonotonicMilliseconds',
         'wallDeadlineUnixMilliseconds','monotonicDeadlineMilliseconds','lastWallUnixMilliseconds',
         'lastMonotonicMilliseconds','postReturnWallUnixMilliseconds','postReturnMonotonicMilliseconds') 'Outer timing'
@@ -403,6 +403,30 @@ function Assert-MyspeedProofOuterLauncher {
     }
     foreach($name in @('lastAction','lastObservation')){[void](Assert-MyspeedCleanString $Result.observer.$name "Outer observer $name" '^[a-z][a-z0-9-]{0,63}$')}
     return $Result
+}
+
+function Assert-MyspeedProofCaseCollectionGate {
+    param([object]$Value)
+    Assert-MyspeedCleanExactKeys $Value @('status','failure','files') 'Case collection gate'
+    $status=Assert-MyspeedCleanString $Value.status 'Case collection outer status' '^(completed|failed)$'
+    if($status -ceq 'failed'){
+        Assert-MyspeedCleanExactKeys $Value.failure @('stage','message') 'Case collection outer failure'
+        $stage=Assert-MyspeedCleanString $Value.failure.stage 'Case collection outer failure stage' '^[a-z][a-z0-9-]{0,63}$'
+        $message=Assert-MyspeedCleanString $Value.failure.message 'Case collection outer failure message'
+        if($message.Length -gt $script:MaximumFailureMessageLength -or $message -match '[\x00-\x1f]'){
+            throw 'Case collection outer failure message differs'
+        }
+        throw "Outer launcher failed at $stage`: $message"
+    }
+    if($null -ne $Value.failure){throw 'Completed outer launcher retained a failure'}
+    $names=@('abi','ready','readiness','result','stdout','stderr')
+    Assert-MyspeedCleanExactKeys $Value.files $names 'Case collection files'
+    foreach($name in $names){
+        if(-not (Assert-MyspeedCleanBoolean $Value.files.$name "Case collection $name file")){
+            throw "Case evidence is incomplete: $name"
+        }
+    }
+    return [pscustomobject]@{ready=$true}
 }
 
 function Invoke-MyspeedProofObserverTick {
@@ -1171,6 +1195,14 @@ function Invoke-MyspeedHostedCleanStopProof {
                 $caseRoot,$outerDeadline,$script:MaximumObservedMilliseconds,$observer,$manifest.observerSha256)
         $outerPath=[IO.Path]::Combine($caseRoot,'outer-launcher.json')
         [void](Write-MyspeedProofCreateNewJson $outerPath $outer 262144)
+        $collectionFiles=[pscustomobject][ordered]@{abi=[IO.File]::Exists($launch.abiPath);ready=[IO.File]::Exists($launch.readyPath)
+            readiness=[IO.File]::Exists($launch.stdoutReadinessPath);result=[IO.File]::Exists($launch.resultPath)
+            stdout=[IO.File]::Exists($launch.stdoutPath);stderr=[IO.File]::Exists($launch.stderrPath)}
+        if($outer.status -ceq 'failed'){
+            [void](Assert-MyspeedProofCaseCollectionGate ([pscustomobject][ordered]@{status=$outer.status;failure=$outer.failure;files=$collectionFiles}))
+        }
+        [void](Assert-MyspeedProofOuterLauncher $manifest $launch $launchSha $outer)
+        [void](Assert-MyspeedProofCaseCollectionGate ([pscustomobject][ordered]@{status=$outer.status;failure=$outer.failure;files=$collectionFiles}))
         $documents=[ordered]@{}
         foreach($entry in ([ordered]@{launch=$launchPath;abi=$launch.abiPath;ready=$launch.readyPath
             readiness=$launch.stdoutReadinessPath;result=$launch.resultPath;outer=$outerPath}).GetEnumerator()){
@@ -1282,6 +1314,7 @@ try{
         'TestObserver' {Invoke-MyspeedProofInjectedObserver (ConvertFrom-MyspeedProofJson $InputJson 'Injected observer')}
         'TestDetachedObserver' {Invoke-MyspeedProofInjectedObserver (ConvertFrom-MyspeedProofJson $InputJson 'Detached observer') $true}
         'TestActiveLogReader' {Invoke-MyspeedProofActiveLogReaderFixture (ConvertFrom-MyspeedProofJson $InputJson 'Active-log fixture')}
+        'TestCollectionGate' {Assert-MyspeedProofCaseCollectionGate (ConvertFrom-MyspeedProofJson $InputJson 'Case collection gate')}
         'InvokeHostedProof' {Invoke-MyspeedHostedCleanStopProof}
     }
     $output|ConvertTo-Json -Depth 40 -Compress
@@ -1290,7 +1323,7 @@ try{
         try{
             $parent=[IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($EvidencePath))
             if([IO.Directory]::Exists($parent) -and -not [IO.File]::Exists($EvidencePath)){
-                $message=[string]$_.Exception.Message;if($message.Length -gt 1024){$message=$message.Substring(0,1024)}
+                $message=[string]$_.Exception.Message;if($message.Length -gt $script:MaximumFailureMessageLength){$message=$message.Substring(0,$script:MaximumFailureMessageLength)}
                 $failed=[pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-clean-stop-hosted-proof';status='failed'
                     qualifying=$false;releaseGatesCleared=@();transportSha256=$null;manifestSha256=$null;summarySha256=$null
                     inventorySha256=$null;matrix=$null;failures=@($message)}

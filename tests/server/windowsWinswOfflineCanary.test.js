@@ -1047,6 +1047,32 @@ if(-not $rejected){throw 'Adapter LUID drift was accepted'}
         }
     });
 
+    powershellIt("reports only bounded forbidden environment names without values", () => {
+        const diagnosticFor = input => {
+            const encoded = Buffer.from(JSON.stringify(input)).toString("base64");
+            const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; ` +
+                `$probe=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))|ConvertFrom-Json; ` +
+                `try { Assert-MyspeedWinswProbe $probe; exit 9 } catch { ` +
+                `[Console]::Error.WriteLine($_.Exception.Message); exit 1 }`;
+            return childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+                {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS});
+        };
+        const value = probe();
+        value.forbiddenNames = ["HTTP_PROXY", "AZURE_SYNTHETIC"];
+        const observed = diagnosticFor(value);
+        assert.notEqual(observed.status, 0);
+        assert.match(`${observed.stdout}\n${observed.stderr}`, /count=2; names=HTTP_PROXY,AZURE_SYNTHETIC/su);
+        const maximumReportedNames = 8;
+        value.forbiddenNames = ["TOKEN=synthetic-sensitive-value", "SECRET_".repeat(20),
+            ...Array.from({length: maximumReportedNames}, (_entry, index) => `PROXY_${index}`)];
+        const bounded = diagnosticFor(value);
+        const diagnostic = `${bounded.stdout}\n${bounded.stderr}`;
+        assert.notEqual(bounded.status, 0);
+        assert.match(diagnostic, /count=10; names=<invalid-name>,<invalid-name>,PROXY_0/su);
+        assert.doesNotMatch(diagnostic, /synthetic-sensitive-value|SECRET_SECRET|PROXY_6|PROXY_7/u);
+    });
+
     powershellIt("accepts normal teardown only when it precedes adapter restoration", () => {
         const assessment = run("AssessRecovery", recovery(false));
         assert.equal(assessment.accepted, true);

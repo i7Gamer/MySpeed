@@ -339,10 +339,49 @@ describe("Windows clean-stop native proof coordinator", () => {
         assert.match(source, /ReadBytes=\{param\(\$path\)Read-MyspeedProofActiveLogBytes/u);
         assert.match(source, /Read-MyspeedProofNativeBytes "\$caseId-\$\(\$entry\.Key\)"/u);
         assert.match(source, /\$Mode -cne \$script:NativeMode[\s\S]*?ReadToEnd/u);
+        const outerFailureGate = source.indexOf("if($outer.status -ceq 'failed')");
+        const outerValidation = source.indexOf("Assert-MyspeedProofOuterLauncher $manifest $launch $launchSha $outer", outerFailureGate);
+        const evidenceGate = source.indexOf("Assert-MyspeedProofCaseCollectionGate", outerValidation);
+        assert.ok(outerFailureGate >= 0 && outerFailureGate < outerValidation && outerValidation < evidenceGate,
+            "outer failure and exit proofs must precede evidence-file collection");
     });
 
     powershellIt("returns the exact observer contract", () => {
         assert.equal(invoke("GetContract").observerSha256, OBSERVER_SHA);
+    });
+
+    powershellIt("reports the outer failure before inspecting unpublished case files", () => {
+        const files = {abi: false, ready: false, readiness: false, result: false, stdout: false, stderr: false};
+        assert.throws(() => invoke("TestCollectionGate", {status: "failed",
+            failure: {stage: "observer", message: "controller failed before ABI publication"}, files}),
+        /controller failed before ABI publication/u);
+        for (const mutate of [
+            value => { value.failure = null; },
+            value => { value.failure.stage = "Observer"; },
+            value => { value.failure.message = "x".repeat(1_025); },
+            value => { value.failure.message = "line\nbreak"; },
+            value => { value.extra = true; }
+        ]) {
+            const invalid = {status: "failed", failure: {stage: "observer", message: "bounded"},
+                files: {...files}};
+            mutate(invalid);
+            assert.throws(() => invoke("TestCollectionGate", invalid));
+        }
+        for (const mutate of [
+            value => { value.files.abi = "false"; },
+            value => { delete value.files.stderr; }
+        ]) {
+            const invalid = {status: "completed", failure: null,
+                files: Object.fromEntries(Object.keys(files).map(name => [name, true]))};
+            mutate(invalid);
+            assert.throws(() => invoke("TestCollectionGate", invalid), /Boolean|keys differ/u);
+        }
+        assert.throws(() => invoke("TestCollectionGate", {status: "completed", failure: null, files}),
+            /incomplete.*abi/u);
+        assert.throws(() => invoke("TestCollectionGate", {status: "completed",
+            failure: {stage: "observer", message: "stale"}, files}), /retained a failure/u);
+        assert.equal(invoke("TestCollectionGate", {status: "completed", failure: null,
+            files: Object.fromEntries(Object.keys(files).map(name => [name, true]))}).ready, true);
     });
 
     powershellIt("strictly validates the sealed manifest", () => {
@@ -609,6 +648,10 @@ describe("Windows clean-stop native proof coordinator", () => {
         const expectedAbi = invoke("GetContract").abiExpected;
         const value = matrixValue(expectedAbi);
         assert.equal(invoke("AssessMatrix", value).allCasesObserved, true);
+        const wrongExit = boundCaseValue("handler", expectedAbi);
+        wrongExit.case.outerLauncherDocument = mutateDocument(wrongExit.case.outerLauncherDocument,
+            record => { record.exitCode = 1; });
+        assert.throws(() => invoke("ValidateCase", wrongExit), /actual=1; expected=0/u);
         for (const mutate of [
             item => { item.cases[0].outerLauncherDocument = mutateDocument(
                 item.cases[0].outerLauncherDocument, record => { record.process.retainedHandleThroughExit = false; }); },

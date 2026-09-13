@@ -33,6 +33,7 @@ const PACKED_UPGRADE = "D471F68A7A34AAD429E690E7D0A01514";
 const POWERSHELL = process.platform === "win32"
     ? `${process.env.SystemRoot ?? "C:\\Windows"}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
     : "pwsh";
+const PWSH = "pwsh";
 const PROCESS_TIMEOUT_MS = 15_000;
 const HAS_POWERSHELL = process.platform === "win32" ||
     childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
@@ -55,6 +56,7 @@ const inboxEnvironment = additions => {
         if (name.toLowerCase() === "psmodulepath") delete environment[name];
     return environment;
 };
+const quotePowerShell = value => `'${value.replaceAll("'", "''")}'`;
 
 describe("sacrificial MSI rollback transport workflow", () => {
     it("is manual, nonpublishing, repository-bound, and candidate-neutral", () => {
@@ -84,6 +86,9 @@ describe("sacrificial MSI rollback transport workflow", () => {
         assert.doesNotMatch(acquire.run, /choco|winget|PATH\s*=/i);
         const build = step(prepare, "build_fixtures");
         assert.match(build.run, /-Mode GetFixtures/);
+        assert.match(build.run, /WindowsPowerShell\\v1\.0\\powershell\.exe/);
+        assert.match(build.run, /& \$inboxPowerShell[^]*?-File \$scriptPath[^\r\n]+-Mode GetFixtures/);
+        assert.doesNotMatch(build.run, /\$fixtureJson\s*=\s*& \$scriptPath/);
         assert.match(build.run, /candle\.exe/);
         assert.match(build.run, /light\.exe/);
         assert.match(build.run, /light\.exe'\) @lightArguments/,
@@ -96,6 +101,46 @@ describe("sacrificial MSI rollback transport workflow", () => {
             "PowerShell must parenthesize each Test-Path expression around -or");
         assert.doesNotMatch(build.run, /CustomAction|ServiceInstall|ServiceControl|Registry/i);
         assert.doesNotMatch(build.run, /-sice:|SuppressIces/i);
+    });
+
+    it("gets a real child exit code when fixture rendering fails", WINDOWS_ONLY, context => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-msi-fixture-render-"));
+        context.after(() => fs.rmSync(root, {recursive: true, force: true}));
+        const stub = path.join(root, "fixture renderer.ps1");
+        fs.writeFileSync(stub, "Write-Output '{}'; exit 7\n");
+        const original = step(config().jobs.prepare, "build_fixtures").run;
+        const script = original.replace(
+            "[IO.Path]::GetFullPath('scripts/qualification/windows-msi-rollback-calibration.ps1')",
+            quotePowerShell(stub));
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+            {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS,
+                env: inboxEnvironment({RUNNER_TEMP: root})});
+        assert.notEqual(result.status, 0);
+        assert.match(`${result.stdout}\n${result.stderr}`, /Fixture rendering failed with exit 7/u);
+        assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /LASTEXITCODE.*not been set/u);
+    });
+
+    it("renders the real bounded fixture JSON across the PowerShell 7 to inbox 5.1 boundary", WINDOWS_ONLY, () => {
+        const build = step(config().jobs.prepare, "build_fixtures").run;
+        const start = build.indexOf("$nonce =");
+        const end = build.indexOf("[IO.File]::WriteAllBytes");
+        assert.ok(start >= 0 && end > start);
+        const prefix = build.slice(start, end);
+        assert.doesNotMatch(prefix, /candle|light|MsiInstallProduct|msiexec/iu);
+        const command = [
+            "$MAX_FIXTURE_JSON_BYTES = 262144",
+            prefix,
+            "[ordered]@{edition=$PSVersionTable.PSEdition;nonce=$nonce;fixtures=@($fixtureDefinitions.fixtures)} | ConvertTo-Json -Depth 12 -Compress"
+        ].join("\n");
+        const result = childProcess.spawnSync(PWSH,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS, cwd: process.cwd()});
+        assert.equal(result.status, 0, result.stderr);
+        const rendered = JSON.parse(result.stdout);
+        assert.equal(rendered.edition, "Core");
+        assert.match(rendered.nonce, /^[0-9a-f]{32}$/u);
+        assert.deepEqual(rendered.fixtures.map(({role}) => role), ["predecessor", "candidate"]);
     });
 
     it("renders the exact x64 compiler and source-rooted linker argument vectors", WINDOWS_ONLY, () => {

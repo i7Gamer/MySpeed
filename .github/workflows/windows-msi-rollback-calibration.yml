@@ -120,8 +120,16 @@ jobs:
           New-Item -ItemType Directory -Path $closureRoot,$buildRoot -ErrorAction Stop | Out-Null
           $nonce = [guid]::NewGuid().ToString('N')
           $scriptPath = [IO.Path]::GetFullPath('scripts/qualification/windows-msi-rollback-calibration.ps1')
-          $fixtureJson = & $scriptPath -Mode GetFixtures -InputJson (@{nonce=$nonce} | ConvertTo-Json -Compress)
-          if ($LASTEXITCODE -ne 0) { throw 'Fixture rendering failed' }
+          $inboxPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $fixtureInputJson = @{nonce=$nonce} | ConvertTo-Json -Compress
+          $fixtureOutput = @(& $inboxPowerShell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $scriptPath -Mode GetFixtures -InputJson $fixtureInputJson)
+          $fixtureExitCode = $LASTEXITCODE
+          if ($fixtureExitCode -ne 0) { throw "Fixture rendering failed with exit $fixtureExitCode" }
+          if ($fixtureOutput.Count -ne 1 -or $fixtureOutput[0] -isnot [string]) {
+            throw 'Fixture rendering stdout shape differs'
+          }
+          $fixtureJson = [string]$fixtureOutput[0]
           $fixtureBytes = [Text.UTF8Encoding]::new($false).GetBytes($fixtureJson)
           if ($fixtureBytes.Length -le 0 -or $fixtureBytes.Length -gt $MAX_FIXTURE_JSON_BYTES) {
             throw 'Fixture definition JSON exceeds its bound'
