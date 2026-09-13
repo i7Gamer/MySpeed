@@ -1,0 +1,585 @@
+import {describe, it} from "node:test";
+import assert from "node:assert/strict";
+import childProcess from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import {fileURLToPath} from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+const SCRIPT = path.join(ROOT, "scripts", "qualification", "windows-clean-stop-controller.ps1");
+const POWERSHELL = (process.env.SystemRoot || "C:\\Windows")
+    + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+const TEST_TIMEOUT_MS = 15_000;
+const TEST_CASE_TIMEOUT_MS = 30_000;
+const RUN_ID = "12345";
+const RUN_ATTEMPT = "2";
+const EVENT_SHA = "a".repeat(40);
+const SOURCE_SHA = "b".repeat(40);
+const NONCE = "c".repeat(32);
+const TASK_ROOT = "C:\\a\\_temp\\myspeed-clean-stop-" + NONCE;
+const CANDIDATE = TASK_ROOT + "\\fixture-handler.exe";
+const SHA256 = "d".repeat(64);
+const MANIFEST_SHA256 = "9".repeat(64);
+const ABI_SHA256 = "8".repeat(64);
+const READY_SHA256 = "f".repeat(64);
+const STDOUT_READINESS_SHA256 = "7".repeat(64);
+const LIFECYCLE_PHASES = [
+    "assertConsoleFree", "openCandidateAndJob", "createStandardHandles", "queryAttributeList",
+    "initializeAttributeList", "updateHandleList", "launchSuspended", "assignJob", "captureIdentity",
+    "resume", "writeReady", "awaitStdoutReadiness", "validateStdoutReadiness", "awaitStopRequest", "validateStopRequest", "attachConsole",
+    "installIgnoreHandler", "revalidateHandle", "proveConsoleMembers", "generateCtrlC",
+    "freeConsole", "proveConsoleFree", "waitCandidateExit", "proveJobZero", "closeResources"
+];
+const powershellAvailable = process.platform === "win32" && fs.existsSync(POWERSHELL);
+const powershellIt = (name, body) => (powershellAvailable ? it : it.skip)(name,
+    {timeout: TEST_CASE_TIMEOUT_MS}, body);
+
+const invoke = (mode, value = null) => {
+    const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", SCRIPT, "-Mode", mode];
+    if (value !== null) args.push("-InputJson", JSON.stringify(value));
+    const result = childProcess.spawnSync(POWERSHELL, args, {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+    assert.equal(result.error, undefined, result.error?.message);
+    if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+};
+
+const request = () => ({
+    schemaVersion: 1,
+    kind: "myspeed-windows-clean-stop-launch",
+    expectedRunId: RUN_ID,
+    expectedRunAttempt: RUN_ATTEMPT,
+    expectedEventSha: EVENT_SHA,
+    expectedSourceSha: SOURCE_SHA,
+    expectedImageVersion: "20260907.229.1",
+    nonce: NONCE,
+    manifestSha256: MANIFEST_SHA256,
+    caseId: "handler",
+    taskRoot: TASK_ROOT,
+    candidatePath: CANDIDATE,
+    candidateSha256: SHA256,
+    candidateVolumeSerial: "89abcdef",
+    candidateFileId: "0123456789abcdef",
+    workingDirectory: TASK_ROOT,
+    arguments: ["handler"],
+    environment: {
+        MYSPEED_CLEAN_STOP_FIXTURE_MODE: "handler",
+        MYSPEED_CLEAN_STOP_NONCE: NONCE
+    },
+    stdoutPath: TASK_ROOT + "\\stdout.log",
+    stderrPath: TASK_ROOT + "\\stderr.log",
+    abiPath: TASK_ROOT + "\\abi.json",
+    readyPath: TASK_ROOT + "\\ready.json",
+    stdoutReadinessPath: TASK_ROOT + "\\stdout.readiness.json",
+    stopRequestPath: TASK_ROOT + "\\stop.request.json",
+    resultPath: TASK_ROOT + "\\result.json",
+    controllerNormalDeadlineMs: 300_000,
+    controllerHardDeadlineMs: 310_000,
+    stopRequestTimeoutMs: 240_000,
+    stopRequestPollMs: 50,
+    gracefulExitTimeoutMs: 30_000,
+    forcedCleanupTimeoutMs: 10_000
+});
+
+const stopRequest = () => ({
+    schemaVersion: 1,
+    kind: "myspeed-windows-clean-stop-request",
+    expectedRunId: RUN_ID,
+    expectedRunAttempt: RUN_ATTEMPT,
+    expectedEventSha: EVENT_SHA,
+    nonce: NONCE,
+    manifestSha256: MANIFEST_SHA256,
+    launchRequestSha256: SHA256,
+    abiSha256: ABI_SHA256,
+    readySha256: READY_SHA256,
+    stdoutReadinessSha256: STDOUT_READINESS_SHA256,
+    caseId: "handler",
+    candidatePid: 4242,
+    candidateCreationTime: "0123456789abcdef",
+    candidateImagePath: CANDIDATE,
+    candidateSha256: SHA256,
+    candidateVolumeSerial: "89abcdef",
+    candidateFileId: "0123456789abcdef"
+});
+
+const stdoutReadiness = () => ({
+    schemaVersion: 1,
+    kind: "myspeed-windows-clean-stop-stdout-readiness",
+    manifestSha256: MANIFEST_SHA256,
+    caseId: "handler",
+    launchRequestSha256: SHA256,
+    abiSha256: ABI_SHA256,
+    readySha256: READY_SHA256,
+    stdoutSha256: "6".repeat(64),
+    marker: "MYSPEED_CLEAN_STOP_FIXTURE_READY_V1",
+    observedMonotonicMs: 20
+});
+
+const lifecycle = (failAt = null) => ({
+    failAt,
+    clock: Array.from({length: LIFECYCLE_PHASES.length}, (_, index) => index * 10),
+    launch: {
+        candidatePid: 4242,
+        candidateCreationTime: "0123456789abcdef",
+        candidateImagePath: CANDIDATE,
+        candidateSha256: SHA256,
+        candidateVolumeSerial: "89abcdef",
+        candidateFileId: "0123456789abcdef"
+    },
+    stopRequest: stopRequest(),
+    stopAvailable: true,
+    candidateExitCode: 0,
+    consoleProcessIds: [4000, 4242]
+});
+
+describe("Windows clean-stop controller prototype", () => {
+    it("keeps the initial slice candidate-neutral and nonqualifying", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /qualifying=\$false/u);
+        assert.match(source, /CONTROLLER_NORMAL_DEADLINE_MS[^\r\n]+300000/u);
+        assert.match(source, /CONTROLLER_HARD_DEADLINE_MS[^\r\n]+310000/u);
+        assert.match(source, /STOP_REQUEST_TIMEOUT_MS[^\r\n]+240000/u);
+        assert.match(source, /STOP_REQUEST_POLL_MS[^\r\n]+50/u);
+        assert.doesNotMatch(source, /listenerGone|databasePassed/u);
+    });
+
+    powershellIt("is import-safe and returns fixed deadlines", () => {
+        assert.deepEqual(invoke("GetContract"), {
+            schemaVersion: 1,
+            kind: "myspeed-windows-clean-stop-controller",
+            qualifying: false,
+            nativeExecuted: false,
+            controllerNormalDeadlineMs: 300_000,
+            controllerHardDeadlineMs: 310_000,
+            stopRequestTimeoutMs: 240_000,
+            stopRequestPollMs: 50,
+            gracefulExitTimeoutMs: 30_000,
+            forcedCleanupTimeoutMs: 10_000
+        });
+    });
+
+    powershellIt("validates exact expected and observed x64 ABI measurements without native execution", () => {
+        const contract = invoke("GetAbiContract");
+        assert.equal(contract.schemaVersion, 1);
+        assert.equal(contract.kind, "myspeed-windows-clean-stop-abi");
+        assert.equal(contract.expected.pointerBytes, 8);
+        assert.equal(contract.expected.startupInfoBytes, 104);
+        assert.equal(contract.expected.startupInfoExBytes, 112);
+        assert.equal(contract.expected.handleListCount, 3);
+        assert.equal(contract.expected.handleListBytes, 24);
+        assert.equal(contract.expected.processCreationFlags, 525_332);
+        const good = {schemaVersion: 1, kind: contract.kind, expected: contract.expected,
+            observed: structuredClone(contract.expected), matched: true};
+        assert.equal(invoke("ValidateAbi", good).accepted, true);
+        const mismatch = structuredClone(good);
+        mismatch.observed.startupInfoBytes++;
+        mismatch.matched = false;
+        assert.equal(invoke("ValidateAbi", mismatch).accepted, true);
+        mismatch.matched = true;
+        assert.throws(() => invoke("ValidateAbi", mismatch), /ABI|matched/i);
+        const malformed = structuredClone(good);
+        malformed.observed.fileTimeBytes = "8";
+        assert.throws(() => invoke("ValidateAbi", malformed), /ABI|integer/i);
+    });
+
+    powershellIt("strictly validates launch and stop contracts", () => {
+        assert.equal(invoke("ValidateLaunchRequest", request()).accepted, true);
+        assert.equal(invoke("ValidateStdoutReadiness", {launch: request(), launchRequestSha256: SHA256,
+            abiSha256: ABI_SHA256, readySha256: READY_SHA256, readiness: stdoutReadiness()}).accepted, true);
+        assert.equal(invoke("ValidateStopRequest", {launch: request(), launchRequestSha256: SHA256,
+            abiSha256: ABI_SHA256, readySha256: READY_SHA256, stop: stopRequest()}).accepted, true);
+        for (const mutate of [
+            value => { value.extra = true; },
+            value => { value.expectedRunId = 1; },
+            value => { value.expectedEventSha += "\n"; },
+            value => { value.nonce = ["c".repeat(32)]; },
+            value => { value.caseId = "unknown"; },
+            value => { value.arguments = ["ignore"]; },
+            value => { value.taskRoot += "\\."; },
+            value => { value.candidatePath = value.taskRoot + ":stream"; },
+            value => { value.stdoutPath = value.stderrPath.toUpperCase(); },
+            value => { value.arguments = "handler"; },
+            value => { value.environment.EXTRA = "forbidden"; },
+            value => { value.controllerNormalDeadlineMs = 299_999; },
+            value => { value.controllerHardDeadlineMs = 310_001; },
+            value => { value.stopRequestTimeoutMs = 240_001; },
+            value => { value.stopRequestPollMs = 51; }
+        ]) {
+            const value = request();
+            mutate(value);
+            assert.throws(() => invoke("ValidateLaunchRequest", value),
+                /request|path|deadline|environment|argument|integer/i);
+        }
+        for (const mutate of [
+            value => { value.readiness.marker += "extra"; },
+            value => { value.readiness.readySha256 = "0".repeat(64); },
+            value => { value.readiness.observedMonotonicMs = 300_001; }
+        ]) {
+            const value = {launch: request(), launchRequestSha256: SHA256,
+                abiSha256: ABI_SHA256, readySha256: READY_SHA256, readiness: stdoutReadiness()};
+            mutate(value);
+            assert.throws(() => invoke("ValidateStdoutReadiness", value), /stdout|readiness|binding|bound/i);
+        }
+        for (const mutate of [
+            value => { value.stop.candidatePid = 0; },
+            value => { value.stop.candidateCreationTime = "1"; },
+            value => { value.stop.candidateImagePath = value.launch.stdoutPath; },
+            value => { value.stop.candidateSha256 = "e".repeat(64); },
+            value => { value.stop.expectedRunAttempt = "3"; }
+        ]) {
+            const value = {launch: request(), launchRequestSha256: SHA256,
+                abiSha256: ABI_SHA256, readySha256: READY_SHA256, stop: stopRequest()};
+            mutate(value);
+            assert.throws(() => invoke("ValidateStopRequest", value), /stop|candidate|identity|binding/i);
+        }
+    });
+
+    powershellIt("runs the injected retained-handle lifecycle in exact order", () => {
+        const result = invoke("TestLifecycle", lifecycle());
+        assert.equal(result.status, "completed");
+        assert.equal(result.qualifying, false);
+        assert.equal(result.controllerLifecyclePassed, true);
+        assert.equal(result.controllerInitiallyConsoleFree, true);
+        assert.equal(result.handlesClosed, true);
+        assert.equal(result.forced, false);
+        assert.deepEqual(result.events, LIFECYCLE_PHASES);
+    });
+
+    powershellIt("never signals after an injected pre-signal failure", () => {
+        for (const phase of [
+            "assertConsoleFree", "openCandidateAndJob", "createStandardHandles", "queryAttributeList",
+            "initializeAttributeList", "updateHandleList", "launchSuspended", "assignJob", "captureIdentity", "resume",
+            "writeReady", "awaitStopRequest", "validateStopRequest", "attachConsole",
+            "awaitStdoutReadiness", "validateStdoutReadiness",
+            "installIgnoreHandler", "revalidateHandle", "proveConsoleMembers"
+        ]) {
+            const result = invoke("TestLifecycle", lifecycle(phase));
+            assert.equal(result.status, "failed", phase);
+            assert.equal(result.controllerLifecyclePassed, false, phase);
+            assert.equal(result.events.includes("generateCtrlC"), false, phase);
+            if (phase === "assertConsoleFree") {
+                assert.equal(result.controllerInitiallyConsoleFree, false);
+                assert.equal(result.handlesClosed, false);
+            }
+        }
+    });
+
+    powershellIt("fails closed for every post-signal proof and malformed injected observation", () => {
+        for (const phase of [
+            "generateCtrlC", "freeConsole", "proveConsoleFree", "waitCandidateExit",
+            "proveJobZero", "closeResources"
+        ]) {
+            const result = invoke("TestLifecycle", lifecycle(phase));
+            assert.equal(result.status, "failed", phase);
+            assert.equal(result.controllerLifecyclePassed, false, phase);
+            assert.equal(result.forced, phase !== "closeResources", phase);
+            assert.equal(result.jobActiveProcesses, 0, phase);
+            if (phase === "closeResources") assert.equal(result.handlesClosed, false);
+        }
+        for (const mutate of [
+            value => { value.clock[5] = value.clock[4] - 1; },
+            value => { value.candidateExitCode = "0"; },
+            value => { value.launch.candidatePid = "4242"; }
+        ]) {
+            const value = lifecycle();
+            mutate(value);
+            assert.throws(() => invoke("TestLifecycle", value), /injected|clock|integer|console|deadline/i);
+        }
+        for (const mutate of [
+            value => { value.clock.fill(300_001, 4); },
+            value => { value.consoleProcessIds = [4000, 4999]; },
+            value => { value.consoleProcessIds = ["4000", 4242]; }
+        ]) {
+            const value = lifecycle();
+            mutate(value);
+            const result = invoke("TestLifecycle", value);
+            assert.equal(result.status, "failed");
+            assert.equal(result.controllerLifecyclePassed, false);
+        }
+    });
+
+    powershellIt("classifies deadline cleanup truthfully", () => {
+        const value = lifecycle("awaitStopRequest");
+        value.clock.fill(300_000, 2);
+        const result = invoke("TestLifecycle", value);
+        assert.equal(result.status, "failed");
+        assert.equal(result.qualifying, false);
+        assert.equal(result.forced, true);
+        assert.equal(result.candidateExited, true);
+        assert.equal(result.exitCode, 197);
+        assert.equal(result.jobActiveProcesses, 0);
+        assert.match(result.failures[0], /stop request|deadline/i);
+
+        const missing = lifecycle();
+        missing.stopAvailable = false;
+        missing.clock[3] = 240_020;
+        missing.clock.fill(240_020, 3);
+        const missingResult = invoke("TestLifecycle", missing);
+        assert.equal(missingResult.status, "failed");
+        assert.match(missingResult.failures[0], /stop request deadline/i);
+
+        const lateStop = lifecycle();
+        lateStop.clock[3] = 240_020;
+        lateStop.clock.fill(240_020, 3);
+        const lateStopResult = invoke("TestLifecycle", lateStop);
+        assert.equal(lateStopResult.status, "failed");
+        assert.equal(lateStopResult.events.includes("validateStopRequest"), false);
+        assert.match(lateStopResult.failures[0], /stop request deadline/i);
+
+        const validationCrossedDeadline = lifecycle();
+        validationCrossedDeadline.clock[5] = 240_020;
+        validationCrossedDeadline.clock.fill(240_020, 5);
+        const validationDeadlineResult = invoke("TestLifecycle", validationCrossedDeadline);
+        assert.equal(validationDeadlineResult.status, "failed");
+        assert.equal(validationDeadlineResult.events.includes("attachConsole"), false);
+        assert.equal(validationDeadlineResult.events.includes("generateCtrlC"), false);
+        assert.match(validationDeadlineResult.failures.join(" "), /deadline expired during validation/i);
+
+        const normalExpiredBeforeLaunch = lifecycle();
+        normalExpiredBeforeLaunch.clock.fill(300_000);
+        const preLaunchResult = invoke("TestLifecycle", normalExpiredBeforeLaunch);
+        assert.equal(preLaunchResult.status, "failed");
+        assert.equal(preLaunchResult.events.includes("openCandidateAndJob"), false);
+        assert.equal(preLaunchResult.forced, false);
+        assert.match(preLaunchResult.failures[0], /normal deadline expired before launch/i);
+
+        const hardExpired = lifecycle();
+        hardExpired.stopAvailable = false;
+        hardExpired.clock.fill(310_001, 2);
+        const hardResult = invoke("TestLifecycle", hardExpired);
+        assert.equal(hardResult.status, "failed");
+        assert.equal(hardResult.forced, false);
+        assert.equal(hardResult.jobActiveProcesses, 1);
+        assert.match(hardResult.failures.join(" "), /hard deadline|cleanup/i);
+
+        const launchCrossedNormalDeadline = lifecycle();
+        launchCrossedNormalDeadline.clock.fill(300_000, 1);
+        const launchDeadlineResult = invoke("TestLifecycle", launchCrossedNormalDeadline);
+        assert.equal(launchDeadlineResult.status, "failed");
+        assert.equal(launchDeadlineResult.events.includes("writeReady"), false);
+        assert.equal(launchDeadlineResult.forced, true);
+        assert.match(launchDeadlineResult.failures.join(" "), /normal deadline expired after launch/i);
+
+        const assignedFailure = invoke("TestLifecycle", lifecycle("captureIdentity"));
+        assert.equal(assignedFailure.events.includes("terminateOwnedJob"), true);
+        assert.equal(assignedFailure.events.includes("terminateRetainedProcess"), false);
+        const unassignedFailure = invoke("TestLifecycle", lifecycle("assignJob"));
+        assert.equal(unassignedFailure.events.includes("terminateRetainedProcess"), true);
+        assert.equal(unassignedFailure.events.includes("waitRetainedProcess"), true);
+        assert.equal(unassignedFailure.events.includes("terminateOwnedJob"), false);
+        assert.equal(invoke("TestLifecycle", lifecycle("assertConsoleFree")).forced, false);
+    });
+
+    powershellIt("recomputes the exact nonqualifying result contract", () => {
+        const result = {
+            schemaVersion: 1,
+            kind: "myspeed-windows-clean-stop-result",
+            status: "completed",
+            qualifying: false,
+            controllerLifecyclePassed: true,
+            forced: false,
+            manifestSha256: MANIFEST_SHA256,
+            caseId: "handler",
+            requestSha256: SHA256,
+            abiSha256: ABI_SHA256,
+            readySha256: READY_SHA256,
+            stdoutReadinessSha256: STDOUT_READINESS_SHA256,
+            stopRequestSha256: "e".repeat(64),
+            stdoutReadinessObserved: true,
+            stopRequestObserved: true,
+            stopRequestDeadlineMs: 240_020,
+            graceExpired: false,
+            observedConsoleProcessIds: [4000, 4242],
+            lifecycleEvents: LIFECYCLE_PHASES,
+            runId: RUN_ID,
+            runAttempt: RUN_ATTEMPT,
+            eventSha: EVENT_SHA,
+            sourceSha: SOURCE_SHA,
+            imageVersion: "20260907.229.1",
+            nonce: NONCE,
+            controllerPid: 4000,
+            candidatePid: 4242,
+            candidateCreationTime: "0123456789abcdef",
+            candidateImagePath: CANDIDATE,
+            candidateSha256: SHA256,
+            candidateVolumeSerial: "89abcdef",
+            candidateFileId: "0123456789abcdef",
+            controllerInitiallyConsoleFree: true,
+            candidateCreatedSuspended: true,
+            privateConsoleRequested: true,
+            handleListConfigured: true,
+            jobAssignedBeforeResume: true,
+            initialJobMembership: true,
+            candidateIdentityCaptured: true,
+            candidateResumed: true,
+            threadHandleClosedBeforeReady: true,
+            preAttachIdentityMatch: true,
+            postAttachHandleUnsignaled: true,
+            postAttachIdentityMatch: true,
+            postAttachJobMembership: true,
+            consoleProcessIdsExact: true,
+            ctrlEventGenerated: true,
+            candidateExited: true,
+            exitCode: 0,
+            jobActiveProcesses: 0,
+            consoleFreeAfter: true,
+            handlesClosed: true,
+            elapsedMs: 12_345,
+            failures: [],
+            releaseGatesCleared: []
+        };
+        assert.equal(invoke("ValidateResult", result).accepted, true);
+        for (const mutate of [
+            value => { value.qualifying = true; },
+            value => { value.forced = true; },
+            value => { value.exitCode = 197; },
+            value => { value.observedConsoleProcessIds = [4000, 4242, 4242]; },
+            value => { value.postAttachIdentityMatch = false; },
+            value => { value.jobActiveProcesses = 1; },
+            value => { value.elapsedMs = 300_001; },
+            value => { value.elapsedMs = 310_001; },
+            value => { value.failures = ["synthetic"]; },
+            value => { value.controllerLifecyclePassed = false; }
+        ]) {
+            const value = structuredClone(result);
+            mutate(value);
+            assert.throws(() => invoke("ValidateResult", value), /result|lifecycle|qualifying|elapsed/i);
+        }
+
+        const failed = structuredClone(result);
+        Object.assign(failed, {
+            status: "failed",
+            controllerLifecyclePassed: false,
+            forced: true,
+            handlesClosed: false,
+            stopRequestSha256: null,
+            stopRequestObserved: false,
+            readySha256: null,
+            candidatePid: null,
+            candidateCreationTime: null,
+            candidateImagePath: null,
+            candidateVolumeSerial: null,
+            candidateFileId: null,
+            graceExpired: null,
+            observedConsoleProcessIds: null,
+            controllerInitiallyConsoleFree: true,
+            candidateCreatedSuspended: false,
+            privateConsoleRequested: false,
+            handleListConfigured: false,
+            jobAssignedBeforeResume: false,
+            initialJobMembership: false,
+            candidateIdentityCaptured: false,
+            candidateResumed: false,
+            threadHandleClosedBeforeReady: false,
+            preAttachIdentityMatch: false,
+            postAttachHandleUnsignaled: false,
+            postAttachIdentityMatch: false,
+            postAttachJobMembership: false,
+            consoleProcessIdsExact: false,
+            ctrlEventGenerated: false,
+            candidateExited: false,
+            exitCode: null,
+            jobActiveProcesses: null,
+            consoleFreeAfter: false,
+            failures: ["stop request deadline expired"]
+        });
+        assert.equal(invoke("ValidateResult", failed).accepted, true);
+        const malformedFailed = structuredClone(failed);
+        malformedFailed.postAttachIdentityMatch = "false";
+        assert.throws(() => invoke("ValidateResult", malformedFailed), /Boolean|result/i);
+
+        const boundary = structuredClone(result);
+        boundary.elapsedMs = 300_000;
+        assert.equal(invoke("ValidateResult", boundary).accepted, true);
+    });
+
+    powershellIt("emits deterministic inert fixture source", () => {
+        const fixture = invoke("GetFixtureSource");
+        assert.deepEqual(fixture.modes, ["handler", "ignore", "extra-participant"]);
+        assert.equal(fixture.readyMarker, "MYSPEED_CLEAN_STOP_FIXTURE_READY_V1");
+        assert.match(fixture.source, /Console\.CancelKeyPress/u);
+        assert.match(fixture.source, /Process\.Start/u);
+        assert.match(fixture.source, /participant==null\|\|participant\.HasExited/u);
+        assert.match(fixture.source, /Console\.Out\.WriteLine\("MYSPEED_CLEAN_STOP_FIXTURE_READY_V1"\)/u);
+        assert.match(fixture.source, /Console\.Out\.Flush\(\)/u);
+        assert.match(fixture.source, /Environment\.Exit\(0\)/u);
+        assert.doesNotMatch(fixture.source, /Socket|Http|WebRequest|TcpClient|UdpClient/u);
+    });
+
+    it("pins x64 ABI, handle-list, Job, and Ctrl+C mechanics", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        for (const token of [
+            "STARTUPINFOEXW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST", "UpdateProcThreadAttribute",
+            "CREATE_SUSPENDED", "CREATE_NEW_CONSOLE", "CREATE_UNICODE_ENVIRONMENT",
+            "EXTENDED_STARTUPINFO_PRESENT", "STARTF_USESTDHANDLES", "STARTF_USESHOWWINDOW",
+            "AssignProcessToJobObject", "IsProcessInJob", "GetProcessTimes",
+            "QueryFullProcessImageNameW", "GetConsoleProcessList", "AttachConsole",
+            "SetConsoleCtrlHandler", "GenerateConsoleCtrlEvent", "CTRL_C_EVENT", "FreeConsole",
+            "TerminateJobObject", "QueryInformationJobObject"
+        ]) assert.match(source, new RegExp(token), token);
+        assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOW\)\)\s*!=\s*104/u);
+        assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOEXW\)\)\s*!=\s*112/u);
+        for (const [type, bytes] of [
+            ["PROCESS_INFORMATION", 24], ["SECURITY_ATTRIBUTES", 24], ["FILETIME", 8],
+            ["IO_COUNTERS", 48], ["BASIC_LIMIT", 64], ["EXTENDED_LIMIT", 144],
+            ["ACCOUNTING", 48], ["BY_HANDLE_FILE_INFORMATION", 52]
+        ]) assert.match(source, new RegExp(`Marshal\\.SizeOf\\(typeof\\(${type}\\)\\)\\s*!=\\s*${bytes}`), type);
+        for (const [type, field, offset] of [
+            ["STARTUPINFOW", "cb", 0], ["STARTUPINFOW", "lpReserved", 8],
+            ["STARTUPINFOW", "lpDesktop", 16], ["STARTUPINFOW", "lpTitle", 24],
+            ["STARTUPINFOW", "dwX", 32], ["STARTUPINFOW", "dwY", 36],
+            ["STARTUPINFOW", "dwXSize", 40], ["STARTUPINFOW", "dwYSize", 44],
+            ["STARTUPINFOW", "dwXCountChars", 48], ["STARTUPINFOW", "dwYCountChars", 52],
+            ["STARTUPINFOW", "dwFillAttribute", 56], ["STARTUPINFOW", "dwFlags", 60],
+            ["STARTUPINFOW", "wShowWindow", 64], ["STARTUPINFOW", "cbReserved2", 66],
+            ["STARTUPINFOW", "lpReserved2", 72],
+            ["STARTUPINFOW", "hStdInput", 80], ["STARTUPINFOW", "hStdOutput", 88],
+            ["STARTUPINFOW", "hStdError", 96], ["STARTUPINFOEXW", "lpAttributeList", 104],
+            ["FILETIME", "Low", 0], ["FILETIME", "High", 4],
+            ["ACCOUNTING", "active", 40], ["BASIC_LIMIT", "flags", 16],
+            ["BASIC_LIMIT", "min", 24], ["BASIC_LIMIT", "active", 40],
+            ["BASIC_LIMIT", "affinity", 48], ["EXTENDED_LIMIT", "io", 64],
+            ["EXTENDED_LIMIT", "processMemory", 112]
+        ]) assert.match(source, new RegExp(`Marshal\\.OffsetOf\\(typeof\\(${type}\\),"${field}"\\)\\.ToInt32\\(\\)!=${offset}`), `${type}.${field}`);
+        assert.match(source, /IntPtr\.Size\*3!=24/u);
+        assert.doesNotMatch(source, /CREATE_NO_WINDOW|CREATE_NEW_PROCESS_GROUP/u);
+        assert.match(source, /ERROR_INSUFFICIENT_BUFFER\s*=\s*122/u);
+        assert.match(source, /CREATE_NEW\s*=\s*1/u);
+        assert.doesNotMatch(source, /OPEN_ALWAYS/u);
+        assert.match(source, /attributeListInitialized/u);
+        assert.match(source, /if\s*\(attributeListInitialized\)\s*DeleteProcThreadAttributeList/u);
+        assert.match(source, /ReleaseLaunchLocals\(ref pi\.hThread[\s\S]*s\.ThreadHandleClosedBeforeReady=true/u);
+        assert.match(source, /public void Dispose\(\)\{if\(!CloseAndProve\(\)\)throw/u);
+        assert.match(source, /if\s*\(!assigned\)[\s\S]*TerminateProcess\(pi\.hProcess/u);
+        assert.match(source, /else[\s\S]*TerminateJobObject\(s\.job/u);
+        assert.match(source, /WaitForSingleObject\(pi\.hProcess,cleanupTimeout\)/u);
+        assert.match(source, /ObserveExitedResult\(true\)/u);
+        assert.match(source, /GetExitCodeProcess\(process,out code\)/u);
+        assert.match(source, /AssertLaunchBudget\(launchWatch,normalRemaining,hardRemaining\)[\s\S]*ResumeThread/u);
+        assert.match(source, /WaitForSingleObject\(process,RemainingBudget\(grace,stopWatch\)\)/u);
+        assert.match(source, /ReleaseLaunchLocals\(ref pi\.hThread[\s\S]*ThreadHandleClosedBeforeReady=true/u);
+        assert.match(source, /controllerInitiallyConsoleFree=\$state\.controllerInitiallyConsoleFree/u);
+        assert.match(source, /FileAttributes\]::ReparsePoint/u);
+        assert.match(source, /\[MySpeed\.Qualification\.CleanStop\.Session\]::AssertConsoleFree\(\)[\s\S]*\[MySpeed\.Qualification\.CleanStop\.Session\]::ObserveAbi\(\)/u);
+        assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$request \$loaded\.sha256 \$abiSha \$operations/u);
+        assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$launchRequest \('d'\*64\) \('8'\*64\) \$operations/u);
+    });
+
+    powershellIt("rejects the native entry locally before native code", () => {
+        const result = childProcess.spawnSync(POWERSHELL, [
+            "-NoLogo", "-NoProfile", "-NonInteractive", "-File", SCRIPT,
+            "-Mode", "InvokeHostedController",
+            "-LaunchRequestPath", path.join(process.env.TEMP, "missing-clean-stop-request.json"),
+            "-ExpectedLaunchRequestSha256", SHA256,
+            "-ExpectedRunId", RUN_ID,
+            "-ExpectedRunAttempt", RUN_ATTEMPT,
+            "-ExpectedEventSha", EVENT_SHA,
+            "-ExpectedSourceSha", SOURCE_SHA,
+            "-ExpectedImageVersion", "20260907.229.1",
+            "-Nonce", NONCE
+        ], {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
+        assert.notEqual(result.status, 0);
+        assert.match(result.stderr, /hosted context/i);
+        assert.doesNotMatch(result.stderr, /Launch request path|Add-Type/i);
+    });
+});

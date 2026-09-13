@@ -374,7 +374,17 @@ function ConvertTo-MyspeedCanaryIpState {
     }
     foreach($entry in $addressRows){
         $index=Assert-MyspeedCanaryInteger $entry.InterfaceIndex 'IP address interface index' 1 4294967295
-        $compartment=Assert-MyspeedCanaryInteger $entry.CompartmentId 'IP address compartment' 0 4294967295
+        # MSFT_NetIPAddress has no CompartmentId. Its interface index must map
+        # to one compartment in the complete MSFT_NetIPInterface snapshot.
+        # IPv4/IPv6 rows may repeat that same compartment; ambiguity is rejected.
+        $compartments=@($interfaceRows|Where-Object {$_.InterfaceIndex -eq $index}|
+            ForEach-Object {$_.CompartmentId}|Sort-Object -Unique)
+        if($compartments.Count -ne 1){throw 'IP address compartment cannot be mapped unambiguously'}
+        $compartment=$compartments[0]
+        if($entry.PSObject.Properties.Name -ccontains 'CompartmentId'){
+            $reported=Assert-MyspeedCanaryInteger $entry.CompartmentId 'IP address compartment' 0 4294967295
+            if($reported -ne $compartment){throw 'IP address compartment differs from its interface'}
+        }
         $literal=Assert-MyspeedCanaryString $entry.IPAddress 'IP address literal';try{$address=[Net.IPAddress]::Parse($literal)}catch{throw 'IP address literal is invalid'}
         $loop=[Net.IPAddress]::IsLoopback($address);$matches=@($Inventory|Where-Object {$_.interfaceIndex -eq $index})
         if($matches.Count -gt 1 -or ($matches.Count -eq 0 -and -not $loop)){throw 'Non-loopback IP address cannot be mapped unambiguously to an adapter'}
@@ -1496,15 +1506,20 @@ public static class MySpeedCanaryJob {
                 $taskRunning=$task.State -ceq 'Running'}
             $readyPresent=Test-Path -LiteralPath $State.request.readyPath -PathType Leaf
             $cleanupReady=if($readyPresent){& $readJson $State.request.readyPath $maximumRequest}else{$null}
-            $cancelCallback={& $cancelRecoveryWhenAdaptersEnabled}.GetNewClosure()
+            # Nested dynamic modules do not inherit the outer closure's captured
+            # variables. Reuse its existing callback and explicitly bind locals
+            # for the callbacks that need this cleanup invocation's readiness.
+            $cancelCallback=$cancelRecoveryWhenAdaptersEnabled
+            $cleanupState=$State;$cleanupPoll=$poll;$cleanupDeadline=$serviceDeadline
+            $cleanupWaitProcess=$waitRecoveryProcessGone
             $waitTaskCallback={
-                $taskTimer=[Diagnostics.Stopwatch]::StartNew();do{$observed=Get-ScheduledTask -TaskName $State.request.taskName -ErrorAction Stop
-                    if($observed.State -cne 'Running'){return};Start-Sleep -Milliseconds $poll
-                }while($taskTimer.Elapsed.TotalSeconds -lt $serviceDeadline)
+                $taskTimer=[Diagnostics.Stopwatch]::StartNew();do{$observed=Get-ScheduledTask -TaskName $cleanupState.request.taskName -ErrorAction Stop
+                    if($observed.State -cne 'Running'){return};Start-Sleep -Milliseconds $cleanupPoll
+                }while($taskTimer.Elapsed.TotalSeconds -lt $cleanupDeadline)
                 throw 'Owned recovery task remains active; cleanup cannot interrupt restoration'
             }.GetNewClosure()
-            $waitProcessCallback={& $waitRecoveryProcessGone $cleanupReady}.GetNewClosure()
-            $unregisterCallback={Unregister-ScheduledTask -TaskName $State.request.taskName -Confirm:$false -ErrorAction Stop}.GetNewClosure()
+            $waitProcessCallback={& $cleanupWaitProcess $cleanupReady}.GetNewClosure()
+            $unregisterCallback={Unregister-ScheduledTask -TaskName $cleanupState.request.taskName -Confirm:$false -ErrorAction Stop}.GetNewClosure()
             [void](& $disposeRecoveryTask $taskPresent $taskRunning $readyPresent $cancelCallback $waitTaskCallback `
                 $waitProcessCallback $unregisterCallback)
         }catch{[void]$cleanupFailures.Add('task cleanup: '+$_.Exception.Message)}}

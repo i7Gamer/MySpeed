@@ -77,7 +77,7 @@ const reject = (mode, input, pattern) => {
     assert.match(`${result.stdout}\n${result.stderr}`, pattern);
 };
 
-const runFactoryFixture = (removeClosure = false, inspectAdapters = false, separateScript = false) => {
+const runFactoryFixture = (removeClosure = false, inspectAdapters = false, separateScript = false, inspectTaskCleanup = false) => {
     const program = `
 $ErrorActionPreference='Stop'
 Import-Module Microsoft.PowerShell.Utility -Global -ErrorAction Stop
@@ -104,6 +104,13 @@ for($index=0;$index -lt $expectedHeader.Count;$index++){
 $safeBody=($statements|Select-Object -Skip $expectedHeader.Count|ForEach-Object {$_.Extent.Text}) -join [Environment]::NewLine
 if([regex]::Matches($safeBody,'return @\\{').Count -ne 1){throw 'Factory return instrumentation shape differs'}
 $safeBody=$safeBody.Replace('return @{','return @{ __reviewGetAdapters=$getNativeAdapters;')
+if(${inspectTaskCleanup ? "$true" : "$false"}){
+  $safeBody=$safeBody.Replace('$restore={',
+    '$cancelRecoveryWhenAdaptersEnabled={ [void]$State.fixtureEvents.Add("cancel") }.GetNewClosure();'+
+    '$waitRecoveryProcessGone={param($Ready) [void]$State.fixtureEvents.Add("processGone") }.GetNewClosure();'+
+    '$readJson={param($Path,$Maximum) return [pscustomobject]@{fixture=$true} }.GetNewClosure();'+
+    '$restore={')
+}
 if(${removeClosure ? "$true" : "$false"}){
   $callbackStart=$safeBody.IndexOf('verifyOffline={',[StringComparison]::Ordinal)
   $closureEnd=$safeBody.IndexOf('}.GetNewClosure()',$callbackStart,[StringComparison]::Ordinal)
@@ -168,6 +175,35 @@ function New-Fixture {
   return [pscustomobject]@{callbacks=$callbacks;state=$privateState}
 }
 $fixture=New-Fixture
+if(${inspectTaskCleanup ? "$true" : "$false"}){
+  $fixture.state.taskOwnershipEligible=$true
+  $fixture.state.fixtureEvents=[Collections.Generic.List[string]]::new()
+  $fixture.state.request=[pscustomobject]@{taskName='fixture-task';readyPath='fixture-ready'}
+  $fixture.state.recoveryPowerShell='fixture-powershell'
+  $fixture.state.recoveryArguments='fixture-arguments'
+  $global:myspeedFixtureEvents=$fixture.state.fixtureEvents
+  function global:Get-ScheduledTask {
+    param([string]$TaskName)
+    if($TaskName -and $TaskName -cne 'fixture-task'){throw 'Unexpected fixture task'}
+    [pscustomobject]@{TaskName='fixture-task';State=$(if($TaskName){'Ready'}else{'Running'})
+      Actions=@([pscustomobject]@{Execute='fixture-powershell';Arguments='fixture-arguments'})}
+  }
+  function global:Unregister-ScheduledTask {
+    param([string]$TaskName,[bool]$Confirm)
+    if($TaskName -cne 'fixture-task' -or $Confirm){throw 'Unexpected fixture unregister'}
+    [void]$global:myspeedFixtureEvents.Add('unregister')
+  }
+  function global:Test-Path {
+    param([string]$LiteralPath,[string]$PathType)
+    if($LiteralPath -cne 'fixture-ready' -or $PathType -cne 'Leaf'){throw 'Unexpected fixture path check'}
+    return $true
+  }
+  & $fixture.callbacks.postReconnectCleanup
+  if(($fixture.state.fixtureEvents -join ',') -cne 'cancel,processGone,unregister'){
+    throw 'Actual cleanup callback order differs'
+  }
+  $fixture.state.taskOwnershipEligible=$false
+}
 if(${inspectAdapters ? "$true" : "$false"}){
   $observed=& $fixture.callbacks.__reviewGetAdapters
   if($observed.raw.Count -ne 2 -or $observed.inventory.Count -ne 2 -or $observed.inventory[0] -is [array]){
@@ -355,6 +391,7 @@ describe("candidate-neutral WinSW offline canary contract", () => {
             "validates the immutable restoration request and exact owned path derivation",
             "strictly binds the SYSTEM watchdog readiness used by every exit proof",
             "requires the whole owned WinSW executable path set gone before normal adapter restore",
+            "retains nested recovery task cleanup callbacks after factory return",
             "generates an inert no-spawn child bound to exact loopback and TEST-NET literals"
         ]);
     });
@@ -671,9 +708,17 @@ Set-StrictMode -Version Latest
         }
         for (const [admin, status] of [[ADAPTER_ADMIN_UP, "Disabled"], [ADAPTER_ADMIN_DOWN, "Up"],
             [ADAPTER_ADMIN_DOWN, "Disconnected"]]) {
-            reject("NormalizeAdapters", {adapters: [adapter(admin, status)]},
-                new RegExp(`administrative status is inconsistent.*admin=${admin};status=${status}`, "iu"));
+            const pattern = new RegExp(`administrative status is inconsistent.*admin=${admin};status=${status}`, "isu");
+            assert.match(`Native adapter administrative status is inconsistent\u001b[0m\n` +
+                `\u001b[31;1m     | (admin=${admin};status=${status})\u001b[0m`, pattern);
+            reject("NormalizeAdapters", {adapters: [adapter(admin, status)]}, pattern);
         }
+    });
+
+    windowsFilesystemPowershellIt("retains nested recovery task cleanup callbacks after factory return", () => {
+        const result = runFactoryFixture(false, false, true, true);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+        assert.deepEqual(JSON.parse(result.stdout), {passed: true, nativeOperations: 0});
     });
 
     it("uses the documented native LUID instead of optional display properties", () => {
@@ -842,6 +887,24 @@ if(-not $rejected){throw 'Adapter LUID drift was accepted'}
         assert.equal(accepted[0].routable, true);
         assert.equal(accepted[1].loopback, true);
         assert.equal(accepted[1].routable, false);
+
+        // MSFT_NetIPAddress does not expose CompartmentId. Bind each address
+        // to the unique compartment reported by its IP interface inventory.
+        const nativeAddresses = value();
+        for (const address of nativeAddresses.addresses) delete address.CompartmentId;
+        assert.deepEqual(run("ProjectIpState", nativeAddresses), accepted);
+        const dualStack = structuredClone(nativeAddresses);
+        dualStack.interfaces.push({...dualStack.interfaces[0]});
+        assert.equal(run("ProjectIpState", dualStack).length, accepted.length + 1);
+        for (const mutate of [
+            item => { item.interfaces.push({...item.interfaces[0], CompartmentId: 2}); },
+            item => { item.interfaces = []; },
+            item => { item.addresses[0].CompartmentId = 2; },
+            item => { item.addresses[0].CompartmentId = "1"; }
+        ]) {
+            const changed = structuredClone(nativeAddresses); mutate(changed);
+            reject("ProjectIpState", changed, /compartment|integer/i);
+        }
 
         const multiple = value();
         multiple.adapters.push({InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",

@@ -105,8 +105,11 @@ describe("hosted Linux KVM capability contract", () => {
     it("embeds the exact minimal KVM HLT operations and named bounds", () => {
         for (const token of ["KVM_GET_API_VERSION", "KVM_CREATE_VM", "KVM_SET_USER_MEMORY_REGION",
             "KVM_CREATE_VCPU", "KVM_GET_VCPU_MMAP_SIZE", "KVM_GET_SREGS", "KVM_SET_SREGS",
-            "KVM_SET_REGS", "KVM_RUN", "KVM_EXIT_HLT", "lstat", "fstat", "S_ISCHR"])
+            "KVM_SET_REGS", "KVM_RUN", "KVM_EXIT_HLT", "lstat", "fstat", "S_ISCHR", "getpid",
+            "probe-process"])
             assert.match(KVM_PROBE_SOURCE, new RegExp(`\\b${token}\\b`), token);
+        assert.match(KVM_PROBE_SOURCE, /stage = "lstat";\s*if \(lstat\("\/dev\/kvm"/u);
+        assert.equal(KVM_PROBE_SOURCE.includes('/proc/self/stat'), true);
         assert.equal(CAPABILITY_LIMITS.probeTimeoutMs, 30_000);
         assert.equal(CAPABILITY_LIMITS.cleanupTimeoutMs, 5_000);
         assert.equal(CAPABILITY_LIMITS.streamBytes, 16_384);
@@ -487,16 +490,11 @@ describe("hosted Linux KVM capability contract", () => {
     });
 });
 
-describe("manual and same-repository PR nonpublishing capability workflow", () => {
+describe("manual-only nonpublishing ordinary-user capability workflow", () => {
     it("uses a source-bound producer and a no-checkout exact-artifact execution job", async () => {
         const {parse} = await import("yaml");
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
-        assert.deepEqual(Object.keys(workflow.on), ["pull_request", "workflow_dispatch"]);
-        assert.deepEqual(workflow.on.pull_request.paths, [
-            ".github/workflows/linux-kvm-capability.yml",
-            "scripts/qualification/linux-kvm-capability.mjs",
-            "tests/server/linuxKvmCapability.test.js"
-        ]);
+        assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
         assert.deepEqual(workflow.permissions, {actions: "read", contents: "read"});
         assert.deepEqual(Object.keys(workflow.jobs), ["prepare", "observe"]);
         assert.equal(workflow.env.EXPECTED_SOURCE_SHA,

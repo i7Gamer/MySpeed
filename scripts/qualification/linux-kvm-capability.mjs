@@ -65,6 +65,7 @@ export const KVM_PROBE_SOURCE = String.raw`#define _GNU_SOURCE
 #include <linux/kvm.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
@@ -76,6 +77,31 @@ export const KVM_PROBE_SOURCE = String.raw`#define _GNU_SOURCE
 #define PROBE_RUN_MAPPING_MAX_BYTES 1048576
 
 struct facts { struct stat value; int present; };
+
+static int read_start_ticks(uintmax_t *value) {
+    FILE *file = fopen("/proc/self/stat", "r");
+    char buffer[4096];
+    if (file == NULL) return -1;
+    int read_ok = fgets(buffer, sizeof(buffer), file) != NULL;
+    int close_result = fclose(file);
+    if (!read_ok || close_result != 0) return -1;
+    char *cursor = strrchr(buffer, ')');
+    if (cursor == NULL || cursor[1] != ' ') return -1;
+    cursor += 2;
+    for (int field = 3; field < 22; field++) {
+        while (*cursor == ' ') cursor++;
+        if (*cursor == '\0') return -1;
+        while (*cursor != '\0' && *cursor != ' ') cursor++;
+    }
+    while (*cursor == ' ') cursor++;
+    errno = 0;
+    char *end = NULL;
+    uintmax_t parsed = strtoumax(cursor, &end, 10);
+    if (errno != 0 || end == cursor || (*end != ' ' && *end != '\n' && *end != '\0') || parsed == 0)
+        return -1;
+    *value = parsed;
+    return 0;
+}
 
 static void print_facts(const struct facts *facts) {
     if (!facts->present) { fputs("null", stdout); return; }
@@ -92,8 +118,16 @@ int main(void) {
     int kvm_fd = -1, vm_fd = -1, vcpu_fd = -1, reopen_fd = -1;
     void *memory = MAP_FAILED, *run_mapping = MAP_FAILED;
     size_t run_bytes = 0;
+    uintmax_t start_ticks = 0;
     struct facts before = {{0}, 0}, opened = {{0}, 0}, reopened = {{0}, 0};
 
+    stage = "process-identity";
+    if (read_start_ticks(&start_ticks) != 0 ||
+        fprintf(stderr, "{\"schemaVersion\":1,\"kind\":\"linux-kvm-probe-process\",\"pid\":%ju,\"startTicks\":\"%ju\"}\n",
+            (uintmax_t)getpid(), start_ticks) < 0 || fflush(stderr) != 0) {
+        saved_errno = errno == 0 ? EIO : errno; goto cleanup;
+    }
+    stage = "lstat";
     if (lstat("/dev/kvm", &before.value) != 0) { saved_errno = errno; goto cleanup; }
     before.present = 1;
     if (!S_ISCHR(before.value.st_mode)) { stage = "device-type"; goto cleanup; }

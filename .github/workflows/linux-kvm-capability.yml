@@ -1,14 +1,9 @@
 name: Hosted Linux KVM capability observation
 
-# Manual or same-repository PR, candidate-neutral, nonqualifying observation
+# Manual-only candidate-neutral, nonqualifying ordinary-user diagnostic
 # only. It downloads no media or QEMU, creates no VM disk, and cannot clear a
 # release gate.
 on:
-  pull_request:
-    paths:
-      - .github/workflows/linux-kvm-capability.yml
-      - scripts/qualification/linux-kvm-capability.mjs
-      - tests/server/linuxKvmCapability.test.js
   workflow_dispatch:
 
 permissions:
