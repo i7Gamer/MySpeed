@@ -104,6 +104,55 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.match(source, /if\(SecurityRestoredBeforeCancel\)return ResponseOk/);
         assert.match(source, /if\(DenyInjectionAttempted\)throw[\s\S]*DenyInjectionAttempted=true;[\s\S]*lease\.ApplyDeny\(\)/,
             "the injected failure must be one-way and never re-arm during rollback callbacks");
+        assert.match(source, /InstallContextTracker/);
+        assert.match(source, /if\(!installContext\.InCandidate\)return ResponseOk/,
+            "nested predecessor actions must not arm the candidate failure");
+        assert.match(source, /!state\.InstallContextBalanced/,
+            "the candidate and nested predecessor install contexts must close exactly");
+    });
+
+    it("tracks the retained nested predecessor timeline and rejects malformed install contexts", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        const candidate = "{FF93E978-E119-4D48-B37B-248457E950A2}";
+        const predecessor = "{1716C600-7C5B-45CB-89F1-584214207169}";
+        assert.match(source, /readonly Stack<string> contexts=new Stack<string>\(\)/);
+        assert.match(source, /MessageInstallStart=0x1A000000,MessageInstallEnd=0x1B000000/);
+        assert.match(source, /messageClass==MessageInstallStart\|\|messageClass==MessageInstallEnd/);
+        assert.match(source, /String\.Equals\(contexts\.Peek\(\),productCode,StringComparison\.Ordinal\)/);
+        const replay = events => {
+            const contexts = [];
+            const observations = [];
+            let candidateStarted = false;
+            let predecessorStarted = false;
+            for (const event of events) {
+                if (event.type === "start") {
+                    if (event.code === candidate) {
+                        if (candidateStarted || contexts.length !== 0) throw new Error("candidate context");
+                        candidateStarted = true;
+                    } else if (event.code === predecessor) {
+                        if (predecessorStarted || contexts.at(-1) !== candidate) throw new Error("predecessor context");
+                        predecessorStarted = true;
+                    } else throw new Error("unknown context");
+                    contexts.push(event.code);
+                } else if (event.type === "end") {
+                    if (contexts.at(-1) !== event.code) throw new Error("unbalanced context");
+                    contexts.pop();
+                } else observations.push({action: event.action,
+                    candidateContext: contexts.length === 1 && contexts[0] === candidate});
+            }
+            return {contexts, observations};
+        };
+        const retained = replay([
+            {type: "start", code: candidate}, {type: "action", action: "RemoveExistingProducts"},
+            {type: "start", code: predecessor}, {type: "action", action: "InstallFiles"},
+            {type: "end", code: predecessor}, {type: "action", action: "InstallFiles"},
+            {type: "end", code: candidate}
+        ]);
+        assert.deepEqual(retained.contexts, []);
+        assert.deepEqual(retained.observations.map(value => value.candidateContext), [true, false, true]);
+        assert.throws(() => replay([{type: "start", code: candidate}, {type: "start", code: candidate}]));
+        assert.throws(() => replay([{type: "start", code: candidate}, {type: "end", code: predecessor}]));
+        assert.notDeepEqual(replay([{type: "start", code: candidate}, {type: "start", code: predecessor}]).contexts, []);
     });
 
     it("requires predecessor setup and exact post-return cleanup without product inventory shortcuts", () => {

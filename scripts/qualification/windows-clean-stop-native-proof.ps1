@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestLauncherBridge','TestActiveLogReader','TestCollectionGate','InvokeHostedProof')]
+    [ValidateSet('Library','GetContract','ValidateTransport','ValidateInventory','ValidateCompilerOperation','ValidateManifest','ValidateCase','AssessMatrix','TestObserver','TestDetachedObserver','TestLauncherBridge','TestActiveLogReader','TestCollectionGate','TestFailureStreams','InvokeHostedProof')]
     [string] $Mode='Library',
     [string] $InputJson='',
     [string] $ClosureRoot='',
@@ -44,6 +44,8 @@ $script:ReviewedFileIdentitySha256='4e1f39d98f08606ac53f314d105e918e0b1080c5363c
 $script:EvidenceInventoryKind='myspeed-windows-clean-stop-evidence-inventory'
 $script:MaximumAggregateEvidenceBytes=33554432
 $script:MaximumFailureMessageLength=1024
+$script:MaximumFailureFieldBytes=128
+$script:MaximumFailureStreamBytes=64
 $script:NativeMode='InvokeHostedProof'
 
 function Assert-MyspeedProofEarlyHostedContext {
@@ -332,6 +334,53 @@ function Get-MyspeedProofOuterArguments {
         '-ExpectedRunId',$Launch.expectedRunId,'-ExpectedRunAttempt',$Launch.expectedRunAttempt,
         '-ExpectedEventSha',$Launch.expectedEventSha,'-ExpectedSourceSha',$Launch.expectedSourceSha,
         '-ExpectedImageVersion',$Launch.expectedImageVersion,'-Nonce',$Launch.nonce)
+}
+
+function Get-MyspeedProofFailedProcessStreams {
+    param([object]$Launch)
+    $reads=[ordered]@{}
+    foreach($entry in ([ordered]@{result=$Launch.resultPath;entryDiagnostic=($Launch.resultPath+'.entry-failure.json')
+        stdout=$Launch.stdoutPath;stderr=$Launch.stderrPath}).GetEnumerator()){
+        if(-not [IO.File]::Exists($entry.Value)){$reads[$entry.Key]=$null;continue}
+        try{$reads[$entry.Key]=Read-MyspeedProofBoundedFile $entry.Value 2097152 -AllowEmpty}catch{$reads[$entry.Key]='unreadable'}
+    }
+    $parts=[Collections.Generic.List[string]]::new()
+    $resultFailure='unavailable'
+    if($null -ne $reads.result -and $reads.result -isnot [string]){
+        try{
+            $parsed=(ConvertFrom-MyspeedProofJson ([Text.UTF8Encoding]::new($false,$true).GetString($reads.result.bytes)) 'Failed controller result')
+            if($parsed.failures -is [object[]] -and $parsed.failures.Count -gt 0 -and $parsed.failures[0] -is [string]){
+                $failureBytes=[Text.UTF8Encoding]::new($false).GetBytes($parsed.failures[0])
+                $take=[Math]::Min($script:MaximumFailureFieldBytes,$failureBytes.Length);$prefix=New-Object byte[] $take
+                if($take -gt 0){[Array]::Copy($failureBytes,$prefix,$take)};$resultFailure=[Convert]::ToBase64String($prefix)
+            }
+        }catch{}
+    }
+    [void]$parts.Add("resultFailurePrefixBase64=$resultFailure")
+    $entryFailure='unavailable'
+    if($null -ne $reads.entryDiagnostic -and $reads.entryDiagnostic -isnot [string]){
+        try{
+            $parsed=(ConvertFrom-MyspeedProofJson ([Text.UTF8Encoding]::new($false,$true).GetString($reads.entryDiagnostic.bytes)) 'Controller entry diagnostic')
+            if($parsed.kind -ceq 'myspeed-windows-clean-stop-controller-entry-failure' -and $parsed.messagePrefixBase64 -is [string]){
+                $failureBytes=[Convert]::FromBase64String($parsed.messagePrefixBase64)
+                if([Convert]::ToBase64String($failureBytes) -cne $parsed.messagePrefixBase64){throw 'Entry diagnostic base64 differs'}
+                $take=[Math]::Min($script:MaximumFailureFieldBytes,$failureBytes.Length);$prefix=New-Object byte[] $take
+                if($take -gt 0){[Array]::Copy($failureBytes,$prefix,$take)};$entryFailure=[Convert]::ToBase64String($prefix)
+            }
+        }catch{}
+    }
+    [void]$parts.Add("entryFailurePrefixBase64=$entryFailure")
+    foreach($entry in ([ordered]@{result=$reads.result;entryDiagnostic=$reads.entryDiagnostic;stdout=$reads.stdout;stderr=$reads.stderr}).GetEnumerator()){
+        if($null -eq $entry.Value){[void]$parts.Add("$($entry.Key)=absent");continue}
+        if($entry.Value -is [string]){[void]$parts.Add("$($entry.Key)=unreadable");continue}
+        $read=$entry.Value;$summary="$($entry.Key)Bytes=$($read.bytes.Length),$($entry.Key)Sha256=$(Get-MyspeedProofSha256 $read.bytes)"
+        if($entry.Key -in @('stdout','stderr')){
+            $take=[Math]::Min($script:MaximumFailureStreamBytes,$read.bytes.Length);$prefix=New-Object byte[] $take
+            if($take -gt 0){[Array]::Copy($read.bytes,$prefix,$take)};$summary+=",$($entry.Key)PrefixBase64=$([Convert]::ToBase64String($prefix))"
+        }
+        [void]$parts.Add($summary)
+    }
+    return ($parts -join ';')
 }
 
 function Assert-MyspeedProofOuterLauncher {
@@ -1261,6 +1310,10 @@ function Invoke-MyspeedHostedCleanStopProof {
         if($outer.status -ceq 'failed'){
             [void](Assert-MyspeedProofCaseCollectionGate ([pscustomobject][ordered]@{status=$outer.status;failure=$outer.failure;files=$collectionFiles}))
         }
+        $expectedOuterExit=if($launch.caseId -ceq 'handler'){0}else{1}
+        if($outer.status -ceq 'completed' -and $outer.exitCode -is [ValueType] -and
+            [int64]$outer.exitCode -ne $expectedOuterExit){$streams=Get-MyspeedProofFailedProcessStreams $launch
+            throw "Outer exit code differs: actual=$($outer.exitCode); expected=$expectedOuterExit; $streams"}
         [void](Assert-MyspeedProofOuterLauncher $manifest $launch $launchSha $outer)
         [void](Assert-MyspeedProofCaseCollectionGate ([pscustomobject][ordered]@{status=$outer.status;failure=$outer.failure;files=$collectionFiles}))
         $documents=[ordered]@{}
@@ -1376,6 +1429,7 @@ try{
         'TestLauncherBridge' {Invoke-MyspeedProofInjectedLauncherBridge}
         'TestActiveLogReader' {Invoke-MyspeedProofActiveLogReaderFixture (ConvertFrom-MyspeedProofJson $InputJson 'Active-log fixture')}
         'TestCollectionGate' {Assert-MyspeedProofCaseCollectionGate (ConvertFrom-MyspeedProofJson $InputJson 'Case collection gate')}
+        'TestFailureStreams' {Get-MyspeedProofFailedProcessStreams (ConvertFrom-MyspeedProofJson $InputJson 'Failure stream request')}
         'InvokeHostedProof' {Invoke-MyspeedHostedCleanStopProof}
     }
     $output|ConvertTo-Json -Depth 40 -Compress

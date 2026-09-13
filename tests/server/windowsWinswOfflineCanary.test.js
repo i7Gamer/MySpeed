@@ -868,6 +868,45 @@ if(-not $rejected){throw 'Adapter LUID drift was accepted'}
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     });
 
+    powershellIt("preserves nested JSON arrays through returned IP projection and validation", () => {
+        const program = `
+. '${SCRIPT.replaceAll("'", "''")}' -Mode Library
+$operations=New-MyspeedCanaryProviderProjectionOperations
+$raw=[object[]]@([pscustomobject]@{InterfaceGuid=[guid]'11111111-1111-1111-1111-111111111111';NetLuid=[uint64]0x0006000001000000
+  Hidden=$false;InterfaceType=[uint32]6;InterfaceAdminStatus=[uint32]1;Status='Up';ifIndex=[uint32]4})
+$inventory=& $operations.normalizeAdapters $raw
+$interface=[pscustomobject]@{InterfaceIndex=[uint32]4;CompartmentId=[uint32]1;ConnectionState=[byte]1}
+$address=[pscustomobject]@{InterfaceIndex=[uint32]4;IPAddress='192.0.2.10'}
+$route=[pscustomobject]@{InterfaceIndex=[uint32]4;CompartmentId=[uint32]1;State=[byte]0}
+$cases=@(
+  [pscustomobject]@{interfaces=[object[]]@();addresses=[object[]]@();routes=[object[]]@()},
+  [pscustomobject]@{interfaces=[object[]]@($interface);addresses=[object[]]@();routes=[object[]]@()},
+  [pscustomobject]@{interfaces=[object[]]@($interface);addresses=[object[]]@($address);routes=[object[]]@($route)}
+)
+$results=[Collections.Generic.List[object]]::new()
+foreach($case in $cases){
+  $projected=& $operations.projectIpState $inventory $case.interfaces $case.addresses $case.routes
+  [void]$projected.Count
+  [void](Assert-MyspeedCanaryArray $projected 'Projected IP state')
+  [void]$results.Add([pscustomobject]@{ipState=$projected})
+}
+$results.ToArray()|ConvertTo-Json -Depth 6 -Compress
+`;
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand",
+                Buffer.from(program, "utf16le").toString("base64")],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.error, undefined, result.error?.message);
+        assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+        const records = JSON.parse(result.stdout);
+        const expectedKinds = [[], ["interface"], ["interface", "address", "route"]];
+        assert.equal(records.length, expectedKinds.length);
+        records.forEach((record, index) => {
+            assert.ok(Array.isArray(record.ipState), "Nested IP state must remain a JSON array");
+            assert.deepEqual(record.ipState.map(entry => entry.kind), expectedKinds[index]);
+        });
+    });
+
     powershellIt("projects the same strict all-compartment IP state before and after adapter disable", () => {
         const value = () => ({
             adapters: [{InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",

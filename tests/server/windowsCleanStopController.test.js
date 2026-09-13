@@ -562,6 +562,26 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /\[MySpeed\.Qualification\.CleanStop\.Session\]::AssertConsoleFree\(\)[\s\S]*\[MySpeed\.Qualification\.CleanStop\.Session\]::ObserveAbi\(\)/u);
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$request \$loaded\.sha256 \$abiSha \$operations/u);
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$launchRequest \('d'\*64\) \('8'\*64\) \$operations/u);
+        assert.match(source, /Assert-MyspeedCleanPhysicalLaunchPaths \$request[\s\S]*?entryDiagnosticPath[\s\S]*?try\{[\s\S]*?Add-Type[\s\S]*?Write-MyspeedCleanEntryFailure/u);
+    });
+
+    powershellIt("writes a bounded create-new diagnostic for failures after physical request validation", () => {
+        const tempResult = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                "[Console]::Out.Write([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))"],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(tempResult.status, 0, tempResult.stderr);
+        const directory = fs.mkdtempSync(path.join(tempResult.stdout, "myspeed-clean-entry-"));
+        const diagnosticPath = path.join(directory, "entry.json");
+        try {
+            const message = "x".repeat(700);
+            const result = invoke("TestEntryFailure", {path: diagnosticPath, message});
+            assert.equal(result.kind, "myspeed-windows-clean-stop-controller-entry-failure");
+            assert.equal(result.messageBytes, 700);
+            assert.equal(Buffer.from(result.messagePrefixBase64, "base64").length, 512);
+            assert.deepEqual(JSON.parse(fs.readFileSync(diagnosticPath, "utf8")), result);
+            assert.throws(() => invoke("TestEntryFailure", {path: diagnosticPath, message}));
+        } finally { fs.rmSync(directory, {recursive: true, force: true}); }
     });
 
     powershellIt("rejects the native entry locally before native code", () => {

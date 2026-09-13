@@ -404,7 +404,9 @@ function ConvertTo-MyspeedCanaryIpState {
         $loop=if($matches.Count -eq 0){$true}else{$matches[0].loopback};$enabled=$matches.Count -eq 1 -and $matches[0].enabled
         [void]$ip.Add([pscustomobject]@{kind='route';compartmentId=$compartment;loopback=$loop;routable=(-not $loop -and $enabled)})
     }
-    Write-Output -NoEnumerate ([object[]]$ip)
+    # Inbox PowerShell decorates Write-Output -NoEnumerate arrays with Count,
+    # making nested JSON serialize as {value,Count}. Return one undecorated array.
+    return ,([object[]]$ip)
 }
 
 function New-MyspeedCanaryProviderProjectionOperations {

@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Library','GetContract','GetAbiContract','ValidateAbi','ValidateLaunchRequest','ValidateStdoutReadiness','ValidateStopRequest',
-        'ValidateResult','GetFixtureSource','GetNativeSource','TestLifecycle','InvokeHostedController')]
+        'ValidateResult','GetFixtureSource','GetNativeSource','TestLifecycle','TestEntryFailure','InvokeHostedController')]
     [string] $Mode='Library',
     [string] $InputJson='',
     [string] $LaunchRequestPath='',
@@ -24,6 +24,7 @@ $script:STOP_REQUEST_POLL_MS=50
 $script:GRACEFUL_EXIT_TIMEOUT_MS=30000
 $script:FORCED_CLEANUP_TIMEOUT_MS=10000
 $script:MaximumJsonBytes=262144
+$script:MaximumEntryFailurePrefixBytes=512
 $script:Repository='i7Gamer/MySpeed'
 $script:ImageOS='win25-vs2026'
 $script:LaunchKind='myspeed-windows-clean-stop-launch'
@@ -838,6 +839,17 @@ function Write-MyspeedCleanCreateNewJson {
     return [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace('-','').ToLowerInvariant()
 }
 
+function Write-MyspeedCleanEntryFailure {
+    param([string]$Path,[string]$Message)
+    $messageBytes=[Text.UTF8Encoding]::new($false).GetBytes($Message)
+    $take=[Math]::Min($script:MaximumEntryFailurePrefixBytes,$messageBytes.Length);$prefix=New-Object byte[] $take
+    if($take -gt 0){[Array]::Copy($messageBytes,$prefix,$take)}
+    $record=[pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-clean-stop-controller-entry-failure'
+        stage='controller-entry';messageBytes=$messageBytes.Length;messagePrefixBase64=[Convert]::ToBase64String($prefix)}
+    [void](Write-MyspeedCleanCreateNewJson $Path $record)
+    return $record
+}
+
 function Invoke-MyspeedHostedCleanStopController {
     param([string]$RequestPath,[string]$RequestSha,[string]$RunId,[string]$RunAttempt,
         [string]$EventSha,[string]$SourceSha,[string]$ImageVersion,[string]$ExpectedNonce)
@@ -853,6 +865,10 @@ function Invoke-MyspeedHostedCleanStopController {
         if($request.($binding.Key) -cne $binding.Value){throw 'Native launch identity differs'}
     }
     Assert-MyspeedCleanPhysicalLaunchPaths $request
+    $entryDiagnosticPath=$request.resultPath+'.entry-failure.json'
+    Assert-MyspeedCleanDescendant $request.taskRoot $entryDiagnosticPath 'Controller entry diagnostic path'
+    Assert-MyspeedCleanPhysicalPath $entryDiagnosticPath 'Controller entry diagnostic path' 'Absent'
+    try{
     Add-Type -TypeDefinition (Get-MyspeedCleanNativeSource) -Language CSharp
     [MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree()
     $rawAbi=[MySpeed.Qualification.CleanStop.Session]::ObserveAbi();$observedAbi=[ordered]@{}
@@ -946,6 +962,12 @@ function Invoke-MyspeedHostedCleanStopController {
     [void](Write-MyspeedCleanCreateNewJson $request.resultPath $result)
     if(-not $result.controllerLifecyclePassed){throw 'Hosted clean-stop controller did not pass'}
     return $result
+    }catch{
+        if(-not [IO.File]::Exists($request.resultPath) -and -not [IO.File]::Exists($entryDiagnosticPath)){
+            try{[void](Write-MyspeedCleanEntryFailure $entryDiagnosticPath ([string]$_.Exception.Message))}catch{}
+        }
+        throw
+    }
 }
 
 function Get-MyspeedCleanContract {
@@ -973,6 +995,10 @@ try{
         'GetFixtureSource' {[pscustomobject][ordered]@{schemaVersion=1;modes=$script:FixtureModes;readyMarker=$script:FixtureReadyMarker;source=Get-MyspeedCleanFixtureSource}}
         'GetNativeSource' {[pscustomobject][ordered]@{schemaVersion=1;source=Get-MyspeedCleanNativeSource}}
         'TestLifecycle' {Invoke-MyspeedCleanInjectedLifecycle (ConvertFrom-MyspeedCleanJson $InputJson 'Injected lifecycle')}
+        'TestEntryFailure' {$value=ConvertFrom-MyspeedCleanJson $InputJson 'Entry failure fixture'
+            Assert-MyspeedCleanExactKeys $value @('path','message') 'Entry failure fixture'
+            Write-MyspeedCleanEntryFailure (Assert-MyspeedCleanPath $value.path 'Entry failure path') `
+                (Assert-MyspeedCleanString $value.message 'Entry failure message')}
         'InvokeHostedController' {Invoke-MyspeedHostedCleanStopController -RequestPath $LaunchRequestPath -RequestSha $ExpectedLaunchRequestSha256 -RunId $ExpectedRunId -RunAttempt $ExpectedRunAttempt -EventSha $ExpectedEventSha -SourceSha $ExpectedSourceSha -ImageVersion $ExpectedImageVersion -ExpectedNonce $Nonce}
     }
     $output|ConvertTo-Json -Depth 30 -Compress

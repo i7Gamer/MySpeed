@@ -351,8 +351,10 @@ describe("Windows clean-stop native proof coordinator", () => {
         assert.match(source, /\$Mode -cne \$script:NativeMode[\s\S]*?ReadToEnd/u);
         const outerFailureGate = source.indexOf("if($outer.status -ceq 'failed')");
         const outerValidation = source.indexOf("Assert-MyspeedProofOuterLauncher $manifest $launch $launchSha $outer", outerFailureGate);
+        const failedStreamRead = source.indexOf("Get-MyspeedProofFailedProcessStreams $launch", outerFailureGate);
         const evidenceGate = source.indexOf("Assert-MyspeedProofCaseCollectionGate", outerValidation);
-        assert.ok(outerFailureGate >= 0 && outerFailureGate < outerValidation && outerValidation < evidenceGate,
+        assert.ok(outerFailureGate >= 0 && outerFailureGate < failedStreamRead && failedStreamRead < outerValidation
+            && outerValidation < evidenceGate,
             "outer failure and exit proofs must precede evidence-file collection");
     });
 
@@ -418,6 +420,59 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
             failure: {stage: "observer", message: "stale"}, files}), /retained a failure/u);
         assert.equal(invoke("TestCollectionGate", {status: "completed", failure: null,
             files: Object.fromEntries(Object.keys(files).map(name => [name, true]))}).ready, true);
+    });
+
+    powershellIt("prioritizes bounded controller failure fields before exact failed-process stream metadata", () => {
+        const tempResult = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command",
+                "[Console]::Out.Write([IO.Path]::GetFullPath([IO.Path]::GetTempPath()))"],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(tempResult.status, 0, tempResult.stderr);
+        const directory = fs.mkdtempSync(path.join(tempResult.stdout, "myspeed-clean-stop-failure-"));
+        const stdoutPath = path.join(directory, "stdout.log");
+        const stderrPath = path.join(directory, "stderr.log");
+        const resultPath = path.join(directory, "result.json");
+        const stdout = Buffer.from("x".repeat(400), "utf8");
+        const stderr = Buffer.from("controller failed before ABI", "utf8");
+        const lifecycleFailure = "Owned Job cleanup failed after retained process exit";
+        const entryFailure = "Add-Type rejected the generated native controller source";
+        const resultBytes = Buffer.from(JSON.stringify({
+            schemaVersion: 1,
+            kind: "myspeed-windows-clean-stop-result",
+            status: "failed",
+            padding: "z".repeat(1800),
+            failures: [lifecycleFailure]
+        }), "utf8");
+        const entryBytes = Buffer.from(JSON.stringify({
+            schemaVersion: 1,
+            kind: "myspeed-windows-clean-stop-controller-entry-failure",
+            stage: "controller-entry",
+            messageBytes: Buffer.byteLength(entryFailure),
+            messagePrefixBase64: Buffer.from(entryFailure).toString("base64")
+        }), "utf8");
+        fs.writeFileSync(stdoutPath, stdout);
+        fs.writeFileSync(stderrPath, stderr);
+        fs.writeFileSync(resultPath, resultBytes);
+        fs.writeFileSync(`${resultPath}.entry-failure.json`, entryBytes);
+        try {
+            const summary = invoke("TestFailureStreams", {resultPath, stdoutPath, stderrPath});
+            assert.ok(summary.length < 900, summary);
+            assert.ok(summary.indexOf("resultFailurePrefixBase64=") < summary.indexOf("resultBytes="), summary);
+            assert.ok(summary.indexOf("entryFailurePrefixBase64=") < summary.indexOf("resultBytes="), summary);
+            assert.match(summary, new RegExp(`resultFailurePrefixBase64=${Buffer.from(lifecycleFailure).toString("base64")}`, "u"));
+            assert.match(summary, new RegExp(`entryFailurePrefixBase64=${Buffer.from(entryFailure).toString("base64")}`, "u"));
+            assert.match(summary, new RegExp(`resultBytes=${resultBytes.length},resultSha256=${sha(resultBytes)}`, "u"));
+            assert.match(summary, new RegExp(`entryDiagnosticBytes=${entryBytes.length},entryDiagnosticSha256=${sha(entryBytes)}`, "u"));
+            assert.match(summary, new RegExp(`stdoutBytes=400,stdoutSha256=${sha(stdout)}`, "u"));
+            assert.match(summary, new RegExp(`stderrBytes=${stderr.length},stderrSha256=${sha(stderr)}`, "u"));
+            const prefix = summary.match(/stdoutPrefixBase64=([^;]*)/u)?.[1];
+            assert.equal(Buffer.from(prefix, "base64").length, 64);
+            const retained = `Outer exit code differs: actual=1; expected=0; ${summary}`.slice(0, 1024);
+            assert.match(retained, new RegExp(Buffer.from(lifecycleFailure).toString("base64"), "u"));
+            assert.match(retained, new RegExp(Buffer.from(entryFailure).toString("base64"), "u"));
+            fs.rmSync(stderrPath);
+            assert.match(invoke("TestFailureStreams", {resultPath, stdoutPath, stderrPath}), /stderr=absent/u);
+        } finally { fs.rmSync(directory, {recursive: true, force: true}); }
     });
 
     powershellIt("strictly validates the sealed manifest", () => {
