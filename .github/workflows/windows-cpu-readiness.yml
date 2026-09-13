@@ -1,0 +1,844 @@
+name: Windows CPU readiness calibration
+
+# Candidate-neutral, nonqualifying calibration. No application, MSI or VM runs.
+on:
+  pull_request:
+    paths:
+      - .github/workflows/windows-cpu-readiness.yml
+      - scripts/qualification/windows-cpu-floor-probe.c
+      - scripts/qualification/windows-cpu-readiness.ps1
+      - scripts/qualification/windows-cpu-readiness-controller.ps1
+      - scripts/qualification/windows-cpu-tool-child.ps1
+      - scripts/qualification/windows-cpu-file-identity.ps1
+      - scripts/qualification/media-job-launcher.ps1
+      - tests/server/windowsCpu*.test.js
+      - tests/server/mediaJobLauncher.test.js
+  push:
+    branches: [development]
+    paths:
+      - .github/workflows/windows-cpu-readiness.yml
+      - scripts/qualification/windows-cpu-floor-probe.c
+      - scripts/qualification/windows-cpu-readiness.ps1
+      - scripts/qualification/windows-cpu-readiness-controller.ps1
+      - scripts/qualification/windows-cpu-tool-child.ps1
+      - scripts/qualification/windows-cpu-file-identity.ps1
+      - scripts/qualification/media-job-launcher.ps1
+      - tests/server/windowsCpu*.test.js
+      - tests/server/mediaJobLauncher.test.js
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Prepare CPU calibration closure
+    if: github.repository == 'i7Gamer/MySpeed' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.closure.outputs.nonce }}
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Test CPU validation and owned-process helpers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Standard-library-only helper tests; the full test workflow covers YAML tests.
+          $tests = @('tests/server/windowsCpuFloorProbe.test.js', 'tests/server/windowsCpuReadiness.test.js',
+            'tests/server/windowsCpuReadinessController.test.js', 'tests/server/windowsCpuToolChild.test.js',
+            'tests/server/windowsCpuFileIdentity.test.js', 'tests/server/mediaJobLauncher.test.js')
+          node --test @tests
+          if ($LASTEXITCODE -ne 0) { throw 'CPU helper tests failed' }
+
+      - name: Seal exact source closure
+        id: closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-cpu-readiness-closure'
+          if (Test-Path -LiteralPath $closureRoot) { throw 'Closure already exists' }
+          New-Item -ItemType Directory -Path $closureRoot | Out-Null
+          $sourceNames = @('windows-cpu-floor-probe.c', 'windows-cpu-readiness.ps1',
+            'windows-cpu-readiness-controller.ps1', 'windows-cpu-tool-child.ps1',
+            'windows-cpu-file-identity.ps1', 'media-job-launcher.ps1')
+          foreach ($name in $sourceNames) {
+            Copy-Item -LiteralPath (Join-Path 'scripts/qualification' $name) -Destination (Join-Path $closureRoot $name)
+          }
+          $nonce = [guid]::NewGuid().ToString('N')
+          $controller = Join-Path $closureRoot 'windows-cpu-readiness-controller.ps1'
+          & $controller -Mode EmitClosureManifest -ClosureRoot $closureRoot `
+            -ExpectedRunId $env:EXPECTED_RUN_ID -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT `
+            -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA -ExpectedEventSha $env:EXPECTED_EVENT_SHA `
+            -Nonce $nonce -ManifestPath (Join-Path $closureRoot 'closure.json')
+          if (-not $?) { throw 'Closure generation failed' }
+          "nonce=$nonce" >> $env:GITHUB_OUTPUT
+
+      - name: Upload immutable source closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cpu-readiness-closure
+          path: |
+            ${{ runner.temp }}/windows-cpu-readiness-closure/windows-cpu-floor-probe.c
+            ${{ runner.temp }}/windows-cpu-readiness-closure/windows-cpu-readiness.ps1
+            ${{ runner.temp }}/windows-cpu-readiness-closure/windows-cpu-readiness-controller.ps1
+            ${{ runner.temp }}/windows-cpu-readiness-closure/windows-cpu-tool-child.ps1
+            ${{ runner.temp }}/windows-cpu-readiness-closure/windows-cpu-file-identity.ps1
+            ${{ runner.temp }}/windows-cpu-readiness-closure/media-job-launcher.ps1
+            ${{ runner.temp }}/windows-cpu-readiness-closure/closure.json
+          if-no-files-found: error
+          retention-days: 7
+
+  readiness:
+    name: Calibrate bounded native CPU controls
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 20
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+    steps:
+      # No checkout in the native job, and no pattern or cross-run download.
+      - name: Download exact source closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/windows-cpu-readiness-closure
+
+      - name: Validate closure and execute hosted calibration
+        id: calibrate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $SCHEMA_VERSION = 1
+          $MAX_SOURCE_BYTES = 262144
+          $MAX_MANIFEST_BYTES = 8192
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-cpu-readiness-closure'
+          $sourceNames = @('windows-cpu-floor-probe.c', 'windows-cpu-readiness.ps1',
+            'windows-cpu-readiness-controller.ps1', 'windows-cpu-tool-child.ps1',
+            'windows-cpu-file-identity.ps1', 'media-job-launcher.ps1')
+          $expectedNames = @($sourceNames) + @('closure.json')
+          $ancestor = Get-Item -LiteralPath $closureRoot -Force
+          while ($null -ne $ancestor) {
+            if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Closure ancestor is not an ordinary directory'
+            }
+            $ancestor = $ancestor.Parent
+          }
+          $entries = @(Get-ChildItem -LiteralPath $closureRoot -Force)
+          if ($entries.Count -ne $expectedNames.Count -or
+            (Compare-Object ($entries.Name | Sort-Object) ($expectedNames | Sort-Object) -CaseSensitive)) {
+            throw 'Closure membership differs'
+          }
+          foreach ($entry in $entries) {
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+              throw 'Closure member is a directory, reparse point or hard link'
+            }
+            if ($IsWindows) {
+              $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*')
+              if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Closure member has alternate streams' }
+            }
+            $limit = if ($entry.Name -ceq 'closure.json') { $MAX_MANIFEST_BYTES } else { $MAX_SOURCE_BYTES }
+            if ($entry.Length -le 0 -or $entry.Length -gt $limit) { throw 'Closure member size is invalid' }
+          }
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json -AsHashtable
+          $keys = @('schemaVersion', 'kind', 'expectedRunId', 'expectedRunAttempt', 'expectedSourceSha', 'expectedEventSha', 'nonce', 'files')
+          if ($manifest -isnot [System.Collections.IDictionary] -or
+            (Compare-Object ($manifest.Keys | Sort-Object) ($keys | Sort-Object) -CaseSensitive)) { throw 'Closure schema differs' }
+          if (($manifest.schemaVersion -isnot [int] -and $manifest.schemaVersion -isnot [long]) -or
+            $manifest.schemaVersion -ne $SCHEMA_VERSION -or $manifest.kind -isnot [string] -or
+            $manifest.kind -cne 'myspeed-windows-cpu-readiness-closure') { throw 'Closure kind/schema version differs' }
+          $identities = [ordered]@{expectedRunId=$env:EXPECTED_RUN_ID; expectedRunAttempt=$env:EXPECTED_RUN_ATTEMPT;
+            expectedSourceSha=$env:EXPECTED_SOURCE_SHA; expectedEventSha=$env:EXPECTED_EVENT_SHA; nonce=$env:EXPECTED_NONCE}
+          foreach ($entry in $identities.GetEnumerator()) {
+            if ($manifest[$entry.Key] -isnot [string] -or $manifest[$entry.Key] -cne $entry.Value) { throw 'Closure workflow identity differs' }
+          }
+          if ($manifest.expectedRunId -cnotmatch '^[1-9][0-9]{0,19}$' -or $manifest.expectedRunAttempt -cnotmatch '^[1-9][0-9]{0,19}$' -or
+            $manifest.expectedSourceSha -cnotmatch '^[a-f0-9]{40}$' -or $manifest.expectedEventSha -cnotmatch '^[a-f0-9]{40}$' -or
+            $manifest.nonce -cnotmatch '^[a-f0-9]{32}$') { throw 'Closure identity format differs' }
+          if ($manifest.files -isnot [array] -or $manifest.files.Count -ne $sourceNames.Count) { throw 'Closure file count differs' }
+          for ($index = 0; $index -lt $sourceNames.Count; $index++) {
+            $file = $manifest.files[$index]
+            if ($file -isnot [System.Collections.IDictionary] -or
+              (Compare-Object ($file.Keys | Sort-Object) @('bytes', 'name', 'sha256') -CaseSensitive)) { throw 'Closure file schema differs' }
+            if ($file.name -isnot [string] -or $file.name -cne $sourceNames[$index] -or
+              ($file.bytes -isnot [int] -and $file.bytes -isnot [long]) -or
+              $file.sha256 -isnot [string] -or $file.sha256 -cnotmatch '^[a-f0-9]{64}$') { throw 'Closure file identity is invalid' }
+            $filePath = Join-Path $closureRoot $file.name
+            $actualHash = (Get-FileHash -LiteralPath $filePath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($file.bytes -ne (Get-Item -LiteralPath $filePath).Length -or $file.sha256 -cne $actualHash) { throw 'Closure file bytes/hash differ' }
+          }
+          # NATIVE_BOUNDARY: no source was executed before all members matched.
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP ('myspeed-cpu-readiness-' + $env:EXPECTED_NONCE)
+          $controller = Join-Path $closureRoot 'windows-cpu-readiness-controller.ps1'
+          $windowsPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $controller `
+            -Mode InvokeHostedReadiness -ExpectedRunId $env:EXPECTED_RUN_ID -ExpectedRunAttempt $env:EXPECTED_RUN_ATTEMPT `
+            -ExpectedSourceSha $env:EXPECTED_SOURCE_SHA -ExpectedEventSha $env:EXPECTED_EVENT_SHA `
+            -Nonce $env:EXPECTED_NONCE -ClosureRoot $closureRoot -ManifestPath $manifestPath -EvidencePath (Join-Path $evidenceRoot 'result.json')
+          if ($LASTEXITCODE -ne 0) { throw 'Native readiness calibration failed; inspect bounded evidence' }
+
+      - name: Confirm successful runner continuation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_RESULT_BYTES = 262144
+          $MAX_AGGREGATE_BYTES = 33554432
+          $MAX_DISASSEMBLY_BYTES = 2097152
+          $MAX_EVIDENCE_ENTRIES = 256
+          $TOOL_STREAM_BYTES = 65536
+          $PROBE_STREAM_BYTES = 4096
+          $TOOL_DURATION_MILLISECONDS = 30000
+          $PROBE_DURATION_MILLISECONDS = 10000
+          $COMPILER_ENVIRONMENT_FAILURE_EXIT = 71
+          $EXPECTED_OPERATION_COUNT = 32
+          $SCHEMA_VERSION = 1
+          $CLASSIFICATION = 'windows-native-host-observation-nonqualifying'
+          $modes = @('cpuid','known-good','known-bad','illegal','sse42','popcnt','avx','avx2')
+          $instructionModes = @('cpuid','illegal','sse42','popcnt','avx','avx2')
+          $compileBase = @('/nologo','/TC','/c','/W4','/WX','/O2','/Oi','/GS','/guard:cf','/MT')
+          $linkBase = @('/NOLOGO','/INCREMENTAL:NO','/SUBSYSTEM:CONSOLE','/MACHINE:X64',
+            '/DYNAMICBASE','/NXCOMPAT','/HIGHENTROPYVA','/GUARD:CF','/MANIFEST:NO')
+          $compilerEnvironmentNames = @('CL','_CL_','LINK','_LINK_')
+          $expectedOperationIds = @('discover-vswhere','environment-preflight')
+          foreach ($mode in $modes) { $expectedOperationIds += @("compile-$mode","link-$mode") }
+          foreach ($mode in $instructionModes) { $expectedOperationIds += "disassemble-$mode" }
+          foreach ($mode in $modes) { $expectedOperationIds += "probe-$mode" }
+          $expectedProbeExits = [ordered]@{cpuid=0;'known-good'=0;'known-bad'=19;illegal=3221225501L
+            sse42=0;popcnt=0;avx=0;avx2=0}
+          $requiredClosureFiles = @('windows-cpu-floor-probe.c','windows-cpu-readiness.ps1',
+            'windows-cpu-readiness-controller.ps1','windows-cpu-tool-child.ps1',
+            'windows-cpu-file-identity.ps1','media-job-launcher.ps1')
+          function Assert-ConsumerExactKeys([object]$Value,[string[]]$Expected,[string]$Label) {
+            if ($null -eq $Value -or $Value -is [string]) { throw "$Label must be an object" }
+            $actual = @($Value.PSObject.Properties.Name | Sort-Object)
+            $wanted = @($Expected | Sort-Object)
+            if (($actual -join "`n") -cne ($wanted -join "`n")) { throw "$Label schema differs" }
+          }
+          function Assert-ConsumerBoolean([object]$Value,[bool]$Expected,[string]$Label) {
+            if ($Value -isnot [bool] -or $Value -ne $Expected) { throw "$Label differs" }
+          }
+          function Assert-ConsumerInteger([object]$Value,[string]$Label) {
+            if ($null -eq $Value -or [Type]::GetTypeCode($Value.GetType()) -notin @(
+              [TypeCode]::SByte,[TypeCode]::Byte,[TypeCode]::Int16,[TypeCode]::UInt16,
+              [TypeCode]::Int32,[TypeCode]::UInt32,[TypeCode]::Int64,[TypeCode]::UInt64)) {
+              throw "$Label must be an integer"
+            }
+            return [int64]$Value
+          }
+          function Assert-ConsumerStringArrayEqual([object]$Actual,[string[]]$Expected,[string]$Label) {
+            if ($Actual -isnot [array] -or $Actual.Count -ne $Expected.Count) { throw "$Label differs" }
+            for ($index = 0; $index -lt $Expected.Count; $index++) {
+              if ($Actual[$index] -isnot [string] -or $Actual[$index] -cne $Expected[$index]) { throw "$Label differs" }
+            }
+          }
+          function Assert-ConsumerCurrentIdentity([object]$Identity,[string]$ExpectedPath,[string]$Label,
+            [bool]$AllowHardLinks=$false) {
+            if (-not [string]::Equals($Identity.path,$ExpectedPath,[StringComparison]::OrdinalIgnoreCase) -or
+              -not [string]::Equals($Identity.finalPath,$ExpectedPath,[StringComparison]::OrdinalIgnoreCase)) {
+              throw "$Label path differs"
+            }
+            $current = Get-Item -LiteralPath $ExpectedPath -Force
+            $hardLinkAllowed = $AllowHardLinks -and $Identity.role -is [string] -and
+              $Identity.role -ceq 'system-tool' -and $current.LinkType -ceq 'HardLink'
+            if ($current.PSIsContainer -or ($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              ($current.LinkType -and -not $hardLinkAllowed) -or
+              $current.Length -ne $Identity.bytes) { throw "$Label current file differs" }
+            $streams = @(Get-Item -LiteralPath $ExpectedPath -Stream '*')
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw "$Label stream differs" }
+            $hash = (Get-FileHash -LiteralPath $ExpectedPath -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -cne $Identity.sha256) { throw "$Label current hash differs" }
+          }
+          function Assert-ConsumerCommandFile([string]$OperationId,[string]$ExpectedText) {
+            $commandPath = Join-Path $root "$OperationId.cmd"
+            $item = Get-Item -LiteralPath $commandPath -Force
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              $item.LinkType -or $item.Length -le 0 -or $item.Length -gt $TOOL_STREAM_BYTES) {
+              throw 'Generated command file is unsafe'
+            }
+            $streams = @(Get-Item -LiteralPath $commandPath -Stream '*')
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Generated command stream differs' }
+            $actualBytes = [IO.File]::ReadAllBytes($commandPath)
+            $expectedBytes = (New-Object Text.ASCIIEncoding).GetBytes($ExpectedText)
+            if ([Convert]::ToBase64String($actualBytes) -cne [Convert]::ToBase64String($expectedBytes)) {
+              throw 'Generated command bytes differ'
+            }
+          }
+          function Read-ConsumerIdentityBytes([object]$Identity,[int64]$MaximumBytes,[string]$Label,
+            [bool]$AllowHardLinks=$false) {
+            Assert-ConsumerCurrentIdentity $Identity $Identity.path $Label $AllowHardLinks
+            $bytes = [IO.File]::ReadAllBytes($Identity.path)
+            if ($bytes.Length -le 0 -or $bytes.Length -gt $MaximumBytes -or $bytes.Length -ne $Identity.bytes) {
+              throw "$Label byte length differs"
+            }
+            $algorithm = [Security.Cryptography.SHA256]::Create()
+            try { $hash = ([BitConverter]::ToString($algorithm.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
+            finally { $algorithm.Dispose() }
+            if ($hash -cne $Identity.sha256) { throw "$Label byte hash differs" }
+            return [byte[]]$bytes
+          }
+          function Read-ConsumerIdentityJson([object]$Identity,[string]$Label) {
+            $bytes = Read-ConsumerIdentityBytes $Identity $MAX_RESULT_BYTES $Label
+            $encoding = New-Object Text.UTF8Encoding($false,$true)
+            try { $text = $encoding.GetString($bytes) } catch { throw "$Label is not strict UTF-8" }
+            if ($text.Length -gt 0 -and $text[0] -eq [char]0xfeff) { throw "$Label contains a byte-order mark" }
+            try { return $text | ConvertFrom-Json -ErrorAction Stop } catch { throw "$Label is not valid JSON" }
+          }
+          function Assert-ConsumerObjectEqual([object]$Actual,[object]$Expected,[string]$Label) {
+            if (($Actual | ConvertTo-Json -Compress -Depth 20) -cne ($Expected | ConvertTo-Json -Compress -Depth 20)) {
+              throw "$Label differs"
+            }
+          }
+          function ConvertFrom-ConsumerBase64([object]$Value,[int64]$MaximumBytes,[string]$Label) {
+            if ($Value -isnot [string]) { throw "$Label must be a string" }
+            try { $bytes = [Convert]::FromBase64String($Value) } catch { throw "$Label is malformed" }
+            if ($bytes.Length -gt $MaximumBytes -or [Convert]::ToBase64String($bytes) -cne $Value) {
+              throw "$Label is noncanonical or oversized"
+            }
+            $encoding = New-Object Text.UTF8Encoding($false,$true)
+            try { return [pscustomobject]@{bytes=[byte[]]$bytes;text=$encoding.GetString($bytes)} }
+            catch { throw "$Label is not strict UTF-8" }
+          }
+          function New-ConsumerPreflightCommand([string]$VcvarsPath) {
+            $vcvars = Test-MyspeedWindowsAbsolutePath $VcvarsPath 'vcvars path'
+            $lines = New-Object 'System.Collections.Generic.List[string]'
+            [void]$lines.Add('@echo off'); [void]$lines.Add('setlocal DisableDelayedExpansion')
+            foreach ($name in $compilerEnvironmentNames) {
+              [void]$lines.Add("if defined $name exit /b $COMPILER_ENVIRONMENT_FAILURE_EXIT")
+            }
+            [void]$lines.Add(('call "{0}" >nul' -f $vcvars)); [void]$lines.Add('if errorlevel 1 exit /b %errorlevel%')
+            foreach ($name in $compilerEnvironmentNames) {
+              [void]$lines.Add("if defined $name exit /b $COMPILER_ENVIRONMENT_FAILURE_EXIT")
+              [void]$lines.Add(('set "{0}="' -f $name))
+            }
+            [void]$lines.Add('echo MYSPEED_ENV_BEGIN')
+            foreach ($name in @('VCToolsVersion','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion')) {
+              [void]$lines.Add("echo $name=%$name%")
+            }
+            [void]$lines.Add('echo MYSPEED_ENV_END'); [void]$lines.Add('exit /b 0')
+            return (($lines -join "`r`n") + "`r`n")
+          }
+          $root = Join-Path $env:RUNNER_TEMP ('myspeed-cpu-readiness-' + $env:EXPECTED_NONCE)
+          $path = Join-Path $root 'result.json'
+          $item = Get-Item -LiteralPath $path -Force
+          if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $item.LinkType -or $item.Length -le 0 -or $item.Length -gt $MAX_RESULT_BYTES) { throw 'Calibration result is unsafe' }
+          $result = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+          Assert-ConsumerExactKeys $result @('schemaVersion','kind','status','qualifying','calibrationPassed',
+            'classification','sourceSha','eventSha','runId','runAttempt','nonce','imageVersion','failures','observations') 'Result'
+          $identities = [ordered]@{sourceSha=$env:EXPECTED_SOURCE_SHA; eventSha=$env:EXPECTED_EVENT_SHA;
+            runId=$env:EXPECTED_RUN_ID; runAttempt=$env:EXPECTED_RUN_ATTEMPT; nonce=$env:EXPECTED_NONCE}
+          foreach ($identity in $identities.GetEnumerator()) {
+            if ($result.($identity.Key) -isnot [string] -or $result.($identity.Key) -cne $identity.Value) { throw 'Result workflow identity differs' }
+          }
+          if ($result.kind -isnot [string] -or $result.kind -cne 'myspeed-windows-cpu-readiness' -or
+            ($result.schemaVersion -isnot [int] -and $result.schemaVersion -isnot [long]) -or $result.schemaVersion -ne $SCHEMA_VERSION) {
+            throw 'Result kind/schema differs'
+          }
+          if ($result.status -isnot [string] -or $result.status -cne 'completed' -or
+            $result.calibrationPassed -isnot [bool] -or $result.calibrationPassed -ne $true -or
+            $result.qualifying -isnot [bool] -or $result.qualifying -ne $false) { throw 'CPU readiness calibration did not pass' }
+          if ($result.classification -isnot [string] -or $result.classification -cne $CLASSIFICATION -or
+            $result.imageVersion -isnot [string] -or $result.imageVersion -cne $env:ImageVersion -or
+            $result.failures -isnot [array] -or $result.failures.Count -ne 0) { throw 'Result classification or failure set differs' }
+          $observations = $result.observations
+          Assert-ConsumerExactKeys $observations @('closureFiles','discovery','preflight','build','disassembly',
+            'calibration','operations','cleanup') 'Observations'
+          if ($observations.closureFiles -isnot [array] -or
+            $observations.closureFiles.Count -ne $requiredClosureFiles.Count + 1) { throw 'Closure observation count differs' }
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-cpu-readiness-closure'
+          foreach ($binding in @(@{index=1;name='windows-cpu-readiness.ps1'},
+            @{index=4;name='windows-cpu-file-identity.ps1'})) {
+            $record = $observations.closureFiles[$binding.index]
+            Assert-ConsumerExactKeys $record @('schemaVersion','name','role','path','finalPath','volumeSerial','fileId',
+              'bytes','lastWriteFileTime','linkCount','sha256','fileVersion','productVersion') 'Bootstrap identity'
+            Assert-ConsumerCurrentIdentity $record (Join-Path $closureRoot $binding.name) 'Bootstrap identity'
+          }
+          $identityPath = Join-Path $closureRoot 'windows-cpu-file-identity.ps1'
+          . $identityPath -Mode Library
+          $allClosureIdentities = @()
+          for ($index = 0; $index -lt $requiredClosureFiles.Count; $index++) {
+            $record = $observations.closureFiles[$index]
+            Assert-MyspeedFileIdentityRecord $record | Out-Null
+            $expectedName = "closure-$index"
+            $expectedRole = if ($index -eq 0) { 'source' } else { 'closure' }
+            $expectedPath = Join-Path $closureRoot $requiredClosureFiles[$index]
+            if ($record.name -cne $expectedName -or $record.role -cne $expectedRole) { throw 'Closure identity differs' }
+            Assert-ConsumerCurrentIdentity $record $expectedPath 'Closure identity'
+            $allClosureIdentities += $record
+          }
+          $manifestIdentity = $observations.closureFiles[$requiredClosureFiles.Count]
+          Assert-MyspeedFileIdentityRecord $manifestIdentity | Out-Null
+          if ($manifestIdentity.name -cne 'closure-manifest' -or $manifestIdentity.role -cne 'closure') { throw 'Manifest identity differs' }
+          Assert-ConsumerCurrentIdentity $manifestIdentity (Join-Path $closureRoot 'closure.json') 'Manifest identity'
+          $allClosureIdentities += $manifestIdentity
+          Assert-MyspeedNoFileIdentityCollisions ([pscustomobject]@{files=$allClosureIdentities}) | Out-Null
+          $corePath = Join-Path $closureRoot 'windows-cpu-readiness.ps1'
+          . $corePath -Mode Library
+          $manifest = Read-ConsumerIdentityJson $manifestIdentity 'Closure manifest'
+          Assert-MyspeedClosureManifest $manifest | Out-Null
+          $manifestBindings = [ordered]@{expectedRunId=$env:EXPECTED_RUN_ID;expectedRunAttempt=$env:EXPECTED_RUN_ATTEMPT
+            expectedSourceSha=$env:EXPECTED_SOURCE_SHA;expectedEventSha=$env:EXPECTED_EVENT_SHA;nonce=$env:EXPECTED_NONCE}
+          foreach ($binding in $manifestBindings.GetEnumerator()) {
+            if ($manifest.($binding.Key) -isnot [string] -or $manifest.($binding.Key) -cne $binding.Value) {
+              throw 'Closure manifest workflow identity differs'
+            }
+          }
+          for ($index = 0; $index -lt $requiredClosureFiles.Count; $index++) {
+            $entry = $manifest.files[$index]; $identity = $observations.closureFiles[$index]
+            if ($entry.name -cne $requiredClosureFiles[$index] -or $entry.bytes -ne $identity.bytes -or
+              $entry.sha256 -cne $identity.sha256) { throw 'Closure manifest file binding differs' }
+          }
+          $discovery = $observations.discovery
+          Assert-ConsumerExactKeys $discovery @('installationPath','vcToolsVersion','versionFile','tools') 'Discovery'
+          if ($discovery.installationPath -isnot [string] -or $discovery.vcToolsVersion -isnot [string]) { throw 'Discovery strings differ' }
+          Assert-ConsumerExactKeys $discovery.tools @('powershell','cmd','vswhere','vcvars','cl','link','dumpbin') 'Tool set'
+          $toolIdentities = @($discovery.versionFile)
+          foreach ($toolName in @('powershell','cmd','vswhere','vcvars','cl','link','dumpbin')) {
+            $toolIdentity = $discovery.tools.$toolName
+            Assert-MyspeedFileIdentityRecord $toolIdentity | Out-Null
+            if ($toolIdentity.name -cne $toolName -or $toolIdentity.role -cne 'system-tool') { throw 'Tool identity differs' }
+            $toolIdentities += $toolIdentity
+          }
+          Assert-MyspeedFileIdentityRecord $discovery.versionFile | Out-Null
+          if ($discovery.versionFile.name -cne 'vc-version' -or $discovery.versionFile.role -cne 'system-tool') {
+            throw 'VC version identity differs'
+          }
+          Assert-MyspeedNoFileIdentityCollisions ([pscustomobject]@{files=$toolIdentities}) | Out-Null
+          $programFilesX86 = ${env:ProgramFiles(x86)}
+          if ([string]::IsNullOrWhiteSpace($programFilesX86)) { throw 'ProgramFiles(x86) is unavailable' }
+          $expectedFixedTools = [ordered]@{
+            powershell=(Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe')
+            cmd=(Join-Path $env:SystemRoot 'System32\cmd.exe')
+            vswhere=(Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe')
+          }
+          foreach ($entry in $expectedFixedTools.GetEnumerator()) {
+            Assert-ConsumerCurrentIdentity $discovery.tools.($entry.Key) $entry.Value "System tool $($entry.Key)" $true
+          }
+          $resolvedVcTools = Resolve-MyspeedVcToolPaths ([pscustomobject]@{
+            installationPath=$discovery.installationPath;vcToolsVersion=$discovery.vcToolsVersion})
+          foreach ($name in @('vcvars','cl','link','dumpbin')) {
+            Assert-ConsumerCurrentIdentity $discovery.tools.$name $resolvedVcTools.$name "VC tool $name" $true
+          }
+          $expectedVersionPath = Join-Path $discovery.installationPath `
+            'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt'
+          Assert-ConsumerCurrentIdentity $discovery.versionFile $expectedVersionPath 'VC version file' $true
+          $versionBytes = Read-ConsumerIdentityBytes $discovery.versionFile 4096 'VC version file' $true
+          if (@($versionBytes | Where-Object { $_ -gt 127 }).Count -gt 0) { throw 'VC version file is not ASCII' }
+          $versionText = [Text.Encoding]::ASCII.GetString($versionBytes)
+          if (($versionText -split "`r?`n").Count -gt 2 -or $versionText.Trim() -cne $discovery.vcToolsVersion) {
+            throw 'VC version file content differs'
+          }
+          Assert-ConsumerExactKeys $observations.preflight @('VCToolsVersion','VCToolsInstallDir','WindowsSdkDir',
+            'WindowsSDKVersion') 'Preflight'
+          foreach ($name in @('VCToolsVersion','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion')) {
+            if ($observations.preflight.$name -isnot [string] -or [string]::IsNullOrWhiteSpace($observations.preflight.$name)) {
+              throw 'Preflight value differs'
+            }
+          }
+          if ($observations.preflight.VCToolsVersion -cne $discovery.vcToolsVersion) { throw 'Preflight VC version differs' }
+          $expectedVcRoot = Join-Path $discovery.installationPath "VC\Tools\MSVC\$($discovery.vcToolsVersion)"
+          if (-not [string]::Equals($observations.preflight.VCToolsInstallDir.TrimEnd('\'),$expectedVcRoot,
+            [StringComparison]::OrdinalIgnoreCase)) { throw 'Preflight VC tools root differs' }
+          if ($observations.build -isnot [array] -or $observations.build.Count -ne $modes.Count) { throw 'Build count differs' }
+          $consumerModeTable = [ordered]@{cpuid=@('PROBE_CPUID','/arch:SSE2');'known-good'=@('PROBE_KNOWN_GOOD','/arch:SSE2')
+            'known-bad'=@('PROBE_KNOWN_BAD','/arch:SSE2');illegal=@('PROBE_ILLEGAL','/arch:SSE2')
+            sse42=@('PROBE_SSE42','/arch:SSE2');popcnt=@('PROBE_POPCNT','/arch:SSE2')
+            avx=@('PROBE_AVX','/arch:AVX');avx2=@('PROBE_AVX2','/arch:AVX2')}
+          $sourcePath = Join-Path $closureRoot 'windows-cpu-floor-probe.c'
+          $expectedCommandInputs = [ordered]@{}
+          $buildIdentities = @()
+          for ($index = 0; $index -lt $modes.Count; $index++) {
+            $build = $observations.build[$index]; $mode = $modes[$index]
+            Assert-ConsumerExactKeys $build @('mode','macro','architecture','compileArguments','linkArguments','object','executable') 'Build'
+            if ($build.mode -isnot [string] -or $build.mode -cne $mode -or $build.macro -isnot [string] -or
+              $build.macro -cne $consumerModeTable[$mode][0] -or $build.architecture -isnot [string] -or
+              $build.architecture -cne $consumerModeTable[$mode][1] -or $build.compileArguments -isnot [array] -or
+              $build.compileArguments.Count -eq 0 -or $build.linkArguments -isnot [array] -or $build.linkArguments.Count -eq 0) {
+              throw 'Build contract differs'
+            }
+            $stem = $mode.Replace('-','_')
+            $expectedObjectPath = Join-Path $root ($stem + '.obj')
+            $expectedExecutablePath = Join-Path $root ($stem + '.exe')
+            $expectedCompile = @($compileBase) + @("/Fo$expectedObjectPath","/D$($consumerModeTable[$mode][0])",
+              $sourcePath,$consumerModeTable[$mode][1])
+            $expectedLink = @($linkBase) + @("/OUT:$expectedExecutablePath",$expectedObjectPath)
+            Assert-ConsumerStringArrayEqual $build.compileArguments $expectedCompile 'Compile arguments'
+            Assert-ConsumerStringArrayEqual $build.linkArguments $expectedLink 'Link arguments'
+            $expectedCommandInputs["compile-$mode"] = [pscustomobject]@{tool=$discovery.tools.cl;arguments=$expectedCompile}
+            $expectedCommandInputs["link-$mode"] = [pscustomobject]@{tool=$discovery.tools.link;arguments=$expectedLink}
+            foreach ($identity in @($build.object,$build.executable)) {
+              Assert-MyspeedFileIdentityRecord $identity | Out-Null
+              if ($identity.role -cne 'generated-command') { throw 'Build identity role differs' }
+              $expectedExtension = if ($identity.name -ceq "$stem-object") { '.obj' }
+                elseif ($identity.name -ceq "$stem-executable") { '.exe' } else { throw 'Build identity name differs' }
+              $expectedPath = Join-Path $root ($stem + $expectedExtension)
+              Assert-ConsumerCurrentIdentity $identity $expectedPath 'Build identity'
+              $buildIdentities += $identity
+            }
+          }
+          Assert-MyspeedNoFileIdentityCollisions ([pscustomobject]@{files=$buildIdentities}) | Out-Null
+          if ($observations.disassembly -isnot [array] -or $observations.disassembly.Count -ne $instructionModes.Count) {
+            throw 'Disassembly count differs'
+          }
+          $disassemblyIdentities = @()
+          for ($index = 0; $index -lt $instructionModes.Count; $index++) {
+            $entry = $observations.disassembly[$index]; $mode = $instructionModes[$index]
+            Assert-ConsumerExactKeys $entry @('mode','arguments','file','contract') 'Disassembly observation'
+            Assert-ConsumerExactKeys $entry.contract @('accepted','symbol') 'Disassembly contract'
+            if ($entry.mode -isnot [string] -or $entry.mode -cne $mode -or $entry.arguments -isnot [array]) {
+              throw 'Disassembly mode or arguments differ'
+            }
+            Assert-ConsumerBoolean $entry.contract.accepted $true 'Disassembly acceptance'
+            Assert-MyspeedFileIdentityRecord $entry.file | Out-Null
+            $stem = $mode.Replace('-','_')
+            if ($entry.file.name -cne "$stem-disassembly" -or $entry.file.role -cne 'generated-command' -or
+              $entry.contract.symbol -isnot [string]) { throw 'Disassembly identity differs' }
+            $expectedPath = Join-Path $root ($stem + '.disasm')
+            $modeIndex = [Array]::IndexOf($modes,$mode)
+            $expectedArguments = @('/NOLOGO','/DISASM:BYTES',"/OUT:$expectedPath",$observations.build[$modeIndex].object.path)
+            Assert-ConsumerStringArrayEqual $entry.arguments $expectedArguments 'Disassembly arguments'
+            $expectedCommandInputs["disassemble-$mode"] = [pscustomobject]@{
+              tool=$discovery.tools.dumpbin;arguments=$expectedArguments
+            }
+            Assert-ConsumerCurrentIdentity $entry.file $expectedPath 'Disassembly file'
+            $disassemblyIdentities += $entry.file
+          }
+          Assert-MyspeedNoFileIdentityCollisions ([pscustomobject]@{files=$disassemblyIdentities}) | Out-Null
+          if ($observations.operations -isnot [array] -or $observations.operations.Count -ne $EXPECTED_OPERATION_COUNT) {
+            throw 'Operation count differs'
+          }
+          $operationIdentities = @()
+          $operationStreams = [ordered]@{}
+          for ($index = 0; $index -lt $expectedOperationIds.Count; $index++) {
+            $operation = $observations.operations[$index]; $operationId = $expectedOperationIds[$index]
+            Assert-ConsumerExactKeys $operation @('operationId','tool','toolSha256','arguments','isProbe','classification',
+              'launcher','wrapper','childProofs','errorMode','request','result') 'Operation summary'
+            Assert-ConsumerExactKeys $operation.childProofs @('parentJobMembershipProven','childExitProven','handlesClosedProven') 'Child proofs'
+            Assert-ConsumerExactKeys $operation.errorMode @('required','requiredFlags','before','during','after','restored') 'Error mode proof'
+            if ($operation.operationId -isnot [string] -or $operation.operationId -cne $operationId -or
+              $operation.tool -isnot [string] -or $operation.toolSha256 -isnot [string] -or
+              $operation.toolSha256 -cnotmatch '^[a-f0-9]{64}$' -or $operation.arguments -isnot [array] -or
+              $operation.isProbe -isnot [bool] -or $operation.classification -isnot [string] -or
+              $operation.classification -cne $CLASSIFICATION) { throw 'Operation header differs' }
+            foreach ($proof in @('parentJobMembershipProven','childExitProven','handlesClosedProven')) {
+              Assert-ConsumerBoolean $operation.childProofs.$proof $true "Operation $proof"
+            }
+            $isProbe = $operationId.StartsWith('probe-',[StringComparison]::Ordinal)
+            if ($operation.isProbe -ne $isProbe) { throw 'Operation probe classification differs' }
+            Assert-ConsumerBoolean $operation.errorMode.required $isProbe 'Error-mode requirement'
+            Assert-ConsumerBoolean $operation.errorMode.restored $true 'Error-mode restoration'
+            $requiredFlags = Assert-ConsumerInteger $operation.errorMode.requiredFlags 'Error-mode flags'
+            if ($requiredFlags -ne $(if($isProbe){3}else{0})) { throw 'Error-mode flags differ' }
+            if ($isProbe) {
+              $before = Assert-ConsumerInteger $operation.errorMode.before 'Error mode before'
+              $during = Assert-ConsumerInteger $operation.errorMode.during 'Error mode during'
+              $after = Assert-ConsumerInteger $operation.errorMode.after 'Error mode after'
+              if ($during -ne ($before -bor $requiredFlags) -or $after -ne $before) { throw 'Probe error-mode evidence differs' }
+            } elseif ($null -ne $operation.errorMode.before -or $null -ne $operation.errorMode.during -or
+              $null -ne $operation.errorMode.after) { throw 'Nonprobe error-mode evidence differs' }
+            $expectedTool = if ($isProbe) { $operationId.Substring(6).Replace('-','_') + '-executable' }
+              elseif ($operationId -ceq 'discover-vswhere') { 'vswhere' } else { 'cmd' }
+            $expectedToolIdentity = if ($isProbe) {
+              $modeIndex = [Array]::IndexOf($modes,$operationId.Substring(6))
+              $observations.build[$modeIndex].executable
+            } else { $discovery.tools.$expectedTool }
+            $expectedToolHash = $expectedToolIdentity.sha256
+            if ($operation.tool -cne $expectedTool -or $operation.toolSha256 -cne $expectedToolHash) {
+              throw 'Operation tool binding differs'
+            }
+            if ($isProbe -and $operation.arguments.Count -ne 0) { throw 'Probe arguments differ' }
+            if (-not $isProbe -and $operationId -cne 'discover-vswhere') {
+              $commandPath = Join-Path $root "$operationId.cmd"
+              Assert-ConsumerStringArrayEqual $operation.arguments @('/d','/s','/c',('"' + $commandPath + '"')) `
+                'Command operation arguments'
+            }
+            foreach ($suffix in @('request','result')) {
+              $identity = $operation.$suffix
+              Assert-MyspeedFileIdentityRecord $identity | Out-Null
+              if ($identity.name -cne "$operationId-$suffix" -or $identity.role -cne 'generated-command') {
+                throw 'Operation I/O identity differs'
+              }
+              $expectedIoPath = Join-Path $root "$operationId.$suffix.json"
+              if (-not [string]::Equals($identity.path,$expectedIoPath,[StringComparison]::OrdinalIgnoreCase) -or
+                -not [string]::Equals($identity.finalPath,$expectedIoPath,[StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Operation I/O path differs'
+              }
+              $operationIdentities += $identity
+            }
+            $request = Read-ConsumerIdentityJson $operation.request "Operation request $operationId"
+            Assert-ConsumerExactKeys $request @('schemaVersion','expectedRunId','expectedRunAttempt','expectedEventSha',
+              'expectedSourceSha','nonce','operationId','toolPath','toolSha256','arguments','workingDirectory',
+              'streamLimitBytes','maximumDurationMilliseconds','isProbe','resultPath') 'Operation request'
+            if ((Assert-ConsumerInteger $request.schemaVersion 'Request schema version') -ne $SCHEMA_VERSION) {
+              throw 'Operation request schema differs'
+            }
+            $requestStrings = [ordered]@{expectedRunId=$env:EXPECTED_RUN_ID;expectedRunAttempt=$env:EXPECTED_RUN_ATTEMPT
+              expectedEventSha=$env:EXPECTED_EVENT_SHA;expectedSourceSha=$env:EXPECTED_SOURCE_SHA;nonce=$env:EXPECTED_NONCE
+              operationId=$operationId;toolPath=$expectedToolIdentity.path;toolSha256=$expectedToolHash
+              workingDirectory=$root;resultPath=(Join-Path $root "$operationId.result.json")}
+            foreach ($binding in $requestStrings.GetEnumerator()) {
+              if ($request.($binding.Key) -isnot [string] -or $request.($binding.Key) -cne $binding.Value) {
+                throw "Operation request binding differs: $operationId/$($binding.Key)"
+              }
+            }
+            Assert-ConsumerStringArrayEqual $request.arguments $operation.arguments 'Operation request arguments'
+            Assert-ConsumerBoolean $request.isProbe $isProbe 'Operation request probe flag'
+            $expectedStreamLimit = if($isProbe){$PROBE_STREAM_BYTES}else{$TOOL_STREAM_BYTES}
+            $expectedDuration = if($isProbe){$PROBE_DURATION_MILLISECONDS}else{$TOOL_DURATION_MILLISECONDS}
+            if ((Assert-ConsumerInteger $request.streamLimitBytes 'Request stream limit') -ne $expectedStreamLimit -or
+              (Assert-ConsumerInteger $request.maximumDurationMilliseconds 'Request duration') -ne $expectedDuration) {
+              throw 'Operation request bounds differ'
+            }
+            $child = Read-ConsumerIdentityJson $operation.result "Operation result $operationId"
+            Assert-ConsumerExactKeys $child @('schemaVersion','status','classification','bindings',
+              'parentJobMembershipProven','childExitProven','handlesClosedProven','errorMode','wrapper',
+              'stdoutBase64','stderrBase64','failures') 'Operation child result'
+            Assert-ConsumerExactKeys $child.bindings @('requestPath','requestSha256','expectedRunId','expectedRunAttempt',
+              'expectedEventSha','expectedSourceSha','nonce','operationId','toolPath','toolSha256','toolSha256Before',
+              'toolSha256After','arguments','workingDirectory','streamLimitBytes','maximumDurationMilliseconds','isProbe',
+              'resultPath') 'Operation child bindings'
+            if ((Assert-ConsumerInteger $child.schemaVersion 'Child schema version') -ne $SCHEMA_VERSION -or
+              $child.status -isnot [string] -or $child.status -cne 'completed' -or
+              $child.classification -isnot [string] -or $child.classification -cne $CLASSIFICATION -or
+              $child.failures -isnot [array] -or $child.failures.Count -ne 0) { throw 'Operation child status differs' }
+            $childStrings = [ordered]@{requestPath=$operation.request.path;requestSha256=$operation.request.sha256
+              expectedRunId=$env:EXPECTED_RUN_ID;expectedRunAttempt=$env:EXPECTED_RUN_ATTEMPT
+              expectedEventSha=$env:EXPECTED_EVENT_SHA;expectedSourceSha=$env:EXPECTED_SOURCE_SHA;nonce=$env:EXPECTED_NONCE
+              operationId=$operationId;toolPath=$expectedToolIdentity.path;toolSha256=$expectedToolHash
+              toolSha256Before=$expectedToolHash;toolSha256After=$expectedToolHash;workingDirectory=$root
+              resultPath=$operation.result.path}
+            foreach ($binding in $childStrings.GetEnumerator()) {
+              if ($child.bindings.($binding.Key) -isnot [string] -or $child.bindings.($binding.Key) -cne $binding.Value) {
+                throw "Operation child binding differs: $operationId/$($binding.Key)"
+              }
+            }
+            Assert-ConsumerStringArrayEqual $child.bindings.arguments $operation.arguments 'Operation child arguments'
+            Assert-ConsumerBoolean $child.bindings.isProbe $isProbe 'Operation child probe flag'
+            if ((Assert-ConsumerInteger $child.bindings.streamLimitBytes 'Child stream limit') -ne $expectedStreamLimit -or
+              (Assert-ConsumerInteger $child.bindings.maximumDurationMilliseconds 'Child duration') -ne $expectedDuration) {
+              throw 'Operation child bounds differ'
+            }
+            Assert-ConsumerBoolean $child.parentJobMembershipProven $true 'Child parent Job proof'
+            Assert-ConsumerBoolean $child.childExitProven $true 'Child exit proof'
+            Assert-ConsumerBoolean $child.handlesClosedProven $true 'Child handle proof'
+            Assert-ConsumerObjectEqual $child.wrapper $operation.wrapper 'Operation child wrapper'
+            Assert-ConsumerObjectEqual $child.errorMode $operation.errorMode 'Operation child error mode'
+            $stdout = ConvertFrom-ConsumerBase64 $child.stdoutBase64 $expectedStreamLimit 'Child stdout'
+            $stderr = ConvertFrom-ConsumerBase64 $child.stderrBase64 $expectedStreamLimit 'Child stderr'
+            if ($stdout.bytes.Length -ne $operation.wrapper.stdoutBytes -or
+              $stderr.bytes.Length -ne $operation.wrapper.stderrBytes) { throw 'Operation stream byte counts differ' }
+            $operationStreams[$operationId] = [pscustomobject]@{stdout=$stdout.text;stderr=$stderr.text}
+          }
+          Assert-MyspeedNoFileIdentityCollisions ([pscustomobject]@{files=$operationIdentities}) | Out-Null
+          $parsedInstallation = ConvertFrom-MyspeedVsWhereOutput $operationStreams['discover-vswhere'].stdout
+          if (-not [string]::Equals($parsedInstallation,$discovery.installationPath,[StringComparison]::OrdinalIgnoreCase) -or
+            -not [string]::IsNullOrEmpty($operationStreams['discover-vswhere'].stderr)) {
+            throw 'vswhere stream evidence differs'
+          }
+          $parsedPreflight = ConvertFrom-MyspeedPreflightOutput $operationStreams['environment-preflight'].stdout
+          foreach ($name in @('VCToolsVersion','VCToolsInstallDir','WindowsSdkDir','WindowsSDKVersion')) {
+            if ($parsedPreflight.$name -isnot [string] -or $parsedPreflight.$name -cne $observations.preflight.$name) {
+              throw 'Preflight stream evidence differs'
+            }
+          }
+          if (-not [string]::IsNullOrEmpty($operationStreams['environment-preflight'].stderr)) {
+            throw 'Preflight stderr differs'
+          }
+          Assert-ConsumerCommandFile 'environment-preflight' (New-ConsumerPreflightCommand $discovery.tools.vcvars.path)
+          foreach ($entry in $expectedCommandInputs.GetEnumerator()) {
+            $expectedText = New-MyspeedVcCommandFile ([pscustomobject]@{
+              vcvarsPath=$discovery.tools.vcvars.path;toolPath=$entry.Value.tool.path;arguments=$entry.Value.arguments
+            })
+            Assert-ConsumerCommandFile $entry.Key $expectedText
+          }
+          $vswhereArguments = @('-latest','-products','*','-requires','Microsoft.VisualStudio.Component.VC.Tools.x86.x64',
+            '-property','installationPath','-format','value','-utf8')
+          Assert-ConsumerStringArrayEqual $observations.operations[0].arguments $vswhereArguments 'vswhere arguments'
+          for ($index = 0; $index -lt $instructionModes.Count; $index++) {
+            $entry = $observations.disassembly[$index]
+            $bytes = [IO.File]::ReadAllBytes($entry.file.path)
+            if ($bytes.Length -gt $MAX_DISASSEMBLY_BYTES) { throw 'Disassembly bytes exceed their bound' }
+            $algorithm = [Security.Cryptography.SHA256]::Create()
+            try { $readHash = ([BitConverter]::ToString($algorithm.ComputeHash($bytes))).Replace('-','').ToLowerInvariant() }
+            finally { $algorithm.Dispose() }
+            if ($readHash -cne $entry.file.sha256) { throw 'Disassembly read hash differs' }
+            $encoding = New-Object Text.UTF8Encoding($false,$true)
+            try { $text = $encoding.GetString($bytes) } catch { throw 'Disassembly is not strict UTF-8' }
+            $contract = Assert-MyspeedDisassembly $entry.mode $text
+            if (($contract | ConvertTo-Json -Compress) -cne ($entry.contract | ConvertTo-Json -Compress)) {
+              throw 'Disassembly contract differs'
+            }
+          }
+          for ($index = 0; $index -lt $expectedOperationIds.Count; $index++) {
+            $operation = $observations.operations[$index]
+            $isProbe = $operation.isProbe
+            $expectedExit = if ($isProbe) { $expectedProbeExits[$operation.operationId.Substring(6)] } else { 0 }
+            Assert-MyspeedOwnedOperation ([pscustomobject]@{
+              streamLimitBytes=if($isProbe){$PROBE_STREAM_BYTES}else{$TOOL_STREAM_BYTES}
+              maximumDurationMilliseconds=if($isProbe){$PROBE_DURATION_MILLISECONDS}else{$TOOL_DURATION_MILLISECONDS}
+              expectedExitCode=$expectedExit;launcher=$operation.launcher;wrapper=$operation.wrapper
+            }) | Out-Null
+          }
+          $calibration = $observations.calibration
+          Assert-ConsumerExactKeys $calibration @('calibrationPassed','assessment','runs') 'Calibration'
+          Assert-ConsumerBoolean $calibration.calibrationPassed $true 'Calibration result'
+          if ($calibration.runs -isnot [array] -or $calibration.runs.Count -ne $modes.Count) { throw 'Calibration run count differs' }
+          $assessmentRuns = @()
+          for ($index = 0; $index -lt $modes.Count; $index++) {
+            $run = $calibration.runs[$index]; $mode = $modes[$index]
+            Assert-ConsumerExactKeys $run @('mode','exitCode','stdout','stderr','operation') 'Calibration run'
+            if ($run.mode -isnot [string] -or $run.mode -cne $mode -or $run.stdout -isnot [string] -or
+              $run.stderr -isnot [string] -or (Assert-ConsumerInteger $run.exitCode 'Calibration exit') -ne $expectedProbeExits[$mode]) {
+              throw 'Calibration run differs'
+            }
+            $operationIndex = [Array]::IndexOf($expectedOperationIds,"probe-$mode")
+            $expectedOperation = $observations.operations[$operationIndex]
+            if (($run.operation | ConvertTo-Json -Compress -Depth 20) -cne
+              ($expectedOperation | ConvertTo-Json -Compress -Depth 20)) { throw 'Calibration operation binding differs' }
+            if ([Text.Encoding]::UTF8.GetByteCount($run.stdout) -ne $run.operation.wrapper.stdoutBytes -or
+              [Text.Encoding]::UTF8.GetByteCount($run.stderr) -ne $run.operation.wrapper.stderrBytes) {
+              throw 'Calibration stream-byte evidence differs'
+            }
+            $operationStream = $operationStreams["probe-$mode"]
+            if ($operationStream.stdout -cne $run.stdout -or $operationStream.stderr -cne $run.stderr) {
+              throw 'Calibration retained child stream differs'
+            }
+            $assessmentRuns += [pscustomobject]@{mode=$mode;exitCode=$run.exitCode;stdout=$run.stdout;stderr=$run.stderr}
+          }
+          $assessment = Test-MyspeedNativeCalibration ([pscustomobject]@{schemaVersion=$SCHEMA_VERSION
+            kind='myspeed-windows-native-calibration-input';runs=$assessmentRuns})
+          if (($assessment | ConvertTo-Json -Compress -Depth 20) -cne
+            ($calibration.assessment | ConvertTo-Json -Compress -Depth 20)) { throw 'Calibration assessment differs' }
+          $cleanup = $observations.cleanup
+          Assert-ConsumerExactKeys $cleanup @('allOperationProofsPassed','operationCount','aggregate') 'Cleanup'
+          Assert-ConsumerExactKeys $cleanup.aggregate @('files','bytes','accepted') 'Cleanup aggregate'
+          Assert-ConsumerBoolean $cleanup.allOperationProofsPassed $true 'Cleanup operation proof'
+          Assert-ConsumerBoolean $cleanup.aggregate.accepted $true 'Cleanup aggregate acceptance'
+          $cleanupCount = Assert-ConsumerInteger $cleanup.operationCount 'Cleanup operation count'
+          $cleanupFiles = Assert-ConsumerInteger $cleanup.aggregate.files 'Cleanup file count'
+          $cleanupBytes = Assert-ConsumerInteger $cleanup.aggregate.bytes 'Cleanup bytes'
+          if ($cleanupCount -ne $EXPECTED_OPERATION_COUNT -or $cleanupFiles -le 0 -or
+            $cleanupFiles -gt $MAX_EVIDENCE_ENTRIES -or $cleanupBytes -le 0 -or $cleanupBytes -gt $MAX_AGGREGATE_BYTES) {
+            throw 'Cleanup bounds differ'
+          }
+          $expectedEvidenceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          [void]$expectedEvidenceNames.Add('environment-preflight.cmd')
+          foreach ($mode in $modes) {
+            $stem = $mode.Replace('-','_')
+            foreach ($name in @("$stem.obj","$stem.exe","compile-$mode.cmd","link-$mode.cmd")) {
+              [void]$expectedEvidenceNames.Add($name)
+            }
+          }
+          foreach ($mode in $instructionModes) {
+            [void]$expectedEvidenceNames.Add("$($mode.Replace('-','_')).disasm")
+            [void]$expectedEvidenceNames.Add("disassemble-$mode.cmd")
+          }
+          foreach ($operationId in $expectedOperationIds) {
+            [void]$expectedEvidenceNames.Add("$operationId.request.json")
+            [void]$expectedEvidenceNames.Add("$operationId.result.json")
+          }
+          $actualEvidenceNames = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          $actualEvidenceBytes = [int64]0
+          foreach ($entry in @(Get-ChildItem -LiteralPath $root -Force)) {
+            if ($entry.Name -ceq 'result.json') { continue }
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+              throw 'Cleanup evidence contains a directory or link'
+            }
+            $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*')
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Cleanup evidence stream differs' }
+            if (-not $expectedEvidenceNames.Contains($entry.Name) -or -not $actualEvidenceNames.Add($entry.Name)) {
+              throw 'Cleanup evidence membership differs'
+            }
+            $actualEvidenceBytes += $entry.Length
+          }
+          if ($actualEvidenceNames.Count -ne $expectedEvidenceNames.Count -or $cleanupFiles -ne $actualEvidenceNames.Count -or
+            $cleanupBytes -ne $actualEvidenceBytes) { throw 'Cleanup aggregate does not match retained evidence' }
+          Write-Output 'Runner continued after the nonqualifying CPU calibration.'
+
+      - name: Bound and validate retained evidence
+        id: bound_evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_AGGREGATE_BYTES = 33554432
+          $MAX_RESULT_BYTES = 262144
+          $MAX_DISASSEMBLY_BYTES = 2097152
+          $MAX_ENTRIES = 256
+          if ($env:EXPECTED_NONCE -cnotmatch '^[a-f0-9]{32}$') { throw 'Evidence nonce is invalid' }
+          $root = Join-Path $env:RUNNER_TEMP ('myspeed-cpu-readiness-' + $env:EXPECTED_NONCE)
+          $rootExists = Test-Path -LiteralPath $root
+          $ancestorPath = if ($rootExists) { $root } else { $env:RUNNER_TEMP }
+          $ancestor = Get-Item -LiteralPath $ancestorPath -Force
+          while ($null -ne $ancestor) {
+            if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Evidence ancestor is not an ordinary directory'
+            }
+            $ancestor = $ancestor.Parent
+          }
+          if (-not $rootExists) { New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null }
+          $queue = [Collections.Generic.Queue[string]]::new()
+          $queue.Enqueue($root)
+          $bytes = [long]0
+          $count = 0
+          while ($queue.Count -gt 0) {
+            $directory = Get-Item -LiteralPath $queue.Dequeue() -Force
+            if (-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Evidence directory is unsafe' }
+            foreach ($entry in Get-ChildItem -LiteralPath $directory.FullName -Force) {
+              $count++
+              if ($count -gt $MAX_ENTRIES -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) { throw 'Evidence membership is unsafe' }
+              if ($entry.PSIsContainer) { $queue.Enqueue($entry.FullName); continue }
+              $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*')
+              if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Evidence has alternate streams' }
+              $bytes += $entry.Length
+              if ($bytes -gt $MAX_AGGREGATE_BYTES) { throw 'Aggregate evidence exceeds its bound' }
+              if ($entry.Extension -ieq '.json' -and $entry.Length -gt $MAX_RESULT_BYTES) { throw 'JSON evidence exceeds its bound' }
+              if ($entry.Extension -ieq '.disasm' -and $entry.Length -gt $MAX_DISASSEMBLY_BYTES) { throw 'Disassembly exceeds its bound' }
+            }
+          }
+          $resultPath = Join-Path $root 'result.json'
+          if (-not (Test-Path -LiteralPath $resultPath)) {
+            $diagnostic = [ordered]@{schemaVersion=1; kind='myspeed-windows-cpu-readiness-workflow-diagnostic'; qualifying=$false;
+              reason='Controller did not produce result.json'; sourceSha=$env:EXPECTED_SOURCE_SHA; eventSha=$env:EXPECTED_EVENT_SHA;
+              runId=$env:EXPECTED_RUN_ID; runAttempt=$env:EXPECTED_RUN_ATTEMPT; nonce=$env:EXPECTED_NONCE}
+            $diagnosticBytes = [Text.UTF8Encoding]::new($false).GetBytes(($diagnostic | ConvertTo-Json -Compress))
+            if ($count -ge $MAX_ENTRIES -or $bytes + $diagnosticBytes.Length -gt $MAX_AGGREGATE_BYTES -or
+              $diagnosticBytes.Length -gt $MAX_RESULT_BYTES) { throw 'Diagnostic would exceed evidence bounds' }
+            $diagnosticPath = Join-Path $root 'workflow-diagnostic.json'
+            $stream = [IO.FileStream]::new($diagnosticPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+            try { $stream.Write($diagnosticBytes, 0, $diagnosticBytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }
+          }
+          Write-Output 'Evidence is physically safe to retain. This does not accept its contents or calibration.'
+
+      - name: Retain bounded calibration evidence
+        if: always() && steps.bound_evidence.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cpu-readiness-evidence
+          path: ${{ runner.temp }}/myspeed-cpu-readiness-${{ needs.prepare.outputs.nonce }}/
+          if-no-files-found: error
+          retention-days: 7
