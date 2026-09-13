@@ -59,6 +59,9 @@ $script:MaximumSourceBytes = 262144
 $script:ExpectedWinswBytes = 18286774
 $script:MaximumWinswBytes = 20971520
 $script:MaximumCompilerBytes = 16777216
+$script:MaximumAdapterCimProperties = 256
+$script:CimInstanceTypeName = 'Microsoft.Management.Infrastructure.CimInstance'
+$script:ProviderPnpDeviceIdPattern = '\A[^\x00-\x1f\x7f]+\z'
 $script:WinswSha256 = 'a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20'
 $script:ClosureKind = 'myspeed-winsw-offline-canary-closure'
 $script:RequiredClosureFiles = @('windows-winsw-offline-canary.ps1','WinSW-x64.exe')
@@ -194,15 +197,55 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
     Write-Output -NoEnumerate ([object[]]$normalized)
 }
 
+function Get-MyspeedCanaryExactProviderPnpDeviceId {
+    param([object]$Adapter,[int64]$MaximumProperties=$script:MaximumAdapterCimProperties)
+    if($null -ne $Adapter -and $Adapter.GetType().FullName -ceq $script:CimInstanceTypeName){
+        $properties=@($Adapter.PSBase.CimInstanceProperties)
+    }else{
+        $collectionMembers=@($Adapter.PSObject.Properties|Where-Object {$_.Name -ceq 'CimInstanceProperties'})
+        $properties=if($collectionMembers.Count -eq 1 -and $null -ne $collectionMembers[0].Value){
+            @($collectionMembers[0].Value)
+        }else{@()}
+    }
+    if($properties.Count -gt $MaximumProperties){throw 'MSFT_NetAdapter CIM property count exceeds its bound'}
+    $derived=[Collections.Generic.List[object]]::new();$inheritedCount=0
+    foreach($property in $properties){
+        if($null -eq $property){continue}
+        $nameMembers=@($property.PSObject.Properties|Where-Object {$_.Name -ceq 'Name'})
+        $valueMembers=@($property.PSObject.Properties|Where-Object {$_.Name -ceq 'Value'})
+        if($nameMembers.Count -ne 1 -or $nameMembers[0].Value -isnot [string]){continue}
+        if($nameMembers[0].Value -ceq 'PNPDeviceID'){$inheritedCount++}
+        if($nameMembers[0].Value -ceq 'PnPDeviceID'){[void]$derived.Add($property)}
+    }
+    $value=$null
+    if($derived.Count -eq 1){
+        $valueMembers=@($derived[0].PSObject.Properties|Where-Object {$_.Name -ceq 'Value'})
+        if($valueMembers.Count -eq 1){$value=$valueMembers[0].Value}
+    }
+    $kind=if($derived.Count -ne 1){'missing-or-duplicate'}elseif($null -eq $value){'null'}
+        elseif($value -is [string]){if($value.Length -eq 0){'empty-string'}else{'string'}}
+        elseif($value -is [array]){'array'}
+        elseif($value -is [pscustomobject] -or $value -is [Collections.IDictionary]){'object'}else{'other'}
+    $label='MSFT_NetAdapter derived CIM PnP property [properties='+$properties.Count+';derived='+$derived.Count+
+        ';inherited='+$inheritedCount+';pnpKind='+$kind+']'
+    if($derived.Count -ne 1 -or $value -isnot [string] -or $value -cnotmatch $script:ProviderPnpDeviceIdPattern){
+        throw "$label must be an exact string"}
+    return [string]$value
+}
+
 function ConvertFrom-MyspeedCanaryNetAdapterProviderInventory {
     param([object]$Value,[int64]$LoopbackType=$script:SoftwareLoopbackInterfaceType,
         [int64]$EnabledAdminStatus=$script:EnabledInterfaceAdminStatus,
         [int64]$DisabledAdminStatus=$script:DisabledInterfaceAdminStatus,
-        [string[]]$KnownStatuses=$script:KnownAdapterStatuses,[scriptblock]$NormalizeAdapters)
+        [string[]]$KnownStatuses=$script:KnownAdapterStatuses,[scriptblock]$NormalizeAdapters,
+        [scriptblock]$GetProviderPnpDeviceId)
     $raw=Assert-MyspeedCanaryArray $Value 'Native provider adapter inventory'
-    $dtos=@($raw|ForEach-Object {[pscustomobject]@{interfaceGuid=$_.InterfaceGuid;pnpDeviceId=$_.PnPDeviceID
-        hidden=$_.Hidden;interfaceType=$_.InterfaceType;interfaceAdminStatus=$_.InterfaceAdminStatus
-        status=$_.Status;interfaceIndex=$_.ifIndex}})
+    $dtos=@($raw|ForEach-Object {
+        $pnp=if($null -eq $GetProviderPnpDeviceId){Get-MyspeedCanaryExactProviderPnpDeviceId $_}
+            else{& $GetProviderPnpDeviceId $_}
+        [pscustomobject]@{interfaceGuid=$_.InterfaceGuid;pnpDeviceId=$pnp;hidden=$_.Hidden
+            interfaceType=$_.InterfaceType;interfaceAdminStatus=$_.InterfaceAdminStatus
+            status=$_.Status;interfaceIndex=$_.ifIndex}})
     if($null -eq $NormalizeAdapters){ConvertTo-MyspeedCanaryAdapterInventory $dtos $LoopbackType $EnabledAdminStatus `
         $DisabledAdminStatus $KnownStatuses}
     else {& $NormalizeAdapters $dtos $LoopbackType $EnabledAdminStatus $DisabledAdminStatus $KnownStatuses}
@@ -213,11 +256,12 @@ function Get-MyspeedCanaryAdapterProviderSnapshot {
         [int64]$LoopbackType=$script:SoftwareLoopbackInterfaceType,
         [int64]$EnabledAdminStatus=$script:EnabledInterfaceAdminStatus,
         [int64]$DisabledAdminStatus=$script:DisabledInterfaceAdminStatus,
-        [string[]]$KnownStatuses=$script:KnownAdapterStatuses,[scriptblock]$NormalizeAdapters)
+        [string[]]$KnownStatuses=$script:KnownAdapterStatuses,[scriptblock]$NormalizeAdapters,
+        [scriptblock]$GetProviderPnpDeviceId)
     $raw=Assert-MyspeedCanaryArray $Value 'Native provider adapter snapshot'
     $inventory=if($null -eq $NormalizeProviderAdapters){
         ConvertFrom-MyspeedCanaryNetAdapterProviderInventory $raw $LoopbackType $EnabledAdminStatus `
-            $DisabledAdminStatus $KnownStatuses $NormalizeAdapters
+            $DisabledAdminStatus $KnownStatuses $NormalizeAdapters $GetProviderPnpDeviceId
     } else {
         & $NormalizeProviderAdapters $raw $LoopbackType $EnabledAdminStatus $DisabledAdminStatus $KnownStatuses $NormalizeAdapters
     }
@@ -225,9 +269,11 @@ function Get-MyspeedCanaryAdapterProviderSnapshot {
         @($inventory|Where-Object {$_ -is [array]}).Count -ne 0){throw 'Normalized adapter snapshot shape differs'}
     for($index=0;$index -lt $raw.Count;$index++){
         $rawGuid=([guid]$raw[$index].InterfaceGuid).ToString('B')
+        $rawPnp=if($null -eq $GetProviderPnpDeviceId){Get-MyspeedCanaryExactProviderPnpDeviceId $raw[$index]}
+            else{& $GetProviderPnpDeviceId $raw[$index]}
         if($inventory[$index].interfaceGuid -isnot [string] -or $inventory[$index].interfaceGuid -ine $rawGuid -or
             $inventory[$index].pnpDeviceId -isnot [string] -or
-            $inventory[$index].pnpDeviceId -ine ([string]$raw[$index].PnPDeviceID)){
+            $inventory[$index].pnpDeviceId -ine $rawPnp){
             throw 'Normalized adapter snapshot order differs'
         }
     }
@@ -374,12 +420,15 @@ function ConvertTo-MyspeedCanaryIpState {
 function New-MyspeedCanaryProviderProjectionOperations {
     $normalizeAdapters=${function:ConvertTo-MyspeedCanaryAdapterInventory}
     $normalizeProviderAdapters=${function:ConvertFrom-MyspeedCanaryNetAdapterProviderInventory}
+    $getProviderPnpDeviceId=${function:Get-MyspeedCanaryExactProviderPnpDeviceId}
     $projectIpState=${function:ConvertTo-MyspeedCanaryIpState}
     return [pscustomobject]@{
         normalizeAdapters={
             param([object]$Raw)
-            & $normalizeProviderAdapters $Raw -NormalizeAdapters $normalizeAdapters
+            & $normalizeProviderAdapters $Raw -NormalizeAdapters $normalizeAdapters `
+                -GetProviderPnpDeviceId $getProviderPnpDeviceId
         }.GetNewClosure()
+        getProviderPnpDeviceId=$getProviderPnpDeviceId
         projectIpState={
             param([object[]]$Inventory,[object]$Interfaces,[object]$Addresses,[object]$Routes)
             & $projectIpState $Inventory $Interfaces $Addresses $Routes
@@ -1177,11 +1226,12 @@ function Invoke-MyspeedCanaryTestNet {
 
 function Get-MyspeedNativeOfflineBoundary {
     param([hashtable]$State,[scriptblock]$Clock,[scriptblock]$NormalizeProviderAdapters,[scriptblock]$NormalizeAdapters,
-        [scriptblock]$GetAdapterSnapshot,[scriptblock]$ProjectIpState,[scriptblock]$GetElapsed,[int64]$LoopbackType,
+        [scriptblock]$GetAdapterSnapshot,[scriptblock]$GetProviderPnpDeviceId,[scriptblock]$ProjectIpState,
+        [scriptblock]$GetElapsed,[int64]$LoopbackType,
         [int64]$EnabledAdminStatus,[int64]$DisabledAdminStatus,[string[]]$KnownStatuses)
     $rawAdapters=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
     $snapshot=& $GetAdapterSnapshot $rawAdapters $NormalizeProviderAdapters $LoopbackType $EnabledAdminStatus `
-        $DisabledAdminStatus $KnownStatuses $NormalizeAdapters
+        $DisabledAdminStatus $KnownStatuses $NormalizeAdapters $GetProviderPnpDeviceId
     $inventory=$snapshot.inventory
     $adapters=@($inventory | ForEach-Object {[pscustomobject]@{interfaceGuid=$_.interfaceGuid;pnpDeviceId=$_.pnpDeviceId
         hidden=$_.hidden;loopback=$_.loopback;enabled=$_.enabled;status=$_.status}})
@@ -1322,6 +1372,7 @@ public static class MySpeedCanaryJob {
     $getBoundary=${function:Get-MyspeedNativeOfflineBoundary};$getProbe=${function:Get-MyspeedNativeProbeEvidence}
     $providerProjection=New-MyspeedCanaryProviderProjectionOperations
     $normalizeProviderAdapters=$providerProjection.normalizeAdapters
+    $getProviderPnpDeviceId=$providerProjection.getProviderPnpDeviceId
     $projectIpState=$providerProjection.projectIpState
     $getAdapterSnapshot=${function:Get-MyspeedCanaryAdapterProviderSnapshot}
     $assertProbe=${function:Assert-MyspeedWinswProbe};$assertBoundary=${function:Assert-MyspeedOfflineBoundary}
@@ -1362,7 +1413,7 @@ public static class MySpeedCanaryJob {
         $all=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
         if($all.Count -eq 0){throw 'Adapter inventory is empty'}
         & $getAdapterSnapshot $all $normalizeProviderAdapters $loopbackType $enabledAdminStatus $disabledAdminStatus `
-            $knownAdapterStatuses $normalizeAdapters
+            $knownAdapterStatuses $normalizeAdapters $getProviderPnpDeviceId
     }.GetNewClosure()
     $snapshotAdapters={ return @((& $getNativeAdapters).inventory) }.GetNewClosure()
     $waitRecoveryProcessGone={
@@ -1614,7 +1665,8 @@ public static class MySpeedCanaryJob {
             @($matched) | Disable-NetAdapter -Confirm:$false -ErrorAction Stop
         }.GetNewClosure()
         verifyOffline={ $State.boundary=& $getBoundary -State $State -Clock $getClock -NormalizeProviderAdapters $normalizeProviderAdapters `
-            -NormalizeAdapters $normalizeAdapters -GetAdapterSnapshot $getAdapterSnapshot -ProjectIpState $projectIpState -GetElapsed $getElapsed `
+            -NormalizeAdapters $normalizeAdapters -GetAdapterSnapshot $getAdapterSnapshot -GetProviderPnpDeviceId $getProviderPnpDeviceId `
+            -ProjectIpState $projectIpState -GetElapsed $getElapsed `
             -LoopbackType $loopbackType -EnabledAdminStatus $enabledAdminStatus -DisabledAdminStatus $disabledAdminStatus `
             -KnownStatuses $knownAdapterStatuses }.GetNewClosure()
         startService={
@@ -1791,11 +1843,12 @@ public static class MySpeedRestorationClock {
         if($now -ge $deadline){break};Start-Sleep -Milliseconds $script:RecoveryPollMilliseconds
     } while($true)
     $adapterRestored=$false;$resultWritten=$false;$failure=$null;$lock=$null;$result=$null
+    $getProviderPnpDeviceId=${function:Get-MyspeedCanaryExactProviderPnpDeviceId}
     try {
         $lock=Enter-MyspeedCanaryRecoveryLock $Request.lockPath
         if(Test-Path -LiteralPath $Request.cancelPath -PathType Leaf){return [pscustomobject]@{cancelled=$true;emergencyRestore=$false}}
         $all=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
-        $snapshot=Get-MyspeedCanaryAdapterProviderSnapshot $all
+        $snapshot=Get-MyspeedCanaryAdapterProviderSnapshot $all -GetProviderPnpDeviceId $getProviderPnpDeviceId
         $inventory=$snapshot.inventory
         $matched=[Collections.Generic.List[object]]::new()
         foreach($target in $Request.adapters){
@@ -1806,7 +1859,7 @@ public static class MySpeedRestorationClock {
         }
         @($matched) | Enable-NetAdapter -Confirm:$false -ErrorAction Stop
         $after=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop)
-        $afterInventory=(Get-MyspeedCanaryAdapterProviderSnapshot $after).inventory
+        $afterInventory=(Get-MyspeedCanaryAdapterProviderSnapshot $after -GetProviderPnpDeviceId $getProviderPnpDeviceId).inventory
         foreach($target in $Request.adapters){if(@($afterInventory|Where-Object {$_.interfaceGuid -ieq $target.interfaceGuid -and
             $_.pnpDeviceId -ieq $target.pnpDeviceId -and $_.enabled}).Count -ne 1){throw 'Emergency adapter enable proof failed'}}
         $adapterRestored=$true
@@ -1919,12 +1972,14 @@ $outputValue=switch ($Mode) {
     'NormalizeAdapters' {
         Assert-MyspeedCanaryExactKeys $inputValue @('adapters') 'Native adapter normalization request'
         $providerProjection=New-MyspeedCanaryProviderProjectionOperations
-        (Get-MyspeedCanaryAdapterProviderSnapshot $inputValue.adapters $providerProjection.normalizeAdapters).inventory
+        (Get-MyspeedCanaryAdapterProviderSnapshot $inputValue.adapters $providerProjection.normalizeAdapters `
+            -GetProviderPnpDeviceId $providerProjection.getProviderPnpDeviceId).inventory
     }
     'ProjectIpState' {
         Assert-MyspeedCanaryExactKeys $inputValue @('adapters','interfaces','addresses','routes') 'Native IP state projection request'
         $providerProjection=New-MyspeedCanaryProviderProjectionOperations
-        $inventory=(Get-MyspeedCanaryAdapterProviderSnapshot $inputValue.adapters $providerProjection.normalizeAdapters).inventory
+        $inventory=(Get-MyspeedCanaryAdapterProviderSnapshot $inputValue.adapters $providerProjection.normalizeAdapters `
+            -GetProviderPnpDeviceId $providerProjection.getProviderPnpDeviceId).inventory
         & $providerProjection.projectIpState $inventory $inputValue.interfaces $inputValue.addresses $inputValue.routes
     }
     'ProjectOwnedProcesses' {
