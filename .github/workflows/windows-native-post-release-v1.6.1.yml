@@ -1,0 +1,359 @@
+name: Windows native post-release v1.6.1 evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  CANDIDATE_SOURCE_SHA: 4fa4dd40a89a062735f98bd85d685e0624ff46a8
+
+jobs:
+  prepare:
+    name: Seal harness and candidate fixture closure
+    if: github.repository == 'i7Gamer/MySpeed'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Checkout exact harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Checkout exact candidate fixture source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          path: candidate-source
+          persist-credentials: false
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install exact candidate fixture dependencies
+        working-directory: candidate-source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          bun install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture dependency installation failed' }
+
+      - name: Run post-release and standalone unit suites
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tests/server/postReleaseNativeV161.test.js `
+            tests/server/windowsNativeStandaloneProof.test.js `
+            tests/server/windowsNativeStandaloneHosted.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Post-release standalone unit suites failed' }
+
+      - name: Build exact source-free closure
+        id: seal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAXIMUM_FILE_BYTES = 33554432
+          $MAXIMUM_CLOSURE_BYTES = 134217728
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'myspeed-v1.6.1-post-release-closure'
+          if (Test-Path -LiteralPath $closureRoot) { throw 'Post-release closure already exists' }
+          [void][IO.Directory]::CreateDirectory($closureRoot)
+          $files = @(
+            'scripts/release/post-release-target.mjs',
+            'scripts/release/post-release-standalone.mjs',
+            'scripts/release/post-release-hosted-controller.mjs',
+            'scripts/release/native-candidate-preseal.mjs',
+            'scripts/qualification/windows-native-standalone-hosted.mjs',
+            'scripts/qualification/windows-native-standalone-proof.mjs',
+            'scripts/qualification/windows-native-standalone-adapter.mjs',
+            'scripts/qualification/windows-native-standalone-host.ps1',
+            'scripts/qualification/windows-native-candidate-controller.ps1',
+            'scripts/qualification/windows-clean-stop-controller.ps1',
+            'scripts/qualification/windows-winsw-offline-canary.ps1',
+            'scripts/qualification/check-artifact.mjs',
+            'scripts/qualification/fixture.mjs',
+            'scripts/qualification/sqlite-check.mjs',
+            'scripts/qualification/safety.mjs'
+          )
+          foreach ($name in $files) {
+            $source = Join-Path $PWD $name
+            $destination = Join-Path $closureRoot $name
+            [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))
+            [IO.File]::Copy($source,$destination,$false)
+          }
+          $fixtureRoot = Join-Path $closureRoot 'fixture'
+          [void][IO.Directory]::CreateDirectory($fixtureRoot)
+          [void][IO.Directory]::CreateDirectory((Join-Path $fixtureRoot 'populated'))
+          [void][IO.Directory]::CreateDirectory((Join-Path $fixtureRoot 'reset'))
+          $candidateRoot = [IO.Path]::GetFullPath((Join-Path $PWD 'candidate-source'))
+          node candidate-source/scripts/qualification/fixture.mjs handoff --repo $candidateRoot `
+            --work (Join-Path $fixtureRoot 'populated') --reset-work (Join-Path $fixtureRoot 'reset') `
+            --manifest (Join-Path $fixtureRoot 'transport.json') --source-sha $env:CANDIDATE_SOURCE_SHA | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture closure creation failed' }
+          $records = [Collections.Generic.List[object]]::new()
+          [int64]$aggregate = 0
+          foreach ($item in @(Get-ChildItem -LiteralPath $closureRoot -File -Recurse -Force | Sort-Object FullName)) {
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType -or
+              $item.Length -le 0 -or $item.Length -gt $MAXIMUM_FILE_BYTES) { throw 'Closure member differs' }
+            $aggregate += $item.Length
+            if ($aggregate -gt $MAXIMUM_CLOSURE_BYTES) { throw 'Closure aggregate exceeds its bound' }
+            [void]$records.Add([pscustomobject][ordered]@{
+              name=[IO.Path]::GetRelativePath($closureRoot,$item.FullName).Replace('\','/');
+              bytes=[int64]$item.Length;
+              sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            })
+          }
+          $manifest = [pscustomobject][ordered]@{
+            schemaVersion=1;kind='myspeed-v1.6.1-post-release-closure';qualifying=$false;
+            releaseGatesCleared=@();repository=$env:GITHUB_REPOSITORY;runId=$env:GITHUB_RUN_ID;
+            runAttempt=$env:GITHUB_RUN_ATTEMPT;harnessSourceSha=$env:GITHUB_SHA;
+            candidateSourceSha=$env:CANDIDATE_SOURCE_SHA;files=[object[]]$records
+          }
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $stream = [IO.File]::Open($manifestPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try {
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($manifest | ConvertTo-Json -Depth 10 -Compress))
+            $stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)
+          } finally { $stream.Dispose() }
+
+      - name: Upload exact source-free closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: myspeed-v1.6.1-post-release-closure
+          path: ${{ runner.temp }}\myspeed-v1.6.1-post-release-closure
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  execute:
+    name: Execute sealed post-release proof offline
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 25
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Verify current-run closure artifact metadata
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          CLOSURE_ARTIFACT_ID: ${{ needs.prepare.outputs.artifact_id }}
+          CLOSURE_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.artifact_digest }}
+        with:
+          script: |
+            const {data: artifact} = await github.rest.actions.getArtifact({
+              owner: context.repo.owner, repo: context.repo.repo,
+              artifact_id: Number(process.env.CLOSURE_ARTIFACT_ID)
+            });
+            if (String(artifact.id) !== process.env.CLOSURE_ARTIFACT_ID
+              || artifact.name !== 'myspeed-v1.6.1-post-release-closure'
+              || artifact.digest !== process.env.CLOSURE_ARTIFACT_DIGEST || artifact.expired
+              || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > 134217728
+              || artifact.workflow_run?.id !== context.runId
+              || artifact.workflow_run?.head_sha !== context.sha)
+              throw new Error('Current-run closure artifact metadata differs');
+
+      - name: Download exact source-free closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          digest-mismatch: error
+          merge-multiple: true
+          path: ${{ runner.temp }}\myspeed-v1.6.1-post-release-closure
+
+      - name: Validate every sealed closure member
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAXIMUM_MANIFEST_BYTES = 2097152
+          $MAXIMUM_FILE_BYTES = 33554432
+          $MAXIMUM_CLOSURE_BYTES = 134217728
+          $MAXIMUM_FILES = 256
+          $closureRoot = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'myspeed-v1.6.1-post-release-closure'))
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $manifestItem = Get-Item -LiteralPath $manifestPath -Force
+          if (($manifestItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+            $null -ne $manifestItem.LinkType -or $manifestItem.Length -le 0 -or
+            $manifestItem.Length -gt $MAXIMUM_MANIFEST_BYTES) { throw 'Closure manifest differs' }
+          $manifest = [IO.File]::ReadAllText($manifestPath,[Text.UTF8Encoding]::new($false,$true)) |
+            ConvertFrom-Json -AsHashtable
+          $keys = @('schemaVersion','kind','qualifying','releaseGatesCleared','repository','runId','runAttempt',
+            'harnessSourceSha','candidateSourceSha','files')
+          if ((@($manifest.Keys | Sort-Object) -join "`n") -cne (@($keys | Sort-Object) -join "`n") -or
+            $manifest.schemaVersion -ne 1 -or $manifest.kind -cne 'myspeed-v1.6.1-post-release-closure' -or
+            $manifest.qualifying -isnot [bool] -or $manifest.qualifying -or
+            $manifest.releaseGatesCleared -isnot [array] -or $manifest.releaseGatesCleared.Count -ne 0 -or
+            $manifest.repository -cne $env:GITHUB_REPOSITORY -or $manifest.runId -cne $env:GITHUB_RUN_ID -or
+            $manifest.runAttempt -cne $env:GITHUB_RUN_ATTEMPT -or $manifest.harnessSourceSha -cne $env:GITHUB_SHA -or
+            $manifest.candidateSourceSha -cne $env:CANDIDATE_SOURCE_SHA -or $manifest.files -isnot [array] -or
+            $manifest.files.Count -le 0 -or $manifest.files.Count -gt $MAXIMUM_FILES) { throw 'Closure identity differs' }
+          $actual = @(Get-ChildItem -LiteralPath $closureRoot -File -Recurse -Force |
+            Where-Object { $_.FullName -cne $manifestPath } | Sort-Object FullName)
+          if ($actual.Count -ne $manifest.files.Count) { throw 'Closure file count differs' }
+          [int64]$aggregate = 0
+          for ($index = 0; $index -lt $actual.Count; $index++) {
+            $item = $actual[$index];$expected = $manifest.files[$index]
+            $name = [IO.Path]::GetRelativePath($closureRoot,$item.FullName).Replace('\','/')
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType -or
+              $item.Length -le 0 -or $item.Length -gt $MAXIMUM_FILE_BYTES -or $expected.name -cne $name -or
+              [int64]$expected.bytes -ne $item.Length -or $expected.sha256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+              (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+                $expected.sha256) { throw 'Closure member identity differs' }
+            $aggregate += $item.Length
+            if ($aggregate -gt $MAXIMUM_CLOSURE_BYTES) { throw 'Closure aggregate exceeds its bound' }
+          }
+
+      - name: Prepare bound target, payloads, envelope, and requests
+        id: prepare
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $controller = Join-Path $env:RUNNER_TEMP `
+            'myspeed-v1.6.1-post-release-closure\scripts\release\post-release-hosted-controller.mjs'
+          $lines = @(& node $controller --prepare-v1.6.1)
+          if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 1) { throw 'Post-release hosted preparation failed' }
+          $value = $lines[0] | ConvertFrom-Json -AsHashtable
+          if ($value.kind -cne 'myspeed-v1.6.1-post-release-hosted-preparation' -or
+            $value.status -cne 'prepared' -or $value.qualifying -isnot [bool] -or $value.qualifying -or
+            $value.nativeExecutionStarted -isnot [bool] -or $value.nativeExecutionStarted -or
+            $value.releaseGatesCleared -isnot [array] -or $value.releaseGatesCleared.Count -ne 0) {
+            throw 'Post-release hosted preparation result differs'
+          }
+          $preparationPath = Join-Path $env:RUNNER_TEMP 'post-release-preparation.json'
+          [IO.File]::WriteAllText($preparationPath,$lines[0],[Text.UTF8Encoding]::new($false))
+          "preparation_path=$preparationPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "envelope_path=$($value.envelopePath)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "envelope_sha256=$($value.envelopeSha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "host_request_path=$($value.execution.hostRequestPath)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "host_request_sha256=$($value.execution.hostRequestSha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "proof_request_path=$($value.execution.proofRequestPath)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "proof_request_sha256=$($value.execution.proofRequestSha256)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Execute existing guarded full standalone proof
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $hosted = Join-Path $env:RUNNER_TEMP `
+            'myspeed-v1.6.1-post-release-closure\scripts\qualification\windows-native-standalone-hosted.mjs'
+          $request = [pscustomobject][ordered]@{
+            hostRequestPath='${{ steps.prepare.outputs.host_request_path }}';
+            hostRequestSha256='${{ steps.prepare.outputs.host_request_sha256 }}';
+            proofRequestPath='${{ steps.prepare.outputs.proof_request_path }}';
+            proofRequestSha256='${{ steps.prepare.outputs.proof_request_sha256 }}'
+          } | ConvertTo-Json -Compress
+          $lines = @($request | & node $hosted --execute)
+          if ($LASTEXITCODE -ne 0 -or $lines.Count -ne 1) { throw 'Post-release standalone execution failed' }
+          $inspection = $lines[0] | ConvertFrom-Json -AsHashtable
+          if ($inspection.status -cne 'accepted' -or $inspection.qualifying -isnot [bool] -or
+            $inspection.qualifying -or $inspection.releaseGatesCleared -isnot [array] -or
+            $inspection.releaseGatesCleared.Count -ne 0) { throw 'Post-release standalone inspection differs' }
+          $taskRoot = [IO.Path]::GetDirectoryName('${{ steps.prepare.outputs.envelope_path }}')
+          [IO.File]::WriteAllText((Join-Path $taskRoot 'inspection.json'),$lines[0],[Text.UTF8Encoding]::new($false))
+
+      - name: Stage exact retained evidence
+        id: stage
+        if: always() && steps.prepare.outcome == 'success'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAXIMUM_FILE_BYTES = 2097152
+          $MAXIMUM_EVIDENCE_BYTES = 10485760
+          $taskRoot = [IO.Path]::GetDirectoryName('${{ steps.prepare.outputs.envelope_path }}')
+          $stageRoot = Join-Path $env:RUNNER_TEMP 'myspeed-v1.6.1-post-release-evidence'
+          if (Test-Path -LiteralPath $stageRoot) { throw 'Evidence staging root already exists' }
+          [void][IO.Directory]::CreateDirectory($stageRoot)
+          $sources = [ordered]@{
+            'post-release-preparation.json'='${{ steps.prepare.outputs.preparation_path }}';
+            'post-release-envelope.json'='${{ steps.prepare.outputs.envelope_path }}';
+            'host.request.json'=(Join-Path $taskRoot 'host.request.json');
+            'proof.request.json'=(Join-Path $taskRoot 'proof.request.json');
+            'host.result.json'=(Join-Path $taskRoot 'host.result.json');
+            'inspection.json'=(Join-Path $taskRoot 'inspection.json')
+          }
+          $records = [Collections.Generic.List[object]]::new();[int64]$aggregate = 0
+          foreach ($entry in $sources.GetEnumerator()) {
+            if (-not (Test-Path -LiteralPath $entry.Value -PathType Leaf)) { continue }
+            $item = Get-Item -LiteralPath $entry.Value -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType -or
+              $item.Length -le 0 -or $item.Length -gt $MAXIMUM_FILE_BYTES) { throw 'Evidence member differs' }
+            $aggregate += $item.Length
+            if ($aggregate -gt $MAXIMUM_EVIDENCE_BYTES) { throw 'Evidence aggregate exceeds its bound' }
+            $destination = Join-Path $stageRoot $entry.Key
+            [IO.File]::Copy($entry.Value,$destination,$false)
+            [void]$records.Add([pscustomobject][ordered]@{name=$entry.Key;bytes=[int64]$item.Length;
+              sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()})
+          }
+          $status = if ($records.Count -eq $sources.Count) { 'completed' } else { 'partial' }
+          $manifest = [pscustomobject][ordered]@{
+            schemaVersion=1;kind='myspeed-v1.6.1-post-release-native-evidence';status=$status;qualifying=$false;
+            releaseGatesCleared=@();repository=$env:GITHUB_REPOSITORY;runId=$env:GITHUB_RUN_ID;
+            runAttempt=$env:GITHUB_RUN_ATTEMPT;harnessSourceSha=$env:GITHUB_SHA;
+            candidateSourceSha=$env:CANDIDATE_SOURCE_SHA;envelopeSha256='${{ steps.prepare.outputs.envelope_sha256 }}';
+            files=[object[]]$records
+          }
+          $stream = [IO.File]::Open((Join-Path $stageRoot 'evidence-manifest.json'),
+            [IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try {
+            $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($manifest | ConvertTo-Json -Depth 10 -Compress))
+            $stream.Write($bytes,0,$bytes.Length);$stream.Flush($true)
+          } finally { $stream.Dispose() }
+          "safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload exact post-release evidence
+        id: upload
+        if: always() && steps.stage.outputs.safe == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: myspeed-v1.6.1-post-release-native-evidence
+          path: ${{ runner.temp }}\myspeed-v1.6.1-post-release-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-provenance:
+    name: Verify current-run evidence archive provenance
+    if: always() && needs.execute.outputs.artifact_id != ''
+    needs: execute
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Bind evidence archive to this run and harness
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          EVIDENCE_ARTIFACT_ID: ${{ needs.execute.outputs.artifact_id }}
+          EVIDENCE_ARTIFACT_DIGEST: ${{ needs.execute.outputs.artifact_digest }}
+        with:
+          script: |
+            const {data: artifact} = await github.rest.actions.getArtifact({
+              owner: context.repo.owner, repo: context.repo.repo,
+              artifact_id: Number(process.env.EVIDENCE_ARTIFACT_ID)
+            });
+            if (String(artifact.id) !== process.env.EVIDENCE_ARTIFACT_ID
+              || artifact.name !== 'myspeed-v1.6.1-post-release-native-evidence'
+              || artifact.digest !== process.env.EVIDENCE_ARTIFACT_DIGEST || artifact.expired
+              || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > 10485760
+              || artifact.workflow_run?.id !== context.runId
+              || artifact.workflow_run?.head_sha !== context.sha)
+              throw new Error('Current-run evidence artifact metadata differs');

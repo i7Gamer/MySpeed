@@ -14,3 +14,6 @@ Dockerfile text eol=lf
 # modules were stored with a bare trailing CR for a year, which git reads as
 # binary, and no per-file diff or blame worked on them while it did.
 * text=auto
+
+# This fixture is the byte-for-byte published v1.6.1 manifest, not editable JSON.
+tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json -text
