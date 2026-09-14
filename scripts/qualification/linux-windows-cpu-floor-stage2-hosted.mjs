@@ -26,6 +26,7 @@ const QEMU_TIMEOUT_SECONDS = 16_200;
 const QEMU_OUTER_TIMEOUT_MILLISECONDS = 16_240_000;
 const MAX_WIMINFO_BYTES = 1_048_576;
 const MAX_GUEST_BYTES = 262_144;
+const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_PROBE_MANIFEST_BYTES = 262_144;
 const MAX_STREAM_BYTES = 4_096;
 const MAX_TREE_ENTRIES = 131_072;
@@ -433,6 +434,25 @@ export function parseGuestOutput(bytes, expectedNonce) {
         value.network.nonLoopbackRoutes].every(item => item === 0)) throw new TypeError("guest network was not isolated");
     return {cpu: recomputed, instructions: {sse42: "completed", popcnt: "completed",
         avx: "illegal-instruction", avx2: "illegal-instruction"}, network: structuredClone(value.network)};
+}
+
+export function parseGuestFailure(bytes, expectedNonce) {
+    if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_GUEST_BYTES)
+        throw new TypeError("guest failure evidence exceeded its bound");
+    const value = parseJson(bytes, "guest failure evidence");
+    requireKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
+    if (value.schemaVersion !== 1 || value.status !== "failed" || value.nonce !== expectedNonce ||
+        value.stage !== "guest-bootstrap" || typeof value.failure !== "string" || value.failure.length < 1 ||
+        value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS || /[\x00-\x1f\x7f]/u.test(value.failure))
+        throw new TypeError("guest failure evidence is invalid");
+    return value;
+}
+
+export function parseGuestOutcome(bytes, expectedNonce) {
+    if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_GUEST_BYTES)
+        throw new TypeError("guest outcome evidence exceeded its bound");
+    const value = parseJson(bytes, "guest outcome evidence");
+    return value?.status === "failed" ? parseGuestFailure(bytes, expectedNonce) : parseGuestOutput(bytes, expectedNonce);
 }
 
 export function parseProbeArtifactEvidence(bytes, artifact) {
@@ -1259,6 +1279,14 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
                     terminationReason: processRecord.terminationReason},
                 argv: input.argv, guest: null};
+            const processResult = {exitCode: processRecord.exitCode, signal: processRecord.signal,
+                timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
+                treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
+                qemuStartTicks: processRecord.qemuStartTicks,
+                launcherExecutablePath: processRecord.launcherExecutablePath,
+                processGroupId: processRecord.processGroupId,
+                qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
+                terminationReason: processRecord.terminationReason};
             const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
                 "guest-result.json");
             try {
@@ -1267,28 +1295,15 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 assertSuccessful(await io.runOwned(extractResult.command, extractResult.argv,
                     {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest result extraction");
                 const guestRead = io.readOwnedVerified(guestResult, MAX_GUEST_BYTES);
-                const parsed = parseGuestOutput(guestRead.bytes, context.nonce);
+                const parsed = parseGuestOutcome(guestRead.bytes, context.nonce);
+                if (parsed.status === "failed") return {process: processResult, argv: input.argv, guest: parsed};
                 const output = io.inspectOwned(input.paths.outputDisk);
-                return {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
-                    timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
-                    treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
-                    qemuStartTicks: processRecord.qemuStartTicks,
-                    launcherExecutablePath: processRecord.launcherExecutablePath,
-                    processGroupId: processRecord.processGroupId,
-                    qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-                    terminationReason: processRecord.terminationReason}, argv: input.argv,
-                guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
+                return {process: processResult, argv: input.argv,
+                    guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
                     instructions: parsed.instructions, network: parsed.network,
                     output: {path: output.path, bytes: output.bytes, sha256: output.sha256}}};
             } catch {
-                return {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
-                    timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
-                    treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
-                    qemuStartTicks: processRecord.qemuStartTicks,
-                    launcherExecutablePath: processRecord.launcherExecutablePath,
-                    processGroupId: processRecord.processGroupId,
-                    qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-                    terminationReason: processRecord.terminationReason}, argv: input.argv, guest: null};
+                return {process: processResult, argv: input.argv, guest: null};
             }
         }
     });

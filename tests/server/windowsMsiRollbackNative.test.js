@@ -110,8 +110,12 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.doesNotMatch(source, /ExpectedErrorCode\s*=\s*1304|messageTypeCode\s*=\s*0x01000005/);
         assert.match(source, /RestoreOriginalSecurity\(\);[\s\S]*return\s+ErrorResponse/);
         assert.match(source, /if\(SecurityRestoredBeforeCancel\)return ResponseOk/);
-        assert.match(source, /if\(DenyInjectionAttempted\)throw[\s\S]*DenyInjectionAttempted=true;[\s\S]*lease\.ApplyDeny\(\)/,
-            "the injected failure must be one-way and never re-arm during rollback callbacks");
+        assert.match(source, /if\(DenyInjectionAttempted\)\{[\s\S]*lease\.ProveCreateDenied\(targetPath\)[\s\S]*return ResponseOk[\s\S]*DenyInjectionAttempted=true;[\s\S]*lease\.ApplyDeny\(\)/,
+            "a duplicate execution-phase InstallFiles start must re-prove, never re-arm, the deny");
+        assert.match(source, /InstallFilesStartCount/);
+        assert.match(source, /DenyReproofCount/);
+        assert.match(source, /if\(!lease\.DenyActive\)throw new InvalidDataException\("Directory deny is not active"\)/);
+        assert.match(source, /currentStage=="reprove-deny"/);
         assert.match(source, /InstallContextTracker/);
         assert.match(source, /if\(!installContext\.InCandidate\)return ResponseOk/,
             "nested predecessor actions must not arm the candidate failure");
@@ -192,6 +196,56 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.throws(() => replay([{type: "start", code: candidate}, {type: "start", code: candidate}]));
         assert.throws(() => replay([{type: "start", code: candidate}, {type: "end", code: predecessor}]));
         assert.notDeepEqual(replay([{type: "start", code: candidate}, {type: "start", code: predecessor}]).contexts, []);
+    });
+
+    it("models the retained two-phase candidate InstallFiles starts as one injection and one re-proof", () => {
+        let denyAttempted = false;
+        let installFilesStartCount = 0;
+        let denyReproofCount = 0;
+        let applyCount = 0;
+        const observeInstallFilesStart = ({candidateContext, removalProductSeen, targetAbsent,
+            denyStillEffective}) => {
+            if (!candidateContext) return;
+            installFilesStartCount += 1;
+            if (denyAttempted) {
+                if (!denyStillEffective) throw new Error("deny drift");
+                denyReproofCount += 1;
+                return;
+            }
+            denyAttempted = true;
+            if (!removalProductSeen || !targetAbsent) throw new Error("removal proof");
+            applyCount += 1;
+        };
+        observeInstallFilesStart({candidateContext: false, removalProductSeen: false,
+            targetAbsent: false, denyStillEffective: false});
+        observeInstallFilesStart({candidateContext: true, removalProductSeen: true,
+            targetAbsent: true, denyStillEffective: true});
+        observeInstallFilesStart({candidateContext: true, removalProductSeen: true,
+            targetAbsent: true, denyStillEffective: true});
+        assert.deepEqual({installFilesStartCount, denyReproofCount, applyCount},
+            {installFilesStartCount: 2, denyReproofCount: 1, applyCount: 1});
+        assert.throws(() => observeInstallFilesStart({candidateContext: true,
+            removalProductSeen: true, targetAbsent: true, denyStillEffective: false}));
+    });
+
+    it("never treats create-allowed plus delete-denied as a successful deny proof", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /catch\(UnauthorizedAccessException\)\{DiagnosticStage=null;return;\}/);
+        assert.match(source, /DiagnosticStage="create-denied-cleanup";try\{File\.Delete\(target\);\}finally\{throw new InvalidDataException\("Directory create was not denied"\);\}/);
+        assert.doesNotMatch(source, /try\{using\(FileStream[\s\S]*File\.Delete\(target\);throw[\s\S]*catch\(UnauthorizedAccessException\)\{\}/,
+            "a delete denial after a successful create must not satisfy the creation-denial proof");
+        const prove = ({createDenied, deleteDenied}) => {
+            if (createDenied) return true;
+            try {
+                if (deleteDenied) throw new Error("delete denied");
+            } catch {
+                // A cleanup failure cannot turn a successful create into a denial.
+            }
+            throw new Error("create was allowed");
+        };
+        assert.equal(prove({createDenied: true, deleteDenied: false}), true);
+        assert.throws(() => prove({createDenied: false, deleteDenied: true}), /create was allowed/);
+        assert.throws(() => prove({createDenied: false, deleteDenied: false}), /create was allowed/);
     });
 
     it("requires predecessor setup and exact post-return cleanup without product inventory shortcuts", () => {

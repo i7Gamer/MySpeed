@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Library','GetContract','GetAbiContract','ValidateAbi','ValidateLaunchRequest','ValidateStdoutReadiness','ValidateStopRequest',
-        'ValidateResult','GetFixtureSource','GetNativeSource','TestLifecycle','TestEntryFailure','InvokeHostedController')]
+        'ValidateResult','GetFixtureSource','GetNativeSource','TestLifecycle','TestInitialConsole','TestEntryFailure','InvokeHostedController')]
     [string] $Mode='Library',
     [string] $InputJson='',
     [string] $LaunchRequestPath='',
@@ -25,6 +25,8 @@ $script:GRACEFUL_EXIT_TIMEOUT_MS=30000
 $script:FORCED_CLEANUP_TIMEOUT_MS=10000
 $script:MaximumJsonBytes=262144
 $script:MaximumEntryFailurePrefixBytes=512
+$script:MaximumInitialConsoleProcesses=64
+$script:ConsoleInvalidHandleError=6
 $script:Repository='i7Gamer/MySpeed'
 $script:ImageOS='win25-vs2026'
 $script:LaunchKind='myspeed-windows-clean-stop-launch'
@@ -310,6 +312,66 @@ function Assert-MyspeedCleanStdoutReadiness {
     return [pscustomobject]@{accepted=$true}
 }
 
+function Assert-MyspeedCleanInitialConsoleObservation {
+    param([object]$Value,[int64]$ControllerPid)
+    Assert-MyspeedCleanExactKeys $Value @('initialConsoleProcessIds','initialConsoleError','initialConsoleDetached','consoleFreeAfter') 'Initial console observation'
+    [void](Assert-MyspeedCleanInteger $ControllerPid 'Initial console controller PID' 1 4294967295)
+    $ids=Assert-MyspeedCleanArray $Value.initialConsoleProcessIds 'Initial console process IDs'
+    if($ids.Count -gt $script:MaximumInitialConsoleProcesses){throw 'Initial console process count exceeds its bound'}
+    $unique=[Collections.Generic.HashSet[int64]]::new()
+    foreach($id in $ids){
+        $processId=Assert-MyspeedCleanInteger $id 'Initial console process ID' 1 4294967295
+        if(-not $unique.Add($processId)){throw 'Initial console process IDs are duplicated'}
+    }
+    $nativeErrorCode=Assert-MyspeedCleanInteger $Value.initialConsoleError 'Initial console error' 0 2147483647
+    $detached=Assert-MyspeedCleanBoolean $Value.initialConsoleDetached 'Initial console detached'
+    $freeAfter=Assert-MyspeedCleanBoolean $Value.consoleFreeAfter 'Initial console-free proof'
+    $alreadyFree=$ids.Count -eq 0 -and $nativeErrorCode -eq $script:ConsoleInvalidHandleError -and -not $detached
+    $soleSelf=$ids.Count -eq 1 -and $ids[0] -eq $ControllerPid -and $nativeErrorCode -eq 0 -and $detached
+    if((-not $alreadyFree -and -not $soleSelf) -or -not $freeAfter){throw 'Initial console observation differs'}
+    return [pscustomobject][ordered]@{initialConsoleProcessIds=@($ids);initialConsoleError=$nativeErrorCode
+        initialConsoleDetached=$detached;consoleFreeAfter=$freeAfter}
+}
+
+function Invoke-MyspeedCleanInitialConsoleCore {
+    param([int64]$ControllerPid,[object]$Operations)
+    [void](Assert-MyspeedCleanInteger $ControllerPid 'Initial console controller PID' 1 4294967295)
+    Assert-MyspeedCleanExactKeys $Operations @('observe','detach','proveFree') 'Initial console operations'
+    $observed=& $Operations.observe
+    Assert-MyspeedCleanExactKeys $observed @('processIds','error') 'Initial console native observation'
+    $ids=Assert-MyspeedCleanArray $observed.processIds 'Initial console native process IDs'
+    $nativeErrorCode=Assert-MyspeedCleanInteger $observed.error 'Initial console native error' 0 2147483647
+    if($ids.Count -gt $script:MaximumInitialConsoleProcesses){throw 'Initial console native process count exceeds its bound'}
+    $unique=[Collections.Generic.HashSet[int64]]::new()
+    foreach($id in $ids){
+        $processId=Assert-MyspeedCleanInteger $id 'Initial console native process ID' 1 4294967295
+        if(-not $unique.Add($processId)){throw 'Initial console native process IDs are duplicated'}
+    }
+    if($ids.Count -eq 0 -and $nativeErrorCode -eq $script:ConsoleInvalidHandleError){
+        return Assert-MyspeedCleanInitialConsoleObservation ([pscustomobject]@{initialConsoleProcessIds=@()
+            initialConsoleError=$nativeErrorCode;initialConsoleDetached=$false;consoleFreeAfter=$true}) $ControllerPid
+    }
+    if($ids.Count -ne 1 -or $ids[0] -ne $ControllerPid -or $nativeErrorCode -ne 0){
+        throw 'Initial console is not solely owned by the controller'
+    }
+    if(-not (Assert-MyspeedCleanBoolean (& $Operations.detach) 'Initial console detach result')){throw 'Initial console detach failed'}
+    if(-not (Assert-MyspeedCleanBoolean (& $Operations.proveFree) 'Initial console-free reproof')){throw 'Initial console-free reproof failed'}
+    return Assert-MyspeedCleanInitialConsoleObservation ([pscustomobject]@{initialConsoleProcessIds=@($ids)
+        initialConsoleError=$nativeErrorCode;initialConsoleDetached=$true;consoleFreeAfter=$true}) $ControllerPid
+}
+
+function Invoke-MyspeedCleanInjectedInitialConsole {
+    param([object]$InputValue)
+    Assert-MyspeedCleanExactKeys $InputValue @('currentPid','observation','observeFailure','detachResult','consoleFreeAfter') 'Injected initial console'
+    $observeFailure=Assert-MyspeedCleanBoolean $InputValue.observeFailure 'Injected initial console observation failure'
+    $operations=[pscustomobject]@{
+        observe={if($observeFailure){throw 'Injected initial console observation failed'};return $InputValue.observation}.GetNewClosure()
+        detach={return $InputValue.detachResult}.GetNewClosure()
+        proveFree={return $InputValue.consoleFreeAfter}.GetNewClosure()
+    }
+    return Invoke-MyspeedCleanInitialConsoleCore (Assert-MyspeedCleanInteger $InputValue.currentPid 'Injected current PID' 1 4294967295) $operations
+}
+
 function Assert-MyspeedCleanResult {
     param([object]$Result)
     $keys=@('schemaVersion','kind','status','qualifying','controllerLifecyclePassed','forced',
@@ -317,7 +379,8 @@ function Assert-MyspeedCleanResult {
         'stdoutReadinessObserved','stopRequestObserved','stopRequestDeadlineMs','graceExpired','observedConsoleProcessIds','lifecycleEvents',
         'runId','runAttempt','eventSha','sourceSha','imageVersion','nonce',
         'controllerPid','candidatePid','candidateCreationTime','candidateImagePath','candidateSha256','candidateVolumeSerial',
-        'candidateFileId','controllerInitiallyConsoleFree','candidateCreatedSuspended','privateConsoleRequested',
+        'candidateFileId','initialConsoleProcessIds','initialConsoleError','initialConsoleDetached',
+        'controllerInitiallyConsoleFree','candidateCreatedSuspended','privateConsoleRequested',
         'handleListConfigured','jobAssignedBeforeResume','initialJobMembership','candidateIdentityCaptured',
         'candidateResumed','threadHandleClosedBeforeReady','preAttachIdentityMatch','postAttachHandleUnsignaled','postAttachIdentityMatch',
         'postAttachJobMembership','consoleProcessIdsExact','ctrlEventGenerated','candidateExited','exitCode',
@@ -369,6 +432,12 @@ function Assert-MyspeedCleanResult {
     [void](Assert-MyspeedCleanString $Result.imageVersion 'Controller result image version' '^[0-9A-Za-z._-]{1,128}$')
     [void](Assert-MyspeedCleanString $Result.nonce 'Controller result nonce' '^[0-9a-f]{32}$')
     [void](Assert-MyspeedCleanInteger $Result.controllerPid 'Controller process PID' 1 4294967295)
+    [void](Assert-MyspeedCleanInitialConsoleObservation ([pscustomobject]@{
+        initialConsoleProcessIds=$Result.initialConsoleProcessIds
+        initialConsoleError=$Result.initialConsoleError
+        initialConsoleDetached=$Result.initialConsoleDetached
+        consoleFreeAfter=$Result.controllerInitiallyConsoleFree
+    }) ([int64]$Result.controllerPid))
     if($null -ne $Result.candidatePid){[void](Assert-MyspeedCleanInteger $Result.candidatePid 'Controller result PID' 1 4294967295)}
     if($null -ne $Result.candidateCreationTime){[void](Assert-MyspeedCleanString $Result.candidateCreationTime 'Controller result creation time' '^[0-9a-f]{16}$')}
     if($null -ne $Result.candidateImagePath){[void](Assert-MyspeedCleanPath $Result.candidateImagePath 'Controller result image path')}
@@ -475,13 +544,14 @@ namespace MySpeed.Qualification.CleanStop {
     public uint[] consoleProcessIds;
     public int exitCode; public uint candidatePid; public ulong candidateCreationTime; public string candidateImagePath,candidateVolumeSerial,candidateFileId;
   }
+  public sealed class ConsoleObservation { public uint[] processIds; public int error; }
   public sealed class Session : IDisposable {
     const uint CREATE_SUSPENDED=0x4,CREATE_NEW_CONSOLE=0x10,CREATE_UNICODE_ENVIRONMENT=0x400,EXTENDED_STARTUPINFO_PRESENT=0x80000;
     const uint STARTF_USESHOWWINDOW=1,STARTF_USESTDHANDLES=0x100; const ushort SW_HIDE=0;
     const uint PROC_THREAD_ATTRIBUTE_HANDLE_LIST=0x20002,JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE=0x2000;
     const int JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION=1,JOB_OBJECT_EXTENDED_LIMIT_INFORMATION=9;
     const uint WAIT_OBJECT_0=0,WAIT_TIMEOUT=258,CTRL_C_EVENT=0,ERROR_INVALID_HANDLE=6,ERROR_INSUFFICIENT_BUFFER=122;
-    const uint NATIVE_CLEANUP_TIMEOUT_MS=10000,NATIVE_CLEANUP_POLL_MS=10,MAX_ATTRIBUTE_LIST_BYTES=1048576;
+    const uint NATIVE_CLEANUP_TIMEOUT_MS=10000,NATIVE_CLEANUP_POLL_MS=10,MAX_ATTRIBUTE_LIST_BYTES=1048576,MAX_INITIAL_CONSOLE_PROCESSES=64;
     const uint STOP_FAILURE_EXIT_CODE=197,LAUNCH_FAILURE_EXIT_CODE=199;
     const uint GENERIC_READ=0x80000000,FILE_APPEND_DATA=4,FILE_SHARE_READ=1,CREATE_NEW=1,OPEN_EXISTING=3,FILE_ATTRIBUTE_NORMAL=0x80;
     IntPtr job=IntPtr.Zero,process=IntPtr.Zero; FileStream image; uint pid; ulong creation; string imagePath,volumeSerial,fileId;
@@ -515,6 +585,7 @@ namespace MySpeed.Qualification.CleanStop {
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr l,uint f,UIntPtr a,IntPtr v,UIntPtr z,IntPtr p,IntPtr r);
     [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr l);
     [DllImport("kernel32.dll",SetLastError=true)] static extern uint GetConsoleProcessList([Out] uint[] p,uint c);
+    [DllImport("kernel32.dll",ExactSpelling=true)] static extern uint GetCurrentProcessId();
     [DllImport("kernel32.dll",EntryPoint="SetLastError",ExactSpelling=true)] static extern void SetLastError(uint error);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool AttachConsole(uint p);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool FreeConsole();
@@ -567,7 +638,10 @@ namespace MySpeed.Qualification.CleanStop {
       if(Marshal.OffsetOf(typeof(EXTENDED_LIMIT),"io").ToInt32()!=64||Marshal.OffsetOf(typeof(EXTENDED_LIMIT),"processMemory").ToInt32()!=112)throw new InvalidOperationException("EXTENDED_LIMIT offsets ABI");
       if(IntPtr.Size*3!=24)throw new InvalidOperationException("HANDLE_LIST buffer ABI");
     }
-    public static void AssertConsoleFree(){uint[] p=new uint[1];SetLastError(0);uint n=GetConsoleProcessList(p,1);int error=Marshal.GetLastWin32Error();if(n!=0||error!=ERROR_INVALID_HANDLE)throw new InvalidOperationException("Controller must start console-free: count="+n+"; error="+error);}
+    public static uint CurrentProcessId(){return GetCurrentProcessId();}
+    public static ConsoleObservation ObserveInitialConsole(){uint[] p=new uint[MAX_INITIAL_CONSOLE_PROCESSES];SetLastError(0);uint n=GetConsoleProcessList(p,MAX_INITIAL_CONSOLE_PROCESSES);int error=Marshal.GetLastWin32Error();if(n>MAX_INITIAL_CONSOLE_PROCESSES)throw new InvalidOperationException("Initial console process count exceeds bound: count="+n+"; error="+error);uint[] ids=new uint[n];Array.Copy(p,ids,n);ConsoleObservation result=new ConsoleObservation();result.processIds=ids;result.error=error;return result;}
+    public static bool DetachInitialConsole(){if(!FreeConsole())throw Error("FreeConsole initial detach");return true;}
+    public static void AssertConsoleFree(){uint[] p=new uint[1];SetLastError(0);uint n=GetConsoleProcessList(p,1);int error=Marshal.GetLastWin32Error();if(n!=0||error!=ERROR_INVALID_HANDLE)throw new InvalidOperationException("Controller must be console-free: count="+n+"; error="+error);}
     static string Quote(string value){if(value.Length>0&&value.IndexOfAny(new[]{' ','\t','"'})<0)return value;if(value.IndexOf('"')>=0)throw new InvalidOperationException("Argument contains a quote");return "\""+value+"\"";}
     static IntPtr EnvironmentBlock(IDictionary<string,string> env){List<string> keys=new List<string>(env.Keys);keys.Sort(StringComparer.OrdinalIgnoreCase);StringBuilder b=new StringBuilder();foreach(string k in keys)b.Append(k).Append('=').Append(env[k]).Append('\0');b.Append('\0');byte[] bytes=Encoding.Unicode.GetBytes(b.ToString());IntPtr p=Marshal.AllocHGlobal(bytes.Length);Marshal.Copy(bytes,0,p,bytes.Length);return p;}
     static string Id(IntPtr h){BY_HANDLE_FILE_INFORMATION i;if(!GetFileInformationByHandle(h,out i))throw Error("GetFileInformationByHandle");return (((ulong)i.fileIndexHigh<<32)|i.fileIndexLow).ToString("x16");}
@@ -871,7 +945,14 @@ function Invoke-MyspeedHostedCleanStopController {
     Assert-MyspeedCleanPhysicalPath $entryDiagnosticPath 'Controller entry diagnostic path' 'Absent'
     try{
     Add-Type -TypeDefinition (Get-MyspeedCleanNativeSource) -Language CSharp
-    [MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree()
+    $nativeCurrentPid=[int64][MySpeed.Qualification.CleanStop.Session]::CurrentProcessId()
+    if($nativeCurrentPid -ne [int64]$PID){throw 'Native controller PID differs'}
+    $initialConsoleOperations=[pscustomobject]@{
+        observe={$native=[MySpeed.Qualification.CleanStop.Session]::ObserveInitialConsole()
+            return [pscustomobject]@{processIds=@($native.processIds);error=[int64]$native.error}}
+        detach={return [MySpeed.Qualification.CleanStop.Session]::DetachInitialConsole()}
+        proveFree={[MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();return $true}}
+    $initialConsole=Invoke-MyspeedCleanInitialConsoleCore $nativeCurrentPid $initialConsoleOperations
     $rawAbi=[MySpeed.Qualification.CleanStop.Session]::ObserveAbi();$observedAbi=[ordered]@{}
     foreach($name in $script:AbiExpected.Keys){
         if(-not $rawAbi.ContainsKey($name)){throw 'Native ABI observation keys differ'}
@@ -941,6 +1022,9 @@ function Invoke-MyspeedHostedCleanStopController {
         candidateImagePath=if($null -eq $session){$null}else{$session.ImagePath};candidateSha256=$request.candidateSha256
         candidateVolumeSerial=if($null -eq $session){$null}else{$session.VolumeSerial}
         candidateFileId=if($null -eq $session){$null}else{$session.FileId}
+        initialConsoleProcessIds=@($initialConsole.initialConsoleProcessIds)
+        initialConsoleError=$initialConsole.initialConsoleError
+        initialConsoleDetached=$initialConsole.initialConsoleDetached
         controllerInitiallyConsoleFree=$state.controllerInitiallyConsoleFree
         candidateCreatedSuspended=($null -ne $session -and $session.CandidateCreatedSuspended)
         privateConsoleRequested=($null -ne $session -and $session.PrivateConsoleRequested)
@@ -996,6 +1080,7 @@ try{
         'GetFixtureSource' {[pscustomobject][ordered]@{schemaVersion=1;modes=$script:FixtureModes;readyMarker=$script:FixtureReadyMarker;source=Get-MyspeedCleanFixtureSource}}
         'GetNativeSource' {[pscustomobject][ordered]@{schemaVersion=1;source=Get-MyspeedCleanNativeSource}}
         'TestLifecycle' {Invoke-MyspeedCleanInjectedLifecycle (ConvertFrom-MyspeedCleanJson $InputJson 'Injected lifecycle')}
+        'TestInitialConsole' {Invoke-MyspeedCleanInjectedInitialConsole (ConvertFrom-MyspeedCleanJson $InputJson 'Injected initial console')}
         'TestEntryFailure' {$value=ConvertFrom-MyspeedCleanJson $InputJson 'Entry failure fixture'
             Assert-MyspeedCleanExactKeys $value @('path','message') 'Entry failure fixture'
             Write-MyspeedCleanEntryFailure (Assert-MyspeedCleanPath $value.path 'Entry failure path') `

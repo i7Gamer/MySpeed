@@ -403,6 +403,9 @@ describe("Windows clean-stop controller prototype", () => {
             candidateSha256: SHA256,
             candidateVolumeSerial: "89abcdef",
             candidateFileId: "0123456789abcdef",
+            initialConsoleProcessIds: [4000],
+            initialConsoleError: 0,
+            initialConsoleDetached: true,
             controllerInitiallyConsoleFree: true,
             candidateCreatedSuspended: true,
             privateConsoleRequested: true,
@@ -438,11 +441,14 @@ describe("Windows clean-stop controller prototype", () => {
             value => { value.elapsedMs = 300_001; },
             value => { value.elapsedMs = 310_001; },
             value => { value.failures = ["synthetic"]; },
-            value => { value.controllerLifecyclePassed = false; }
+            value => { value.controllerLifecyclePassed = false; },
+            value => { value.initialConsoleProcessIds = [4242]; },
+            value => { value.initialConsoleDetached = false; },
+            value => { value.initialConsoleError = 6; }
         ]) {
             const value = structuredClone(result);
             mutate(value);
-            assert.throws(() => invoke("ValidateResult", value), /result|lifecycle|qualifying|elapsed/i);
+            assert.throws(() => invoke("ValidateResult", value), /result|lifecycle|qualifying|elapsed|console/i);
         }
 
         const failed = structuredClone(result);
@@ -490,6 +496,36 @@ describe("Windows clean-stop controller prototype", () => {
         const boundary = structuredClone(result);
         boundary.elapsedMs = 300_000;
         assert.equal(invoke("ValidateResult", boundary).accepted, true);
+        const alreadyConsoleFree = structuredClone(result);
+        Object.assign(alreadyConsoleFree, {
+            initialConsoleProcessIds: [], initialConsoleError: 6, initialConsoleDetached: false
+        });
+        assert.equal(invoke("ValidateResult", alreadyConsoleFree).accepted, true);
+    });
+
+    powershellIt("allows only already-free or exact sole-self console initialization", () => {
+        const input = (processIds, error, detachResult = null, consoleFreeAfter = null) => ({
+            currentPid: 4000,
+            observation: {processIds, error},
+            observeFailure: false,
+            detachResult,
+            consoleFreeAfter
+        });
+        assert.deepEqual(invoke("TestInitialConsole", input([], 6)), {
+            initialConsoleProcessIds: [], initialConsoleError: 6,
+            initialConsoleDetached: false, consoleFreeAfter: true
+        });
+        assert.deepEqual(invoke("TestInitialConsole", input([4000], 0, true, true)), {
+            initialConsoleProcessIds: [4000], initialConsoleError: 0,
+            initialConsoleDetached: true, consoleFreeAfter: true
+        });
+        for (const invalid of [
+            input([], 0), input([4000], 5, true, true), input([4242], 0, true, true),
+            input([4000, 4000], 0, true, true), input([4000, 4242], 0, true, true),
+            input(Array.from({length: 65}, () => 4000), 0, true, true),
+            input([[4000]], 0, true, true), input(["4000"], 0, true, true), input([4000], 0, false, true),
+            input([4000], 0, true, false), {...input([4000], 0, true, true), observeFailure: true}
+        ]) assert.throws(() => invoke("TestInitialConsole", invalid), /console|detach|process/i);
     });
 
     powershellIt("emits deterministic inert fixture source", () => {
@@ -513,13 +549,17 @@ describe("Windows clean-stop controller prototype", () => {
             "EXTENDED_STARTUPINFO_PRESENT", "STARTF_USESTDHANDLES", "STARTF_USESHOWWINDOW",
             "AssignProcessToJobObject", "IsProcessInJob", "GetProcessTimes",
             "QueryFullProcessImageNameW", "GetConsoleProcessList", "AttachConsole",
-            "SetConsoleCtrlHandler", "GenerateConsoleCtrlEvent", "CTRL_C_EVENT", "FreeConsole",
+            "GetCurrentProcessId", "SetConsoleCtrlHandler", "GenerateConsoleCtrlEvent", "CTRL_C_EVENT", "FreeConsole",
             "TerminateJobObject", "QueryInformationJobObject"
         ]) assert.match(source, new RegExp(token), token);
         assert.match(source, /SetLastError\(0\);uint n=GetConsoleProcessList[\s\S]*int error=Marshal\.GetLastWin32Error\(\)/,
             "console-free observation must not consume stale thread last-error state");
-        assert.match(source, /Controller must start console-free: count="\+n\+"; error="\+error/,
+        assert.match(source, /Controller must be console-free: count="\+n\+"; error="\+error/,
             "a hosted failure must retain the exact console observation");
+        assert.match(source, /MAX_INITIAL_CONSOLE_PROCESSES\s*=\s*64/u);
+        assert.match(source, /public static ConsoleObservation ObserveInitialConsole/u);
+        assert.match(source, /public static bool DetachInitialConsole\(\)[\s\S]*FreeConsole/u);
+        assert.match(source, /CurrentProcessId\(\)[\s\S]*nativeCurrentPid -ne \[int64\]\$PID[\s\S]*Invoke-MyspeedCleanInitialConsoleCore/u);
         assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOW\)\)\s*!=\s*104/u);
         assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOEXW\)\)\s*!=\s*112/u);
         for (const [type, bytes] of [
@@ -563,7 +603,9 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /ReleaseLaunchLocals\(ref pi\.hThread[\s\S]*ThreadHandleClosedBeforeReady=true/u);
         assert.match(source, /controllerInitiallyConsoleFree=\$state\.controllerInitiallyConsoleFree/u);
         assert.match(source, /FileAttributes\]::ReparsePoint/u);
-        assert.match(source, /\[MySpeed\.Qualification\.CleanStop\.Session\]::AssertConsoleFree\(\)[\s\S]*\[MySpeed\.Qualification\.CleanStop\.Session\]::ObserveAbi\(\)/u);
+        assert.match(source, /Invoke-MyspeedCleanInitialConsoleCore[\s\S]*\[MySpeed\.Qualification\.CleanStop\.Session\]::ObserveAbi\(\)/u);
+        assert.match(source, /assertConsoleFree=\{\[MySpeed\.Qualification\.CleanStop\.Session\]::AssertConsoleFree\(\)\}/u,
+            "post-initialization lifecycle checks remain strict and do not auto-detach");
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$request \$loaded\.sha256 \$abiSha \$operations/u);
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$launchRequest \('d'\*64\) \('8'\*64\) \$operations/u);
         assert.match(source, /Assert-MyspeedCleanPhysicalLaunchPaths \$request[\s\S]*?entryDiagnosticPath[\s\S]*?try\{[\s\S]*?Add-Type[\s\S]*?Write-MyspeedCleanEntryFailure/u);

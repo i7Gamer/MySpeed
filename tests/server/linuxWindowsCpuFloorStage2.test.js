@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import {spawnSync} from "node:child_process";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {describe, it} from "node:test";
 
 import {
@@ -7,6 +11,7 @@ import {
     STAGE2_PROVENANCE,
     TOP_LEVEL_PACKAGE_PINS,
     buildQemuArguments,
+    renderGuestBootstrap,
     runWindowsCpuFloorStage2,
     validatePackageClosure,
     selectWindowsImage
@@ -18,6 +23,8 @@ import {createHostedStage2Operations} from
 const NONCE = "0123456789abcdef0123456789abcdef";
 const HASH = value => crypto.createHash("sha256").update(value).digest("hex");
 const FILE_HASH = "a".repeat(64);
+const POWERSHELL_TEST_TIMEOUT_MILLISECONDS = 10_000;
+const EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "b".repeat(40),
@@ -244,14 +251,125 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             "base64").toString("utf8");
         assert.match(bootstrap, /MYSPEEDOUT/u);
         assert.match(bootstrap, /Get-NetAdapter/u);
-        assert.match(bootstrap, /SetErrorMode\(3\)/u);
-        assert.match(bootstrap, /WaitForExit\(\$PROBE_TIMEOUT_MILLISECONDS\)/u);
+        assert.match(bootstrap, /SetErrorMode 3/u);
+        assert.match(bootstrap, /\$probeTimeoutMilliseconds = \$PROBE_TIMEOUT_MILLISECONDS/u);
+        assert.match(bootstrap, /WaitForExit\(\$probeTimeoutMilliseconds\)/u);
         assert.match(bootstrap, /BitConverter\]::ToUInt32/u);
+        assert.match(bootstrap, /\$bootstrapFailure = \$null/u);
+        assert.match(bootstrap, /\$errorModeChanged = \$false\r\n\s+try \{/u);
+        assert.match(bootstrap, /catch \{\r\n\s+\$bootstrapFailure = \$_/u);
+        assert.match(bootstrap, /\$expectedNonce = \$EXPECTED_NONCE/u);
+        assert.match(bootstrap, /status='failed';nonce=\$EXPECTED_NONCE;stage='guest-bootstrap'/u);
+        assert.match(bootstrap, /\$temporaryPath = \$Path \+ '\.tmp'/u);
+        assert.match(bootstrap, /StructuralEqualityComparer\.Equals\(\$observed,\$Bytes\)/u);
+        assert.match(bootstrap, /\[IO\.File\]::Move\(\$temporaryPath,\$Path\)/u);
+        assert.match(bootstrap, /finally \{\r\n\s+try \{\r\n\s+if \(\$errorModeChanged\)/u);
+        assert.match(bootstrap, /\} finally \{\r\n\s+& \$Shutdown\r\n\s+\}/u);
+        assert.equal((bootstrap.match(/Stop-Computer -Force/gu) ?? []).length, 1);
+        assert.ok(bootstrap.indexOf("Stop-Computer -Force") > bootstrap.indexOf("finally {"));
+        assert.ok(bootstrap.indexOf("Operations.SetErrorMode $previousErrorMode") < bootstrap.indexOf("& $Shutdown"));
         assert.doesNotMatch(bootstrap, /Enable-NetAdapter|New-NetIPAddress|Set-Net/u);
         assert.deepEqual(seen.seedSpec.files.filter(file => file.kind === "owned-file").map(file => file.name),
             PROBE_ROLES.map(role => `${role}.exe`));
         assert.equal(seen.seedSpec.files.find(file => file.name === "known-good.exe").sourcePath,
             `${paths().probeRoot}/known_good.exe`);
+    });
+
+    it("captures native collector constants in its returned detached closure", {skip: process.platform !== "win32"}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-native-closure-"));
+        const script = path.join(root, "bootstrap.ps1");
+        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        const harness = `$ErrorActionPreference='Stop';$global:timeouts=[Collections.Generic.List[int]]::new();` +
+            `$global:lifecycle=[Collections.Generic.List[string]]::new();$global:nullExit=$false;` +
+            `$global:testRoot='${root.replaceAll("'", "''")}';` +
+            `function global:Join-Path{param($Path,$ChildPath)if($ChildPath -like 'Temp\\myspeed-*'){` +
+            `[IO.Path]::Combine($global:testRoot,[IO.Path]::GetFileName($ChildPath))}else{` +
+            `[IO.Path]::Combine([string]$Path,[string]$ChildPath)}}` +
+            `function global:Add-Type{param($TypeDefinition,$Language)}` +
+            `function global:Start-Process{param($FilePath,[switch]$NoNewWindow,[switch]$PassThru,` +
+            `$RedirectStandardOutput,$RedirectStandardError);[IO.File]::WriteAllBytes($RedirectStandardOutput,[byte[]]@());` +
+            `[IO.File]::WriteAllBytes($RedirectStandardError,[byte[]]@());$p=[pscustomobject]@{};` +
+            `$p|Add-Member ScriptProperty Handle {$global:lifecycle.Add('handle');1};` +
+            `$p|Add-Member ScriptMethod WaitForExit {param([int]$Milliseconds)$global:lifecycle.Add('wait');` +
+            `$global:timeouts.Add($Milliseconds);$true};$p|Add-Member ScriptProperty ExitCode {` +
+            `$global:lifecycle.Add('exit');if($global:nullExit){return $null};return 0};` +
+            `$p|Add-Member ScriptMethod Kill {};` +
+            `$p|Add-Member ScriptMethod Dispose {$global:lifecycle.Add('dispose')};return $p}` +
+            `function global:Get-CimInstance{param($ClassName) @()}` +
+            `function global:Get-NetAdapter{param([switch]$IncludeHidden) @()}` +
+            `function global:Get-NetRoute{ @() };` +
+            `$ops=& {. '${script.replaceAll("'", "''")}' -LibraryMode;New-MyspeedGuestNativeOperations};` +
+            `$result=& $ops.CollectEvidence '${root.replaceAll("'", "''")}';` +
+            `$global:nullExit=$true;$rejected=$null;try{& $ops.CollectEvidence '${root.replaceAll("'", "''")}'}catch{` +
+            `$rejected=$_.Exception.Message};` +
+            `[Console]::Out.Write(([ordered]@{nonce=$result.nonce;runCount=$result.runs.Count;` +
+            `timeouts=@($global:timeouts);lifecycle=@($global:lifecycle);rejected=$rejected}|ConvertTo-Json -Compress))`;
+        try {
+            const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
+                {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
+            assert.equal(result.status, 0, result.stderr);
+            const observed = JSON.parse(result.stdout);
+            assert.equal(observed.nonce, NONCE);
+            assert.equal(observed.runCount, PROBE_ROLES.length);
+            assert.deepEqual(observed.timeouts,
+                Array(PROBE_ROLES.length + 1).fill(EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS));
+            assert.deepEqual(observed.lifecycle, [...Array(PROBE_ROLES.length).fill(["handle", "wait", "exit", "dispose"])
+                .flat(), "handle", "wait", "exit", "dispose"]);
+            assert.equal(observed.rejected, "Probe exit code is unavailable");
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("runs injected bootstrap failure, diagnostic, restoration and shutdown paths", {skip: process.platform !== "win32"}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-bootstrap-"));
+        const script = path.join(root, "bootstrap.ps1");
+        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        const harness = `$ErrorActionPreference='Stop';. '${script.replaceAll("'", "''")}' -LibraryMode;` +
+            `$events=[Collections.Generic.List[string]]::new();$resolveCount=0;` +
+            `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);if($Mode -eq 3){return [uint32]77}};` +
+            `ResolveVolume={param([string]$Label)$script:resolveCount++;$events.Add('resolve:'+$Label);` +
+            `if($Label -eq 'MYSPEEDSEED'){'C:\\Seed\\'}else{'C:\\Output\\'}};` +
+            `CollectEvidence={param([string]$Seed)$events.Add('collect');[ordered]@{ok=$true}};` +
+            `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
+            `if([IO.Path]::GetFileName($Path) -eq 'result.json'){throw 'synthetic write failure'}}};` +
+            `try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {$events.Add('shutdown')}}` +
+            `catch{$events.Add('caught')};[Console]::Out.Write(($events -join ','))`;
+        try {
+            const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
+                {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.stdout, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,mode:77," +
+                "write:result.json,shutdown,caught");
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("still invokes shutdown when error-mode restoration fails", {skip: process.platform !== "win32"}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-restore-"));
+        const script = path.join(root, "bootstrap.ps1");
+        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        const harness = `$ErrorActionPreference='Stop';. '${script.replaceAll("'", "''")}' -LibraryMode;` +
+            `$events=[Collections.Generic.List[string]]::new();$script:writtenBytes=$null;` +
+            `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);` +
+            `if($Mode -eq 3){return [uint32]77}else{throw 'restore failed'}};` +
+            `ResolveVolume={param([string]$Label)$events.Add('resolve:'+$Label);'C:\\Output\\'};` +
+            `CollectEvidence={param([string]$Seed)$events.Add('collect');[ordered]@{ok=$true}};` +
+            `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
+            `$script:writtenBytes=[byte[]]$Bytes.Clone()}};` +
+            `try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {$events.Add('shutdown')}}` +
+            `catch{$events.Add('caught')};$outcome=[Text.Encoding]::UTF8.GetString($script:writtenBytes)|ConvertFrom-Json;` +
+            `[Console]::Out.Write(([ordered]@{events=($events -join ',');outcome=$outcome}|ConvertTo-Json -Compress))`;
+        try {
+            const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
+                {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
+            assert.equal(result.status, 0, result.stderr);
+            const observed = JSON.parse(result.stdout);
+            assert.equal(observed.events, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,mode:77," +
+                "write:result.json,shutdown,caught");
+            assert.deepEqual(observed.outcome, {schemaVersion: 1, status: "failed", nonce: NONCE,
+                stage: "guest-bootstrap", failure: "restore failed"});
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
     it("accepts the exact acquired-probe projection returned by the hosted adapter", async () => {
@@ -315,6 +433,16 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             assert.equal(result.releaseGateCleared, false, label);
             assert.equal(result.stage, lastCall, label);
         }
+
+        const bootstrap = operations({launchOwnedQemu: async input => ({process: {exitCode: 0, signal: null,
+            timedOut: false, cleanupProven: true, treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
+            launcherExecutablePath: toolchain().runtime.loader.path, processGroupId: 2300,
+            qemuPidAbsentAfter: true, terminationReason: null}, argv: input.argv, guest: {schemaVersion: 1,
+            status: "failed", nonce: context().nonce, stage: "guest-bootstrap", failure: "probe execution failed"}})});
+        const bootstrapResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, bootstrap.op);
+        assert.equal(bootstrapResult.status, "failed");
+        assert.match(bootstrapResult.failure, /probe execution failed/u);
     });
 
     it("records failure and cleanup truth without treating a QEMU CPU name as calibration", async () => {

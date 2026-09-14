@@ -8,6 +8,8 @@ import {
     buildIsolatedAptVectors,
     collectHostedAdmissionObservations,
     createHostedStage2Operations,
+    parseGuestFailure,
+    parseGuestOutcome,
     parseGuestOutput,
     parseProbeArtifactEvidence,
     parseWimInfo,
@@ -47,6 +49,23 @@ const rootFileIdentity = target => ({path: target, bytes: "4096", sha256: "f".re
 const commandIdentity = target => ({...rootFileIdentity(target), invocationPath: target});
 
 describe("hosted Stage 2 native adapter preparation", () => {
+    it("accepts only bounded fail-closed guest bootstrap diagnostics", () => {
+        const value = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
+            failure: "probe execution failed"};
+        assert.deepEqual(parseGuestFailure(Buffer.from(JSON.stringify(value)), NONCE), value);
+        assert.deepEqual(parseGuestOutcome(Buffer.from(JSON.stringify(value)), NONCE), value);
+        for (const mutate of [
+            record => { record.status = "observed"; },
+            record => { record.nonce = "f".repeat(32); },
+            record => { record.failure = "bad\nmessage"; },
+            record => { record.extra = true; }
+        ]) {
+            const changed = structuredClone(value);
+            mutate(changed);
+            assert.throws(() => parseGuestFailure(Buffer.from(JSON.stringify(changed)), NONCE), /failure evidence/i);
+        }
+    });
+
     it("drains outputs larger than the Stage 1 cap under a fixed Stage 2 bound", async () => {
         const output = Buffer.alloc(20_000, 0x61);
         const child = new EventEmitter();
@@ -437,6 +456,35 @@ describe("hosted Stage 2 native adapter preparation", () => {
             executablePath: launch.process.launcherExecutablePath, absent: launch.process.qemuPidAbsentAfter},
         {pid: 2345, startTicks: "77",
             executablePath: `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`, absent: true});
+    });
+
+    it("extracts bounded guest failure evidence only after clean QEMU teardown", async () => {
+        const failure = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
+            failure: "synthetic provider failure"};
+        const extracted = [];
+        const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+            inspectOwned: rootFileIdentity,
+            inspectDirectory: directoryIdentity,
+            runOwned: async (_command, argv) => { extracted.push(argv.find(value => value.startsWith("::")));
+                return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
+            runMonitoredQemu: async () => ({observation: {process: okProcess, stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)}, identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+                executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+            absentAfter: true, processGroupGone: true, terminationReason: null}),
+            readOwnedVerified: target => ({bytes: Buffer.from(JSON.stringify(failure)), identity: {
+                path: target, bytes: String(Buffer.byteLength(JSON.stringify(failure))), sha256: "1".repeat(64)}})
+        }});
+        const toolchain = {runtime: {loader: rootFileIdentity(
+            `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+        libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+        mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+        const result = await adapter.launchOwnedQemu({paths: paths(), toolchain,
+            privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
+        assert.deepEqual(result.guest, failure);
+        assert.deepEqual(extracted, ["::result.json"]);
+        assert.equal(result.process.cleanupProven, true);
+        assert.equal(result.process.treeGone, true);
     });
 
     it("aborts when no QEMU identity appears within the bounded startup window", async () => {

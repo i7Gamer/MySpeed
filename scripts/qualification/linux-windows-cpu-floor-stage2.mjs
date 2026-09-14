@@ -19,6 +19,8 @@ const MAX_WIM_BYTES = 8_152_356_864n;
 const GUEST_OUTPUT_BYTES = "67108864";
 const GUEST_DISK_BYTES = "51539607552";
 const GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
+const GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
+const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
@@ -514,40 +516,97 @@ function renderAutounattend(image, nonce) {
     return Buffer.from(xml, "utf8");
 }
 
-function renderGuestBootstrap(nonce) {
+export function renderGuestBootstrap(nonce) {
     const roles = PROBE_ROLES.map(role => `'${role}'`).join(",");
-    const script = `$ErrorActionPreference = 'Stop'\r\nSet-StrictMode -Version Latest\r\n` +
+    const script = `param([switch]$LibraryMode)\r\n$ErrorActionPreference = 'Stop'\r\nSet-StrictMode -Version Latest\r\n` +
         `$EXPECTED_NONCE = '${nonce}'\r\n$MAX_STREAM_BYTES = 4096\r\n$EXPECTED_ILLEGAL_EXIT = 3221225501L\r\n` +
         `$PROBE_TIMEOUT_MILLISECONDS = ${GUEST_PROBE_TIMEOUT_MILLISECONDS}\r\n` +
-        `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ` +
+        `$PROBE_CLEANUP_TIMEOUT_MILLISECONDS = ${GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
+        `$MAX_FAILURE_MESSAGE_CHARACTERS = ${MAX_GUEST_FAILURE_MESSAGE_CHARACTERS}\r\n` +
+        `function New-MyspeedGuestNativeOperations {\r\n` +
+        `  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ` +
         `MyspeedErrorMode { [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode); }'\r\n` +
-        `$previousErrorMode = [MyspeedErrorMode]::SetErrorMode(3)\r\n` +
-        `$seed = (Get-Volume -FileSystemLabel 'MYSPEEDSEED' -ErrorAction Stop).DriveLetter + ':\\'\r\n` +
-        `$output = (Get-Volume -FileSystemLabel 'MYSPEEDOUT' -ErrorAction Stop).DriveLetter + ':\\result.json'\r\n` +
-        `$runs = [Collections.Generic.List[object]]::new()\r\nforeach ($role in @(${roles})) {\r\n` +
-        `  $stdout = Join-Path $env:SystemRoot ('Temp\\myspeed-' + $role + '.stdout')\r\n` +
-        `  $stderr = Join-Path $env:SystemRoot ('Temp\\myspeed-' + $role + '.stderr')\r\n` +
-        `  $process = Start-Process -FilePath (Join-Path $seed ($role + '.exe')) -NoNewWindow -PassThru ` +
+        `  $probeTimeoutMilliseconds = $PROBE_TIMEOUT_MILLISECONDS\r\n` +
+        `  $probeCleanupTimeoutMilliseconds = $PROBE_CLEANUP_TIMEOUT_MILLISECONDS\r\n` +
+        `  $maximumStreamBytes = $MAX_STREAM_BYTES\r\n` +
+        `  $expectedNonce = $EXPECTED_NONCE\r\n` +
+        `  $collectEvidence = { param([string]$Seed)\r\n` +
+        `    $runs = [Collections.Generic.List[object]]::new()\r\n    foreach ($role in @(${roles})) {\r\n` +
+        `    $stdout = Join-Path $env:SystemRoot ('Temp\\myspeed-' + $role + '.stdout')\r\n` +
+        `    $stderr = Join-Path $env:SystemRoot ('Temp\\myspeed-' + $role + '.stderr')\r\n` +
+        `    $process = Start-Process -FilePath (Join-Path $Seed ($role + '.exe')) -NoNewWindow -PassThru ` +
         `-RedirectStandardOutput $stdout -RedirectStandardError $stderr\r\n` +
-        `  if (-not $process.WaitForExit($PROBE_TIMEOUT_MILLISECONDS)) { $process.Kill(); $process.WaitForExit(); ` +
-        `throw 'Probe exceeded its deadline' }\r\n` +
-        `  $stdoutBytes = [IO.File]::ReadAllBytes($stdout); $stderrBytes = [IO.File]::ReadAllBytes($stderr)\r\n` +
-        `  if ($stdoutBytes.Length -gt $MAX_STREAM_BYTES -or $stderrBytes.Length -gt $MAX_STREAM_BYTES) { ` +
+        `    try {\r\n      $null = $process.Handle\r\n` +
+        `      if (-not $process.WaitForExit($probeTimeoutMilliseconds)) {\r\n        $process.Kill()\r\n` +
+        `        if (-not $process.WaitForExit($probeCleanupTimeoutMilliseconds)) { ` +
+        `throw 'Probe cleanup exceeded its deadline' }\r\n        throw 'Probe exceeded its deadline'\r\n      }\r\n` +
+        `      $rawExit = $process.ExitCode\r\n      if ($rawExit -isnot [int]) { ` +
+        `throw 'Probe exit code is unavailable' }\r\n` +
+        `      $stdoutBytes = [IO.File]::ReadAllBytes($stdout); $stderrBytes = [IO.File]::ReadAllBytes($stderr)\r\n` +
+        `      if ($stdoutBytes.Length -gt $maximumStreamBytes -or $stderrBytes.Length -gt $maximumStreamBytes) { ` +
         `throw 'Probe stream exceeded its bound' }\r\n` +
-        `  $unsignedExit = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$process.ExitCode),0)\r\n` +
-        `  $runs.Add([ordered]@{role=$role;exitCode=$unsignedExit;` +
+        `      $unsignedExit = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$rawExit),0)\r\n` +
+        `      $runs.Add([ordered]@{role=$role;exitCode=$unsignedExit;` +
         `stdoutBase64=[Convert]::ToBase64String($stdoutBytes);stderrBase64=[Convert]::ToBase64String($stderrBytes)})\r\n` +
-        `  Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction Stop\r\n}\r\n` +
-        `$physical = @(Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop | Where-Object { $_.PhysicalAdapter -eq $true })\r\n` +
-        `$enabled = @(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' -and ` +
+        `      Remove-Item -LiteralPath $stdout,$stderr -Force -ErrorAction Stop\r\n` +
+        `    } finally { $process.Dispose() }\r\n    }\r\n` +
+        `    $physical = @(Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop | Where-Object { $_.PhysicalAdapter -eq $true })\r\n` +
+        `    $enabled = @(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' -and ` +
         `$_.InterfaceDescription -notmatch 'Loopback' })\r\n` +
-        `$routes = @(Get-NetRoute -ErrorAction Stop | Where-Object { $_.InterfaceAlias -notmatch 'Loopback' })\r\n` +
-        `$record = [ordered]@{schemaVersion=1;nonce=$EXPECTED_NONCE;runs=$runs;network=[ordered]@{` +
+        `    $routes = @(Get-NetRoute -ErrorAction Stop | Where-Object { $_.InterfaceAlias -notmatch 'Loopback' })\r\n` +
+        `    return [ordered]@{schemaVersion=1;nonce=$expectedNonce;runs=$runs;network=[ordered]@{` +
         `hardwareNics=$physical.Count;enabledNonLoopbackInterfaces=$enabled.Count;nonLoopbackRoutes=$routes.Count}}\r\n` +
-        `$bytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Compress -Depth 8))\r\n` +
-        `$stream = [IO.FileStream]::new($output,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)\r\n` +
-        `try { $stream.Write($bytes,0,$bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }\r\n` +
-        `$null = [MyspeedErrorMode]::SetErrorMode($previousErrorMode)\r\nStop-Computer -Force\r\n`;
+        `  }.GetNewClosure()\r\n` +
+        `  $writeExclusive = { param([string]$Path,[byte[]]$Bytes)\r\n` +
+        `    $temporaryPath = $Path + '.tmp'\r\n    try {\r\n` +
+        `      $stream = [IO.FileStream]::new($temporaryPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,` +
+        `[IO.FileShare]::None)\r\n` +
+        `      try { $stream.Write($Bytes,0,$Bytes.Length); $stream.Flush($true) } finally { $stream.Dispose() }\r\n` +
+        `      $observed = [IO.File]::ReadAllBytes($temporaryPath)\r\n` +
+        `      if (-not [Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($observed,$Bytes)) { ` +
+        `throw 'Guest outcome write verification failed' }\r\n` +
+        `      [IO.File]::Move($temporaryPath,$Path)\r\n` +
+        `    } catch {\r\n      if ([IO.File]::Exists($temporaryPath)) { ` +
+        `[IO.File]::Delete($temporaryPath) }\r\n      throw\r\n    }\r\n` +
+        `  }.GetNewClosure()\r\n` +
+        `  return @{SetErrorMode={ param([uint32]$Mode) [MyspeedErrorMode]::SetErrorMode($Mode) };` +
+        `ResolveVolume={ param([string]$Label) (Get-Volume -FileSystemLabel $Label -ErrorAction Stop).DriveLetter + ':\\' };` +
+        `CollectEvidence=$collectEvidence;WriteExclusive=$writeExclusive}\r\n}\r\n` +
+        `function Invoke-MyspeedGuestBootstrap {\r\n  param([hashtable]$Operations,` +
+        `[scriptblock]$Shutdown = { Stop-Computer -Force })\r\n` +
+        `  $bootstrapFailure = $null\r\n  $outputRoot = $null\r\n  $successBytes = $null\r\n` +
+        `  $errorModeChanged = $false\r\n` +
+        `  try {\r\n    if ($null -eq $Operations) { $Operations = New-MyspeedGuestNativeOperations }\r\n` +
+        `    foreach ($name in @('SetErrorMode','ResolveVolume','CollectEvidence','WriteExclusive')) { ` +
+        `if ($Operations[$name] -isnot [scriptblock]) { throw ('Guest operation is absent: ' + $name) } }\r\n` +
+        `    $previousErrorMode = & $Operations.SetErrorMode 3\r\n` +
+        `    if ($previousErrorMode -isnot [uint32]) { throw 'Previous error mode is invalid' }\r\n` +
+        `    $errorModeChanged = $true\r\n` +
+        `    $seed = & $Operations.ResolveVolume 'MYSPEEDSEED'\r\n` +
+        `    $outputRoot = & $Operations.ResolveVolume 'MYSPEEDOUT'\r\n` +
+        `    $record = & $Operations.CollectEvidence $seed\r\n` +
+        `    $successBytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Compress -Depth 8))\r\n` +
+        `  } catch {\r\n    $bootstrapFailure = $_\r\n  } finally {\r\n    try {\r\n` +
+        `      if ($errorModeChanged) {\r\n        try { $null = & $Operations.SetErrorMode $previousErrorMode } ` +
+        `catch { $bootstrapFailure = $_ }\r\n      }\r\n` +
+        `      if ($null -ne $outputRoot -and $Operations['WriteExclusive'] -is [scriptblock]) {\r\n` +
+        `        if ($null -ne $bootstrapFailure) {\r\n          try {\r\n` +
+        `            $message = [regex]::Replace([string]$bootstrapFailure.Exception.Message, ` +
+        `'[\\x00-\\x1f\\x7f]+', ' ')\r\n` +
+        `            if ($message.Length -gt $MAX_FAILURE_MESSAGE_CHARACTERS) { ` +
+        `$message = $message.Substring(0,$MAX_FAILURE_MESSAGE_CHARACTERS) }\r\n` +
+        `            $failureRecord = [ordered]@{schemaVersion=1;status='failed';nonce=$EXPECTED_NONCE;` +
+        `stage='guest-bootstrap';failure=$message}\r\n` +
+        `            $failureBytes = [Text.UTF8Encoding]::new($false).GetBytes(($failureRecord | ` +
+        `ConvertTo-Json -Compress -Depth 4))\r\n` +
+        `            & $Operations.WriteExclusive (Join-Path $outputRoot 'result.json') $failureBytes\r\n` +
+        `          } catch { }\r\n        }\r\n      }\r\n` +
+        `      if ($null -eq $bootstrapFailure -and $null -ne $successBytes) {\r\n        try { ` +
+        `& $Operations.WriteExclusive (Join-Path $outputRoot 'result.json') $successBytes } ` +
+        `catch { $bootstrapFailure = $_ }\r\n      }\r\n` +
+        `    } finally {\r\n      & $Shutdown\r\n    }\r\n  }\r\n` +
+        `  if ($null -ne $bootstrapFailure) { throw $bootstrapFailure }\r\n}\r\n` +
+        `if (-not $LibraryMode) { Invoke-MyspeedGuestBootstrap }\r\n`;
     return Buffer.from(script, "utf8");
 }
 
@@ -589,7 +648,16 @@ function validatePreparedMedia(value, pathsValue, seedSpec, toolchain) {
     return deepFreeze(structuredClone(value));
 }
 
-function validateGuest(value, pathsValue) {
+function validateGuest(value, pathsValue, expectedNonce) {
+    if (value?.status === "failed") {
+        assertKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
+        if (value.schemaVersion !== SCHEMA_VERSION || value.nonce !== expectedNonce ||
+            value.stage !== "guest-bootstrap" ||
+            typeof value.failure !== "string" || value.failure.length < 1 ||
+            value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS ||
+            /[\x00-\x1f\x7f]/u.test(value.failure)) throw new TypeError("guest failure evidence is invalid");
+        throw new Error(`guest bootstrap failed: ${value.failure}`);
+    }
     assertKeys(value, ["cpu", "instructions", "network", "output", "schemaVersion", "status"], "guest evidence");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed") throw new TypeError("guest header is invalid");
     assertKeys(value.cpu, ["avx", "avx2", "osxsave", "popcnt", "sse42", "xcr0"], "guest CPUID");
@@ -611,7 +679,8 @@ function validateGuest(value, pathsValue) {
 }
 
 function failure(context, stage, error, cleanupProven = true) {
-    const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ").slice(0, 512);
+    const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ")
+        .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
     return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
         context: structuredClone(context), failure: message || "unspecified failure"});
@@ -681,7 +750,7 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             launchObservation.process.terminationReason !== null ||
             launchObservation.process.qemuPidAbsentAfter !== true)
             throw new Error("QEMU process did not complete cleanly");
-        const guest = validateGuest(launchObservation.guest, checkedPaths);
+        const guest = validateGuest(launchObservation.guest, checkedPaths, context.nonce);
         return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             cpuCalibrationAccepted: true, cleanupProven: true, privilegeMode, context: structuredClone(context),

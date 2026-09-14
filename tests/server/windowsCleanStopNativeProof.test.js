@@ -237,6 +237,7 @@ const result = caseId => {
         controllerPid: 4000,
         candidatePid: 4242, candidateCreationTime: "0123456789abcdef", candidateImagePath: CANDIDATE,
         candidateSha256: "0".repeat(64), candidateVolumeSerial: "89abcdef", candidateFileId: "0123456789abcdef",
+        initialConsoleProcessIds: [4000], initialConsoleError: 0, initialConsoleDetached: true,
         controllerInitiallyConsoleFree: true, candidateCreatedSuspended: true, privateConsoleRequested: true,
         handleListConfigured: true, jobAssignedBeforeResume: true, initialJobMembership: true,
         candidateIdentityCaptured: true, candidateResumed: true, threadHandleClosedBeforeReady: true,
