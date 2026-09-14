@@ -80,11 +80,19 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.match(source, /GetFileInformationByHandle/);
         assert.match(source, /GetFinalPathNameByHandleW/);
         assert.match(source, /GetKernelObjectSecurity/);
-        assert.match(source, /SetKernelObjectSecurity/);
+        assert.match(source, /SetSecurityInfo/);
+        assert.match(source, /SeFileObject\s*=\s*1/);
+        assert.match(source, /ProtectedDaclSecurityInformation\s*=\s*0x80000000/);
+        assert.match(source, /SecurityDescriptorRelativeHeaderBytes\s*=\s*20/);
+        assert.match(source, /DaclOffsetFieldByteOffset\s*=\s*16/);
+        assert.match(source, /BitConverter\.ToInt32\(descriptor,DaclOffsetFieldByteOffset\)/);
+        assert.match(source, /DaclSecurityInformation\s*\|\s*ProtectedDaclSecurityInformation/);
+        assert.match(source, /GCHandle\.Alloc\(descriptor,GCHandleType\.Pinned\)/);
+        assert.doesNotMatch(source, /SetKernelObjectSecurity/);
         assert.match(source, /OwnerSecurityInformation\s*\|\s*GroupSecurityInformation\s*\|\s*DaclSecurityInformation/);
         assert.match(source, /FileAddFile\s*=\s*0x00000002/);
         assert.match(source, /AceFlags\.None/);
-        assert.match(source, /DenyAttempted\s*=\s*true;[\s\S]*SetKernelObjectSecurity/);
+        assert.match(source, /DenyAttempted\s*=\s*true;[\s\S]*SetFileDacl\(handle,bytes\)/);
         assert.match(source, /finally[\s\S]*RestoreOriginalSecurity/);
     });
 
@@ -109,6 +117,37 @@ describe("hosted sacrificial MSI native adapter", () => {
             "nested predecessor actions must not arm the candidate failure");
         assert.match(source, /!state\.InstallContextBalanced/,
             "the candidate and nested predecessor install contexts must close exactly");
+        assert.doesNotMatch(source, /"RollbackPayloadFile"|"RollbackRoot"/,
+            "ACTIONDATA matching must not use authored MSI table identifiers as observed values");
+        assert.match(source, /Path\.GetFileName\(targetPath\)/);
+        assert.match(source, /NormalizeDirectory\(record\.Fields\[8\]\)/);
+        assert.match(source, /FailureStage/);
+        assert.match(source, /FailureNativeErrorCode/);
+        assert.match(source, /CleanupFailureStage/);
+        assert.match(source, /CleanupFailureNativeErrorCode/);
+    });
+
+    it("matches the retained hosted InstallFiles ACTIONDATA filename, size, and resolved directory", () => {
+        const target = "C:\\ProgramData\\MyspeedRollback-be623b6cfcc34c0fafd3a927bbcbde15\\rollback-payload.txt";
+        const retained = ["rollback-payload.txt", "", "", "", "", "10", "", "",
+            "C:\\ProgramData\\MyspeedRollback-be623b6cfcc34c0fafd3a927bbcbde15\\"];
+        const normalizeDirectory = value => path.win32.resolve(value).replace(/[\\/]+$/u, "");
+        const matches = fields => fields.length >= 9
+            && fields[0] === path.win32.basename(target)
+            && fields[5] === "10"
+            && normalizeDirectory(fields[8]).toLowerCase()
+                === normalizeDirectory(path.win32.dirname(target)).toLowerCase();
+        assert.equal(matches(retained), true);
+        for (const mutate of [
+            value => { value[0] = "RollbackPayloadFile"; },
+            value => { value[5] = "11"; },
+            value => { value[8] = "RollbackRoot"; },
+            value => { value[8] = "C:\\ProgramData\\Other\\"; }
+        ]) {
+            const changed = [...retained];
+            mutate(changed);
+            assert.equal(matches(changed), false);
+        }
     });
 
     it("tracks the retained nested predecessor timeline and rejects malformed install contexts", () => {

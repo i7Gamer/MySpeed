@@ -516,6 +516,10 @@ describe("Windows clean-stop controller prototype", () => {
             "SetConsoleCtrlHandler", "GenerateConsoleCtrlEvent", "CTRL_C_EVENT", "FreeConsole",
             "TerminateJobObject", "QueryInformationJobObject"
         ]) assert.match(source, new RegExp(token), token);
+        assert.match(source, /SetLastError\(0\);uint n=GetConsoleProcessList[\s\S]*int error=Marshal\.GetLastWin32Error\(\)/,
+            "console-free observation must not consume stale thread last-error state");
+        assert.match(source, /Controller must start console-free: count="\+n\+"; error="\+error/,
+            "a hosted failure must retain the exact console observation");
         assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOW\)\)\s*!=\s*104/u);
         assert.match(source, /Marshal\.SizeOf\(typeof\(STARTUPINFOEXW\)\)\s*!=\s*112/u);
         for (const [type, bytes] of [

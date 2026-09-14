@@ -515,6 +515,7 @@ namespace MySpeed.Qualification.CleanStop {
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr l,uint f,UIntPtr a,IntPtr v,UIntPtr z,IntPtr p,IntPtr r);
     [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr l);
     [DllImport("kernel32.dll",SetLastError=true)] static extern uint GetConsoleProcessList([Out] uint[] p,uint c);
+    [DllImport("kernel32.dll",EntryPoint="SetLastError",ExactSpelling=true)] static extern void SetLastError(uint error);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool AttachConsole(uint p);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool FreeConsole();
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetConsoleCtrlHandler(IntPtr h,bool a);
@@ -566,7 +567,7 @@ namespace MySpeed.Qualification.CleanStop {
       if(Marshal.OffsetOf(typeof(EXTENDED_LIMIT),"io").ToInt32()!=64||Marshal.OffsetOf(typeof(EXTENDED_LIMIT),"processMemory").ToInt32()!=112)throw new InvalidOperationException("EXTENDED_LIMIT offsets ABI");
       if(IntPtr.Size*3!=24)throw new InvalidOperationException("HANDLE_LIST buffer ABI");
     }
-    public static void AssertConsoleFree(){uint[] p=new uint[1];uint n=GetConsoleProcessList(p,1);if(n!=0||Marshal.GetLastWin32Error()!=ERROR_INVALID_HANDLE)throw new InvalidOperationException("Controller must start console-free");}
+    public static void AssertConsoleFree(){uint[] p=new uint[1];SetLastError(0);uint n=GetConsoleProcessList(p,1);int error=Marshal.GetLastWin32Error();if(n!=0||error!=ERROR_INVALID_HANDLE)throw new InvalidOperationException("Controller must start console-free: count="+n+"; error="+error);}
     static string Quote(string value){if(value.Length>0&&value.IndexOfAny(new[]{' ','\t','"'})<0)return value;if(value.IndexOf('"')>=0)throw new InvalidOperationException("Argument contains a quote");return "\""+value+"\"";}
     static IntPtr EnvironmentBlock(IDictionary<string,string> env){List<string> keys=new List<string>(env.Keys);keys.Sort(StringComparer.OrdinalIgnoreCase);StringBuilder b=new StringBuilder();foreach(string k in keys)b.Append(k).Append('=').Append(env[k]).Append('\0');b.Append('\0');byte[] bytes=Encoding.Unicode.GetBytes(b.ToString());IntPtr p=Marshal.AllocHGlobal(bytes.Length);Marshal.Copy(bytes,0,p,bytes.Length);return p;}
     static string Id(IntPtr h){BY_HANDLE_FILE_INFORMATION i;if(!GetFileInformationByHandle(h,out i))throw Error("GetFileInformationByHandle");return (((ulong)i.fileIndexHigh<<32)|i.fileIndexLow).ToString("x16");}
