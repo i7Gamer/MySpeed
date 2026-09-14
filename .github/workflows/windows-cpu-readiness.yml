@@ -2,6 +2,23 @@ name: Windows CPU readiness calibration
 
 # Candidate-neutral, nonqualifying calibration. No application, MSI or VM runs.
 on:
+  workflow_call:
+    outputs:
+      closure_artifact_id:
+        description: Exact same-run source closure artifact ID
+        value: ${{ jobs.prepare.outputs.artifact_id }}
+      closure_artifact_digest:
+        description: SHA-256 of the uploaded source closure archive
+        value: ${{ jobs.prepare.outputs.artifact_digest }}
+      probe_artifact_id:
+        description: Exact same-run CPU probe evidence artifact ID
+        value: ${{ jobs.readiness.outputs.artifact_id }}
+      probe_artifact_digest:
+        description: SHA-256 of the uploaded CPU probe evidence archive
+        value: ${{ jobs.readiness.outputs.artifact_digest }}
+      nonce:
+        description: Producer execution nonce bound inside the retained evidence
+        value: ${{ jobs.prepare.outputs.nonce }}
   pull_request:
     paths:
       - .github/workflows/windows-cpu-readiness.yml
@@ -45,6 +62,7 @@ jobs:
     timeout-minutes: 20
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
       nonce: ${{ steps.closure.outputs.nonce }}
     steps:
       - name: Checkout exact source
@@ -113,6 +131,9 @@ jobs:
     needs: prepare
     runs-on: windows-2025
     timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.evidence.outputs.artifact-id }}
+      artifact_digest: ${{ steps.evidence.outputs.artifact-digest }}
     env:
       EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
     steps:
@@ -834,6 +855,7 @@ jobs:
           Write-Output 'Evidence is physically safe to retain. This does not accept its contents or calibration.'
 
       - name: Retain bounded calibration evidence
+        id: evidence
         if: always() && steps.bound_evidence.outcome == 'success'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:

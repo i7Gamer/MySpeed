@@ -46,6 +46,7 @@ $script:MaximumAggregateEvidenceBytes=33554432
 $script:MaximumFailureMessageLength=1024
 $script:MaximumFailureFieldBytes=128
 $script:MaximumFailureStreamBytes=64
+$script:MaximumFailureProofNames=8
 $script:NativeMode='InvokeHostedProof'
 
 function Assert-MyspeedProofEarlyHostedContext {
@@ -346,17 +347,40 @@ function Get-MyspeedProofFailedProcessStreams {
     }
     $parts=[Collections.Generic.List[string]]::new()
     $resultFailure='unavailable'
+    $resultProof='unavailable'
     if($null -ne $reads.result -and $reads.result -isnot [string]){
         try{
             $parsed=(ConvertFrom-MyspeedProofJson ([Text.UTF8Encoding]::new($false,$true).GetString($reads.result.bytes)) 'Failed controller result')
-            if($parsed.failures -is [object[]] -and $parsed.failures.Count -gt 0 -and $parsed.failures[0] -is [string]){
-                $failureBytes=[Text.UTF8Encoding]::new($false).GetBytes($parsed.failures[0])
+            $failuresProperty=$parsed.PSObject.Properties['failures']
+            if($null -ne $failuresProperty -and $failuresProperty.Value -is [object[]] -and
+                $failuresProperty.Value.Count -gt 0 -and $failuresProperty.Value[0] -is [string]){
+                $failureBytes=[Text.UTF8Encoding]::new($false).GetBytes($failuresProperty.Value[0])
                 $take=[Math]::Min($script:MaximumFailureFieldBytes,$failureBytes.Length);$prefix=New-Object byte[] $take
                 if($take -gt 0){[Array]::Copy($failureBytes,$prefix,$take)};$resultFailure=[Convert]::ToBase64String($prefix)
             }
+            $requiredProofs=@('controllerInitiallyConsoleFree','candidateCreatedSuspended','privateConsoleRequested',
+                'handleListConfigured','jobAssignedBeforeResume','initialJobMembership','candidateIdentityCaptured',
+                'candidateResumed','threadHandleClosedBeforeReady','preAttachIdentityMatch','postAttachHandleUnsignaled',
+                'postAttachIdentityMatch','postAttachJobMembership','consoleProcessIdsExact','ctrlEventGenerated',
+                'candidateExited','consoleFreeAfter','handlesClosed')
+            $falseProofs=[Collections.Generic.List[string]]::new()
+            foreach($name in $requiredProofs){$property=$parsed.PSObject.Properties[$name]
+                if($null -eq $property -or $property.Value -isnot [bool] -or -not $property.Value){
+                    if($falseProofs.Count -lt $script:MaximumFailureProofNames){[void]$falseProofs.Add($name)}}}
+            $normalizeBoolean={param($name)$property=$parsed.PSObject.Properties[$name]
+                if($null -eq $property -or $property.Value -isnot [bool]){return 'x'};if($property.Value){return '1'};return '0'}
+            $normalizeInteger={param($name)$property=$parsed.PSObject.Properties[$name]
+                if($null -eq $property -or $null -eq $property.Value){return 'null'}
+                if($property.Value -isnot [ValueType] -or $property.Value -is [bool] -or $property.Value -is [double] -or
+                    $property.Value -is [single] -or $property.Value -is [decimal]){return 'invalid'}
+                try{return ([int64]$property.Value).ToString([Globalization.CultureInfo]::InvariantCulture)}catch{return 'invalid'}}
+            $resultProof="pass:$(& $normalizeBoolean 'controllerLifecyclePassed'),forced:$(& $normalizeBoolean 'forced'),grace:$(& $normalizeBoolean 'graceExpired')," +
+                "false:$($falseProofs -join ','),exit:$(& $normalizeInteger 'exitCode'),job:$(& $normalizeInteger 'jobActiveProcesses')," +
+                "elapsed:$(& $normalizeInteger 'elapsedMs')"
         }catch{}
     }
     [void]$parts.Add("resultFailurePrefixBase64=$resultFailure")
+    [void]$parts.Add("resultProof=$resultProof")
     $entryFailure='unavailable'
     if($null -ne $reads.entryDiagnostic -and $reads.entryDiagnostic -isnot [string]){
         try{

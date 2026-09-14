@@ -441,6 +441,30 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
             schemaVersion: 1,
             kind: "myspeed-windows-clean-stop-result",
             status: "failed",
+            controllerLifecyclePassed: false,
+            forced: false,
+            graceExpired: false,
+            controllerInitiallyConsoleFree: true,
+            candidateCreatedSuspended: true,
+            privateConsoleRequested: true,
+            handleListConfigured: true,
+            jobAssignedBeforeResume: true,
+            initialJobMembership: true,
+            candidateIdentityCaptured: true,
+            candidateResumed: true,
+            threadHandleClosedBeforeReady: true,
+            preAttachIdentityMatch: false,
+            postAttachHandleUnsignaled: true,
+            postAttachIdentityMatch: true,
+            postAttachJobMembership: true,
+            consoleProcessIdsExact: true,
+            ctrlEventGenerated: true,
+            candidateExited: true,
+            exitCode: 0,
+            jobActiveProcesses: 0,
+            consoleFreeAfter: true,
+            handlesClosed: true,
+            elapsedMs: 7000,
             padding: "z".repeat(1800),
             failures: [lifecycleFailure]
         }), "utf8");
@@ -462,6 +486,7 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
             assert.ok(summary.indexOf("entryFailurePrefixBase64=") < summary.indexOf("resultBytes="), summary);
             assert.match(summary, new RegExp(`resultFailurePrefixBase64=${Buffer.from(lifecycleFailure).toString("base64")}`, "u"));
             assert.match(summary, new RegExp(`entryFailurePrefixBase64=${Buffer.from(entryFailure).toString("base64")}`, "u"));
+            assert.match(summary, /resultProof=pass:0,forced:0,grace:0,false:preAttachIdentityMatch,exit:0,job:0,elapsed:7000/u);
             assert.match(summary, new RegExp(`resultBytes=${resultBytes.length},resultSha256=${sha(resultBytes)}`, "u"));
             assert.match(summary, new RegExp(`entryDiagnosticBytes=${entryBytes.length},entryDiagnosticSha256=${sha(entryBytes)}`, "u"));
             assert.match(summary, new RegExp(`stdoutBytes=400,stdoutSha256=${sha(stdout)}`, "u"));
@@ -471,6 +496,29 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
             const retained = `Outer exit code differs: actual=1; expected=0; ${summary}`.slice(0, 1024);
             assert.match(retained, new RegExp(Buffer.from(lifecycleFailure).toString("base64"), "u"));
             assert.match(retained, new RegExp(Buffer.from(entryFailure).toString("base64"), "u"));
+
+            const cappedProofNames = ["controllerInitiallyConsoleFree", "candidateCreatedSuspended",
+                "privateConsoleRequested", "handleListConfigured", "jobAssignedBeforeResume",
+                "initialJobMembership", "candidateIdentityCaptured", "candidateResumed"];
+            const remainingProofNames = ["threadHandleClosedBeforeReady", "preAttachIdentityMatch",
+                "postAttachHandleUnsignaled", "postAttachIdentityMatch", "postAttachJobMembership",
+                "consoleProcessIdsExact", "ctrlEventGenerated", "candidateExited", "consoleFreeAfter",
+                "handlesClosed"];
+            const allFalseProofs = Object.fromEntries([...cappedProofNames, ...remainingProofNames]
+                .map(name => [name, false]));
+            fs.writeFileSync(resultPath, JSON.stringify({...allFalseProofs, controllerLifecyclePassed: false,
+                forced: false, graceExpired: false, exitCode: 0, jobActiveProcesses: 0, elapsedMs: 1,
+                failures: []}));
+            const cappedSummary = invoke("TestFailureStreams", {resultPath, stdoutPath, stderrPath});
+            assert.match(cappedSummary, new RegExp(`resultProof=pass:0,forced:0,grace:0,false:${
+                cappedProofNames.join(",")},exit:0,job:0,elapsed:1`, "u"));
+            assert.doesNotMatch(cappedSummary, /false:[^;]*threadHandleClosedBeforeReady/u);
+
+            fs.writeFileSync(resultPath, JSON.stringify({controllerLifecyclePassed: "false", forced: null,
+                graceExpired: [], exitCode: "0", jobActiveProcesses: 1.5, elapsedMs: true}));
+            const malformedSummary = invoke("TestFailureStreams", {resultPath, stdoutPath, stderrPath});
+            assert.match(malformedSummary, new RegExp(`resultProof=pass:x,forced:x,grace:x,false:${
+                cappedProofNames.join(",")},exit:invalid,job:invalid,elapsed:invalid`, "u"));
             fs.rmSync(stderrPath);
             assert.match(invoke("TestFailureStreams", {resultPath, stdoutPath, stderrPath}), /stderr=absent/u);
         } finally { fs.rmSync(directory, {recursive: true, force: true}); }
