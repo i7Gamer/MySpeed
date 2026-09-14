@@ -218,6 +218,52 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.doesNotMatch(source, /msiexec|MsiInstallProduct|Win32_Product/iu);
     });
 
+    it("returns only MSI properties despite COM method return values and releases failed reads", {skip: !HAS_POWERSHELL}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-msi-properties-mock-"));
+        const timeoutMilliseconds = 10_000;
+        try {
+            const script = path.resolve("scripts/release/post-release-msi-fixture-preparation.ps1");
+            const harnessPath = path.join(root, "harness.ps1");
+            const harness = `
+. '${script.replaceAll("'", "''")}' -Mode Library
+function Get-FileIdentity([string]$Value){return @{path=$Value}}
+function New-Object {throw 'Native COM creation is forbidden in this test'}
+class MockState {static [bool]$Missing=$false;static [int]$MethodReturn=23}
+class MockRecord {[string] StringData([int]$Index){return 'property-value'}}
+class MockView {
+    [int] Execute(){return [MockState]::MethodReturn}
+    [object] Fetch(){if([MockState]::Missing){return $null};return [MockRecord]::new()}
+    [int] Close(){return [MockState]::MethodReturn}
+}
+class MockDatabase {[object] OpenView([string]$Query){return [MockView]::new()}}
+class MockSummary {[string] Property([int]$Index){return 'package-value'}}
+class MockInstaller {
+    [object] OpenDatabase([string]$Path,[int]$Mode){return [MockDatabase]::new()}
+    [object] SummaryInformation([string]$Path,[int]$Mode){return [MockSummary]::new()}
+}
+$released=[Collections.Generic.List[string]]::new()
+$release={param($Value)$released.Add($Value.GetType().Name);[MockState]::MethodReturn}
+$success=@(Get-MsiProperties 'mock-only.msi' -CreateInstaller {[MockInstaller]::new()} -ReleaseCom $release)
+$successReleased=@($released.ToArray())
+$released.Clear();[MockState]::Missing=$true;$failure=''
+try{$null=Get-MsiProperties 'mock-only.msi' -CreateInstaller {[MockInstaller]::new()} -ReleaseCom $release}
+catch{$failure=$_.Exception.Message}
+@{success=$success;successReleased=$successReleased;failure=$failure;failureReleased=@($released.ToArray())} |
+    ConvertTo-Json -Depth 8 -Compress
+`;
+            fs.writeFileSync(harnessPath, harness);
+            const value = JSON.parse(execFileSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive",
+                "-File", harnessPath], {encoding: "utf8", timeout: timeoutMilliseconds, windowsHide: true,
+                stdio: ["ignore", "pipe", "pipe"]}));
+            assert.deepEqual(value.success, [{ProductCode: "property-value", ProductVersion: "property-value",
+                UpgradeCode: "property-value", PackageCode: "package-value"}]);
+            assert.deepEqual(value.successReleased, ["MockRecord", "MockView", "MockRecord", "MockView",
+                "MockRecord", "MockView", "MockSummary", "MockDatabase", "MockInstaller"]);
+            assert.equal(value.failure, "MSI ProductCode is absent");
+            assert.deepEqual(value.failureReleased, ["MockView", "MockDatabase", "MockInstaller"]);
+        } finally { fs.rmSync(root, {recursive: true, force: false}); }
+    });
+
     it("maps WiX dark File-ID exports through decompiled logical names", {skip: !HAS_POWERSHELL}, () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-msi-dark-map-"));
         try {

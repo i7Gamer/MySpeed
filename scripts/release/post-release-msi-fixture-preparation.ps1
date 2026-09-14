@@ -97,9 +97,11 @@ function Get-MsiPayloadSourceMap([string]$Source,[string]$PayloadRoot) {
         inventory=@($relativePaths | ForEach-Object {$byPath[$_]})}
 }
 
-function Get-MsiProperties([string]$Value) {
+function Get-MsiProperties([string]$Value,
+    [scriptblock]$CreateInstaller={New-Object -ComObject WindowsInstaller.Installer},
+    [scriptblock]$ReleaseCom={param($Object)[void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($Object)}) {
     $path = (Get-FileIdentity $Value).path
-    $installer = New-Object -ComObject WindowsInstaller.Installer
+    $installer = & $CreateInstaller
     $database = $null; $summary = $null
     try {
         $database = $installer.OpenDatabase($path, 0)
@@ -112,17 +114,17 @@ function Get-MsiProperties([string]$Value) {
                 if (-not $record) { throw "MSI $name is absent" }
                 $result[$name] = [string]$record.StringData(1)
             } finally {
-                if ($record) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($record) }
-                if ($view) { $view.Close(); [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($view) }
+                if ($record) { [void](& $ReleaseCom $record) }
+                if ($view) { [void]$view.Close(); [void](& $ReleaseCom $view) }
             }
         }
         $summary = $installer.SummaryInformation($path, 0)
         $result['PackageCode'] = [string]$summary.Property(9)
         return $result
     } finally {
-        if ($summary) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($summary) }
-        if ($database) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($database) }
-        if ($installer) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($installer) }
+        if ($summary) { [void](& $ReleaseCom $summary) }
+        if ($database) { [void](& $ReleaseCom $database) }
+        if ($installer) { [void](& $ReleaseCom $installer) }
     }
 }
 
