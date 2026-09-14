@@ -719,6 +719,26 @@ Set-StrictMode -Version Latest
         }
     });
 
+    powershellIt("identifies every duplicate adapter field without dropping ambiguous rows", () => {
+        const first = {InterfaceGuid: "{11111111-1111-1111-1111-111111111111}",
+            NetLuid: NATIVE_NET_LUID, Hidden: false, InterfaceType: 6,
+            InterfaceAdminStatus: ADAPTER_ADMIN_UP, Status: "Up", ifIndex: 4};
+        const second = {...first, InterfaceGuid: "{22222222-2222-2222-2222-222222222222}",
+            NetLuid: 0x0006000002000000, Hidden: true, ifIndex: 5};
+        for (const fields of [["InterfaceGuid"], ["NetLuid"], ["ifIndex"],
+            ["InterfaceGuid", "NetLuid", "ifIndex"]]) {
+            const duplicate = {...second};
+            for (const field of fields) duplicate[field] = first[field];
+            const output = invoke("NormalizeAdapters", {adapters: [first, duplicate]});
+            assert.equal(output.error, undefined, output.error?.message);
+            assert.notEqual(output.status, 0, "ambiguous inventory must still fail closed");
+            const expectedFields = fields.map(field => ({InterfaceGuid: "guid", NetLuid: "luid", ifIndex: "index"})[field]);
+            const message = `${output.stdout}\n${output.stderr}`;
+            assert.match(message, new RegExp(`duplicated[\\s\\S]*fields=${expectedFields.join(",")}`, "u"));
+            assert.match(message, /row=2[\s\S]*hidden=True[\s\S]*type=6[\s\S]*admin=1/u);
+        }
+    });
+
     windowsFilesystemPowershellIt("retains nested recovery task cleanup callbacks after factory return", () => {
         const result = runFactoryFixture(false, false, true, true);
         assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);

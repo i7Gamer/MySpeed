@@ -547,7 +547,11 @@ namespace MySpeed.Qualification.CleanStop {
     public int exitCode; public uint candidatePid; public ulong candidateCreationTime; public string candidateImagePath,candidateVolumeSerial,candidateFileId;
   }
   public sealed class ConsoleObservation { public uint[] processIds; public int error; }
+  public sealed class CandidateFileIdentity {
+    public string Path,FinalPath,Sha256,VolumeSerial,FileId; public long Bytes; public uint LinkCount; public bool IsRegular,ReparsePoint;
+  }
   public sealed class Session : IDisposable {
+    const long MAX_CANDIDATE_BYTES=536870912; const int MAX_FINAL_PATH_CHARS=32768;
     const uint CREATE_SUSPENDED=0x4,CREATE_NEW_CONSOLE=0x10,CREATE_UNICODE_ENVIRONMENT=0x400,EXTENDED_STARTUPINFO_PRESENT=0x80000;
     const uint STARTF_USESHOWWINDOW=1,STARTF_USESTDHANDLES=0x100; const ushort SW_HIDE=0;
     const uint PROC_THREAD_ATTRIBUTE_HANDLE_LIST=0x20002,JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE=0x2000;
@@ -581,6 +585,8 @@ namespace MySpeed.Qualification.CleanStop {
     [DllImport("kernel32.dll",SetLastError=true)] static extern uint GetProcessId(IntPtr p);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr h);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetFileInformationByHandle(IntPtr h,out BY_HANDLE_FILE_INFORMATION i);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true,EntryPoint="GetFinalPathNameByHandleW")]
+    static extern uint GetFinalPathNameByHandle(IntPtr h,StringBuilder path,uint length,uint flags);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true,EntryPoint="CreateFileW")]
     static extern IntPtr CreateFile(string n,uint a,uint s,ref SECURITY_ATTRIBUTES sa,uint d,uint f,IntPtr t);
     [DllImport("kernel32.dll",SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr l,int c,uint f,ref UIntPtr z);
@@ -648,6 +654,20 @@ namespace MySpeed.Qualification.CleanStop {
     static IntPtr EnvironmentBlock(IDictionary<string,string> env){List<string> keys=new List<string>(env.Keys);keys.Sort(StringComparer.OrdinalIgnoreCase);StringBuilder b=new StringBuilder();foreach(string k in keys)b.Append(k).Append('=').Append(env[k]).Append('\0');b.Append('\0');byte[] bytes=Encoding.Unicode.GetBytes(b.ToString());IntPtr p=Marshal.AllocHGlobal(bytes.Length);Marshal.Copy(bytes,0,p,bytes.Length);return p;}
     static string Id(IntPtr h){BY_HANDLE_FILE_INFORMATION i;if(!GetFileInformationByHandle(h,out i))throw Error("GetFileInformationByHandle");return (((ulong)i.fileIndexHigh<<32)|i.fileIndexLow).ToString("x16");}
     static string Volume(IntPtr h){BY_HANDLE_FILE_INFORMATION i;if(!GetFileInformationByHandle(h,out i))throw Error("GetFileInformationByHandle");return i.volumeSerial.ToString("x8");}
+    static string FinalFilePath(IntPtr h){StringBuilder b=new StringBuilder(MAX_FINAL_PATH_CHARS);uint n=GetFinalPathNameByHandle(h,b,(uint)b.Capacity,0);if(n==0||n>=b.Capacity)throw Error("GetFinalPathNameByHandleW");string value=b.ToString();if(value.StartsWith(@"\\?\UNC\",StringComparison.OrdinalIgnoreCase))value=@"\\"+value.Substring(8);else if(value.StartsWith(@"\\?\",StringComparison.OrdinalIgnoreCase))value=value.Substring(4);return System.IO.Path.GetFullPath(value);}
+    public static CandidateFileIdentity InspectCandidate(string path,string expectedSha,long maximumBytes){
+      if(maximumBytes<1||maximumBytes>MAX_CANDIDATE_BYTES)throw new ArgumentOutOfRangeException("maximumBytes");string canonical=System.IO.Path.GetFullPath(path);
+      using(FileStream stream=new FileStream(canonical,FileMode.Open,FileAccess.Read,FileShare.Read)){
+        long before=stream.Length;if(before<1||before>maximumBytes)throw new InvalidDataException("Candidate identity size differs");
+        BY_HANDLE_FILE_INFORMATION info;if(!GetFileInformationByHandle(stream.SafeFileHandle.DangerousGetHandle(),out info))throw Error("GetFileInformationByHandle");
+        const uint FILE_ATTRIBUTE_REPARSE_POINT=0x400,FILE_ATTRIBUTE_DIRECTORY=0x10;bool reparse=(info.attributes&FILE_ATTRIBUTE_REPARSE_POINT)!=0;bool regular=(info.attributes&FILE_ATTRIBUTE_DIRECTORY)==0;
+        if(reparse||!regular||info.links!=1)throw new InvalidDataException("Candidate identity file kind differs");string final=FinalFilePath(stream.SafeFileHandle.DangerousGetHandle());
+        if(!String.Equals(canonical,final,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("Candidate identity final path differs");
+        string digest;using(SHA256 algorithm=SHA256.Create())digest=BitConverter.ToString(algorithm.ComputeHash(stream)).Replace("-",String.Empty).ToLowerInvariant();
+        if(stream.Length!=before||stream.Position!=before)throw new InvalidDataException("Candidate identity changed while hashing");if(digest!=expectedSha)throw new InvalidDataException("Candidate identity SHA differs");
+        return new CandidateFileIdentity{Path=canonical,FinalPath=final,Bytes=before,Sha256=digest,VolumeSerial=info.volumeSerial.ToString("x8"),FileId=info.fileIndexHigh.ToString("x8")+info.fileIndexLow.ToString("x8"),LinkCount=info.links,IsRegular=regular,ReparsePoint=reparse};
+      }
+    }
     static string Image(IntPtr h){uint n=32768;StringBuilder b=new StringBuilder((int)n);if(!QueryImage(h,0,b,ref n))throw Error("QueryFullProcessImageNameW");return Path.GetFullPath(b.ToString());}
     static ulong Creation(IntPtr h){FILETIME c,e,k,u;if(!GetProcessTimes(h,out c,out e,out k,out u))throw Error("GetProcessTimes");return c.Value;}
     static uint Active(IntPtr j){ACCOUNTING a=new ACCOUNTING();if(!QueryInformationJobObject(j,JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,ref a,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero))throw Error("QueryInformationJobObject");return a.active;}
@@ -690,6 +710,7 @@ namespace MySpeed.Qualification.CleanStop {
     static uint[] ConsoleIds(){uint[] p=new uint[2];uint n=GetConsoleProcessList(p,(uint)p.Length);if(n>p.Length){p=new uint[n];n=GetConsoleProcessList(p,(uint)p.Length);}if(n==0)throw Error("GetConsoleProcessList");Array.Resize(ref p,(int)n);Array.Sort(p);return p;}
     static uint RemainingBudget(uint budget,Stopwatch watch){long available=(long)budget-watch.ElapsedMilliseconds;return (uint)Math.Max(0,available);}
     static uint RemainingCleanup(uint hardRemaining,Stopwatch watch){return Math.Min(NATIVE_CLEANUP_TIMEOUT_MS,RemainingBudget(hardRemaining,watch));}
+    bool WaitForJobZero(uint budget,Stopwatch watch){while(true){uint active=Active(job);long elapsed=watch.ElapsedMilliseconds;if(elapsed>=budget)return false;if(active==0)return true;long remaining=(long)budget-elapsed;System.Threading.Thread.Sleep((int)Math.Min((long)NATIVE_CLEANUP_POLL_MS,remaining));}}
     public NativeResult Stop(uint expectedControllerPid,uint grace,uint hardRemaining){
       NativeResult r=NewResult();
       LastResult=r;StopCleanupAttempted=false;Stopwatch stopWatch=Stopwatch.StartNew();
@@ -706,7 +727,7 @@ namespace MySpeed.Qualification.CleanStop {
         }finally{if(!FreeConsole())throw Error("FreeConsole");r.consoleFreeAfter=true;AssertConsoleFree();}
         r.candidateExited=WaitForSingleObject(process,RemainingBudget(grace,stopWatch))==WAIT_OBJECT_0;r.graceExpired=!r.candidateExited;
         if(r.candidateExited){uint code;if(!GetExitCodeProcess(process,out code))throw Error("GetExitCodeProcess");r.exitCode=unchecked((int)code);}
-        r.jobZero=Active(job)==0;
+        r.jobZero=r.candidateExited&&WaitForJobZero(grace,stopWatch);
         if(!r.candidateExited||!r.jobZero){r.forced=true;StopCleanupAttempted=true;Force(RemainingCleanup(hardRemaining,stopWatch));r.jobZero=Active(job)==0;}
         return r;
       }catch{r.forced=true;if(!StopCleanupAttempted&&Active(job)!=0){StopCleanupAttempted=true;Force(RemainingCleanup(hardRemaining,stopWatch));}throw;}

@@ -207,8 +207,15 @@ function ConvertTo-MyspeedCanaryAdapterInventory {
             (-not $enabled -and $administrativelyDownStatuses -cnotcontains $status)){
             throw "Native adapter administrative status is inconsistent (admin=$adminStatus;status=$status)"
         }
-        if(-not $guids.Add($guid) -or -not $luids.Add($luid) -or -not $indices.Add([uint32]$index)){
-            throw 'Native adapter identity or index is duplicated'
+        $duplicates=[Collections.Generic.List[string]]::new()
+        if(-not $guids.Add($guid)){[void]$duplicates.Add('guid')}
+        if(-not $luids.Add($luid)){[void]$duplicates.Add('luid')}
+        if(-not $indices.Add([uint32]$index)){[void]$duplicates.Add('index')}
+        if($duplicates.Count -gt 0){
+            # Keep rejection strict; report only already validated identity facts,
+            # never provider display names, addresses or environment values.
+            $row=$normalized.Count+1
+            throw "Native adapter identity or index is duplicated;fields=$($duplicates -join ',');row=$row;hidden=$hidden;type=$interfaceType;admin=$adminStatus;guid=$guid;luid=$luid;index=$index"
         }
         [void]$normalized.Add([pscustomobject][ordered]@{interfaceGuid=$guid;netLuid=$luid;hidden=$hidden
             interfaceType=$interfaceType;interfaceAdminStatus=$adminStatus;status=$status;interfaceIndex=$index

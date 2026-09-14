@@ -605,6 +605,10 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /GetExitCodeProcess\(process,out code\)/u);
         assert.match(source, /AssertLaunchBudget\(launchWatch,normalRemaining,hardRemaining\)[\s\S]*ResumeThread/u);
         assert.match(source, /WaitForSingleObject\(process,RemainingBudget\(grace,stopWatch\)\)/u);
+        assert.match(source, /r\.jobZero=r\.candidateExited&&WaitForJobZero\(grace,stopWatch\)/u);
+        assert.match(source,
+            /WaitForJobZero\(uint budget,Stopwatch watch\)\{while\(true\)\{uint active=Active\(job\);long elapsed=watch\.ElapsedMilliseconds;if\(elapsed>=budget\)return false;if\(active==0\)return true;long remaining=\(long\)budget-elapsed;[\s\S]*NATIVE_CLEANUP_POLL_MS/u,
+            "Job-zero proof must sample the shared grace clock after every accounting observation");
         assert.match(source, /ReleaseLaunchLocals\(ref pi\.hThread[\s\S]*ThreadHandleClosedBeforeReady=true/u);
         assert.match(source, /controllerInitiallyConsoleFree=\$state\.controllerInitiallyConsoleFree/u);
         assert.match(source, /FileAttributes\]::ReparsePoint/u);
@@ -618,6 +622,12 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /Read-MyspeedCleanBoundedJsonUntilStable[\s\S]*Test-MyspeedCleanSharingViolation/u);
         assert.match(source, /readStdoutReadiness=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
         assert.match(source, /readStop=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
+        assert.match(source, /public static CandidateFileIdentity InspectCandidate/u);
+        assert.match(source, /new FileStream\(canonical,FileMode\.Open,FileAccess\.Read,FileShare\.Read\)/u);
+        assert.match(source, /GetFileInformationByHandle\(stream\.SafeFileHandle\.DangerousGetHandle\(\),out info\)/u);
+        assert.match(source, /GetFinalPathNameByHandle\(h,b,\(uint\)b\.Capacity,0\)/u);
+        assert.match(source, /algorithm\.ComputeHash\(stream\)/u);
+        assert.match(source, /stream\.Length!=before\|\|stream\.Position!=before/u);
     });
 
     powershellIt("binds the exact launch environment to generic IDictionary", () => {
