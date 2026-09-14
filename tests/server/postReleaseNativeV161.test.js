@@ -553,6 +553,16 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.match(workflow, /post-release-envelope\.json/u);
         assert.match(workflow, /actions\/upload-artifact@[0-9a-f]{40}/u);
         assert.match(workflow, /artifact\.workflow_run\?\.id !== context\.runId/u);
+        const migrationGeneration = workflow.indexOf("node scripts/generate-migrations.js");
+        const integrationGeneration = workflow.indexOf("node scripts/generate-integrations.js");
+        const fixtureHandoff = workflow.indexOf("node candidate-source/scripts/qualification/fixture.mjs handoff");
+        assert.ok(migrationGeneration > 0 && migrationGeneration < fixtureHandoff);
+        assert.ok(integrationGeneration > migrationGeneration && integrationGeneration < fixtureHandoff);
+        const generatorStep = workflow.slice(workflow.lastIndexOf("\n      - name:", migrationGeneration),
+            workflow.indexOf("\n      - name:", integrationGeneration));
+        assert.match(generatorStep, /working-directory: candidate-source/u);
+        assert.match(generatorStep, /generate-migrations\.js[\s\S]*\$LASTEXITCODE -ne 0/u);
+        assert.match(generatorStep, /generate-integrations\.js[\s\S]*\$LASTEXITCODE -ne 0/u);
         const executeJob = workflow.slice(workflow.indexOf("\n  execute:"), workflow.indexOf("\n  verify-provenance:"));
         assert.doesNotMatch(executeJob, /actions\/checkout@/u);
         assert.doesNotMatch(workflow, /(?:gh\s+release|releases:\s*write|contents:\s*write)/u);

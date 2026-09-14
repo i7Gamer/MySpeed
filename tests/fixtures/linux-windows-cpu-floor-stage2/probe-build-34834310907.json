@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "runId": "34834310907",
+    "runAttempt": "1",
+    "sourceSha": "dce629fd50ea007221b3a9f2698c32a573bca160"
+  },
+  "build": [
+    {
+      "mode": "cpuid",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "cpuid-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\cpuid.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\cpuid.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "000400000000005f",
+        "bytes": 144896,
+        "lastWriteFileTime": "01dd4435bba20996",
+        "linkCount": 1,
+        "sha256": "7123c3582635fad5e5a1077729b3190e21f3e92bd440800c8dd3e625a5fcec7d",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "known-good",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "known_good-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\known_good.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\known_good.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "0004000000000067",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435bf426263",
+        "linkCount": 1,
+        "sha256": "d54c6ac39bf7423a0cf6518a2d3c06ad826b37709139a405121082a1b9fe62d8",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "known-bad",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "known_bad-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\known_bad.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\known_bad.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "000400000000006f",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435c2e21454",
+        "linkCount": 1,
+        "sha256": "423a9049d712eaffe929da8479d7312e42a8ee2f598d9315ba1117a7651588d0",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "illegal",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "illegal-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\illegal.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\illegal.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "0004000000000077",
+        "bytes": 108032,
+        "lastWriteFileTime": "01dd4435c6831e21",
+        "linkCount": 1,
+        "sha256": "4777c4787f2d9432157c25c4cd62e37f742e023febfdbcee75e1ac061e762631",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "sse42",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "sse42-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\sse42.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\sse42.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "000400000000007f",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435ca26a15c",
+        "linkCount": 1,
+        "sha256": "5e753d621cc0d209bdbddec624e0f83994cf98a8d2bf1dcbec1fa78f81202f15",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "popcnt",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "popcnt-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\popcnt.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\popcnt.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "0004000000000087",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435cdbfe456",
+        "linkCount": 1,
+        "sha256": "900dbb5aa203334df5e0b58e676e1c0fbfaff993fcb0be8750fff5d0f63f92cb",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "avx",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "avx-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\avx.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\avx.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "00030000000000de",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435d169e9b0",
+        "linkCount": 1,
+        "sha256": "5cd642f605f7dd42a03d0f8770b42be6b27a365ba2161cdd6df92d42937928be",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    },
+    {
+      "mode": "avx2",
+      "executable": {
+        "schemaVersion": 1,
+        "name": "avx2-executable",
+        "role": "generated-command",
+        "path": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\avx2.exe",
+        "finalPath": "D:\\a\\_temp\\myspeed-cpu-readiness-24755d98c9994524a33600d740015190\\avx2.exe",
+        "volumeSerial": "1a24df9f",
+        "fileId": "00030000000000e6",
+        "bytes": 141312,
+        "lastWriteFileTime": "01dd4435d50d50e3",
+        "linkCount": 1,
+        "sha256": "20a28c601db4cb99ca1163067cf5ad54780deac56a5046e22c4507a1fc8a530c",
+        "fileVersion": null,
+        "productVersion": null
+      }
+    }
+  ]
+}

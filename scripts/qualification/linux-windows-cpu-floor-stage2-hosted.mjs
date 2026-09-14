@@ -492,7 +492,8 @@ export function parseProbeArtifactEvidence(bytes, artifact) {
     }
     for (const expected of artifact.files) {
         const observed = builds.get(expected.role);
-        if (!observed || observed.role !== "executable" || observed.bytes !== expected.bytes ||
+        if (!observed || observed.role !== "generated-command" || !Number.isSafeInteger(observed.bytes) ||
+            observed.bytes < 1 || String(observed.bytes) !== expected.bytes ||
             observed.sha256 !== expected.sha256 || path.win32.basename(observed.path) !== expected.name)
             throw new TypeError("probe executable evidence differs");
     }

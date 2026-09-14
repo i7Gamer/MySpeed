@@ -51,6 +51,16 @@ jobs:
           bun install --frozen-lockfile
           if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture dependency installation failed' }
 
+      - name: Generate exact candidate registries
+        working-directory: candidate-source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node scripts/generate-migrations.js
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate migration registry generation failed' }
+          node scripts/generate-integrations.js
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate integration registry generation failed' }
+
       - name: Run post-release and standalone unit suites
         shell: pwsh
         run: |

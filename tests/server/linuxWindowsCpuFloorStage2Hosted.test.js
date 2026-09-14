@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {EventEmitter} from "node:events";
+import fs from "node:fs";
 import {describe, it} from "node:test";
 import {PassThrough} from "node:stream";
 
@@ -24,6 +25,8 @@ import {
 import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
+const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
+    "../fixtures/linux-windows-cpu-floor-stage2/probe-build-34834310907.json", import.meta.url), "utf8"));
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "a".repeat(40), eventSha: "b".repeat(40),
@@ -720,21 +723,18 @@ describe("hosted Stage 2 native adapter preparation", () => {
     });
 
     it("replays producer result identity before accepting probe executable bytes", () => {
-        const roles = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
-        const files = roles.map((role, index) => ({role, name: `${role.replaceAll("-", "_")}.exe`,
-            bytes: String(4096 + index), sha256: String(index + 1).repeat(64).slice(0, 64)}));
+        assert.deepEqual(CAPTURED_PROBE_BUILD.source, {runId: "34834310907", runAttempt: "1",
+            sourceSha: "dce629fd50ea007221b3a9f2698c32a573bca160"});
+        const files = CAPTURED_PROBE_BUILD.build.map(({mode, executable}) => ({role: mode,
+            name: `${mode.replaceAll("-", "_")}.exe`, bytes: String(executable.bytes), sha256: executable.sha256}));
         const artifact = {sourceSha: context().sourceSha, runId: context().runId, runAttempt: context().runAttempt, files};
-        const fileIdentity = file => ({schemaVersion: 1, name: `${file.role.replaceAll("-", "_")}-executable`,
-            role: "executable", path: `C:\\evidence\\${file.name}`, finalPath: `C:\\evidence\\${file.name}`,
-            volumeSerial: "1", fileId: file.sha256.slice(0, 32), bytes: file.bytes, lastWriteFileTime: "1", linkCount: 1,
-            sha256: file.sha256, fileVersion: null, productVersion: null});
         const evidence = {schemaVersion: 1, kind: "myspeed-windows-cpu-readiness", status: "completed",
             qualifying: false, calibrationPassed: true, classification: "windows-native-host-observation-nonqualifying",
             sourceSha: artifact.sourceSha, eventSha: "b".repeat(40), runId: artifact.runId,
             runAttempt: artifact.runAttempt, nonce: "c".repeat(32), imageVersion: "20260907.1", failures: [],
-            observations: {closureFiles: [], discovery: {}, preflight: {}, build: files.map(file => ({mode: file.role,
+            observations: {closureFiles: [], discovery: {}, preflight: {}, build: CAPTURED_PROBE_BUILD.build.map(record => ({mode: record.mode,
                 macro: "PROBE", architecture: "/arch:SSE2", compileArguments: [], linkArguments: [], object: {},
-                executable: fileIdentity(file)})), disassembly: [], calibration: {calibrationPassed: true,
+                executable: structuredClone(record.executable)})), disassembly: [], calibration: {calibrationPassed: true,
                 assessment: {calibrationPassed: true}, runs: []}, operations: [], cleanup: {}}};
         const bytes = Buffer.from(JSON.stringify(evidence));
         assert.deepEqual(parseProbeArtifactEvidence(bytes, artifact), {sourceSha: artifact.sourceSha,
@@ -744,6 +744,16 @@ describe("hosted Stage 2 native adapter preparation", () => {
         changed.observations.build[5].executable.sha256 = "f".repeat(64);
         assert.throws(() => parseProbeArtifactEvidence(Buffer.from(JSON.stringify(changed)), artifact),
             /executable evidence/u);
+        const wrongRole = structuredClone(evidence);
+        wrongRole.observations.build[0].executable.role = "executable";
+        assert.throws(() => parseProbeArtifactEvidence(Buffer.from(JSON.stringify(wrongRole)), artifact),
+            /executable evidence/u);
+        for (const invalidBytes of [files[0].bytes, 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+            const invalid = structuredClone(evidence);
+            invalid.observations.build[0].executable.bytes = invalidBytes;
+            assert.throws(() => parseProbeArtifactEvidence(Buffer.from(JSON.stringify(invalid)), artifact),
+                /executable evidence/u);
+        }
     });
 
     it("verifies generated disk geometry and returns computed package-tree manifests", async () => {
