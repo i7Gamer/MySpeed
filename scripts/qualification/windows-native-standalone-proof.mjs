@@ -4,6 +4,7 @@ import {createHash} from "node:crypto";
 import {execFileSync, spawn} from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import {performance} from "node:perf_hooks";
 import {pathToFileURL} from "node:url";
 import {setTimeout as delay} from "node:timers/promises";
 import {checkPopulatedInstance, removeOwnedWork} from "./check-artifact.mjs";
@@ -34,7 +35,12 @@ const CONTROLLER_TIMEOUT_MILLISECONDS = 310_000;
 const COORDINATOR_HEADROOM_MILLISECONDS = 60_000;
 const COORDINATOR_WAIT_BUDGET_MILLISECONDS = NORMAL_DEADLINE_MS - COORDINATOR_HEADROOM_MILLISECONDS;
 const DIAGNOSTIC_READ_BUDGET_MILLISECONDS = 1_000;
+const CONTROLLER_STDERR_DRAIN_GRACE_MILLISECONDS = 1_000;
 const MAXIMUM_FAILURE_MESSAGE_CHARACTERS = 512;
+const MAXIMUM_CONTROLLER_STDERR_BYTES = 8 * 1024;
+const CONTROLLER_TIMEOUT_CODE = "ERR_MYSPEED_CONTROLLER_TIMEOUT";
+const CONTROLLER_STDERR_TRUNCATED_MARKER = "[stderr truncated]";
+const CONTROLLER_STDERR_UNAVAILABLE_MARKER = "[stderr unavailable]";
 const HOST_RESULT_KIND = "myspeed-windows-native-standalone-host-result";
 const HOST_REQUEST_KIND = "myspeed-windows-native-standalone-host-request";
 const RECOVERY_REQUEST_KIND = "myspeed-windows-native-standalone-recovery-request";
@@ -770,7 +776,9 @@ const waitChild = (child, timeoutMilliseconds) => new Promise((resolve, reject) 
     if (child.exitCode !== null) return resolve({exitCode: child.exitCode, signal: child.signalCode});
     const timer = setTimeout(() => {
         cleanup();
-        reject(new Error("Candidate controller exceeded its deadline"));
+        const error = new Error("Candidate controller exceeded its deadline");
+        error.code = CONTROLLER_TIMEOUT_CODE;
+        reject(error);
     }, timeoutMilliseconds);
     const cleanup = () => {
         clearTimeout(timer);
@@ -782,6 +790,93 @@ const waitChild = (child, timeoutMilliseconds) => new Promise((resolve, reject) 
     child.once("error", onError);
     child.once("exit", onExit);
 });
+
+const emptyControllerStderr = () => ({text: "", truncated: false, unavailable: false});
+
+const collectChildStderr = (stream, maximumBytes = MAXIMUM_CONTROLLER_STDERR_BYTES) => {
+    if (!stream || typeof stream.on !== "function" || stream.destroyed === true || stream.readableEnded === true) {
+        const snapshot = emptyControllerStderr();
+        return {completion: Promise.resolve(snapshot), finalize: () => snapshot};
+    }
+    let finalizeCapture;
+    const completion = new Promise(resolve => {
+        const chunks = [];
+        let retainedBytes = 0;
+        let truncated = false;
+        let unavailable = false;
+        let finished = false;
+        let snapshot;
+        let handlers = [];
+        const lateErrorGuard = () => {};
+        const cleanup = () => {
+            for (const [event, handler] of handlers) stream.removeListener?.(event, handler);
+            stream.once?.("error", lateErrorGuard);
+        };
+        const finish = (forced = false) => {
+            if (finished) return snapshot;
+            finished = true;
+            if (forced) unavailable = true;
+            cleanup();
+            const bytes = Buffer.concat(chunks, retainedBytes);
+            const text = new TextDecoder("utf-8").decode(bytes)
+                .replace(/[\u0000-\u001f\u007f]+/gu, " ").replace(/\s+/gu, " ").trim();
+            snapshot = {text: text.slice(0, MAXIMUM_FAILURE_MESSAGE_CHARACTERS),
+                truncated: truncated || text.length > MAXIMUM_FAILURE_MESSAGE_CHARACTERS, unavailable};
+            resolve(snapshot);
+            return snapshot;
+        };
+        const onData = chunk => {
+            let bytes;
+            try {
+                if (Buffer.isBuffer(chunk)) bytes = chunk;
+                else if (typeof chunk === "string") bytes = Buffer.from(chunk, "utf8");
+                else { unavailable = true; return; }
+            } catch { unavailable = true; return; }
+            const available = maximumBytes - retainedBytes;
+            if (available > 0) {
+                const retained = bytes.subarray(0, available);
+                chunks.push(Buffer.from(retained));
+                retainedBytes += retained.length;
+            }
+            if (bytes.length > Math.max(available, 0)) truncated = true;
+        };
+        const onError = () => { unavailable = true; finish(); };
+        handlers = [["data", onData], ["end", finish], ["close", finish], ["error", onError]];
+        stream.on("data", onData);
+        stream.once?.("end", finish);
+        stream.once?.("close", finish);
+        stream.once?.("error", onError);
+        finalizeCapture = () => finish(true);
+    });
+    return {completion, finalize: () => finalizeCapture()};
+};
+
+const drainControllerStderr = async (capture, timeoutMilliseconds) => {
+    let timer;
+    const maximumWait = Math.min(timeoutMilliseconds, CONTROLLER_STDERR_DRAIN_GRACE_MILLISECONDS);
+    const deadline = new Promise(resolve => {
+        timer = setTimeout(() => resolve(capture.finalize()), maximumWait);
+    });
+    try { return await Promise.race([capture.completion, deadline]); }
+    finally { clearTimeout(timer); }
+};
+
+const controllerStderrDetail = stderr => {
+    if (!stderr || typeof stderr !== "object") return "";
+    const parts = [];
+    if (typeof stderr.text === "string" && stderr.text.length > 0) parts.push(stderr.text);
+    if (stderr.truncated === true) parts.push(CONTROLLER_STDERR_TRUNCATED_MARKER);
+    if (stderr.unavailable === true) parts.push(CONTROLLER_STDERR_UNAVAILABLE_MARKER);
+    return parts.length === 0 ? "" : `: controller stderr: ${parts.join(" ")}`;
+};
+
+const withControllerStderr = (error, stderr) => {
+    const detail = controllerStderrDetail(stderr);
+    if (!detail) return error;
+    const enriched = new Error(`${error instanceof Error ? error.message : String(error)}${detail}`, {cause: error});
+    enriched.controllerStderr = stderr;
+    return enriched;
+};
 
 const invokeHostObserver = (proof, mode, input, timeoutMilliseconds = CONTROLLER_TIMEOUT_MILLISECONDS) => JSON.parse(execFileSync(proof.powershellPath,
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", proof.hostPath,
@@ -795,37 +890,56 @@ const invokeHostObserver = (proof, mode, input, timeoutMilliseconds = CONTROLLER
         "-Nonce", proof.adapterRequest.nonce],
     {encoding: "utf8", timeout: timeoutMilliseconds, windowsHide: true}));
 
-const defaultRuntimeDependencies = proof => ({
-    loadFixture: value => loadHandoffFixture(value),
-    startController: (requestRecord, timeoutMilliseconds = CONTROLLER_TIMEOUT_MILLISECONDS) => {
-        const adapter = proof.adapterRequest;
-        const child = spawn(proof.powershellPath,
-            ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
-                proof.candidateControllerPath, "-Mode", "InvokeHostedCandidate", "-RequestPath", requestRecord.path,
-                "-ExpectedRequestSha256", requestRecord.sha256, "-ExpectedRunId", adapter.expectedRunId,
-                "-ExpectedRunAttempt", adapter.expectedRunAttempt, "-ExpectedEventSha", adapter.expectedEventSha,
-                "-ExpectedSourceSha", adapter.expectedSourceSha, "-ExpectedImageVersion", adapter.expectedImageVersion,
-                "-Nonce", requestRecord.value.nonce],
-            {cwd: requestRecord.value.workingDirectory, windowsHide: true, stdio: "ignore"});
-        return {child, completion: waitChild(child, timeoutMilliseconds)};
-    },
-    observeOffline: (value, timeout) => invokeHostObserver(proof, "ObserveOffline", value, timeout),
-    observeListener: (value, timeout) => invokeHostObserver(proof, "ObserveListener", value, timeout),
-    checkPopulated: origin => checkPopulatedInstance(origin),
-    checkPopulatedDatabase: (file, expected) => checkPopulatedDatabase(file, expected),
-    checkResetDatabase: file => checkResetDatabase(file),
-    removeOwnedWork: (work, nonce) => removeOwnedWork(work, nonce),
-    readControllerRequest: definition => readBoundJson(definition.path, definition.sha256,
-        "Candidate controller request").value,
-    readFixtureManifestBytes: definition => fs.readFileSync(definition.manifestPath),
-    readReady: async (request, deadline, clock, signal) => (await readWhenPublished(request.readyPath, "", "Candidate ready",
-        deadline, clock, signal)).value,
-    readReadyNow: request => readBoundJson(request.readyPath, "", "Candidate ready").value,
-    readResult: async (request, deadline, clock) => (await readWhenPublished(request.resultPath, "", "Candidate result",
-        deadline, clock)).value,
-    writeStop: (request, value) => writeNewJson(request.stopRequestPath, value),
-    clock: Date.now
-});
+const defaultRuntimeDependencies = proof => {
+    const dependencies = {
+        loadFixture: value => loadHandoffFixture(value),
+        startController(requestRecord, timeoutMilliseconds = CONTROLLER_TIMEOUT_MILLISECONDS) {
+            const adapter = proof.adapterRequest;
+            const startedAt = this.monotonicClock();
+            const child = this.spawnController(proof.powershellPath,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+                    proof.candidateControllerPath, "-Mode", "InvokeHostedCandidate", "-RequestPath", requestRecord.path,
+                    "-ExpectedRequestSha256", requestRecord.sha256, "-ExpectedRunId", adapter.expectedRunId,
+                    "-ExpectedRunAttempt", adapter.expectedRunAttempt, "-ExpectedEventSha", adapter.expectedEventSha,
+                    "-ExpectedSourceSha", adapter.expectedSourceSha, "-ExpectedImageVersion", adapter.expectedImageVersion,
+                    "-Nonce", requestRecord.value.nonce],
+                {cwd: requestRecord.value.workingDirectory, windowsHide: true, stdio: ["ignore", "ignore", "pipe"]});
+            const stderr = collectChildStderr(child.stderr);
+            const remainingTimeout = () => Math.max(timeoutMilliseconds - (this.monotonicClock() - startedAt), 0);
+            const completion = waitChild(child, timeoutMilliseconds).then(async outcome =>
+                ({...outcome, stderr: await drainControllerStderr(stderr, remainingTimeout())}), async error => {
+                    if (error?.code === CONTROLLER_TIMEOUT_CODE) {
+                        error.controllerStderr = stderr.finalize();
+                        throw error;
+                    }
+                    throw withControllerStderr(error, await drainControllerStderr(stderr, remainingTimeout()));
+                });
+            return {child, completion};
+        },
+        spawnController: (executable, argumentsList, options) => spawn(executable, argumentsList, options),
+        observeOffline: (value, timeout) => invokeHostObserver(proof, "ObserveOffline", value, timeout),
+        observeListener: (value, timeout) => invokeHostObserver(proof, "ObserveListener", value, timeout),
+        checkPopulated: origin => checkPopulatedInstance(origin),
+        checkPopulatedDatabase: (file, expected) => checkPopulatedDatabase(file, expected),
+        checkResetDatabase: file => checkResetDatabase(file),
+        removeOwnedWork: (work, nonce) => removeOwnedWork(work, nonce),
+        readControllerRequest: definition => readBoundJson(definition.path, definition.sha256,
+            "Candidate controller request").value,
+        readFixtureManifestBytes: definition => fs.readFileSync(definition.manifestPath),
+        readReady: async (request, deadline, clock, signal) => (await readWhenPublished(request.readyPath, "", "Candidate ready",
+            deadline, clock, signal)).value,
+        readReadyNow: request => readBoundJson(request.readyPath, "", "Candidate ready").value,
+        readResult: async (request, deadline, clock) => (await readWhenPublished(request.resultPath, "", "Candidate result",
+            deadline, clock)).value,
+        writeStop: (request, value) => writeNewJson(request.stopRequestPath, value),
+        clock: Date.now,
+        monotonicClock: () => performance.now()
+    };
+    return dependencies;
+};
+
+export const createWindowsNativeStandaloneRuntimeDependencies = input =>
+    defaultRuntimeDependencies(assertWindowsNativeStandaloneProofRequest(input));
 
 export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
     const proof = assertWindowsNativeStandaloneProofRequest(input);
@@ -892,7 +1006,10 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                 const first = await Promise.race([readyOutcome, completionOutcome]);
                 if (first.completed === true) {
                     try { state.ready = assertCandidateReady(dependencies.readReadyNow(state.request), state.request); }
-                    catch { throw new Error("Candidate controller exited before ready publication"); }
+                    catch {
+                        throw withControllerStderr(new Error("Candidate controller exited before ready publication"),
+                            first.value.stderr);
+                    }
                 } else if (!first.ready) throw first.error;
                 if (!state.ready) state.ready = assertCandidateReady(first.value, state.request);
             } catch (error) {
@@ -950,7 +1067,8 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                         const messages = candidateFailureDiagnostic(failed, state.request, state.ready);
                         detail = `: ${messages.join("; ").slice(0, MAXIMUM_FAILURE_MESSAGE_CHARACTERS)}`;
                     } catch {}
-                    throw new Error(`Candidate controller process failed${detail}`);
+                    throw new Error(`Candidate controller process failed${detail}`
+                        + controllerStderrDetail(completed.stderr));
                 }
                 const result = assertCandidateResult(await dependencies.readResult(state.request,
                     coordinatorDeadline, dependencies.clock),

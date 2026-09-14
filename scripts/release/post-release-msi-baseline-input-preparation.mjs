@@ -15,6 +15,8 @@ const MAX_FILE_BYTES = 512 * 1024 * 1024;
 const FIXTURE_COMMON = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
 const OPTIONAL_WAL = "data/storage.db-wal";
+const TRANSIENT_SHARED_MEMORY = "data/storage.db-shm";
+const POPULATED_SQLITE_SIDECARS = Object.freeze([TRANSIENT_SHARED_MEMORY, OPTIONAL_WAL]);
 const SHA256 = /^[0-9a-f]{64}$/u;
 const COMMIT_SHA = /^[0-9a-f]{40}$/u;
 const RESULT_KIND = "myspeed-v1.6.1-post-release-baseline-input-preparation";
@@ -37,9 +39,9 @@ const deepFreeze = value => {
     }
     return value;
 };
-const expectedRelativePaths = includeWal => ["qualification-manifest.json", "fixture/transport.json",
+const expectedRelativePaths = populatedSidecars => ["qualification-manifest.json", "fixture/transport.json",
     ...[".myspeed-qualification.json", ...FIXTURE_COMMON, "data/storage.db",
-        ...(includeWal ? [OPTIONAL_WAL] : [])].map(name => `fixture/populated/${name}`),
+        ...populatedSidecars].map(name => `fixture/populated/${name}`),
     ...[".myspeed-qualification.json", ...FIXTURE_COMMON].map(name => `fixture/reset/${name}`),
     ...[...WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS,
         "scripts/qualification/windows-baseline-guest-runtime-installer.ps1"]
@@ -54,8 +56,9 @@ export function validateV161PostReleaseBaselineInputPreparation(value) {
     exactHash(value.harnessSourceSha, COMMIT_SHA, "baseline harness source");
     if (value.harnessSourceSha === value.candidateSourceSha) throw new TypeError("baseline source roles collapse");
     if (!Array.isArray(value.files)) throw new TypeError("baseline input files differ");
-    const includeWal = value.files.some(file => file?.relativePath === `fixture/populated/${OPTIONAL_WAL}`);
-    const expectedPaths = expectedRelativePaths(includeWal);
+    const populatedSidecars = POPULATED_SQLITE_SIDECARS.filter(name => value.files.some(file =>
+        file?.relativePath === `fixture/populated/${name}`));
+    const expectedPaths = expectedRelativePaths(populatedSidecars);
     if (value.files.length !== expectedPaths.length) throw new TypeError("baseline input file count differs");
     value.files.forEach((file, index) => {
         exactKeys(file, ["bindingId", "sourceRole", "sourceSha", "relativePath", "bytes", "sha256"],
@@ -139,10 +142,11 @@ export function prepareV161PostReleaseBaselineInputs({candidateFixture, harnessR
 
     const records = [createRecord("qualification-manifest.json", manifestBytes,
         "candidate", CANDIDATE_SOURCE_SHA)];
+    const populatedSidecars = POPULATED_SQLITE_SIDECARS.filter(name =>
+        Object.hasOwn(fixtureTransport.populated.filesSha256, name));
     const fixtureNames = ["transport.json",
         ...[".myspeed-qualification.json", ...FIXTURE_COMMON, "data/storage.db",
-            ...(fs.existsSync(path.join(candidateFixture.populatedRoot, ...OPTIONAL_WAL.split("/")))
-                ? [OPTIONAL_WAL] : [])].map(name => `populated/${name}`),
+            ...populatedSidecars].map(name => `populated/${name}`),
         ...[".myspeed-qualification.json", ...FIXTURE_COMMON].map(name => `reset/${name}`)];
     for (const name of fixtureNames) {
         const source = name === "transport.json" ? candidateFixture.manifestPath :
@@ -176,4 +180,4 @@ export function prepareV161PostReleaseBaselineInputs({candidateFixture, harnessR
 }
 
 export const POST_RELEASE_BASELINE_INPUT_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA, EMPTY_SHA256,
-    FIXTURE_COMMON, MANIFEST_BYTES, MANIFEST_SHA256, MAX_FILE_BYTES, OPTIONAL_WAL});
+    FIXTURE_COMMON, MANIFEST_BYTES, MANIFEST_SHA256, MAX_FILE_BYTES, OPTIONAL_WAL, TRANSIENT_SHARED_MEMORY});

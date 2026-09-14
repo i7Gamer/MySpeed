@@ -19,7 +19,7 @@ const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: tr
     .filter(entry => entry.isFile()).map(entry => { const target = path.join(entry.parentPath, entry.name);
         return [path.relative(root, target).replaceAll(path.sep, "/"), sha256(fs.readFileSync(target))]; }));
 
-function fixture(root, includeWal) {
+function fixture(root, includeWal, includeSharedMemory = false) {
     const populatedRoot = path.join(root, "fixture-source", "populated");
     const resetRoot = path.join(root, "fixture-source", "reset");
     fs.mkdirSync(populatedRoot, {recursive: true}); fs.mkdirSync(resetRoot, {recursive: true});
@@ -29,6 +29,7 @@ function fixture(root, includeWal) {
     }
     write(populatedRoot, "data/storage.db", Buffer.from("sqlite"));
     if (includeWal) write(populatedRoot, POST_RELEASE_BASELINE_INPUT_CONSTANTS.OPTIONAL_WAL, Buffer.alloc(0));
+    if (includeSharedMemory) write(populatedRoot, "data/storage.db-shm", Buffer.from("sqlite-shared-memory"));
     write(populatedRoot, ".myspeed-qualification.json", Buffer.from("populated-marker"));
     write(resetRoot, ".myspeed-qualification.json", Buffer.from("reset-marker"));
     const manifest = {schemaVersion: 1, source: {commit: POST_RELEASE_BASELINE_INPUT_CONSTANTS.CANDIDATE_SOURCE_SHA,
@@ -109,6 +110,24 @@ describe("post-release MSI baseline input preparation", () => {
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
+    it("retains a candidate-declared transient SQLite shared-memory sidecar for downstream transport reconstruction", () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-shm-input-")));
+        try {
+            const outputRoot = path.join(root, "output");
+            const result = prepareV161PostReleaseBaselineInputs({candidateFixture: fixture(root, false, true),
+                harnessRoot: harness(root), harnessSourceSha: HARNESS_SHA,
+                manifestPath: fs.realpathSync.native(
+                    "tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"), outputRoot});
+            const sharedMemory = result.files.find(file => file.relativePath === `fixture/populated/${
+                POST_RELEASE_BASELINE_INPUT_CONSTANTS.TRANSIENT_SHARED_MEMORY}`);
+            assert.ok(sharedMemory);
+            const staged = fs.readFileSync(path.join(outputRoot, "fixture", "populated", "data",
+                "storage.db-shm"));
+            assert.equal(sha256(staged), sharedMemory.sha256);
+            assert.equal(staged.toString("utf8"), "sqlite-shared-memory");
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
     it("validates every source before creating the output subtree", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-reject-")));
         try {
@@ -141,11 +160,10 @@ describe("post-release MSI baseline input preparation", () => {
     it("rejects fixture bytes changed after transport validation but before copying", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-race-")));
         const candidateFixture = fixture(root, false); const target = path.join(candidateFixture.populatedRoot,
-            "bin", "iperf3.exe"); const wal = path.join(candidateFixture.populatedRoot,
-                ...POST_RELEASE_BASELINE_INPUT_CONSTANTS.OPTIONAL_WAL.split("/"));
-        const originalExists = fs.existsSync; let changed = false;
-        fs.existsSync = value => { if (!changed && value === wal) { changed = true; fs.appendFileSync(target, "drift"); }
-            return originalExists(value); };
+            "bin", "iperf3.exe");
+        const originalOpen = fs.openSync; let targetOpens = 0;
+        fs.openSync = (value, ...args) => { if (value === target && ++targetOpens === 2) fs.appendFileSync(target, "drift");
+            return originalOpen(value, ...args); };
         try {
             const outputRoot = path.join(root, "output");
             assert.throws(() => prepareV161PostReleaseBaselineInputs({candidateFixture,
@@ -153,6 +171,6 @@ describe("post-release MSI baseline input preparation", () => {
                     "tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"), outputRoot}),
             /fixture.*identity/u);
             assert.equal(fs.existsSync(outputRoot), false);
-        } finally { fs.existsSync = originalExists; fs.rmSync(root, {recursive: true, force: true}); }
+        } finally { fs.openSync = originalOpen; fs.rmSync(root, {recursive: true, force: true}); }
     });
 });

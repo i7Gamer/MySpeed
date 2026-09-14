@@ -404,6 +404,8 @@ function New-MyspeedCandidateNativeOperations {
     $watch=$Watch
     $limits=[pscustomobject]@{hardDeadlineMs=$script:HardDeadlineMs;cleanupMs=$script:CleanupMs
         win32CodeMask=$script:Win32CodeMask;sharingViolationCode=$script:SharingViolationCode}
+    $readJson=${function:Read-MyspeedCandidateJson}
+    $writeJson=${function:Write-MyspeedCandidateJson}
     $nativeState=[pscustomobject]@{session=$null}
     return [pscustomobject]@{
         elapsed={return [int64]$watch.ElapsedMilliseconds}.GetNewClosure()
@@ -424,9 +426,9 @@ function New-MyspeedCandidateNativeOperations {
                         if($remaining -gt 0){$session.Force([uint32][Math]::Min($limits.cleanupMs,$remaining))}}}finally{[void]$session.CloseAndProve();$nativeState.session=$null}
                 throw
             }}.GetNewClosure()
-        writeReady={param($ready)Write-MyspeedCandidateJson $req.readyPath $ready}.GetNewClosure()
+        writeReady={param($ready)& $writeJson $req.readyPath $ready}.GetNewClosure()
         stopExists={return Test-Path -LiteralPath $req.stopRequestPath -PathType Leaf}.GetNewClosure()
-        readStop={try{return (Read-MyspeedCandidateJson $req.stopRequestPath '').value}catch [IO.IOException]{
+        readStop={try{return (& $readJson $req.stopRequestPath '').value}catch [IO.IOException]{
                 if(($_.Exception.HResult -band $limits.win32CodeMask) -eq $limits.sharingViolationCode){return $null};throw}}.GetNewClosure()
         sleep={param($milliseconds)Start-Sleep -Milliseconds $milliseconds}
         stop={param($session,$grace,$cleanup)if($null -eq $nativeState.session){throw 'Native candidate session is absent'};return $nativeState.session.Stop([uint32]$PID,[uint32]$grace,[uint32]$cleanup)}.GetNewClosure()

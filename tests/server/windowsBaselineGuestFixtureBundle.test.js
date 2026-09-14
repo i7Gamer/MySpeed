@@ -14,7 +14,7 @@ const EXPECTED_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 
-const writeTree = (root, populated, includeWal = false) => {
+const writeTree = (root, populated, includeWal = false, sharedMemory = null) => {
     for (const name of EXPECTED_FILES) {
         const target = path.join(root, ...name.split("/"));
         fs.mkdirSync(path.dirname(target), {recursive: true});
@@ -22,6 +22,8 @@ const writeTree = (root, populated, includeWal = false) => {
     }
     if (populated) fs.writeFileSync(path.join(root, "data", "storage.db"), "sqlite-fixture", {flag: "wx"});
     if (includeWal) fs.writeFileSync(path.join(root, "data", "storage.db-wal"), Buffer.alloc(0), {flag: "wx"});
+    if (sharedMemory !== null)
+        fs.writeFileSync(path.join(root, "data", "storage.db-shm"), sharedMemory, {flag: "wx"});
     fs.writeFileSync(path.join(root, ".myspeed-qualification.json"), "owned-marker\n", {flag: "wx"});
 };
 
@@ -31,11 +33,11 @@ const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: tr
         return [path.relative(root, target).replaceAll(path.sep, "/"), sha256(fs.readFileSync(target))];
     }).sort(([left], [right]) => left.localeCompare(right)));
 
-const createTransport = (root, includeWal = false) => {
+const createTransport = (root, includeWal = false, sharedMemory = null) => {
     const populatedRoot = path.join(root, "transport-populated");
     const resetRoot = path.join(root, "transport-reset");
     fs.mkdirSync(populatedRoot); fs.mkdirSync(resetRoot);
-    writeTree(populatedRoot, true, includeWal); writeTree(resetRoot, false);
+    writeTree(populatedRoot, true, includeWal, sharedMemory); writeTree(resetRoot, false);
     const manifest = {schemaVersion: 1, source: {commit: SOURCE_SHA, bunLockSha256: "1".repeat(64),
         packageSha256: "2".repeat(64)}, populated: {root: "C:\\producer\\populated", nonce: "3".repeat(48),
         markerSha256: sha256(fs.readFileSync(path.join(populatedRoot, ".myspeed-qualification.json"))),
@@ -122,5 +124,23 @@ describe("Windows baseline guest fixture bundle builder", () => {
                 resetRoot: transport.resetRoot}), /WAL|identity|inventory/u);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
-});
 
+    it("validates the candidate's transient SQLite shared-memory sidecar without copying it into the guest bundle", () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-shm-")));
+        try {
+            const sharedMemory = Buffer.from("candidate-sqlite-shared-memory");
+            const transport = createTransport(root, false, sharedMemory);
+            const bytes = buildWindowsBaselineGuestFixtureBundle({sourceSha: SOURCE_SHA,
+                manifest: {path: transport.manifestPath, bytes: String(transport.manifestBytes.length),
+                    sha256: sha256(transport.manifestBytes)}, populatedRoot: transport.populatedRoot,
+                resetRoot: transport.resetRoot});
+            const bundle = JSON.parse(bytes);
+            assert.equal(bundle.populated.files.some(file => file.path === "data/storage.db-shm"), false);
+            fs.writeFileSync(path.join(transport.populatedRoot, "data", "storage.db-shm"), "drift");
+            assert.throws(() => buildWindowsBaselineGuestFixtureBundle({sourceSha: SOURCE_SHA,
+                manifest: {path: transport.manifestPath, bytes: String(transport.manifestBytes.length),
+                    sha256: sha256(transport.manifestBytes)}, populatedRoot: transport.populatedRoot,
+                resetRoot: transport.resetRoot}), /identity/u);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+});

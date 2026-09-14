@@ -207,6 +207,39 @@ describe("Windows native candidate controller", () => {
             "elapsed,assertConsoleFree,launch,writeReady,stopExists,readStop,sleep,stop,lastResult,active,force,close");
     });
 
+    powershellIt("keeps JSON callbacks bound in script and dynamic-module callers", () => {
+        const escapedScript = SCRIPT.replaceAll("'", "''");
+        const command = `$scriptPath='${escapedScript}';`
+            + "$root=Join-Path ([IO.Path]::GetTempPath()) ('myspeed-candidate-callbacks-'+[guid]::NewGuid().ToString('N'));"
+            + "[void](New-Item -ItemType Directory -Path $root);try{"
+            + "$candidate=[scriptblock]::Create([IO.File]::ReadAllText($scriptPath));"
+            + "$module=New-Module -ScriptBlock {param($trusted). $trusted -Mode Library;"
+            + "Export-ModuleMember -Function New-MyspeedCandidateNativeOperations} -ArgumentList $candidate;"
+            + "$moduleRequest=[pscustomobject]@{readyPath=(Join-Path $root 'module-ready.json');"
+            + "stopRequestPath=(Join-Path $root 'module-stop.json');scenario='populated-first-boot'};"
+            + "$moduleResult=& $module {param($req)Write-MyspeedCandidateJson $req.stopRequestPath "
+            + "([ordered]@{source='module-stop'});$operations=New-MyspeedCandidateNativeOperations $req "
+            + "([Diagnostics.Stopwatch]::StartNew());& $operations.writeReady ([ordered]@{source='module-ready'});"
+            + "return (& $operations.readStop)} $moduleRequest;"
+            + "Remove-Module $module -Force;$module=$null;. $scriptPath -Mode Library;"
+            + "$directRequest=[pscustomobject]@{readyPath=(Join-Path $root 'direct-ready.json');"
+            + "stopRequestPath=(Join-Path $root 'direct-stop.json');scenario='populated-first-boot'};"
+            + "Write-MyspeedCandidateJson $directRequest.stopRequestPath ([ordered]@{source='direct-stop'});"
+            + "$direct=New-MyspeedCandidateNativeOperations $directRequest ([Diagnostics.Stopwatch]::StartNew());"
+            + "& $direct.writeReady ([ordered]@{source='direct-ready'});$directStop=& $direct.readStop;"
+            + "[pscustomobject]@{directReady=(Get-Content -LiteralPath $directRequest.readyPath -Raw|ConvertFrom-Json).source;"
+            + "directStop=$directStop.source;moduleReady=(Get-Content -LiteralPath $moduleRequest.readyPath -Raw|ConvertFrom-Json).source;"
+            + "moduleStop=$moduleResult.source}|ConvertTo-Json -Compress"
+            + "}finally{if($null -ne $module){Remove-Module $module -Force -ErrorAction SilentlyContinue};"
+            + "Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue}";
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        assert.deepEqual(JSON.parse(result.stdout), {directReady: "direct-ready", directStop: "direct-stop",
+            moduleReady: "module-ready", moduleStop: "module-stop"});
+    });
+
     powershellIt("captures cleanup limits and retries only sharing violations in native callbacks", () => {
         const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
             + "function Read-MyspeedCandidateJson { throw [IO.IOException]::new('injected-io', $global:QualificationHResult) }; "

@@ -16,6 +16,7 @@ const COMMON_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bi
 const POPULATED_FILES = Object.freeze([...COMMON_FILES, "data/storage.db"].sort());
 const RESET_FILES = Object.freeze([...COMMON_FILES].sort());
 const OPTIONAL_EMPTY_WAL = "data/storage.db-wal";
+const TRANSIENT_SHARED_MEMORY = "data/storage.db-shm";
 const EMPTY_SHA256 = crypto.createHash("sha256").update(Buffer.alloc(0)).digest("hex");
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -87,13 +88,18 @@ function validateRoot(root, label) {
 function validateInventory(value, expectedFiles, label, allowEmptyWal = false) {
     if (!isObject(value)) throw new TypeError(`${label} inventory differs`);
     const hasWal = Object.hasOwn(value, OPTIONAL_EMPTY_WAL);
-    const expected = [MARKER_NAME, ...expectedFiles, ...(hasWal && allowEmptyWal ? [OPTIONAL_EMPTY_WAL] : [])].sort();
+    const hasSharedMemory = Object.hasOwn(value, TRANSIENT_SHARED_MEMORY);
+    const transientFiles = [
+        ...(hasWal && allowEmptyWal ? [OPTIONAL_EMPTY_WAL] : []),
+        ...(hasSharedMemory && allowEmptyWal ? [TRANSIENT_SHARED_MEMORY] : [])
+    ];
+    const expected = [MARKER_NAME, ...expectedFiles, ...transientFiles].sort();
     if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expected))
         throw new TypeError(`${label} inventory differs`);
     for (const name of expected) exactString(value[name], SHA256_PATTERN, `${label} ${name} SHA`);
     if (hasWal && value[OPTIONAL_EMPTY_WAL] !== EMPTY_SHA256)
         throw new TypeError(`${label} optional WAL identity differs`);
-    return {inventory: value, files: [...expectedFiles, ...(hasWal ? [OPTIONAL_EMPTY_WAL] : [])].sort()};
+    return {inventory: value, files: [...expectedFiles, ...transientFiles].sort()};
 }
 
 function validateTreeShape(root, expectedFiles, label) {
@@ -132,7 +138,7 @@ function readTree(root, expectedFiles, inventory, label) {
                 MAX_FILE_BYTES, `${label} ${name}`);
         if (name === OPTIONAL_EMPTY_WAL && (bytes.length !== 0 || sha256(bytes) !== EMPTY_SHA256))
             throw new TypeError(`${label} optional WAL identity differs`);
-        if (name !== MARKER_NAME) records.push({path: name, bytes: String(bytes.length), sha256: sha256(bytes),
+        if (name !== MARKER_NAME && name !== TRANSIENT_SHARED_MEMORY) records.push({path: name, bytes: String(bytes.length), sha256: sha256(bytes),
             bytesBase64: bytes.toString("base64")});
     }
     return records;
@@ -191,4 +197,3 @@ export function buildWindowsBaselineGuestFixtureBundle(input) {
 export const WINDOWS_BASELINE_GUEST_FIXTURE_BUNDLE_CONSTANTS = Object.freeze({BUNDLE_KIND, COMMON_FILES,
     EMPTY_SHA256, MARKER_NAME, MAX_BUNDLE_BYTES, MAX_FILE_BYTES, MAX_MANIFEST_BYTES, OPTIONAL_EMPTY_WAL,
     POPULATED_FILES, RESET_FILES});
-
