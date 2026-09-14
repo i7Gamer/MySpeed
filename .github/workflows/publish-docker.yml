@@ -107,6 +107,17 @@ jobs:
             const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
             if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
             const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
+            const approvedScope = 'owner-approved-reduced-v1.6.1';
+            const deferredChecks = ['Windows native full verification with enforced outbound denial',
+              'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
+            if (context.repo.owner + '/' + context.repo.repo !== 'i7Gamer/MySpeed'
+              || manifest.source.repository !== 'i7Gamer/MySpeed' || manifest.source.version !== '1.6.1'
+              || manifest.promotion.scope?.id !== approvedScope
+              || JSON.stringify(manifest.promotion.scope.deferredChecks) !== JSON.stringify(deferredChecks)
+              || manifest.promotion.evidence?.windowsNative !== null
+              || manifest.promotion.evidence?.windowsCpuFloor !== null
+              || manifest.promotion.evidence?.msiLifecycle !== null)
+              throw new Error('Qualification scope is not the approved reduced v1.6.1 policy');
             if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
               || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
               || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
