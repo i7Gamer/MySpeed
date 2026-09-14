@@ -6,6 +6,7 @@ import * as loadOokla from './loadOokla.js';
 import * as loadLibre from './loadLibre.js';
 import * as loadCloudflare from './loadCloudflare.js';
 import * as loadIperf3 from './loadIperf3.js';
+import * as loadOst from './loadOst.js';
 
 /**
  * How long each LibreSpeed measurement phase runs, in seconds.
@@ -17,6 +18,7 @@ import * as loadIperf3 from './loadIperf3.js';
  * the price of a number that means anything.
  */
 export const LIBRE_DURATION_SECONDS = 15;
+export const OST_DURATION_SECONDS = 15;
 
 /**
  * How long each iperf3 direction runs, how many streams carry it, and how much
@@ -436,6 +438,28 @@ export const REGISTRY = {
         isResult: (data) => data.event === "end" && data.data
             && Object.keys(data.data).length > 0,
         errorOf: (data) => data.event === "error" ? data.data : undefined
+    },
+    openspeedtest: {
+        binaryName: "ost-cli",
+        loader: loadOst,
+        listName: "OpenSpeedTest",
+        serverList: null,
+        streamsProgress: false,
+        downloadedOnDemand: true,
+        wholeOutput: true,
+        buildArgs(target) {
+            if (typeof target?.endpoint !== "string" || target.endpoint === "")
+                throw new Error("This OpenSpeedTest target names no server URL");
+
+            return {
+                args: ["--server", target.endpoint, "--duration", String(OST_DURATION_SECONDS), "--json"],
+                temporaryServer: null
+            };
+        },
+        isResult: (data) => data?.type === "result"
+            && data.ping !== null && typeof data.ping === "object" && !Array.isArray(data.ping)
+            && data.download !== null && typeof data.download === "object" && !Array.isArray(data.download)
+            && data.upload !== null && typeof data.upload === "object" && !Array.isArray(data.upload)
     }
 };
 

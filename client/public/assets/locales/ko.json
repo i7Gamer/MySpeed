@@ -61,6 +61,7 @@
       "libre_desc": "오픈소스, 자체 호스팅 가능한 속도 테스트",
       "cloudflare_desc": "빠른 CDN 기반 테스트",
       "iperf3_desc": "네트워크 안에서 직접 운영하는 iperf3 서버",
+      "openspeedtest_desc": "네트워크 안에서 직접 운영하는 OpenSpeedTest 서버",
       "iperf_advanced": "실행 설정",
       "iperf_duration": "방향당 초",
       "iperf_streams": "병렬 스트림",

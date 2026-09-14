@@ -123,7 +123,7 @@ describe("the baseline field on every provider", () => {
     // records rather than about how it measures them - so every provider has
     // one, and nothing here is gated on which.
     it("travels on every provider", () => {
-        for (const provider of ["ookla", "libre", "cloudflare", "iperf3"])
+        for (const provider of ["ookla", "libre", "cloudflare", "iperf3", "openspeedtest"])
             assert.equal(targetBody(editorState({provider, endpoint: "nas.lan",
                 baselineAlerts: true, baselinePercent: "70"})).baselinePercent, 70,
             `${provider} dropped its baseline`);

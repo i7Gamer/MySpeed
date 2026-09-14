@@ -19,6 +19,16 @@ const SOCKET_NOISE = Array.from({length: 8}, () => JSON.stringify({
     message: "Error: [0] Cannot open socket", level: "error"
 })).join("\n");
 
+const OST_RESULT = JSON.stringify({
+    type: "result",
+    timestamp: "2026-09-14T12:00:00Z",
+    server: {url: "http://192.168.1.50:3000", scheme: "http"},
+    ping: {latency_ms: 3.25, jitter_ms: 0.4, samples: 10},
+    download: {bandwidth_bps: 100000000, bytes: 187500000, elapsed_ms: 15000},
+    upload: {bandwidth_bps: 50000000, bytes: 93750000, elapsed_ms: 15000},
+    client: {version: "0.1.1", os: "linux", arch: "amd64"}
+}, null, 2);
+
 describe("parseCliOutput", () => {
     describe("a run that produced a result", () => {
         /**
@@ -383,5 +393,57 @@ describe("a result line that is not flush against the margin", () => {
         ].join("\r\n"));
 
         assert.equal(parseCliOutput("ookla", stream, "").ping.latency, 24.079);
+    });
+});
+
+describe("a whole-document OpenSpeedTest result", () => {
+    it("parses the indented object emitted by ost-cli", () => {
+        assert.equal(parseCliOutput("openspeedtest", OST_RESULT, "").download.bandwidth_bps, 100000000);
+    });
+
+    it("accepts only surrounding whitespace and one leading BOM", () => {
+        const parsed = parseCliOutput("openspeedtest", `\ufeff\r\n${OST_RESULT}\r\n`, "");
+
+        assert.equal(parsed.ping.latency_ms, 3.25);
+    });
+
+    for (const [name, stdout] of [
+        ["an array wrapper", `[${OST_RESULT}]`],
+        ["a scalar", "42"],
+        ["null", "null"],
+        ["leading chatter", `banner\n${OST_RESULT}`],
+        ["trailing chatter", `${OST_RESULT}\ndone`]
+    ]) it(`rejects ${name}`, () => {
+        assert.deepEqual(parseCliOutput("openspeedtest", stdout, ""), {});
+    });
+
+    it("falls back to stderr when the JSON is malformed", () => {
+        assert.equal(parseCliOutput("openspeedtest", OST_RESULT.slice(0, -2), "connection reset").error,
+            "connection reset");
+    });
+
+    it("preserves stderr for the exact partial-result shape emitted on exit 4", () => {
+        const partial = JSON.stringify({
+            type: "result", timestamp: "2026-09-14T12:00:00Z",
+            server: {url: "http://192.168.1.50:3000", scheme: "http"},
+            ping: {latency_ms: 3.25, jitter_ms: 0.4, samples: 10},
+            download: {bandwidth_bps: 100000000, bytes: 187500000, elapsed_ms: 15000},
+            client: {version: "0.1.1", os: "linux", arch: "amd64"}
+        }, null, 2);
+
+        assert.equal(parseCliOutput("openspeedtest", partial, "error: upload: connection reset").error,
+            "error: upload: connection reset");
+    });
+
+    it("preserves stderr when a network error emitted an empty-phase result", () => {
+        const empty = JSON.stringify({
+            type: "result", timestamp: "2026-09-14T12:00:00Z",
+            server: {url: "http://192.168.1.50:3000", scheme: "http"},
+            ping: {latency_ms: 0, jitter_ms: 0, samples: 0},
+            client: {version: "0.1.1", os: "linux", arch: "amd64"}
+        }, null, 2);
+
+        assert.match(parseCliOutput("openspeedtest", empty,
+            "error: connectivity check failed: dial tcp: connection refused").error, /connection refused/);
     });
 });

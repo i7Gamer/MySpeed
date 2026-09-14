@@ -92,7 +92,7 @@ describe("the download hold", () => {
         assert.equal(attempts, 3);
     });
 
-    // One provider's broken archive says nothing about another's, and the four
+    // One provider's broken archive says nothing about another's, and the
     // loaders share this module.
     it("holds one provider without holding the rest", async () => {
         const ookla = failing("Checksum did not match");
@@ -133,17 +133,18 @@ describe("the loaders that install a CLI", () => {
     const loaders = walkSources("server/util/providers")
         .filter(({path}) => /\/load[A-Z]\w*\.js$/.test(path));
 
-    it("are the four this project ships", () => {
+    it("are the five this project ships", () => {
         assert.deepEqual(loaders.map(({path}) => path.split("/").pop()).sort(),
-            ["loadCloudflare.js", "loadIperf3.js", "loadLibre.js", "loadOokla.js"],
+            ["loadCloudflare.js", "loadIperf3.js", "loadLibre.js", "loadOokla.js", "loadOst.js"],
             "a provider was added or renamed, and this suite is reading the wrong set");
     });
 
     it("download through the hold rather than straight", () => {
         for (const {path, source} of loaders) {
-            const load = bodyOf(source, "export const load = async ()");
+            const load = bodyOf(source, "export const load = async");
+            const held = path.endsWith("loadOst.js") ? /await hold\(/ : /await heldDownload\(/;
 
-            assert.match(load, /await heldDownload\(/,
+            assert.match(load, held,
                 `${path} fetches the archive again on every tick a permanent failure lasts`);
             assert.doesNotMatch(load, /await downloadFile\(\)/,
                 `${path} still has a path that downloads without asking the hold`);
@@ -154,16 +155,22 @@ describe("the loaders that install a CLI", () => {
     // dropped into bin/ by hand has to be picked up on the next tick rather
     // than waiting out a hold left by the download it made unnecessary.
     it("ask the hold only when the binary is missing", () => {
-        for (const {path, source} of loaders)
-            assert.match(bodyOf(source, "export const load = async ()"),
-                /if \(!await fileExists\(\)\) await heldDownload\(/,
+        for (const {path, source} of loaders) {
+            const expected = path.endsWith("loadOst.js")
+                ? /if \(!await exists\(\)\) await hold\(/
+                : /if \(!await fileExists\(\)\) await heldDownload\(/;
+
+            assert.match(bodyOf(source, "export const load = async"), expected,
                 `${path} holds a provider whose binary is already installed`);
+        }
     });
 
     // One name each, and its own: the hold is keyed by it, so two providers
     // sharing a name would hold each other and a typo would hold nothing.
     it("name themselves distinctly to the hold", () => {
-        const names = loaders.map(({source}) => /heldDownload\("(\w+)"/.exec(source)?.[1]);
+        const names = loaders.map(({path, source}) => (path.endsWith("loadOst.js")
+            ? /hold\("(\w+)"/.exec(source)
+            : /heldDownload\("(\w+)"/.exec(source))?.[1]);
 
         assert.equal(new Set(names).size, loaders.length,
             `two loaders share a hold key: ${names.join(", ")}`);

@@ -6,7 +6,7 @@
  * sure of that is to hand it a step and a provider and ask.
  */
 
-import {iperfHostAccepted, requiresEndpoint} from "../TargetsDialog/providerFields.js";
+import {iperfHostAccepted, ostEndpointAccepted, requiresEndpoint} from "../TargetsDialog/providerFields.js";
 import {isThresholdNumber} from "../../utils/TestUtil.js";
 
 /** The step the wizard opens on: the greeting, before anything is asked. */
@@ -106,7 +106,8 @@ export const canAdvance = ({step, provider, endpoint, ping, download, upload}) =
         // back and the dialog cannot be dismissed. The rule lives beside
         // requiresEndpoint so the target editor asks the same question of the
         // same field.
-        return !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
+        return !requiresEndpoint(provider)
+            || (provider === "iperf3" ? iperfHostAccepted(endpoint) : ostEndpointAccepted(endpoint));
 
     // The thresholds, by the same reasoning and the server's own shape rule:
     // the three inputs carry no min, and the refusal lands where finish()

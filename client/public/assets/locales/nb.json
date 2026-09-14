@@ -61,6 +61,7 @@
       "libre_desc": "Hastighetstest med åpen kildekode, kan driftes selv",
       "cloudflare_desc": "Rask CDN-basert testing",
       "iperf3_desc": "Din egen iperf3-server, på ditt nettverk",
+      "openspeedtest_desc": "Din egen OpenSpeedTest-server, på ditt nettverk",
       "iperf_advanced": "Kjøreinnstillinger",
       "iperf_duration": "Sekunder per retning",
       "iperf_streams": "Parallelle strømmer",

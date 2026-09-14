@@ -26,7 +26,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🩺 Configure health checks to notify you via email, Signal, WhatsApp, or Telegram in case of errors or downtime
 - 📆 Test results can be stored for any retention period you configure - from a few days to forever
 - 🔥 Support for Prometheus and Grafana
-- 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 server
+- 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 or OpenSpeedTest server
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
 - 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
 - 🛰️ Trace the route to the test server when a test fails or slows down, and see hop by hop where the line broke
@@ -240,6 +240,12 @@ rest_command:
 ```
 
 Tokens travel in a configuration export only when it includes the secrets, the way node passwords do; a redacted export leaves them out and restoring it leaves them alone.
+
+#### OpenSpeedTest targets
+
+Add an OpenSpeedTest target with your server's HTTP or HTTPS base URL. MySpeed downloads the MIT-licensed [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) on its first test and verifies the pinned archive checksum. Supported builds are Windows and Linux x64/ARM64, and macOS x64/ARM64. Each transfer phase lasts 15 seconds. Untrusted HTTPS certificates are refused; no automatic certificate bypass is enabled.
+
+OpenSpeedTest follows the operating system's routing table: its CLI cannot bind to MySpeed's selected network interface, so its measurements may describe a different connection. Configure targets only for servers trusted by the administrator. MySpeed rejects literal metadata/link-local addresses, but the external CLI's DNS, proxy and redirect handling is not confined by that check. It does not protect against a hostname or redirect reaching those destinations.
 
 #### Connection changes
 

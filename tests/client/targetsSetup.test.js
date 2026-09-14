@@ -6,7 +6,7 @@ import {
     optimalAccepted, optimalOrNull, optimalsAccepted, targetBody, uniqueTargetName
 } from "@/common/components/TargetsDialog/targetBody.js";
 import {
-    requiresEndpoint, takesEndpoint, takesServerId
+    ostEndpointAccepted, requiresEndpoint, takesEndpoint, takesServerId
 } from "@/common/components/TargetsDialog/providerFields.js";
 
 /**
@@ -425,11 +425,13 @@ describe("what each provider lets a target say", () => {
         assert.equal(takesServerId("cloudflare"), false);
         // Named on the target itself - an iperf3 server is the operator's own.
         assert.equal(takesServerId("iperf3"), false);
+        assert.equal(takesServerId("openspeedtest"), false);
     });
 
     it("offers an address of its own to the two that take one", () => {
         assert.equal(takesEndpoint("libre"), true);
         assert.equal(takesEndpoint("iperf3"), true);
+        assert.equal(takesEndpoint("openspeedtest"), true);
         assert.equal(takesEndpoint("ookla"), false);
         assert.equal(takesEndpoint("cloudflare"), false);
     });
@@ -438,7 +440,14 @@ describe("what each provider lets a target say", () => {
     // list; an iperf3 target with no host has nothing to measure at all.
     it("insists on one only where there is no fallback", () => {
         assert.equal(requiresEndpoint("iperf3"), true);
+        assert.equal(requiresEndpoint("openspeedtest"), true);
         assert.equal(requiresEndpoint("libre"), false);
+    });
+
+    it("accepts only complete OpenSpeedTest base URLs", () => {
+        assert.equal(ostEndpointAccepted("http://nas.lan:3000"), true);
+        for (const endpoint of ["nas.lan:3000", "http://user@nas.lan", "http://nas.lan?q=1"])
+            assert.equal(ostEndpointAccepted(endpoint), false, endpoint);
     });
 });
 
@@ -499,6 +508,11 @@ describe("the editor's own guard", () => {
     // holds only the iperf3 shape rule itself.
     it("judges the host the way the server will", () => {
         assert.match(editor, /iperfHostAccepted\(endpoint\)/);
+        assert.match(editor, /ostEndpointAccepted\(endpoint\)/);
+    });
+
+    it("shows OpenSpeedTest the base URL example", () => {
+        assert.match(editor, /provider === "openspeedtest" \? OPENSPEEDTEST_PLACEHOLDER/);
     });
 
     it("draws the server pickers only where they mean something", () => {
@@ -561,7 +575,7 @@ describe("the run's own shape on the body", () => {
     // on a provider that decides its own - so a value left behind by a
     // provider switch must not travel with the save.
     it("sends nothing at all for a provider that shapes its own run", () => {
-        for (const provider of ["ookla", "libre", "cloudflare"]) {
+        for (const provider of ["ookla", "libre", "cloudflare", "openspeedtest"]) {
             const body = targetBody({...IPERF, provider, endpoint: "", iperfDuration: "30", iperfStreams: "8"});
 
             assert.equal(body.iperfDuration, null, `${provider} carried a duration`);

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { cloudflareList, iperfList, libreList, ooklaList } from "../../server/config/binaries.js";
+import { cloudflareList, iperfList, libreList, ooklaList, ostList } from "../../server/config/binaries.js";
 import { DigestMismatchError, downloadAndExtract, verifyDigest } from "../../server/util/providers/downloadHelper.js";
 
 /**
@@ -41,7 +41,8 @@ describe("the pinned manifest", () => {
         // list above exists to close: its seven entries are downloaded and
         // spawned like any other CLI, and nothing here asked whether they
         // carried a digest at all.
-        ...iperfList.map((entry) => ({provider: "iperf3", ...entry}))
+        ...iperfList.map((entry) => ({provider: "iperf3", ...entry})),
+        ...ostList.map((entry) => ({provider: "openspeedtest", ...entry}))
     ];
 
     it("has entries to check", () => {

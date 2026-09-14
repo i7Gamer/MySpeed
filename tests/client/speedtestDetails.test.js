@@ -145,6 +145,7 @@ describe("providerName", () => {
         // sub-line and falls back to being treated as one from before the
         // column existed.
         assert.equal(providerName("iperf3"), "iperf3");
+        assert.equal(providerName("openspeedtest"), "OpenSpeedTest");
     });
 
     // Every test recorded before the column existed carries nothing, and naming

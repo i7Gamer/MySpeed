@@ -98,7 +98,7 @@ describe("the editor and the door judge a run's shape the same way", () => {
     // targetBody nulls it on the way out, so the editor can never produce this
     // - but the API is open and the rule is the reason the column is nullable.
     it("refuses tuning on a provider that takes none", () => {
-        for (const provider of ["ookla", "libre", "cloudflare"]) {
+        for (const provider of ["ookla", "libre", "cloudflare", "openspeedtest"]) {
             assert.equal(tuningOrNull(provider, "10"), null,
                 `${provider} carried a duration out of the editor`);
             assert.notEqual(iperfTuningProblem({provider, iperfDuration: 10}), null,
@@ -280,7 +280,7 @@ describe("the editor and the door judge a UDP run the same way", () => {
             {iperfDuration: "abc", iperfStreams: "0", iperfUdp: true, iperfBitrate: "99999"}
         ];
 
-        for (const provider of ["ookla", "libre", "cloudflare"])
+        for (const provider of ["ookla", "libre", "cloudflare", "openspeedtest"])
             for (const over of stranded) {
                 const state = editorState({provider, endpoint: "", ...over});
 

@@ -13,7 +13,7 @@ export const FIXTURE_MARKER = ".myspeed-qualification.json";
 export const HANDOFF_SCHEMA_VERSION = 1;
 
 const PROVIDER_CATALOGUES = ["ookla.json", "librespeed.json"];
-const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3"];
+const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3", "ost-cli"];
 const WINDOWS_SUFFIX = ".exe";
 const DIRECTORY_MODE = 0o700;
 const EXECUTABLE_MODE = 0o700;

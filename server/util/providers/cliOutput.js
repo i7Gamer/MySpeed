@@ -104,6 +104,40 @@ const plainTextLines = (text) => text.split(/\r?\n/)
     .filter((line) => line && !line.startsWith("{") && !line.startsWith("["))
     .join('\n');
 
+const lineRecords = (mode, stdout) => {
+    const records = [];
+
+    for (const rawLine of stdout.split(/\r?\n/)) {
+        const line = rawLine.trim();
+        if (!(line.startsWith("{") || line.startsWith("["))) continue;
+
+        let data;
+        try {
+            data = JSON.parse(line);
+            if (line.startsWith("[") && mode !== "cloudflare") data = data[0];
+        } catch (error) {
+            console.error("JSON parse error:", error.message, "Line:", line);
+            continue;
+        }
+
+        if (data !== null && typeof data === "object") records.push(data);
+    }
+
+    return records;
+};
+
+const wholeRecord = (stdout) => {
+    const document = stdout.startsWith("\uFEFF") ? stdout.slice(1) : stdout;
+
+    try {
+        const data = JSON.parse(document);
+        return data !== null && typeof data === "object" && !Array.isArray(data) ? [data] : [];
+    } catch (error) {
+        console.error("JSON parse error:", error.message);
+        return [];
+    }
+};
+
 /**
  * Turns what a provider CLI printed into either a result or an error.
  *
@@ -127,19 +161,8 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         // point from the Windows side, where the CLIs write CRLF and every line
         // but the last would otherwise keep a trailing carriage return. The
         // helper above and the progress reader both already read lines this way.
-        for (const rawLine of stdout.split(/\r?\n/)) {
-            const line = rawLine.trim();
-
-            if (!(line.startsWith("{") || line.startsWith("["))) continue;
-
-            let data;
-            try {
-                data = JSON.parse(line);
-                if (line.startsWith("[") && mode !== "cloudflare") data = data[0];
-            } catch (e) {
-                console.error("JSON parse error:", e.message, "Line:", line);
-                continue;
-            }
+        const records = descriptor(mode).wholeOutput ? wholeRecord(stdout) : lineRecords(mode, stdout);
+        for (const data of records) {
 
             // The unwrap above can leave nothing behind, and this read used to
             // sit outside the try that would have caught it. `[]` is valid JSON
@@ -149,8 +172,6 @@ export const parseCliOutput = (mode, stdout, stderr) => {
             // uncaughtException rather than a rejected promise. A line that
             // parsed to no object is chatter, the same as one that did not
             // parse at all.
-            if (data === null || typeof data !== "object") continue;
-
             /*
              * Reduced to text here, where the shape is in hand, rather than
              * left for capError's String(): an error reported as an object -
@@ -200,7 +221,7 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         // The JSON lines are skipped because they are progress records, not an
         // explanation: reporting those would make every interrupted run cite
         // its own progress log as the reason it stopped.
-        const text = stderr.trim() || plainTextLines(stdout);
+        const text = stderr.trim() || (descriptor(mode).wholeOutput ? "" : plainTextLines(stdout));
 
         if (text) result.error = normaliseError(text);
     }

@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { REGISTRY, descriptor, providerIds, LIBRE_DURATION_SECONDS, IPERF_DURATION_SECONDS,
     IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS, IPERF_MIN_STREAMS,
-    IPERF_STREAMS } from "../../server/util/providers/registry.js";
+    IPERF_STREAMS, OST_DURATION_SECONDS } from "../../server/util/providers/registry.js";
 
 /**
  * One descriptor per provider, replacing the if/else chains that named the
@@ -27,7 +27,7 @@ describe("the provider registry", () => {
     });
 
     it("lists the shipped providers", () => {
-        assert.deepEqual(providerIds(), ["ookla", "libre", "cloudflare", "iperf3"]);
+        assert.deepEqual(providerIds(), ["ookla", "libre", "cloudflare", "iperf3", "openspeedtest"]);
     });
 
     it("names the server list only for providers that have one", () => {
@@ -37,12 +37,34 @@ describe("the provider registry", () => {
         // An iperf3 server is a host the operator runs, named on the target
         // itself - there is no fleet to list.
         assert.equal(REGISTRY.iperf3.serverList, null);
+        assert.equal(REGISTRY.openspeedtest.serverList, null);
     });
 
     it("streams progress only where the CLI reports it", () => {
         assert.equal(REGISTRY.ookla.streamsProgress, true);
         assert.equal(REGISTRY.libre.streamsProgress, false);
         assert.equal(REGISTRY.cloudflare.streamsProgress, false);
+        assert.equal(REGISTRY.openspeedtest.streamsProgress, false);
+    });
+});
+
+describe("OpenSpeedTest arguments", () => {
+    it("passes the endpoint and a stable duration without bypassing TLS", () => {
+        assert.deepEqual(REGISTRY.openspeedtest.buildArgs({endpoint: "https://speed.lan"}, IFACE), {
+            args: ["--server", "https://speed.lan", "--duration", String(OST_DURATION_SECONDS), "--json"],
+            temporaryServer: null
+        });
+        assert.equal(OST_DURATION_SECONDS, 15);
+    });
+
+    it("requires an endpoint", () => {
+        assert.throws(() => REGISTRY.openspeedtest.buildArgs({}, IFACE), /server URL/i);
+    });
+
+    it("is downloaded only when a target uses it", () => {
+        assert.equal(REGISTRY.openspeedtest.downloadedOnDemand, true);
+        assert.equal(REGISTRY.openspeedtest.wholeOutput, true);
+        assert.notEqual(REGISTRY.openspeedtest.providesLatency, false);
     });
 });
 
@@ -161,5 +183,9 @@ describe("result recognition", () => {
         assert.equal(REGISTRY.cloudflare.isResult({metadata: {}}), true);
         assert.equal(REGISTRY.cloudflare.isResult([1, 2]), false);
         assert.equal(REGISTRY.libre.isResult({anything: true}), true);
+        const complete = {type: "result", ping: {}, download: {}, upload: {}};
+        assert.equal(REGISTRY.openspeedtest.isResult(complete), true);
+        assert.equal(REGISTRY.openspeedtest.isResult({type: "result", ping: {}, download: {}}), false);
+        assert.equal(REGISTRY.openspeedtest.isResult({timestamp: "2026-09-14T00:00:00Z"}), false);
     });
 });

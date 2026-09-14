@@ -26,7 +26,7 @@ MySpeed ist eine Speedtest-Analyse-Software, welche die Geschwindigkeit deines I
 - 🩺 Es lassen sich Healthchecks konfigurieren, welche dich bei Fehlern oder Ausfällen über E-Mail, Signal, WhatsApp oder Telegram benachrichtigen können
 - 📆 Testergebnisse lassen sich beliebig lange speichern - die Aufbewahrungsdauer ist frei konfigurierbar
 - 🔥 Unterstützung für Prometheus und Grafana
-- 🗳️ Wähle zwischen Ookla, LibreSpeed, Cloudflare und deinem eigenen iperf3-Server
+- 🗳️ Wähle zwischen Ookla, LibreSpeed, Cloudflare und deinem eigenen iperf3- oder OpenSpeedTest-Server
 - 🎯 Miss mehrere Ziele in einem Durchlauf - das Internet und dein eigenes LAN nebeneinander
 - 📉 Lass dich benachrichtigen, wenn ein Ziel unter das fällt, was es sonst liefert - gemessen am eigenen gleitenden Median
 - 🛰️ Verfolge bei fehlgeschlagenen oder langsamen Tests die Route zum Testserver und untersuche die Antworten der einzelnen Hops
@@ -247,6 +247,12 @@ rest_command:
 ```
 
 API-Tokens werden nur mit exportiert, wenn der Konfigurationsexport die Zugangsdaten enthält. Ein bereinigter Export lässt sie aus; beim Wiederherstellen eines solchen Exports bleiben vorhandene Tokens erhalten.
+
+#### OpenSpeedTest-Ziele
+
+Lege ein OpenSpeedTest-Ziel mit der HTTP- oder HTTPS-Basis-URL deines Servers an. MySpeed lädt den MIT-lizenzierten [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) beim ersten Test herunter und prüft die festgelegte Archiv-Prüfsumme. Unterstützt werden Windows und Linux auf x64/ARM64 sowie macOS auf x64/ARM64. Jede Übertragungsphase dauert 15 Sekunden. Nicht vertrauenswürdige HTTPS-Zertifikate werden abgelehnt; die Zertifikatsprüfung wird nicht automatisch umgangen.
+
+OpenSpeedTest folgt der Routingtabelle des Betriebssystems: Die CLI kann sich nicht an die in MySpeed ausgewählte Netzwerkschnittstelle binden. Die Messung kann daher eine andere Verbindung betreffen. Konfiguriere nur Server, denen der Administrator vertraut. MySpeed lehnt direkt angegebene Metadaten- und Link-Local-Adressen ab, begrenzt damit aber nicht die DNS-Auflösung, Proxy-Nutzung oder Weiterleitungen der externen CLI. Ein Hostname oder eine Weiterleitung kann solche Ziele weiterhin erreichen.
 
 #### Verbindungsänderungen
 

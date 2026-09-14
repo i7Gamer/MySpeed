@@ -18,9 +18,10 @@
 /**
  * The providers whose "server" is a machine the operator runs.
  *
- * An iperf3 target's endpoint is always one, and a librespeed target's may be:
- * both are exactly what routes/targets.js already withholds from a viewer, and
- * both are copied onto the row as `serverHost` by their parsers - so the
+ * An iperf3 or OpenSpeedTest target's endpoint is always one, and a
+ * librespeed target's may be. They are exactly what routes/targets.js already
+ * withholds from a viewer, and are copied onto the row as `serverHost` by
+ * their parsers - so the
  * address the targets route refuses to give was handed to the same reader by
  * the speedtest list, the CSV export and the dashboard's status payload.
  *
@@ -28,14 +29,18 @@
  * list, so masking one withholds something the reader can look up on the
  * provider's own website while saying a measurement was hidden.
  */
-const PRIVATE_SERVER_PROVIDERS = new Set(["iperf3", "libre"]);
+const PRIVATE_SERVER_PROVIDERS = new Set(["iperf3", "libre", "openspeedtest"]);
+const PRIVATE_SERVER_ERROR = "Private server test failed";
 
 export const stripConnectionIdentity = (row) => {
     if (!row) return row;
 
     row.isp = null;
     row.externalIp = null;
-    if (PRIVATE_SERVER_PROVIDERS.has(row.provider)) row.serverHost = null;
+    if (PRIVATE_SERVER_PROVIDERS.has(row.provider)) {
+        row.serverHost = null;
+        if (row.error) row.error = PRIVATE_SERVER_ERROR;
+    }
     delete row.resultId;
 
     // The route a degraded run traced: the LAN gateway and the provider's

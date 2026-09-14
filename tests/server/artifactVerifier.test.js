@@ -547,6 +547,20 @@ describe("runtime isolation and teardown", () => {
         }
     });
 
+    it("seeds the on-demand OpenSpeedTest CLI without executing or downloading it", () => {
+        for (const [platform, suffix] of [["linux", ""], ["win32", ".exe"]]) {
+            const work = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-qualification-ost-fixture-test-"));
+            const nonce = "synthetic-ost-fixture";
+            try {
+                prepareStaticFixtures({work, nonce, platform});
+                assert.equal(fs.readFileSync(path.join(work, "bin", `ost-cli${suffix}`), "utf8"),
+                    `MySpeed qualification fixture ${nonce}\n`);
+            } finally {
+                removeOwnedWork(work, nonce);
+            }
+        }
+    });
+
     it("refuses stale fixtures and reports cleanup failures", () => {
         const parent = fs.mkdtempSync(path.join(os.tmpdir(), "artifact-verifier-test-"));
         const work = fs.mkdtempSync(path.join(parent, "myspeed-qualification-"));

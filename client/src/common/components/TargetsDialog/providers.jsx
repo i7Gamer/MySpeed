@@ -1,4 +1,4 @@
-import {faServer} from "@fortawesome/free-solid-svg-icons";
+import {faGaugeHigh, faServer} from "@fortawesome/free-solid-svg-icons";
 import OoklaImage from "./assets/img/ookla.webp";
 import LibreImage from "./assets/img/libre.webp";
 import CloudflareImage from "./assets/img/cloudflare.webp";
@@ -20,7 +20,8 @@ export const providers = [
     {id: "ookla", name: "Ookla", image: OoklaImage},
     {id: "libre", name: "LibreSpeed", image: LibreImage},
     {id: "cloudflare", name: "Cloudflare", image: CloudflareImage},
-    {id: "iperf3", name: "iperf3", icon: faServer}
+    {id: "iperf3", name: "iperf3", icon: faServer},
+    {id: "openspeedtest", name: "OpenSpeedTest", icon: faGaugeHigh}
 ];
 
 export const providerById = (id) => providers.find((provider) => provider.id === id) ?? null;
@@ -31,7 +32,7 @@ export const providerById = (id) => providers.find((provider) => provider.id ===
  * here so a caller that wants both has one import.
  */
 export {
-    takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted,
+    takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted, ostEndpointAccepted,
     takesTuning, durationAccepted, streamsAccepted, bitrateAccepted, tuningAccepted,
     TUNING_BOUNDS, IPERF_DEFAULTS, baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT
 } from "./providerFields.js";

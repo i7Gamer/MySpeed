@@ -3,11 +3,13 @@ import "./styles.sass";
 import {providers, requiresEndpoint} from "@/common/components/TargetsDialog/providers";
 import SelectableOption, {SelectableList} from "@/common/components/SelectableOption";
 import {FontAwesomeIcon} from "@fortawesome/react-fontawesome";
-import {faServer} from "@fortawesome/free-solid-svg-icons";
-import {IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
+import {faLink, faServer} from "@fortawesome/free-solid-svg-icons";
+import {IPERF_HOST_PLACEHOLDER, OPENSPEEDTEST_PLACEHOLDER} from "@/common/utils/InvariantText";
 import {t} from "i18next";
 
 export const ProviderChooser = ({provider, setProvider, endpoint, setEndpoint}) => {
+    const isIperf = provider === "iperf3";
+
     return (
         <div className="provider-chooser">
             <h2>{t("welcome.provider_title")}</h2>
@@ -38,11 +40,11 @@ export const ProviderChooser = ({provider, setProvider, endpoint, setEndpoint}) 
             {requiresEndpoint(provider) && (
                 <div className="provider-endpoint">
                     <div className="provider-endpoint-label">
-                        <FontAwesomeIcon icon={faServer}/>
-                        <h3>{t("dialog.provider.iperf_host")}</h3>
+                        <FontAwesomeIcon icon={isIperf ? faServer : faLink}/>
+                        <h3>{t(isIperf ? "dialog.provider.iperf_host" : "dialog.provider.custom_url")}</h3>
                     </div>
                     <input type="text" className="dialog-input"
-                           placeholder={IPERF_HOST_PLACEHOLDER}
+                           placeholder={isIperf ? IPERF_HOST_PLACEHOLDER : OPENSPEEDTEST_PLACEHOLDER}
                            value={endpoint} onChange={(e) => setEndpoint(e.target.value)}/>
                 </div>
             )}
