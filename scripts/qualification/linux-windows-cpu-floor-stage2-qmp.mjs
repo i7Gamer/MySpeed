@@ -4,7 +4,7 @@ const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
 const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
-const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32})\/early-boot-([12])\.png$/u;
+const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}))\/early-boot-([12])\.png$/u;
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 

@@ -1,0 +1,296 @@
+import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {spawnSync} from "node:child_process";
+import {describe, it} from "node:test";
+
+import {renderWindowsBaselineGuestBootstrap} from "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
+import {buildWindowsBaselineGuestSeedDocuments} from "../../scripts/qualification/windows-baseline-guest-seed-documents.mjs";
+import {renderGuestBootstrap} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+
+const NONCE = "3".repeat(32);
+const SOURCE_SHA = "1".repeat(40);
+const SHA = character => character.repeat(64);
+const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+const HAS_INBOX_POWERSHELL = process.platform === "win32" && fs.existsSync(POWERSHELL);
+const TEST_TIMEOUT_MILLISECONDS = 30_000;
+const TEST_STREAM_BYTES = 1024 * 1024;
+const hostedContext = () => ({schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA,
+    eventSha: "2".repeat(40), runId: "123", runAttempt: "1", nonce: NONCE,
+    environment: {GITHUB_ACTIONS: "true", CI: "true", RUNNER_OS: "Linux", RUNNER_ARCH: "X64",
+        RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24", ImageVersion: "20260907.1"}});
+
+const render = () => renderWindowsBaselineGuestBootstrap({nonce: NONCE, sourceSha: SOURCE_SHA,
+    requestSha256: SHA("4"), executionSha256: SHA("5"), runtimeBundleSha256: SHA("6")});
+
+describe("Windows baseline guest bootstrap", () => {
+    it("seals exact bindings and orders guest guard, runtime cleanup, error-mode restore, publication, and shutdown", () => {
+        const source = render().toString("utf8");
+        assert.match(source, /\$EXPECTED_REQUEST_SHA='4{64}'/u);
+        assert.match(source, /\$EXPECTED_EXECUTION_SHA='5{64}'/u);
+        assert.match(source, /\$EXPECTED_RUNTIME_SHA='6{64}'/u);
+        assert.ok(source.indexOf("$boundary=& $ObserveGuard") < source.indexOf("$runtime=& $InstallRuntime"));
+        assert.ok(source.indexOf("$cleanup=& $RemoveRuntime") < source.indexOf("SetErrorMode $previousMode"));
+        assert.ok(source.indexOf("SetErrorMode $previousMode") < source.indexOf(`'baseline-result.json'`));
+        assert.ok(source.indexOf(`'baseline-result.json'`) < source.indexOf("& $Shutdown"));
+        assert.equal((source.match(/Stop-Computer -Force/gu) ?? []).length, 1);
+    });
+
+    it("runs the returned pure orchestration and publishes only after cleanup and restoration", {skip: !HAS_INBOX_POWERSHELL}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-bootstrap-"));
+        const scriptPath = path.join(root, "bootstrap.ps1");
+        const cpuPath = path.join(root, "cpu-calibration.ps1");
+        const harnessPath = path.join(root, "harness.ps1");
+        try {
+            fs.writeFileSync(scriptPath, render());
+            fs.writeFileSync(cpuPath, renderGuestBootstrap(hostedContext()));
+            const harness = `$events=@();. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                `Invoke-MyspeedBaselineBootstrap -ObserveGuard {$script:events+='guard';[pscustomobject]@{seed='D:\\';output='E:\\'}} ` +
+                `-StageInputs {param($Seed,$Root)$script:events+='stage-inputs';[pscustomobject]@{installed=$true;root=$Root}} ` +
+                `-InstallRuntime {param($Seed,$Root)$script:events+='install';[pscustomobject]@{installed=$true;root=$Root}} ` +
+                `-LoadCpu {param($Seed). '${cpuPath.replaceAll("'", "''")}' -LibraryMode;` +
+                `$script:events+=("load-cpu:"+$BASELINE_MAX_STREAM_BYTES);[pscustomobject]@{` +
+                `SetErrorMode={param($Value)$script:events+="mode:$Value";[uint32]7};` +
+                `CollectEvidence={param($Value)$script:events+='cpu';[pscustomobject]@{schemaVersion=1;status='observed'}}}} ` +
+                `-StartExecutor {param($Root,$Seed)$script:events+='executor';[Text.UTF8Encoding]::new($false).GetBytes('{"schemaVersion":1,"status":"observed","profile":"baseline-cpu","cleanupProven":true,"summary":{}}')} ` +
+                `-RemoveRuntime {param($Root)$script:events+='cleanup';[pscustomobject]@{cleanupProven=$true}} ` +
+                `-RemoveInputs {param($Seed,$Root)$script:events+='cleanup-inputs';[pscustomobject]@{cleanupProven=$true}} ` +
+                `-Publish {param($Path,$Bytes)$script:events+=("publish:"+[IO.Path]::GetFileName($Path))} ` +
+                `-Shutdown {$script:events+='shutdown'}\r\n$events|ConvertTo-Json -Compress\r\n`;
+            fs.writeFileSync(harnessPath, harness);
+            const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.stderr, "");
+            assert.notEqual(result.stdout.trim(), "", result.stderr);
+            assert.deepEqual(JSON.parse(result.stdout), ["guard", "stage-inputs", "install", "load-cpu:4194304", "mode:3",
+                "cpu", "executor", "cleanup", "cleanup-inputs", "mode:7", "publish:baseline-result.json",
+                "publish:result.json", "shutdown"]);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("publishes only a failed CPU envelope and still shuts down when restoration fails", {skip: !HAS_INBOX_POWERSHELL}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-bootstrap-failure-"));
+        const scriptPath = path.join(root, "bootstrap.ps1"); const harnessPath = path.join(root, "harness.ps1");
+        try {
+            fs.writeFileSync(scriptPath, render());
+            const harness = `$events=@();. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                `$calls=0\r\n` +
+                `try{Invoke-MyspeedBaselineBootstrap -ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} ` +
+                `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)$script:calls++;if($script:calls -eq 1){[uint32]7}else{throw 'restore failed'}};CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                `-StartExecutor {param($Root,$Seed)[Text.UTF8Encoding]::new($false).GetBytes('{}')} ` +
+                `-RemoveRuntime {param($Root)[pscustomobject]@{cleanupProven=$true}} ` +
+                `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
+                `-Publish {param($Path,$Bytes)$script:events+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
+                `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n$events|ConvertTo-Json -Compress\r\n`;
+            fs.writeFileSync(harnessPath, harness);
+            const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+            assert.equal(result.status, 0, result.stderr);
+            assert.equal(result.stderr, "");
+            assert.notEqual(result.stdout.trim(), "", result.stderr);
+            const events = JSON.parse(result.stdout);
+            assert.deepEqual(events.map(value => value.name), ["result.json", "shutdown"]);
+            const failure = JSON.parse(events[0].text);
+            assert.equal(failure.status, "failed"); assert.equal(failure.stage, "error-mode-restore");
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("reloads the sealed runtime installer for cleanup after the install callback scope exits",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-installer-scope-"));
+            const scriptPath = path.join(root, "bootstrap.ps1");
+            const installerPath = path.join(root, "runtime-installer.ps1");
+            const removedPath = path.join(root, "removed.txt");
+            const harnessPath = path.join(root, "harness.ps1");
+            try {
+                fs.writeFileSync(scriptPath, render());
+                fs.writeFileSync(installerPath, `param([switch]$Mode)\r\n` +
+                    `function Install-MyspeedBaselineRuntimeBundle { param($Bundle,$Sha,$Source,$Nonce,$Root,$Temp) ` +
+                    `[pscustomobject]@{installed=$true;root=$Root} }\r\n` +
+                    `function Remove-MyspeedBaselineRuntimeBundle { param($Source,$Nonce,$Root,$Temp) ` +
+                    `[IO.File]::WriteAllText('${removedPath.replaceAll("'", "''")}','removed');` +
+                    `[pscustomobject]@{cleanupProven=$true} }\r\n`);
+                const escapedRoot = root.replaceAll("'", "''");
+                const harness = `. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                    `Invoke-MyspeedBaselineBootstrap -ObserveGuard {[pscustomobject]@{seed='${escapedRoot}';output='${escapedRoot}'}} ` +
+                    `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                    `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
+                    `CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                    `-StartExecutor {param($Root,$Seed)[Text.UTF8Encoding]::new($false).GetBytes('{}')} ` +
+                    `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
+                    `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
+                    `[pscustomobject]@{removed=[IO.File]::Exists('${removedPath.replaceAll("'", "''")}')}|` +
+                    `ConvertTo-Json -Compress\r\n`;
+                fs.writeFileSync(harnessPath, harness);
+                const result = spawnSync(POWERSHELL,
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                    {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+                assert.equal(result.status, 0, result.stderr);
+                assert.equal(result.stderr, "");
+                assert.deepEqual(JSON.parse(result.stdout), {removed: true});
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+
+    it("stages label-discovered seed inputs to the fixed owned root and removes them before publication",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const nonce = "4".repeat(32);
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-stage-"));
+            const candidateBytes = Buffer.from("candidate-bytes\n");
+            const fixtureBytes = Buffer.from("fixture-bytes\n");
+            const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
+                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+                sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
+                sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
+            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            const scriptPath = path.join(root, "bootstrap.ps1");
+            const harnessPath = path.join(root, "harness.ps1");
+            const ownedInputRoot = path.join(root, "owned-input");
+            const execution = structuredClone(documents.execution);
+            execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
+            execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
+            const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`, "utf8");
+            const executionSha256 = digest(executionBytes);
+            try {
+                fs.writeFileSync(path.join(root, "execution.json"), executionBytes);
+                fs.writeFileSync(path.join(root, "MySpeed.exe"), candidateBytes);
+                fs.writeFileSync(path.join(root, "fixture-bundle.json"), fixtureBytes);
+                fs.writeFileSync(scriptPath, renderWindowsBaselineGuestBootstrap({nonce, sourceSha: SOURCE_SHA,
+                    requestSha256: documents.requestRecord.sha256,
+                    executionSha256, runtimeBundleSha256: SHA("6")}));
+                const escapedRoot = root.replaceAll("'", "''");
+                const harness = `. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                    `Invoke-MyspeedBaselineBootstrap -ObserveGuard {[pscustomobject]@{seed='${escapedRoot}';output='${escapedRoot}'}} ` +
+                    `-ResolveInputRoot {'${ownedInputRoot.replaceAll("'", "''")}'} ` +
+                    `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                    `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
+                    `CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                    `-StartExecutor {param($Root,$Seed)[Text.UTF8Encoding]::new($false).GetBytes('{}')} ` +
+                    `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
+                    `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
+                    `[pscustomobject]@{inputGone=(-not [IO.Directory]::Exists('${ownedInputRoot.replaceAll("'", "''")}'))}|` +
+                    `ConvertTo-Json -Compress\r\n`;
+                fs.writeFileSync(harnessPath, harness);
+                const result = spawnSync(POWERSHELL,
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                    {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+                assert.equal(result.status, 0, result.stderr);
+                assert.equal(result.stderr, "");
+                assert.deepEqual(JSON.parse(result.stdout), {inputGone: true});
+            } finally {
+                if (fs.existsSync(ownedInputRoot)) fs.rmSync(ownedInputRoot, {recursive: true, force: true});
+                fs.rmSync(root, {recursive: true, force: true});
+            }
+        });
+
+    it("does not claim or remove an input root that existed before staging",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const nonce = "5".repeat(32);
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-stale-"));
+            const ownedInputRoot = path.join(root, "owned-input");
+            const candidateBytes = Buffer.from("stale-candidate\n");
+            const fixtureBytes = Buffer.from("stale-fixture\n");
+            const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
+                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+                sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
+                sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
+            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            const execution = structuredClone(documents.execution);
+            execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
+            execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
+            const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`, "utf8");
+            const scriptPath = path.join(root, "bootstrap.ps1");
+            const harnessPath = path.join(root, "harness.ps1");
+            try {
+                fs.mkdirSync(ownedInputRoot);
+                fs.writeFileSync(path.join(ownedInputRoot, "MySpeed.exe"), candidateBytes);
+                fs.writeFileSync(path.join(ownedInputRoot, "fixture-bundle.json"), fixtureBytes);
+                fs.writeFileSync(path.join(root, "execution.json"), executionBytes);
+                fs.writeFileSync(scriptPath, renderWindowsBaselineGuestBootstrap({nonce, sourceSha: SOURCE_SHA,
+                    requestSha256: documents.requestRecord.sha256,
+                    executionSha256: digest(executionBytes), runtimeBundleSha256: SHA("6")}));
+                const escapedRoot = root.replaceAll("'", "''");
+                const escapedInput = ownedInputRoot.replaceAll("'", "''");
+                const harness = `$events=@();. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                    `try{Invoke-MyspeedBaselineBootstrap ` +
+                    `-ObserveGuard {[pscustomobject]@{seed='${escapedRoot}';output='${escapedRoot}'}} ` +
+                    `-ResolveInputRoot {'${escapedInput}'} ` +
+                    `-Publish {param($Path,$Bytes)$script:events+=([Text.Encoding]::UTF8.GetString($Bytes))} ` +
+                    `-Shutdown {}}catch{}\r\n` +
+                    `[pscustomobject]@{rootExists=[IO.Directory]::Exists('${escapedInput}');` +
+                    `candidateExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'MySpeed.exe'));` +
+                    `fixtureExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'fixture-bundle.json'));` +
+                    `failure=($events|Select-Object -First 1)}|ConvertTo-Json -Compress\r\n`;
+                fs.writeFileSync(harnessPath, harness);
+                const result = spawnSync(POWERSHELL,
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                    {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+                assert.equal(result.status, 0, result.stderr);
+                assert.equal(result.stderr, "");
+                const observed = JSON.parse(result.stdout);
+                assert.equal(observed.rootExists, true);
+                assert.equal(observed.candidateExists, true);
+                assert.equal(observed.fixtureExists, true);
+                assert.equal(JSON.parse(observed.failure).status, "failed");
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+
+    it("verifies every staged input before deleting any input",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const nonce = "6".repeat(32);
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-drift-"));
+            const ownedInputRoot = path.join(root, "owned-input");
+            const candidateBytes = Buffer.from("candidate-before-drift\n");
+            const fixtureBytes = Buffer.from("fixture-before-drift\n");
+            const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
+                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+                sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
+                sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
+            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            const execution = structuredClone(documents.execution);
+            execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
+            execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
+            const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`, "utf8");
+            const scriptPath = path.join(root, "bootstrap.ps1");
+            const harnessPath = path.join(root, "harness.ps1");
+            try {
+                fs.writeFileSync(path.join(root, "execution.json"), executionBytes);
+                fs.writeFileSync(path.join(root, "MySpeed.exe"), candidateBytes);
+                fs.writeFileSync(path.join(root, "fixture-bundle.json"), fixtureBytes);
+                fs.writeFileSync(scriptPath, renderWindowsBaselineGuestBootstrap({nonce, sourceSha: SOURCE_SHA,
+                    requestSha256: documents.requestRecord.sha256,
+                    executionSha256: digest(executionBytes), runtimeBundleSha256: SHA("6")}));
+                const escapedRoot = root.replaceAll("'", "''");
+                const escapedInput = ownedInputRoot.replaceAll("'", "''");
+                const harness = `. '${scriptPath.replaceAll("'", "''")}' -LibraryMode\r\n` +
+                    `$null=Install-MyspeedBaselineInputs '${escapedRoot}' '${escapedInput}'\r\n` +
+                    `[IO.File]::AppendAllText((Join-Path '${escapedInput}' 'fixture-bundle.json'),'drift')\r\n` +
+                    `try{$null=Remove-MyspeedBaselineInputs '${escapedRoot}' '${escapedInput}'}catch{}\r\n` +
+                    `[pscustomobject]@{rootExists=[IO.Directory]::Exists('${escapedInput}');` +
+                    `candidateExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'MySpeed.exe'));` +
+                    `fixtureExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'fixture-bundle.json'))}|` +
+                    `ConvertTo-Json -Compress\r\n`;
+                fs.writeFileSync(harnessPath, harness);
+                const result = spawnSync(POWERSHELL,
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+                    {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+                assert.equal(result.status, 0, result.stderr);
+                assert.equal(result.stderr, "");
+                assert.deepEqual(JSON.parse(result.stdout), {rootExists: true, candidateExists: true,
+                    fixtureExists: true});
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+});

@@ -28,6 +28,7 @@ import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivation
     "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
+const PIDFILE_IDENTITY = {path: paths().qemuPid, dev: "11", ino: "22", uid: "1001", gid: "1001", mode: "600"};
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
     "../fixtures/linux-windows-cpu-floor-stage2/probe-build-34834310907.json", import.meta.url), "utf8"));
@@ -282,6 +283,41 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(reads, 2);
         assert.deepEqual(result.monitorFailure.identity, {pid: 2345,
             expected: {processGroupId: 2300, executablePath: "/owned/loader"}, observed});
+    });
+
+    it("fails before launch when a reviewed-sudo pidfile already exists", async () => {
+        let launched = false;
+        await assert.rejects(runMonitoredQemu({
+            createOwnedPidFile: () => { throw new Error("QEMU pidfile already exists"); },
+            runOwned: () => { launched = true; throw new Error("unexpected launch"); }
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            precreatePidFile: true, resources: {taskPath: "/owned", roots: ["/owned"]}}), /already exists/u);
+        assert.equal(launched, false);
+    });
+
+    it("fails closed when reviewed-sudo QEMU replaces the precreated pidfile", async () => {
+        let finish;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let removed = false;
+        const result = await runMonitoredQemu({
+            createOwnedPidFile: target => { assert.equal(target, "/owned/qemu.pid"); return PIDFILE_IDENTITY; },
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137, cleanupProven: false},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true,
+            readOwnedPidFile: (_target, maximumBytes, expected) => { assert.equal(maximumBytes, 32);
+                assert.equal(expected, PIDFILE_IDENTITY); throw new Error("QEMU pidfile identity changed"); },
+            removeOwnedPidFile: () => { removed = true; },
+            monotonicMilliseconds: () => 1,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            precreatePidFile: true, resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(result.terminationReason, "identity-observation-failed");
+        assert.match(result.monitorFailure.message, /pidfile identity changed/u);
+        assert.equal(removed, false);
     });
 
     it("counts a symbolic-link inode without traversing its target", () => {
@@ -578,19 +614,28 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(launch.process.qemuPidAbsentAfter, true);
         const qemu = calls.find(call => call[0] === "monitored")[1];
         assert.equal(qemu.command, "/usr/bin/sudo");
+        assert.equal(qemu.precreatePidFile, true);
         assert.deepEqual(qemu.argv.slice(0, 9), ["-n", "--", "/usr/bin/timeout", "--foreground", "--signal=KILL",
             "16200s", toolchain.runtime.loader.path, "--argv0", toolchain.qemu.invocationPath]);
     });
 
     it("captures the live QEMU PID/start/executable identity before accepting its cleanup", async () => {
         let identityReads = 0;
+        const pidfileCalls = [];
         const qemuPath = `${paths().portableRoot}/usr/bin/qemu-system-x86_64`;
         const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
             inspectOwned: rootFileIdentity,
             inspectDirectory: directoryIdentity,
-            runOwned: async (command, argv, options) => { options?.onSpawn?.(2300); return {
+            runOwned: async (command, argv, options) => { pidfileCalls.push(["launch", command]);
+                options?.onSpawn?.(2300); return {
                 process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
             pathExists: target => target === paths().qemuPid,
+            createOwnedPidFile: target => { pidfileCalls.push(["create", target]); return PIDFILE_IDENTITY; },
+            readOwnedPidFile: (target, maximumBytes, expected) => { pidfileCalls.push(["read", target]);
+                assert.equal(maximumBytes, 32); assert.equal(expected, PIDFILE_IDENTITY);
+                return {bytes: Buffer.from("2345\n")}; },
+            removeOwnedPidFile: (target, expected) => { pidfileCalls.push(["remove", target]);
+                assert.equal(expected, PIDFILE_IDENTITY); },
             readOwnedVerified: target => target === paths().qemuPid ?
                 {bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5", sha256: "1".repeat(64)}} :
                 {bytes: Buffer.from("{}"), identity: {path: target, bytes: "2", sha256: "2".repeat(64)}},
@@ -615,6 +660,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
             executablePath: launch.process.launcherExecutablePath, absent: launch.process.qemuPidAbsentAfter},
         {pid: 2345, startTicks: "77",
             executablePath: `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`, absent: true});
+        assert.deepEqual(pidfileCalls, [["create", paths().qemuPid], ["launch", "/usr/bin/sudo"],
+            ["read", paths().qemuPid], ["remove", paths().qemuPid]]);
     });
 
     it("exposes the normalized monitored QEMU process proof without parsing guest output", async () => {
@@ -775,7 +822,11 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     finish({process: {...okProcess, exitCode: 137}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
                     return Promise.resolve({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}); }
                 options.onSpawn(2300); return new Promise(resolve => { finish = resolve; });
-            }, pathExists: () => false, monotonicMilliseconds: () => clock,
+            }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            pathExists: target => target === paths().qemuPid,
+            readOwnedPidFile: () => ({bytes: Buffer.alloc(0)}),
+            removeOwnedPidFile: () => { throw new Error("unclean launch must retain pidfile identity"); },
+            monotonicMilliseconds: () => clock,
             wait: async milliseconds => { clock += milliseconds; },
             isProcessGroupAlive: () => groupAlive
         }});
@@ -809,7 +860,11 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 options.onTerminationReady(reason => assert.equal(reason, "monitor-low-memory"));
                 options.onQmpSession(Promise.resolve(qmpObservation()));
                 return new Promise(resolve => { finish = resolve; });
-            }, pathExists: target => target === paths().qemuPid,
+            }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            pathExists: target => target === paths().qemuPid,
+            readOwnedPidFile: (_target, _maximumBytes, expected) => { assert.equal(expected, PIDFILE_IDENTITY);
+                return {bytes: Buffer.from("2345\n")}; },
+            removeOwnedPidFile: (_target, expected) => assert.equal(expected, PIDFILE_IDENTITY),
             readOwnedVerified: target => ({bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5",
                 sha256: "1".repeat(64)}}),
             readProcessIdentity: () => ++identityReads <= 2 ? {state: "present", processGroupId: 2300,

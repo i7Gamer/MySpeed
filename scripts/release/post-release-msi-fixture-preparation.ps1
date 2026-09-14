@@ -108,7 +108,7 @@ function Get-MsiProperties([string]$Value) {
             $view = $null; $record = $null
             try {
                 $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='$name'")
-                $view.Execute(); $record = $view.Fetch()
+                [void]$view.Execute(); $record = $view.Fetch()
                 if (-not $record) { throw "MSI $name is absent" }
                 $result[$name] = [string]$record.StringData(1)
             } finally {

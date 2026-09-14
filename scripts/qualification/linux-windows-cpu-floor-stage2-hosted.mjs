@@ -804,6 +804,54 @@ function waitMilliseconds(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+function defaultCreateOwnedPidFile(target) {
+    const descriptor = fs.openSync(target, fs.constants.O_CREAT | fs.constants.O_EXCL |
+        fs.constants.O_WRONLY | fs.constants.O_NOFOLLOW, 0o600);
+    try {
+        fs.fsyncSync(descriptor);
+        const stat = fs.fstatSync(descriptor, {bigint: true});
+        if (!stat.isFile() || stat.nlink !== 1n || stat.size !== 0n || (stat.mode & 0o777n) !== 0o600n)
+            throw new Error("QEMU pidfile precreation identity is invalid");
+        const canonical = fs.realpathSync(target);
+        if (canonical !== target || fs.realpathSync(`/proc/self/fd/${descriptor}`) !== target)
+            throw new Error("QEMU pidfile precreation path differs");
+        return {path: target, dev: stat.dev.toString(), ino: stat.ino.toString(), uid: stat.uid.toString(),
+            gid: stat.gid.toString(), mode: "600"};
+    } finally { fs.closeSync(descriptor); }
+}
+
+function defaultReadOwnedPidFile(target, maximumBytes, expected) {
+    const canonical = fs.realpathSync(target);
+    if (canonical !== target) throw new Error("QEMU pidfile path differs");
+    const descriptor = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        const before = fs.fstatSync(descriptor, {bigint: true});
+        if (!before.isFile() || before.nlink !== 1n || before.dev.toString() !== expected.dev
+            || before.ino.toString() !== expected.ino || before.uid.toString() !== expected.uid
+            || before.gid.toString() !== expected.gid || (before.mode & 0o777n) !== 0o600n
+            || before.size > BigInt(maximumBytes)) throw new Error("QEMU pidfile identity changed");
+        const bytes = Buffer.alloc(Number(before.size));
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+            if (count < 1) throw new Error("QEMU pidfile read was truncated");
+            offset += count;
+        }
+        const after = fs.fstatSync(descriptor, {bigint: true});
+        if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size
+            || after.mtimeNs !== before.mtimeNs) return null;
+        return {bytes};
+    } finally { fs.closeSync(descriptor); }
+}
+
+function defaultRemoveOwnedPidFile(target, expected) {
+    const lexical = fs.lstatSync(target, {bigint: true});
+    if (!lexical.isFile() || lexical.isSymbolicLink() || lexical.nlink !== 1n
+        || lexical.dev.toString() !== expected.dev || lexical.ino.toString() !== expected.ino)
+        throw new Error("QEMU pidfile cleanup identity changed");
+    fs.unlinkSync(target);
+}
+
 function diagnosticIdentity(value) {
     if (value?.state === "absent") return {state: "absent"};
     if (value?.state !== "present") return null;
@@ -822,6 +870,7 @@ function boundedMonitorFailure(phase, error, identity) {
 }
 
 export async function runMonitoredQemu(io, request) {
+    const pidfile = request.precreatePidFile === true ? io.createOwnedPidFile(request.pidPath) : null;
     let finished = false;
     let outerProcessGroupId = null;
     let requestOwnedSettlement = null;
@@ -848,7 +897,10 @@ export async function runMonitoredQemu(io, request) {
     try {
         while (!finished && io.monotonicMilliseconds() <= identityDeadline) {
             if (io.pathExists(request.pidPath)) {
-                const pidBytes = io.readOwnedVerified(request.pidPath, 32, {allowEmpty: true}).bytes;
+                const observedPid = pidfile === null ? io.readOwnedVerified(request.pidPath, 32, {allowEmpty: true})
+                    : io.readOwnedPidFile(request.pidPath, 32, pidfile);
+                if (observedPid === null) { await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS); continue; }
+                const pidBytes = observedPid.bytes;
                 if (pidBytes.length === 0) {
                     await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
                     continue;
@@ -925,9 +977,17 @@ export async function runMonitoredQemu(io, request) {
             terminationReasons.push("group-observation-failed");
         }
     }
+    const finish = value => {
+        if (pidfile && io.pathExists(request.pidPath)) {
+            if (value.absentAfter !== true || value.processGroupGone !== true)
+                return {...value, terminationReason: value.terminationReason ?? "pidfile-cleanup-deferred"};
+            io.removeOwnedPidFile(request.pidPath, pidfile);
+        }
+        return value;
+    };
     if (monitorFailed || identity === null || !teardownProven)
-        return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
-            terminationReason: terminationReasons[0] ?? null};
+        return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
+            terminationReason: terminationReasons[0] ?? null});
     const cleanupDeadline = io.monotonicMilliseconds() + QEMU_CLEANUP_TIMEOUT_MILLISECONDS;
     while (io.monotonicMilliseconds() <= cleanupDeadline) {
         const after = await io.readQemuProcessIdentity(identity.pid);
@@ -938,17 +998,17 @@ export async function runMonitoredQemu(io, request) {
                 monitorFailed = true;
                 terminationReasons.push("group-observation-failed");
             }
-            return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: true, processGroupGone,
-                terminationReason: terminationReasons[0] ?? null};
+            return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: true,
+                processGroupGone, terminationReason: terminationReasons[0] ?? null});
         }
         if (after.startTicks !== identity.startTicks || after.executablePath !== identity.executablePath)
-            return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
+            return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
                 processGroupGone: false,
-                terminationReason: terminationReasons[0] ?? null};
+                terminationReason: terminationReasons[0] ?? null});
         await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
     }
-    return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
-        terminationReason: terminationReasons[0] ?? null};
+    return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
+        processGroupGone: false, terminationReason: terminationReasons[0] ?? null});
 }
 
 function normalizeDependencies(value) {
@@ -959,6 +1019,9 @@ function normalizeDependencies(value) {
         inspectOwned: value.inspectOwned ?? defaultInspectOwned,
         inspectDirectory: value.inspectDirectory ?? defaultInspectDirectory,
         readOwnedVerified: value.readOwnedVerified ?? defaultReadOwnedVerified,
+        createOwnedPidFile: value.createOwnedPidFile ?? defaultCreateOwnedPidFile,
+        readOwnedPidFile: value.readOwnedPidFile ?? defaultReadOwnedPidFile,
+        removeOwnedPidFile: value.removeOwnedPidFile ?? defaultRemoveOwnedPidFile,
         readProcessIdentity: value.readProcessIdentity ?? defaultReadProcessIdentity,
         isProcessGroupAlive: value.isProcessGroupAlive ?? defaultIsProcessGroupAlive,
         wait: value.wait ?? waitMilliseconds,
@@ -1129,7 +1192,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
         timeoutMs: QEMU_OUTER_TIMEOUT_MILLISECONDS, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
-        executionDeadline, resources: {taskPath: path.posix.dirname(input.paths.root),
+        executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
+        resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]}, qmp: {screenshotPaths}});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&

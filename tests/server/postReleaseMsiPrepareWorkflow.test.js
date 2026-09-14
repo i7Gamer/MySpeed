@@ -7,6 +7,7 @@ import {describe, it} from "node:test";
 import {runV161PostReleaseMsiPrepare} from
     "../../scripts/release/post-release-msi-prepare-controller.mjs";
 import {createPostReleaseV161Target} from "../helpers/post-release-v161-target-fixture.mjs";
+import {createCandidateBaselineFixtureSource} from "../helpers/baseline-fixture-source.mjs";
 
 const WORKFLOW = fs.readFileSync(".github/workflows/post-release-msi-prepare.yml", "utf8");
 const HASH = character => character.repeat(64);
@@ -48,6 +49,10 @@ describe("post-release MSI hosted preparation workflow", () => {
                 : path.win32.join("C:\\qualification", path.basename(temporary), "bundle", "files");
             const outputPath = path.join(temporary, "bundle", "result.json");
             const fixtureProofPath = path.join(temporary, "bundle", "fixture-proof.json");
+            const baselineProofPath = path.join(temporary, "bundle", "baseline-proof.json");
+            const baselineOutputRoot = path.join(temporary, "bundle", "files", "baseline");
+            const baselineSource = path.join(temporary, "baseline-source");
+            createCandidateBaselineFixtureSource(baselineSource);
             const fixtureOutputRoot = path.win32.join(acquisitionRoot, "fixtures");
             const operations = {initialize: async () => {}, download: async () => {},
                 observe: async file => ({bindingId: file.bindingId, role: file.role,
@@ -58,7 +63,7 @@ describe("post-release MSI hosted preparation workflow", () => {
                     ProductVersion: input.bindingId.startsWith("candidate-") ? "1.6.1.0" : "1.6.0.0",
                     UpgradeCode: "{A1B2C3D4-5E6F-7890-ABCD-EF1234567890}"})};
             const fixtureOperations = {initialize: async () => {}, inspectPayload: async input =>
-                input.bindingId === "candidate-default" ? candidatePayload() : predecessorPayload(),
+                input.bindingId.startsWith("candidate-") ? candidatePayload() : predecessorPayload(),
             buildClone: async input => ({bindingId: input.bindingId, path: input.destinationPath,
                 bytes: 40_000_000, sha256: input.bindingId === "lower-stamp-fixture" ? HASH("e") : HASH("f"),
                 properties: {ProductCode: input.productCode, ProductVersion: input.productVersion,
@@ -68,9 +73,11 @@ describe("post-release MSI hosted preparation workflow", () => {
                 CI: "true", GITHUB_REPOSITORY: "i7Gamer/MySpeed", GITHUB_SHA: target.harness.sourceSha,
                 GITHUB_RUN_ID: "40000000001", GITHUB_RUN_ATTEMPT: "1", ImageVersion: "20260907.229.1",
                 RUNNER_OS: "Windows", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted"},
-            captured, manifestBytes: fs.readFileSync(
+            captured, manifestPath: fs.realpathSync.native(
                 "tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"),
+            manifestBytes: fs.readFileSync("tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"),
             acquisitionRoot, fixtureOutputRoot, outputPath, fixtureProofPath,
+            baselineOutputRoot, baselineProofPath, baselineSource, harnessRoot: fs.realpathSync.native("."),
             powershellPath: "C:\\hostedtoolcache\\pwsh.exe", operations, fixtureOperations,
             now: () => new Date("2026-09-14T12:30:00Z")});
             assert.equal(result.target.candidate.sourceSha, target.candidate.sourceSha);
@@ -81,10 +88,16 @@ describe("post-release MSI hosted preparation workflow", () => {
                 ["lower-stamp-fixture", "safe-rollback-predecessor"]);
             assert.equal(result.fixturePreparation.fixtures[0].exeFileVersion, "1.6.0.44");
             assert.equal(result.fixturePreparation.installerExecution, false);
+            assert.deepEqual(result.fixturePreparation.candidateBaselinePayload, candidatePayload());
             assert.deepEqual(result.releaseGatesCleared, []);
             assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, "utf8")), result);
             assert.deepEqual(JSON.parse(fs.readFileSync(fixtureProofPath, "utf8")),
                 result.fixturePreparation);
+            assert.equal(result.baselinePreparation.files.length, 31);
+            assert.deepEqual(JSON.parse(fs.readFileSync(baselineProofPath, "utf8")),
+                result.baselinePreparation);
+            assert.equal(fs.readFileSync(baselineProofPath, "utf8"),
+                `${JSON.stringify(result.baselinePreparation)}\n`);
         } finally { fs.rmSync(temporary, {recursive: true, force: false}); }
     });
 
@@ -93,7 +106,11 @@ describe("post-release MSI hosted preparation workflow", () => {
         assert.match(WORKFLOW, /permissions:\s*\n\s+actions: read\s*\n\s+contents: read/u);
         assert.match(WORKFLOW, /runs-on: windows-2025/u);
         assert.match(WORKFLOW, /actions\/checkout@[0-9a-f]{40}/u);
+        assert.match(WORKFLOW, /CANDIDATE_SOURCE_SHA:\s*4fa4dd40a89a062735f98bd85d685e0624ff46a8/u);
+        assert.match(WORKFLOW, /ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}[\s\S]*path: candidate-source/u);
         assert.match(WORKFLOW, /actions\/setup-node@[0-9a-f]{40}[\s\S]*node-version: 22\.19\.0/u);
+        assert.match(WORKFLOW, /oven-sh\/setup-bun@[0-9a-f]{40}[\s\S]*bun-version: 1\.4\.2/u);
+        assert.match(WORKFLOW, /bun install --frozen-lockfile[\s\S]*generate-migrations\.js[\s\S]*generate-integrations\.js/u);
         assert.match(WORKFLOW, /post-release-msi-prepare-controller\.mjs/u);
         assert.match(WORKFLOW, /Get-Command pwsh -CommandType Application/u);
         assert.match(WORKFLOW, /wix314-binaries\.zip/u);
@@ -101,6 +118,8 @@ describe("post-release MSI hosted preparation workflow", () => {
         for (const tool of ["dark.exe", "candle.exe", "light.exe"]) assert.ok(WORKFLOW.includes(tool));
         assert.match(WORKFLOW, /--fixture-root/u);
         assert.match(WORKFLOW, /--fixture-proof/u);
+        assert.match(WORKFLOW, /candidate-source\/scripts\/qualification\/fixture\.mjs handoff/u);
+        assert.match(WORKFLOW, /--baseline-source[\s\S]*--baseline-proof/u);
         assert.match(WORKFLOW, /post-release-v1\.6\.1-msi-appassets/u);
         assert.doesNotMatch(WORKFLOW, /contents: write|packages: write|gh release|msiexec|MsiInstallProduct/u);
     });

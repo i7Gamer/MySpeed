@@ -87,6 +87,49 @@ describe("Stage 2 early-boot QMP session", () => {
         assert.equal(wrote, false);
     });
 
+    it("accepts only the closed MSI row roots and never mixes screenshot owners", async () => {
+        const hostNonce = "0123456789abcdef0123456789abcdef";
+        const rowNonce = "fedcba9876543210fedcba9876543210";
+        const msiRoot = `/home/runner/work/_temp/myspeed-windows-msi-${hostNonce}`;
+        for (const index of ["00", "13"]) {
+            const root = `${msiRoot}/row-${index}-${rowNonce}`;
+            const screenshotPaths = [`${root}/early-boot-1.png`, `${root}/early-boot-2.png`];
+            const result = await runEarlyBootQmpSession({readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}}, capabilities: []}},
+                {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"}, {return: {}, id: "screenshot-2"}
+            ]), writeBytes: () => undefined, screenshotPaths}, {wait: async () => undefined});
+            assert.deepEqual(result.screenshotPaths, screenshotPaths);
+        }
+        for (const root of [`${msiRoot}/row-14-${rowNonce}`, `${msiRoot}/row-0-${rowNonce}`,
+            `${msiRoot}/../row-00-${rowNonce}`, `${msiRoot}/row-00-${rowNonce}/nested`]) {
+            await assert.rejects(runEarlyBootQmpSession({readable: stream([]),
+                writeBytes: () => assert.fail("invalid root wrote to QMP"),
+                screenshotPaths: [`${root}/early-boot-1.png`, `${root}/early-boot-2.png`]}), /screenshot path/u);
+        }
+        await assert.rejects(runEarlyBootQmpSession({readable: stream([]),
+            writeBytes: () => assert.fail("mixed row owners wrote to QMP"), screenshotPaths: [
+                `${msiRoot}/row-00-${rowNonce}/early-boot-1.png`,
+                `${msiRoot}/row-01-${rowNonce}/early-boot-2.png`]}), /screenshot path/u);
+    });
+
+    it("accepts the fixed same-job baseline child but rejects other nested roots", async () => {
+        const root = `${ROOT}/post-release-baseline`;
+        const screenshotPaths = [`${root}/early-boot-1.png`, `${root}/early-boot-2.png`];
+        const result = await runEarlyBootQmpSession({readable: stream([
+            {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}}, capabilities: []}},
+            {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+            {return: {}, id: "screenshot-1"}, {return: {}, id: "screenshot-2"}
+        ]), writeBytes: () => undefined, screenshotPaths}, {wait: async () => undefined});
+        assert.deepEqual(result.screenshotPaths, screenshotPaths);
+        for (const invalidRoot of [`${ROOT}/other`, `${root}/nested`, `${root}/../post-release-baseline`]) {
+            await assert.rejects(runEarlyBootQmpSession({readable: stream([]),
+                writeBytes: () => assert.fail("unowned baseline path wrote to QMP"),
+                screenshotPaths: [`${invalidRoot}/early-boot-1.png`, `${invalidRoot}/early-boot-2.png`]}),
+            /screenshot path/u);
+        }
+    });
+
     it("runs QMP only over inherited child pipes and exposes its bounded session to the owner", async () => {
         const child = new EventEmitter();
         child.pid = 321; child.stdin = new PassThrough(); child.stdout = new PassThrough();

@@ -12,6 +12,7 @@ import {createWindowsHostedMsiPrepareOperations, prepareV161PostReleaseMsiOnWind
 import {buildV161PostReleaseMsiFixturePlan, createWindowsHostedMsiFixtureOperations,
     prepareV161PostReleaseMsiFixturesOnWindows, validateV161PostReleaseMsiFixturePreparation} from
     "./post-release-msi-fixture-preparation.mjs";
+import {prepareV161PostReleaseBaselineInputs} from "./post-release-msi-baseline-input-preparation.mjs";
 
 const REQUIRED_ENVIRONMENT = ["GITHUB_ACTIONS", "CI", "GITHUB_REPOSITORY", "GITHUB_SHA",
     "GITHUB_RUN_ID", "GITHUB_RUN_ATTEMPT", "ImageVersion", "RUNNER_OS", "RUNNER_ARCH",
@@ -27,18 +28,20 @@ const exactEnvironment = environment => {
         || !/^[0-9a-f]{40}$/u.test(environment.GITHUB_SHA)) fail("hosted environment differs");
 };
 const argumentsByName = argv => {
-    if (argv.length !== 22) fail("arguments differ");
+    if (argv.length !== 26) fail("arguments differ");
     const result = {};
     for (let index = 0; index < argv.length; index += 2) result[argv[index]] = argv[index + 1];
     for (const name of ["--captured", "--manifest", "--root", "--fixture-root", "--fixture-work",
-        "--wix-dark", "--wix-candle", "--wix-light", "--fixture-proof", "--output", "--pwsh"])
+        "--wix-dark", "--wix-candle", "--wix-light", "--fixture-proof", "--baseline-source",
+        "--baseline-proof", "--output", "--pwsh"])
         if (typeof result[name] !== "string") fail(`${name} is absent`);
     return result;
 };
 
-export const runV161PostReleaseMsiPrepare = async ({environment, captured, manifestBytes,
+export const runV161PostReleaseMsiPrepare = async ({environment, captured, manifestPath, manifestBytes,
     acquisitionRoot, fixtureOutputRoot, fixtureInspectionRoot, wix, outputPath, powershellPath,
-    fixtureProofPath, operations, fixtureOperations, now = () => new Date()}) => {
+    fixtureProofPath, baselineSource, baselineOutputRoot, baselineProofPath, harnessRoot,
+    operations, fixtureOperations, now = () => new Date()}) => {
     exactEnvironment(environment);
     const context = {repository: environment.GITHUB_REPOSITORY, sourceSha: environment.GITHUB_SHA,
         eventSha: environment.GITHUB_SHA, runId: environment.GITHUB_RUN_ID,
@@ -65,14 +68,22 @@ export const runV161PostReleaseMsiPrepare = async ({environment, captured, manif
     const fixturePreparation = await prepareV161PostReleaseMsiFixturesOnWindows(fixturePlan,
         hostedFixtureOperations);
     validateV161PostReleaseMsiFixturePreparation(fixturePreparation, fixturePlan);
+    const fixtureManifestPath = fs.realpathSync.native(path.join(baselineSource, "transport.json"));
+    const baselinePreparation = prepareV161PostReleaseBaselineInputs({candidateFixture: {
+        manifestPath: fixtureManifestPath,
+        populatedRoot: fs.realpathSync.native(path.join(baselineSource, "populated")),
+        resetRoot: fs.realpathSync.native(path.join(baselineSource, "reset"))},
+    harnessRoot, harnessSourceSha: environment.GITHUB_SHA, manifestPath, outputRoot: baselineOutputRoot});
     const result = {schemaVersion: 1, kind: "myspeed-v1.6.1-post-release-msi-prepare-result",
         status: "prepared", qualifying: false, installerExecution: false, releaseGatesCleared: [],
         target: structuredClone(target), envelope: structuredClone(envelope), acquisition,
         windowsPreparation: structuredClone(preparation), inspections: preparation.inspections,
-        fixturePreparation: structuredClone(fixturePreparation),
+        fixturePreparation: structuredClone(fixturePreparation), baselinePreparation,
         pending: ["linux-transport-reobservation"]};
     fs.mkdirSync(path.dirname(outputPath), {recursive: true});
     fs.writeFileSync(fixtureProofPath, `${JSON.stringify(fixturePreparation)}\n`,
+        {encoding: "utf8", flag: "wx"});
+    fs.writeFileSync(baselineProofPath, `${JSON.stringify(baselinePreparation)}\n`,
         {encoding: "utf8", flag: "wx"});
     fs.writeFileSync(outputPath, `${JSON.stringify(result)}\n`, {encoding: "utf8", flag: "wx"});
     return result;
@@ -83,11 +94,15 @@ const invokedDirectly = process.argv[1]
 if (invokedDirectly) {
     const args = argumentsByName(process.argv.slice(2));
     runV161PostReleaseMsiPrepare({environment: process.env, captured: readJson(args["--captured"]),
+        manifestPath: fs.realpathSync.native(args["--manifest"]),
         manifestBytes: fs.readFileSync(args["--manifest"]), acquisitionRoot: args["--root"],
         fixtureOutputRoot: args["--fixture-root"], fixtureInspectionRoot: args["--fixture-work"],
         wix: {darkPath: args["--wix-dark"], candlePath: args["--wix-candle"],
             lightPath: args["--wix-light"]}, outputPath: args["--output"],
         fixtureProofPath: args["--fixture-proof"],
+        baselineSource: fs.realpathSync.native(args["--baseline-source"]),
+        baselineOutputRoot: path.join(args["--root"], "baseline"),
+        baselineProofPath: args["--baseline-proof"], harnessRoot: fs.realpathSync.native("."),
         powershellPath: args["--pwsh"]}).then(result => {
         process.stdout.write(`${JSON.stringify({status: result.status, qualifying: result.qualifying})}\n`);
     }).catch(error => { process.stderr.write(`${String(error?.message ?? error).slice(0, 1024)}\n`);
