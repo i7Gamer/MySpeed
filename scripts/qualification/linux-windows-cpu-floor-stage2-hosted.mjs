@@ -28,6 +28,7 @@ const QEMU_TIMEOUT_SECONDS = 16_200;
 const QEMU_OUTER_TIMEOUT_MILLISECONDS = 16_240_000;
 const MAX_WIMINFO_BYTES = 1_048_576;
 const MAX_GUEST_BYTES = 262_144;
+const GUEST_FAILURE_FALLBACK_NAME = "bootstrap-failure.json";
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_GUEST_ACTIVATION_FILE_BYTES = 1_048_576;
 const MAX_GUEST_ACTIVATION_STRING_CHARACTERS = 1_024;
@@ -1527,7 +1528,18 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     systemTools: parsed.systemTools,
                     output: {path: output.path, bytes: output.bytes, sha256: output.sha256}}};
             } catch {
-                return {...launched, guest: null};
+                // A failed primary publication must not erase the guest's bounded
+                // secondary failure receipt. This path can never produce success.
+                try {
+                    const fallback = directChild(input.paths.root,
+                        `${input.paths.root}/${GUEST_FAILURE_FALLBACK_NAME}`, GUEST_FAILURE_FALLBACK_NAME);
+                    const extractFailure = portableInvocation(input.toolchain, input.toolchain.mcopy,
+                        ["-i", input.paths.outputDisk, `::${GUEST_FAILURE_FALLBACK_NAME}`, fallback]);
+                    assertSuccessful(await io.runOwned(extractFailure.command, extractFailure.argv,
+                        {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest fallback failure extraction");
+                    const read = io.readOwnedVerified(fallback, MAX_GUEST_BYTES);
+                    return {...launched, guest: parseGuestFailure(read.bytes, context.nonce)};
+                } catch { return {...launched, guest: null}; }
             }
         }
     });

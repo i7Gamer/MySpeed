@@ -15,9 +15,70 @@ const MAX_FILE_BYTES = 512 * 1024 * 1024;
 const FIXTURE_COMMON = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
 const OPTIONAL_WAL = "data/storage.db-wal";
+const SHA256 = /^[0-9a-f]{64}$/u;
+const COMMIT_SHA = /^[0-9a-f]{40}$/u;
+const RESULT_KIND = "myspeed-v1.6.1-post-release-baseline-input-preparation";
+const RESULT_AUTHORITY = "windows-hosted-input-preparation-only";
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const recordId = relativePath => `baseline:${relativePath}`;
+const exactKeys = (value, keys, label) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)
+        || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort()))
+        throw new TypeError(`${label} keys differ`);
+};
+const exactHash = (value, pattern, label) => {
+    if (typeof value !== "string" || pattern.exec(value)?.[0] !== value) throw new TypeError(`${label} differs`);
+};
+const deepFreeze = value => {
+    if (value && typeof value === "object" && !Object.isFrozen(value)) {
+        for (const child of Object.values(value)) deepFreeze(child);
+        Object.freeze(value);
+    }
+    return value;
+};
+const expectedRelativePaths = includeWal => ["qualification-manifest.json", "fixture/transport.json",
+    ...[".myspeed-qualification.json", ...FIXTURE_COMMON, "data/storage.db",
+        ...(includeWal ? [OPTIONAL_WAL] : [])].map(name => `fixture/populated/${name}`),
+    ...[".myspeed-qualification.json", ...FIXTURE_COMMON].map(name => `fixture/reset/${name}`),
+    ...[...WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS,
+        "scripts/qualification/windows-baseline-guest-runtime-installer.ps1"]
+        .map(name => `runtime/${name}`)];
+
+export function validateV161PostReleaseBaselineInputPreparation(value) {
+    exactKeys(value, ["schemaVersion", "kind", "status", "authority", "candidateSourceSha", "harnessSourceSha",
+        "files"], "baseline input preparation");
+    if (value.schemaVersion !== 1 || value.kind !== RESULT_KIND || value.status !== "prepared"
+        || value.authority !== RESULT_AUTHORITY || value.candidateSourceSha !== CANDIDATE_SOURCE_SHA)
+        throw new TypeError("baseline input preparation header differs");
+    exactHash(value.harnessSourceSha, COMMIT_SHA, "baseline harness source");
+    if (value.harnessSourceSha === value.candidateSourceSha) throw new TypeError("baseline source roles collapse");
+    if (!Array.isArray(value.files)) throw new TypeError("baseline input files differ");
+    const includeWal = value.files.some(file => file?.relativePath === `fixture/populated/${OPTIONAL_WAL}`);
+    const expectedPaths = expectedRelativePaths(includeWal);
+    if (value.files.length !== expectedPaths.length) throw new TypeError("baseline input file count differs");
+    value.files.forEach((file, index) => {
+        exactKeys(file, ["bindingId", "sourceRole", "sourceSha", "relativePath", "bytes", "sha256"],
+            "baseline input file");
+        const relativePath = expectedPaths[index];
+        const sourceRole = relativePath.startsWith("runtime/") ? "harness" : "candidate";
+        const sourceSha = sourceRole === "harness" ? value.harnessSourceSha : value.candidateSourceSha;
+        if (file.bindingId !== recordId(relativePath) || file.relativePath !== relativePath
+            || file.sourceRole !== sourceRole || file.sourceSha !== sourceSha
+            || path.posix.normalize(relativePath) !== relativePath || path.posix.isAbsolute(relativePath))
+            throw new TypeError("baseline input file binding differs");
+        const isWal = relativePath === `fixture/populated/${OPTIONAL_WAL}`;
+        if (!Number.isSafeInteger(file.bytes) || file.bytes < (isWal ? 0 : 1) || file.bytes > MAX_FILE_BYTES)
+            throw new TypeError("baseline input file bytes differ");
+        exactHash(file.sha256, SHA256, "baseline input file SHA-256");
+        if (isWal && (file.bytes !== 0 || file.sha256 !== EMPTY_SHA256))
+            throw new TypeError("baseline input WAL differs");
+    });
+    const manifest = value.files[0];
+    if (manifest.bytes !== MANIFEST_BYTES || manifest.sha256 !== MANIFEST_SHA256)
+        throw new TypeError("baseline qualification manifest differs");
+    return deepFreeze(structuredClone(value));
+}
 
 function readBounded(target, allowEmpty = false) {
     const canonical = fs.realpathSync.native(target);
@@ -109,9 +170,9 @@ export function prepareV161PostReleaseBaselineInputs({candidateFixture, harnessR
     fs.mkdirSync(outputRoot, {recursive: false});
     for (const record of records) writeRecord(outputRoot, record);
     const files = Object.freeze(records.map(record => record.value));
-    return Object.freeze({schemaVersion: 1, kind: "myspeed-v1.6.1-post-release-baseline-input-preparation",
-        status: "prepared", authority: "windows-hosted-input-preparation-only",
-        candidateSourceSha: CANDIDATE_SOURCE_SHA, harnessSourceSha, files});
+    return validateV161PostReleaseBaselineInputPreparation({schemaVersion: 1, kind: RESULT_KIND,
+        status: "prepared", authority: RESULT_AUTHORITY, candidateSourceSha: CANDIDATE_SOURCE_SHA,
+        harnessSourceSha, files});
 }
 
 export const POST_RELEASE_BASELINE_INPUT_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA, EMPTY_SHA256,

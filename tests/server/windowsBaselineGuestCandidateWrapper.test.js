@@ -37,7 +37,27 @@ describe("Windows baseline guest candidate wrapper", () => {
         assert.match(source, /Get-MyspeedCleanNativeSource/u);
         assert.match(source,
             /function Get-MyspeedBaselineGuestCandidateIdentity[\s\S]*Assert-MyspeedBaselineGuestGuard \(Get-MyspeedBaselineGuestActualGuard\)[\s\S]*Read-MyspeedBaselineGuestBytes[\s\S]*Get-MyspeedCandidateFileIdentity/u);
+        assert.match(source,
+            /function Get-MyspeedBaselineOwnedListener[\s\S]*Get-Process -Id[\s\S]*Get-NetTCPConnection -State Listen[\s\S]*'ObserveOwnedListener' \{Get-MyspeedBaselineOwnedListener/u);
         assert.doesNotMatch(source, /GITHUB_ACTIONS|RUNNER_ENVIRONMENT|InvokeHostedCandidate/u);
+    });
+
+    powershellIt("binds listener ownership to loopback, PID, and process creation time", () => {
+        const expected = {process: {pid: 123, creationTime: "a".repeat(16), exited: false},
+            listeners: [{address: "127.0.0.1", port: 41001, pid: 123}]};
+        const argv = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", SCRIPT, "-Mode", "TestOwnedListener",
+            "-InputJson", JSON.stringify(expected), "-CandidatePid", "123", "-CandidateCreationTime", "a".repeat(16),
+            "-CandidatePort", "41001"];
+        const accepted = childProcess.spawnSync(POWERSHELL, argv, {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS});
+        assert.equal(accepted.status, 0, accepted.stderr);
+        assert.equal(JSON.parse(accepted.stdout).listenerOwned, true);
+        for (const mutate of [value => { value.process.creationTime = "b".repeat(16); },
+            value => { value.listeners[0].pid = 124; }, value => { value.listeners[0].address = "0.0.0.0"; }]) {
+            const changed = structuredClone(expected); mutate(changed); const changedArgv = [...argv];
+            changedArgv[changedArgv.indexOf("-InputJson") + 1] = JSON.stringify(changed);
+            assert.notEqual(childProcess.spawnSync(POWERSHELL, changedArgv,
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS}).status, 0);
+        }
     });
 
     powershellIt("accepts only an exact console-free NIC-free baseline guest observation", () => {
@@ -70,4 +90,3 @@ describe("Windows baseline guest candidate wrapper", () => {
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 });
-

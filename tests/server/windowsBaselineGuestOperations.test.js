@@ -44,6 +44,8 @@ function fixture(overrides = {}) {
             candidatePid: candidatePid(input.request.scenario),
             candidateCreationTime: candidateCreationTime(input.request.scenario), retainedHandleAuthority: true,
             jobAssignedBeforeResume: true, handleListConfigured: true}),
+        observeOwnedListener: input => ({listenerOwned: true, candidatePid: input.candidatePid,
+            candidateCreationTime: input.candidateCreationTime, port: input.port}),
         checkPopulated: input => { calls.push(["http", input.port]); return {elapsedMs: 10}; },
         waitController: input => { calls.push(["wait", input.request.scenario]); return {exitCode: 0, signal: null}; },
         readResult: input => ({schemaVersion: 1, kind: "myspeed-windows-native-candidate-result",
@@ -56,6 +58,9 @@ function fixture(overrides = {}) {
             jobActiveProcesses: 0, handleCleanupAttempted: true, handlesClosed: true,
             processTreeExitProven: true, listenerGone: false, elapsedMs: 100, failures: []}),
         observeListener: input => { calls.push(["listener", input.port]); return {listenerGone: true}; },
+        readFailedResult: input => { calls.push(["failed-result", input.request.scenario]); return {result: null,
+            resultFailure: "", stdout: "", stderr: "", captureFailure: ""}; },
+        stopController: input => { calls.push(["stop-controller", input.request.scenario]); return {killAttempted: true}; },
         writeStop: input => { calls.push(["stop", input.request.scenario, input.value]); },
         checkPopulatedDatabase: () => expected,
         checkResetDatabase: () => ({integrity: "ok", configTable: false}),
@@ -89,6 +94,50 @@ describe("Windows baseline guest native operations bridge", () => {
         assert.equal(result.status, "failed");
         assert.equal(result.cleanupProven, false);
         assert.match(result.failure, /controller wait failed/u);
+        assert.equal(value.calls.filter(call => call[0] === "stop-controller").length, 1);
+    });
+
+    it("retains bounded failed-controller details without treating them as cleanup proof", async () => {
+        const value = fixture({waitController: () => ({exitCode: 1, signal: null}),
+            readFailedResult: () => ({result: {schemaVersion: 1, kind: "myspeed-windows-native-candidate-result",
+                status: "failed", qualifying: false, releaseGatesCleared: [], alias: "baseline",
+                artifactLogicalName: "MySpeed-windows-x64-baseline.exe", scenario: SCENARIOS[0],
+                stopKind: "ctrl-c", candidatePid: candidatePid(SCENARIOS[0]),
+                candidateCreationTime: candidateCreationTime(SCENARIOS[0]), candidateExited: true, exitCode: 1,
+                forced: true, jobActiveProcesses: 0, handleCleanupAttempted: true, handlesClosed: true,
+                processTreeExitProven: true, listenerGone: false, elapsedMs: 100,
+                failures: ["candidate-lifecycle-failed"], failureDetails: [
+                    {phase: "lifecycle", failure: "sentinel\ncontroller failure"}
+                ]}, resultFailure: "", stdout: "", stderr: "", captureFailure: ""}),
+            cleanup: () => ({cleanupProven: false})});
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "failed");
+        assert.equal(result.cleanupProven, false);
+        assert.match(result.failure, /sentinel controller failure/u);
+    });
+
+    it("retains bounded wrapper stderr when the failed result is absent or malformed", async () => {
+        for (const resultValue of [null, {malformed: true}]) {
+            const value = fixture({waitController: () => ({exitCode: 1, signal: null}),
+                readFailedResult: () => ({result: resultValue, resultFailure: "missing", stdout: "",
+                    stderr: `wrapper ${"x".repeat(500)}`, captureFailure: ""}),
+                cleanup: () => ({cleanupProven: false})});
+            const result = await runWindowsBaselineGuest(request(), value.operations);
+            assert.equal(result.status, "failed");
+            assert.match(result.failure, /wrapper x/u);
+            assert.ok(result.failure.length <= 512);
+        }
+    });
+
+    it("fails explicitly when ready is missing and never releases the retained session", async () => {
+        let retained;
+        const value = fixture({readReady: () => { throw new Error("ready missing"); },
+            waitController: () => ({exitCode: 0, signal: null}),
+            cleanup: input => { retained = input.sessions; return {cleanupProven: false}; }});
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /ready missing/u);
+        assert.equal(retained.length, 1);
     });
 
     it("retains a conservative cleanup obligation when controller startup throws", async () => {
@@ -133,4 +182,3 @@ describe("Windows baseline guest native operations bridge", () => {
         }
     });
 });
-

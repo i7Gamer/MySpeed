@@ -5,6 +5,7 @@ import {execFileSync, spawn} from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
+import {setTimeout as delay} from "node:timers/promises";
 import {checkPopulatedInstance, removeOwnedWork} from "./check-artifact.mjs";
 import {loadHandoffFixture} from "./fixture.mjs";
 import {checkPopulatedDatabase, checkResetDatabase} from "./sqlite-check.mjs";
@@ -30,6 +31,10 @@ const MAXIMUM_JSON_BYTES = 262_144;
 const MAXIMUM_JSON_BASE64_CHARACTERS = Math.ceil(MAXIMUM_JSON_BYTES / 3) * 4;
 const POLL_MILLISECONDS = 50;
 const CONTROLLER_TIMEOUT_MILLISECONDS = 310_000;
+const COORDINATOR_HEADROOM_MILLISECONDS = 60_000;
+const COORDINATOR_WAIT_BUDGET_MILLISECONDS = NORMAL_DEADLINE_MS - COORDINATOR_HEADROOM_MILLISECONDS;
+const DIAGNOSTIC_READ_BUDGET_MILLISECONDS = 1_000;
+const MAXIMUM_FAILURE_MESSAGE_CHARACTERS = 512;
 const HOST_RESULT_KIND = "myspeed-windows-native-standalone-host-result";
 const HOST_REQUEST_KIND = "myspeed-windows-native-standalone-host-request";
 const RECOVERY_REQUEST_KIND = "myspeed-windows-native-standalone-recovery-request";
@@ -619,6 +624,37 @@ const assertCandidateResult = (value, request, ready) => {
     return value;
 };
 
+const candidateFailureDiagnostic = (value, request, ready) => {
+    const keys = ["schemaVersion", "kind", "status", "qualifying", "releaseGatesCleared", "alias",
+        "artifactLogicalName", "scenario", "stopKind", "candidatePid", "candidateCreationTime",
+        "candidateExited", "exitCode", "forced", "jobActiveProcesses", "handleCleanupAttempted",
+        "handlesClosed", "processTreeExitProven", "listenerGone", "elapsedMs", "failures", "failureDetails"];
+    exactKeys(value, keys, "Candidate failed result");
+    if (value.schemaVersion !== 1 || value.kind !== CANDIDATE_RESULT_KIND || value.status !== "failed"
+        || value.qualifying !== false || value.alias !== request.alias || value.scenario !== request.scenario
+        || value.artifactLogicalName !== request.artifactLogicalName || value.candidatePid !== ready.candidatePid
+        || value.candidateCreationTime !== ready.candidateCreationTime
+        || !Array.isArray(value.releaseGatesCleared) || value.releaseGatesCleared.length !== 0)
+        throw new Error("Candidate failed result binding differs");
+    for (const name of ["candidateExited", "forced", "handleCleanupAttempted", "handlesClosed",
+        "processTreeExitProven", "listenerGone"]) strictBoolean(value[name], `Candidate failed result ${name}`);
+    integer(value.elapsedMs, "Candidate failed result elapsed time", 0, CONTROLLER_TIMEOUT_MILLISECONDS);
+    if (value.exitCode !== null) integer(value.exitCode, "Candidate failed result exit code", 0, 0xffff_ffff);
+    if (value.jobActiveProcesses !== null)
+        integer(value.jobActiveProcesses, "Candidate failed result active processes", 0, 0xffff_ffff);
+    if (!Array.isArray(value.failures) || value.failures.length < 1 || value.failures.length > 4
+        || !Array.isArray(value.failureDetails) || value.failureDetails.length !== value.failures.length)
+        throw new Error("Candidate failed result diagnostics differ");
+    return value.failureDetails.map(detail => {
+        exactKeys(detail, ["phase", "failure"], "Candidate failed result detail");
+        string(detail.phase, "Candidate failed result phase", /^(?:lifecycle|cleanup|handle-cleanup|proof)$/u);
+        if (typeof detail.failure !== "string" || detail.failure.length < 1
+            || detail.failure.length > MAXIMUM_FAILURE_MESSAGE_CHARACTERS)
+            throw new Error("Candidate failed result failure must be bounded");
+        return detail.failure;
+    });
+};
+
 const bound = (request, alias, scenario = null) => ({
     expectedRunId: request.expectedRunId,
     expectedRunAttempt: request.expectedRunAttempt,
@@ -710,15 +746,14 @@ export const createWindowsNativeStandaloneOperations = (input, runtime) => {
     };
 };
 
-const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
-
-const readWhenPublished = async (file, expectedSha256, label, deadline, clock = Date.now) => {
+const readWhenPublished = async (file, expectedSha256, label, deadline, clock = Date.now, signal) => {
     for (;;) {
+        signal?.throwIfAborted();
         if (clock() >= deadline) throw new Error(`${label} publication timed out`);
         try { return readBoundJson(file, expectedSha256, label); }
         catch (error) {
             if (!["ENOENT", "EBUSY", "EPERM"].includes(error?.code)) throw error;
-            await delay(POLL_MILLISECONDS);
+            await delay(POLL_MILLISECONDS, undefined, {signal});
         }
     }
 };
@@ -748,7 +783,7 @@ const waitChild = (child, timeoutMilliseconds) => new Promise((resolve, reject) 
     child.once("exit", onExit);
 });
 
-const invokeHostObserver = (proof, mode, input) => JSON.parse(execFileSync(proof.powershellPath,
+const invokeHostObserver = (proof, mode, input, timeoutMilliseconds = CONTROLLER_TIMEOUT_MILLISECONDS) => JSON.parse(execFileSync(proof.powershellPath,
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", proof.hostPath,
         "-Mode", mode, "-InputJson", JSON.stringify(mode === "ObserveOffline"
             ? {...input, canaryPath: proof.canaryPath, canarySha256: proof.canarySha256} : input),
@@ -758,11 +793,11 @@ const invokeHostObserver = (proof, mode, input) => JSON.parse(execFileSync(proof
         "-ExpectedSourceSha", proof.adapterRequest.expectedSourceSha,
         "-ExpectedImageVersion", proof.adapterRequest.expectedImageVersion,
         "-Nonce", proof.adapterRequest.nonce],
-    {encoding: "utf8", timeout: CONTROLLER_TIMEOUT_MILLISECONDS, windowsHide: true}));
+    {encoding: "utf8", timeout: timeoutMilliseconds, windowsHide: true}));
 
 const defaultRuntimeDependencies = proof => ({
     loadFixture: value => loadHandoffFixture(value),
-    startController: requestRecord => {
+    startController: (requestRecord, timeoutMilliseconds = CONTROLLER_TIMEOUT_MILLISECONDS) => {
         const adapter = proof.adapterRequest;
         const child = spawn(proof.powershellPath,
             ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
@@ -772,10 +807,10 @@ const defaultRuntimeDependencies = proof => ({
                 "-ExpectedSourceSha", adapter.expectedSourceSha, "-ExpectedImageVersion", adapter.expectedImageVersion,
                 "-Nonce", requestRecord.value.nonce],
             {cwd: requestRecord.value.workingDirectory, windowsHide: true, stdio: "ignore"});
-        return {child, completion: waitChild(child, CONTROLLER_TIMEOUT_MILLISECONDS)};
+        return {child, completion: waitChild(child, timeoutMilliseconds)};
     },
-    observeOffline: value => invokeHostObserver(proof, "ObserveOffline", value),
-    observeListener: value => invokeHostObserver(proof, "ObserveListener", value),
+    observeOffline: (value, timeout) => invokeHostObserver(proof, "ObserveOffline", value, timeout),
+    observeListener: (value, timeout) => invokeHostObserver(proof, "ObserveListener", value, timeout),
     checkPopulated: origin => checkPopulatedInstance(origin),
     checkPopulatedDatabase: (file, expected) => checkPopulatedDatabase(file, expected),
     checkResetDatabase: file => checkResetDatabase(file),
@@ -783,8 +818,9 @@ const defaultRuntimeDependencies = proof => ({
     readControllerRequest: definition => readBoundJson(definition.path, definition.sha256,
         "Candidate controller request").value,
     readFixtureManifestBytes: definition => fs.readFileSync(definition.manifestPath),
-    readReady: async (request, deadline, clock) => (await readWhenPublished(request.readyPath, "", "Candidate ready",
-        deadline, clock)).value,
+    readReady: async (request, deadline, clock, signal) => (await readWhenPublished(request.readyPath, "", "Candidate ready",
+        deadline, clock, signal)).value,
+    readReadyNow: request => readBoundJson(request.readyPath, "", "Candidate ready").value,
     readResult: async (request, deadline, clock) => (await readWhenPublished(request.resultPath, "", "Candidate result",
         deadline, clock)).value,
     writeStop: (request, value) => writeNewJson(request.stopRequestPath, value),
@@ -798,10 +834,21 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
     const candidates = new Map(proof.candidates.map(value => [value.alias, value]));
     const sessions = new Map();
     let outerJobCleanupRequired = false;
+    // The host's 600-second watch starts before this coordinator. Reserve a
+    // fixed setup/cleanup margin and bound only waits this process owns; the
+    // outer Job remains the backstop for synchronous OS calls that cannot be
+    // preempted by JavaScript.
+    const coordinatorDeadline = dependencies.clock() + COORDINATOR_WAIT_BUDGET_MILLISECONDS;
+    const remaining = (label, maximum = CONTROLLER_TIMEOUT_MILLISECONDS) => {
+        const value = coordinatorDeadline - dependencies.clock();
+        if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`Standalone coordinator deadline expired before ${label}`);
+        return Math.min(value, maximum);
+    };
     const runtime = {
         observeOffline: async ({alias, scenario, phase}) => {
             if (outerJobCleanupRequired) throw new Error("Outer Job cleanup is required before offline proof");
-            const result = await dependencies.observeOffline({schemaVersion: 1, alias, scenario, phase});
+            const result = await dependencies.observeOffline({schemaVersion: 1, alias, scenario, phase},
+                remaining("offline observation"));
             exactKeys(result, ["boundarySha256", "boundaryBase64", "offlineBoundaryPassed"], "Hosted offline observation");
             return result;
         },
@@ -830,10 +877,29 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
             state.launched = dependencies.startController({path: state.definition.path,
                 sha256: state.definition.sha256, value: state.request,
                 controllerExecutablePath: proof.candidateControllerPath,
-                controllerExecutableSha256: proof.candidateControllerSha256});
-            const published = await dependencies.readReady(state.request,
-                dependencies.clock() + state.request.normalDeadlineMs, dependencies.clock);
-            state.ready = assertCandidateReady(published, state.request);
+                controllerExecutableSha256: proof.candidateControllerSha256}, remaining("controller launch"));
+            const completion = Promise.resolve(state.launched.completion);
+            // Attach rejection handling at creation; readiness may remain pending.
+            completion.catch(() => {});
+            const readyAbort = new AbortController();
+            try {
+                const readyOutcome = dependencies.readReady(state.request, coordinatorDeadline, dependencies.clock,
+                    readyAbort.signal)
+                    .then(value => ({ready: true, value}), error => ({ready: false, error}));
+                const completionOutcome = completion.then(
+                    value => ({completed: true, value}), error => ({completed: false, error}));
+                state.launched.completionOutcome = completionOutcome;
+                const first = await Promise.race([readyOutcome, completionOutcome]);
+                if (first.completed === true) {
+                    try { state.ready = assertCandidateReady(dependencies.readReadyNow(state.request), state.request); }
+                    catch { throw new Error("Candidate controller exited before ready publication"); }
+                } else if (!first.ready) throw first.error;
+                if (!state.ready) state.ready = assertCandidateReady(first.value, state.request);
+            } catch (error) {
+                outerJobCleanupRequired = true;
+                try { state.launched.child?.kill(); } catch {}
+                throw error;
+            } finally { readyAbort.abort(); }
             return {candidatePid: state.ready.candidatePid, candidateCreationTime: state.ready.candidateCreationTime,
                 retainedHandleAuthority: state.ready.retainedHandleAuthority,
                 jobAssignedBeforeResume: state.ready.jobAssignedBeforeResume,
@@ -845,7 +911,7 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                 const port = Number(state.request.environment.SERVER_PORT);
                 const listener = await dependencies.observeListener({schemaVersion: 1, mode: "owned",
                     address: "127.0.0.1", port, candidatePid: state.ready.candidatePid,
-                    candidateCreationTime: state.ready.candidateCreationTime});
+                    candidateCreationTime: state.ready.candidateCreationTime}, remaining("owned listener observation"));
                 exactKeys(listener, ["listenerOwned"], "Owned listener observation");
                 if (listener.listenerOwned !== true) throw new Error("Owned candidate listener was not proven");
                 summary = await dependencies.checkPopulated(`http://127.0.0.1:${port}`);
@@ -872,15 +938,27 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                     {schemaVersion: 1, kind: CANDIDATE_STOP_KIND, nonce: state.request.nonce,
                         manifestSha256: state.request.manifestSha256, alias: state.alias, scenario: state.scenario,
                         candidatePid: state.ready.candidatePid, candidateCreationTime: state.ready.candidateCreationTime});
-                const completed = await state.launched.completion;
-                if (completed.signal !== null || completed.exitCode !== 0)
-                    throw new Error("Candidate controller process failed");
+                const completion = await state.launched.completionOutcome;
+                if (!completion.completed) throw completion.error;
+                const completed = completion.value;
+                if (completed.signal !== null || completed.exitCode !== 0) {
+                    let detail = "";
+                    try {
+                        const failed = await dependencies.readResult(state.request,
+                            dependencies.clock() + remaining("candidate failure diagnostic",
+                                DIAGNOSTIC_READ_BUDGET_MILLISECONDS), dependencies.clock);
+                        const messages = candidateFailureDiagnostic(failed, state.request, state.ready);
+                        detail = `: ${messages.join("; ").slice(0, MAXIMUM_FAILURE_MESSAGE_CHARACTERS)}`;
+                    } catch {}
+                    throw new Error(`Candidate controller process failed${detail}`);
+                }
                 const result = assertCandidateResult(await dependencies.readResult(state.request,
-                    dependencies.clock() + state.request.hardDeadlineMs, dependencies.clock),
+                    coordinatorDeadline, dependencies.clock),
                 state.request, state.ready);
                 const listener = await dependencies.observeListener({schemaVersion: 1, mode: "absent",
                     address: "127.0.0.1", port: Number(state.request.environment.SERVER_PORT),
-                    candidatePid: state.ready.candidatePid, candidateCreationTime: state.ready.candidateCreationTime});
+                    candidatePid: state.ready.candidatePid, candidateCreationTime: state.ready.candidateCreationTime},
+                remaining("absent listener observation"));
                 exactKeys(listener, ["listenerGone"], "Absent listener observation");
                 const closed = {status: result.status, stopKind: result.stopKind, candidateStarted: true,
                     candidateExited: result.candidateExited, exitCode: result.exitCode,
@@ -899,7 +977,7 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
             }
             for (const [sessionId, session] of sessions)
                 if (session.alias === ownership.alias) sessions.delete(sessionId);
-            return {cleanupProven: state !== null};
+            return {cleanupProven: isObject(state)};
         }
     };
     return runtime;
@@ -922,7 +1000,24 @@ export const runWindowsNativeStandaloneProof = async (input, runtime) => {
             artifactLogicalName: candidate.artifactLogicalName, artifactId: candidate.artifactId,
             artifactDigest: candidate.artifactDigest, candidateSha256: candidate.sha256})),
         adapter, releaseGatesCleared: []};
-    if (result.status === "completed") assertWindowsNativeStandaloneProofResult(result, proof);
+    if (result.status === "completed") {
+        try { assertWindowsNativeStandaloneProofResult(result, proof); }
+        catch (error) {
+            const message = String(error?.message ?? error).replace(/[\x00-\x1f\x7f]+/gu, " ")
+                .slice(0, MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            const failed = {...result, status: "failed",
+                failureDetails: [{phase: "self-validation", failure: message}]};
+            exactKeys(failed, ["schemaVersion", "kind", "status", "qualifying", "manifestSha256", "sourceSha",
+                "eventSha", "runId", "runAttempt", "imageVersion", "nonce", "qualificationSourceSha",
+                "qualificationRunId", "qualificationRunAttempt", "qualificationManifestArtifactId",
+                "qualificationManifestArtifactDigest", "candidates", "adapter", "releaseGatesCleared",
+                "failureDetails"], "Failed standalone proof result");
+            if (failed.status !== "failed" || failed.qualifying !== false || message.length < 1
+                || !Array.isArray(failed.releaseGatesCleared) || failed.releaseGatesCleared.length !== 0)
+                throw new Error("Failed standalone proof result differs");
+            return failed;
+        }
+    }
     return result;
 };
 

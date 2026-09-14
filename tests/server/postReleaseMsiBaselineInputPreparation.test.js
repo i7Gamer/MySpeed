@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {describe, it} from "node:test";
 
-import {prepareV161PostReleaseBaselineInputs, POST_RELEASE_BASELINE_INPUT_CONSTANTS} from
+import {prepareV161PostReleaseBaselineInputs, POST_RELEASE_BASELINE_INPUT_CONSTANTS,
+    validateV161PostReleaseBaselineInputPreparation} from
     "../../scripts/release/post-release-msi-baseline-input-preparation.mjs";
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
@@ -75,10 +76,37 @@ describe("post-release MSI baseline input preparation", () => {
                     ? POST_RELEASE_BASELINE_INPUT_CONSTANTS.EMPTY_SHA256 : undefined);
                 for (const file of result.files) assert.equal(sha256(fs.readFileSync(path.join(outputRoot,
                     ...file.relativePath.split("/")))), file.sha256);
+                const validated = validateV161PostReleaseBaselineInputPreparation(
+                    JSON.parse(JSON.stringify(result)));
+                assert.deepEqual(validated, result);
                 assert.equal(Object.isFrozen(result), true); assert.equal(Object.isFrozen(result.files), true);
                 assert.equal(Object.isFrozen(result.files[0]), true);
+                assert.equal(Object.isFrozen(validated), true); assert.equal(Object.isFrozen(validated.files), true);
+                assert.equal(Object.isFrozen(validated.files[0]), true);
             } finally { fs.rmSync(root, {recursive: true, force: true}); }
         }
+    });
+
+    it("strictly validates JSON-roundtripped preparation identities and the optional empty WAL", () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-validate-")));
+        try {
+            const result = prepareV161PostReleaseBaselineInputs({candidateFixture: fixture(root, true),
+                harnessRoot: harness(root), harnessSourceSha: HARNESS_SHA,
+                manifestPath: fs.realpathSync.native(
+                    "tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"),
+                outputRoot: path.join(root, "output")});
+            const mutate = change => { const value = JSON.parse(JSON.stringify(result)); change(value);
+                assert.throws(() => validateV161PostReleaseBaselineInputPreparation(value)); };
+            mutate(value => value.files.reverse());
+            mutate(value => { value.files[1].sourceRole = "harness"; });
+            mutate(value => { value.files[1].relativePath = "../transport.json"; });
+            mutate(value => { value.files[2].bytes = 0; });
+            mutate(value => { value.files.find(file => file.relativePath.endsWith("storage.db-wal")).bytes = "0"; });
+            mutate(value => { value.files.find(file => file.relativePath.endsWith("storage.db-wal")).sha256
+                = "1".repeat(64); });
+            mutate(value => { value.harnessSourceSha = value.candidateSourceSha; });
+            mutate(value => { value.unexpected = true; });
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
     it("validates every source before creating the output subtree", () => {

@@ -48,8 +48,10 @@ export const runV161PostReleaseMsiPrepare = async ({environment, captured, manif
         runAttempt: environment.GITHUB_RUN_ATTEMPT, imageVersion: environment.ImageVersion,
         nonce: createHash("sha256").update(`${environment.GITHUB_RUN_ID}\0${environment.GITHUB_RUN_ATTEMPT}`
             + `\0${environment.GITHUB_SHA}`, "utf8").digest("hex").slice(0, 32)};
-    const target = bindV161PostReleaseTarget({...captured, harnessSourceSha: environment.GITHUB_SHA,
-        observedAt: now().toISOString().replace(/\.\d{3}Z$/u, "Z"), manifestBytes});
+    const binderInput = {...structuredClone(captured), harnessSourceSha: environment.GITHUB_SHA,
+        observedAt: now().toISOString().replace(/\.\d{3}Z$/u, "Z")};
+    const targetInput = {...structuredClone(binderInput), manifestBytesBase64: manifestBytes.toString("base64")};
+    const target = bindV161PostReleaseTarget({...binderInput, manifestBytes});
     const envelope = createV161PostReleaseMsiEnvelope(target, context);
     const plan = buildV161PostReleaseMsiAcquisitionPlan(envelope, context, acquisitionRoot);
     fs.mkdirSync(path.dirname(acquisitionRoot), {recursive: true});
@@ -76,7 +78,7 @@ export const runV161PostReleaseMsiPrepare = async ({environment, captured, manif
     harnessRoot, harnessSourceSha: environment.GITHUB_SHA, manifestPath, outputRoot: baselineOutputRoot});
     const result = {schemaVersion: 1, kind: "myspeed-v1.6.1-post-release-msi-prepare-result",
         status: "prepared", qualifying: false, installerExecution: false, releaseGatesCleared: [],
-        target: structuredClone(target), envelope: structuredClone(envelope), acquisition,
+        targetInput, target: structuredClone(target), envelope: structuredClone(envelope), acquisition,
         windowsPreparation: structuredClone(preparation), inspections: preparation.inspections,
         fixturePreparation: structuredClone(fixturePreparation), baselinePreparation,
         pending: ["linux-transport-reobservation"]};

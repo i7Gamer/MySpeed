@@ -17,6 +17,12 @@ const CONTROLLER_EXIT_TIMEOUT_MILLISECONDS = 310_000;
 const INSPECTION_TIMEOUT_MILLISECONDS = 30_000;
 const INSPECTION_STREAM_BYTES = 262_144;
 const MAX_CANDIDATE_BYTES = 512 * 1024 * 1024;
+const OWNED_LISTENER_TIMEOUT_MILLISECONDS = 60_000;
+const OWNED_LISTENER_POLL_MILLISECONDS = 250;
+const MAX_DIAGNOSTIC_CHARACTERS = 512;
+const DEPENDENCY_NAMES = Object.freeze(["checkPopulated", "checkPopulatedDatabase", "checkResetDatabase", "cleanup",
+    "clearTimer", "inspectCandidate", "materialize", "now", "observeListener", "observeOwnedListener",
+    "readPublishedJson", "setTimer", "spawn", "spawnSync", "writeNewJson"]);
 
 const jsonBytes = value => Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -29,24 +35,44 @@ function writeNewJson(target, value) {
     return sha256(bytes);
 }
 
-const delay = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+const sanitized = value => String(value ?? "").replace(/[\x00-\x1f\x7f]+/gu, " ").replace(/\s+/gu, " ")
+    .trim().slice(0, MAX_DIAGNOSTIC_CHARACTERS);
 
-async function readPublishedJson(target, deadline = Date.now() + CONTROLLER_EXIT_TIMEOUT_MILLISECONDS) {
+const waitOrCompletion = (milliseconds, completion, setTimer = setTimeout, clearTimer = clearTimeout) =>
+    new Promise((resolve, reject) => {
+        let settled = false;
+        const timer = setTimer(() => { if (!settled) { settled = true; resolve({kind: "poll"}); } }, milliseconds);
+        completion.then(value => {
+            if (!settled) { settled = true; clearTimer(timer); resolve({kind: "completion", value}); }
+        }, error => { if (!settled) { settled = true; clearTimer(timer); reject(error); } });
+    });
+
+function readPublishedJsonOnce(target) {
+    const handle = fs.openSync(target, "r");
+    try {
+        const stat = fs.fstatSync(handle);
+        if (!stat.isFile() || stat.size < 2 || stat.size > MAX_JSON_BYTES)
+            throw new Error("baseline guest JSON file differs");
+        const bytes = fs.readFileSync(handle);
+        if (bytes.length !== stat.size) throw new Error("baseline guest JSON read was truncated");
+        return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+    } finally { fs.closeSync(handle); }
+}
+
+async function readPublishedJson(target, deadline = Date.now() + CONTROLLER_EXIT_TIMEOUT_MILLISECONDS, options = {}) {
     for (;;) {
         if (Date.now() >= deadline) throw new Error("baseline guest JSON publication exceeded its deadline");
-        try {
-            const handle = fs.openSync(target, "r");
-            try {
-                const stat = fs.fstatSync(handle);
-                if (!stat.isFile() || stat.size < 2 || stat.size > MAX_JSON_BYTES)
-                    throw new Error("baseline guest JSON file differs");
-                const bytes = fs.readFileSync(handle);
-                if (bytes.length !== stat.size) throw new Error("baseline guest JSON read was truncated");
-                return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
-            } finally { fs.closeSync(handle); }
-        } catch (error) {
+        try { return readPublishedJsonOnce(target); }
+        catch (error) {
             if (!["ENOENT", "EBUSY", "EPERM"].includes(error?.code)) throw error;
-            await delay(PUBLICATION_POLL_MILLISECONDS);
+            if (options.completion !== undefined) {
+                const observed = await waitOrCompletion(PUBLICATION_POLL_MILLISECONDS, options.completion,
+                    options.setTimer, options.clearTimer);
+                if (observed.kind === "completion") {
+                    try { return readPublishedJsonOnce(target); }
+                    catch { throw new Error(`baseline candidate exited before ready publication: exit=${observed.value.exitCode}; signal=${observed.value.signal ?? "none"}`); }
+                }
+            } else await new Promise(resolve => (options.setTimer ?? setTimeout)(resolve, PUBLICATION_POLL_MILLISECONDS));
         }
     }
 }
@@ -70,6 +96,10 @@ function validateConfiguration(value) {
         if (!(name in value)) throw new TypeError(`baseline runtime ${name} is absent`);
     if (typeof value.powershellPath !== "string" || !value.wrapper || !value.candidateController ||
         !value.cleanStopController) throw new TypeError("baseline runtime identity differs");
+    const supplied = value.dependencies ?? {};
+    if (!supplied || typeof supplied !== "object" || Array.isArray(supplied)
+        || Object.keys(supplied).some(name => !DEPENDENCY_NAMES.includes(name) || typeof supplied[name] !== "function"))
+        throw new TypeError("baseline runtime dependencies differ");
     return value;
 }
 
@@ -89,8 +119,10 @@ function inspectCandidateWithWrapper(configuration, input, spawnSync) {
     const result = spawnSync(configuration.powershellPath, argv, {cwd: path.dirname(candidate.path), encoding: "utf8",
         timeout: INSPECTION_TIMEOUT_MILLISECONDS, maxBuffer: INSPECTION_STREAM_BYTES, windowsHide: true});
     if (result.error !== undefined || result.signal !== null || result.status !== SUCCESS_EXIT_CODE ||
-        result.stderr !== "" || Buffer.byteLength(result.stdout ?? "", "utf8") > INSPECTION_STREAM_BYTES)
-        throw new Error("baseline candidate identity process failed");
+        result.stderr !== "" || Buffer.byteLength(result.stdout ?? "", "utf8") > INSPECTION_STREAM_BYTES) {
+        const diagnostic = sanitized(result.stderr || result.error?.message);
+        throw new Error(sanitized(`baseline candidate identity process failed${diagnostic ? `: ${diagnostic}` : ""}`));
+    }
     let value;
     try { value = JSON.parse(result.stdout); }
     catch { throw new TypeError("baseline candidate identity output is invalid"); }
@@ -109,6 +141,46 @@ function inspectCandidateWithWrapper(configuration, input, spawnSync) {
     return {volumeSerial: value.volumeSerial, fileId: value.fileId};
 }
 
+function observeOwnedListenerWithWrapper(configuration, input, spawnSync) {
+    const result = spawnSync(configuration.powershellPath, ["-NoLogo", "-NoProfile", "-NonInteractive",
+        "-ExecutionPolicy", "Bypass", "-File", configuration.wrapper.path, "-Mode", "ObserveOwnedListener",
+        "-CandidatePid", String(input.candidatePid), "-CandidateCreationTime", input.candidateCreationTime,
+        "-CandidatePort", String(input.port)], {encoding: "utf8",
+        timeout: Math.min(INSPECTION_TIMEOUT_MILLISECONDS, input.timeoutMs),
+        maxBuffer: INSPECTION_STREAM_BYTES, windowsHide: true});
+    if (result.error !== undefined || result.signal !== null || result.status !== SUCCESS_EXIT_CODE
+        || result.stderr !== "" || Buffer.byteLength(result.stdout ?? "", "utf8") > INSPECTION_STREAM_BYTES)
+        throw new Error(`baseline owned listener observation failed${sanitized(result.stderr) ? `: ${sanitized(result.stderr)}` : ""}`);
+    let value;
+    try { value = JSON.parse(result.stdout); } catch { throw new TypeError("baseline owned listener output is invalid"); }
+    const keys = ["candidateCreationTime", "candidatePid", "listenerOwned", "port"];
+    if (!value || typeof value !== "object" || Array.isArray(value)
+        || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(keys)
+        || typeof value.listenerOwned !== "boolean" || value.candidatePid !== input.candidatePid
+        || value.candidateCreationTime !== input.candidateCreationTime || value.port !== input.port)
+        throw new TypeError("baseline owned listener output differs");
+    return value;
+}
+
+const attachBoundedCapture = (stream, started, name) => {
+    const chunks = [];
+    let bytes = 0;
+    stream?.on?.("data", chunk => {
+        const value = Buffer.from(chunk);
+        const remaining = Math.max(0, INSPECTION_STREAM_BYTES - bytes);
+        if (remaining > 0) chunks.push(value.subarray(0, remaining));
+        bytes += value.length;
+        if (bytes > INSPECTION_STREAM_BYTES && !started.killAttempted) {
+            started.killAttempted = true;
+            try { started.child.kill(); } catch (error) { started.captureFailure = sanitized(error?.message ?? error); }
+        }
+    });
+    started[`${name}Text`] = () => {
+        try { return sanitized(new TextDecoder("utf-8", {fatal: true}).decode(Buffer.concat(chunks))); }
+        catch { return "invalid UTF-8 diagnostic"; }
+    };
+};
+
 export function createWindowsBaselineGuestRuntime(configuration) {
     const value = validateConfiguration(configuration);
     const supplied = value.dependencies ?? {};
@@ -126,6 +198,7 @@ export function createWindowsBaselineGuestRuntime(configuration) {
             dependencies: {checkPopulatedDatabase: inspectPopulatedDatabase}}),
         cleanup: cleanupWindowsBaselineGuestFixture,
         inspectCandidate: input => inspectCandidateWithWrapper(value, input, syncSpawn),
+        observeOwnedListener: input => observeOwnedListenerWithWrapper(value, input, syncSpawn),
         setTimer: setTimeout, clearTimer: clearTimeout, now: Date.now, ...supplied};
     return Object.freeze({
         materialize: io.materialize,
@@ -145,19 +218,54 @@ export function createWindowsBaselineGuestRuntime(configuration) {
                 "-ExpectedImageVersion", request.expectedImageVersion, "-ExpectedNonce", request.nonce];
             const startedAt = io.now();
             const child = io.spawn(value.powershellPath, argv, {cwd: request.taskRoot, windowsHide: true,
-                stdio: "ignore"});
+                stdio: ["ignore", "pipe", "pipe"]});
             const hardDeadline = startedAt + Math.min(request.hardDeadlineMs, CONTROLLER_EXIT_TIMEOUT_MILLISECONDS);
             const completion = waitForChild(child, Math.max(0, hardDeadline - io.now()),
                 io.setTimer, io.clearTimer);
             completion.catch(() => undefined);
-            return {child, request: structuredClone(request), requestSha256, argv, startedAt, completion};
+            const started = {child, request: structuredClone(request), requestSha256, argv, startedAt, completion,
+                killAttempted: false, captureFailure: "", stdoutText: () => "", stderrText: () => ""};
+            attachBoundedCapture(child.stdout, started, "stdout"); attachBoundedCapture(child.stderr, started, "stderr");
+            return started;
         },
         readReady: ({request, started}) => io.readPublishedJson(request.readyPath,
-            started.startedAt + request.normalDeadlineMs),
+            started.startedAt + request.normalDeadlineMs, {completion: started.completion,
+                setTimer: io.setTimer, clearTimer: io.clearTimer}),
+        async observeOwnedListener({port, candidatePid, candidateCreationTime, started}) {
+            const deadline = Math.min(started.startedAt + requestDeadline(started.request),
+                io.now() + OWNED_LISTENER_TIMEOUT_MILLISECONDS);
+            for (;;) {
+                const remaining = deadline - io.now();
+                if (remaining <= 0) throw new Error("baseline owned listener exceeded its deadline");
+                const observed = await io.observeOwnedListener({port, candidatePid, candidateCreationTime,
+                    timeoutMs: remaining});
+                if (observed.listenerOwned) return observed;
+                if (io.now() >= deadline) throw new Error("baseline owned listener exceeded its deadline");
+                const state = await waitOrCompletion(OWNED_LISTENER_POLL_MILLISECONDS, started.completion,
+                    io.setTimer, io.clearTimer);
+                if (state.kind === "completion")
+                    throw new Error(`baseline candidate exited before owned listener: exit=${state.value.exitCode}`);
+            }
+        },
         checkPopulated: io.checkPopulated,
         waitController: ({started}) => started.completion,
         readResult: ({request, started}) => io.readPublishedJson(request.resultPath,
             started.startedAt + request.hardDeadlineMs),
+        async readFailedResult({request, started}) {
+            let result = null; let resultFailure = "";
+            try { result = readPublishedJsonOnce(request.resultPath); }
+            catch (error) { resultFailure = sanitized(error?.message ?? error); }
+            return {result, resultFailure, stderr: started.stderrText(), stdout: started.stdoutText(),
+                captureFailure: started.captureFailure};
+        },
+        stopController({started}) {
+            if (!started.killAttempted) {
+                started.killAttempted = true;
+                try { started.child.kill(); }
+                catch (error) { started.captureFailure = sanitized(error?.message ?? error); }
+            }
+            return {killAttempted: true, failure: started.captureFailure};
+        },
         writeStop: ({request, value: stop}) => io.writeNewJson(request.stopRequestPath, stop),
         checkPopulatedDatabase: io.checkPopulatedDatabase,
         checkResetDatabase: io.checkResetDatabase,
@@ -165,6 +273,7 @@ export function createWindowsBaselineGuestRuntime(configuration) {
     });
 }
 
+const requestDeadline = request => Math.min(request.normalDeadlineMs, CONTROLLER_EXIT_TIMEOUT_MILLISECONDS);
+
 export const WINDOWS_BASELINE_GUEST_RUNTIME_CONSTANTS = Object.freeze({CONTROLLER_EXIT_TIMEOUT_MILLISECONDS,
     MAX_JSON_BYTES, PUBLICATION_POLL_MILLISECONDS, SUCCESS_EXIT_CODE});
-

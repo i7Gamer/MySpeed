@@ -19,7 +19,8 @@ const input = () => ({context: {...CONTEXT}, imageVersion: "windows-server-2025-
 
 const noopDependencies = () => Object.fromEntries(["checkPopulated", "checkPopulatedDatabase",
     "checkResetDatabase", "cleanup", "inspectCandidate", "materialize", "observeListener", "observeNetwork",
-    "readReady", "readResult", "startController", "waitController", "writeStop"].map(name => [name, () => {
+    "observeOwnedListener", "readFailedResult", "readReady", "readResult", "startController", "stopController",
+    "waitController", "writeStop"].map(name => [name, () => {
     throw new Error(`unused ${name}`);
 }]));
 
@@ -45,6 +46,8 @@ describe("Windows baseline guest seed documents", () => {
             observeNetwork: async () => ({hardwareNics: 0, enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}),
             openScenario: async ({scenario}) => ({scenario}),
             awaitReady: async () => ({candidatePid: 42, candidateCreationTime: "a".repeat(16)}),
+            awaitOwnedListener: async ({ready, port}) => ({listenerOwned: true,
+                candidatePid: ready.candidatePid, candidateCreationTime: ready.candidateCreationTime, port}),
             checkPopulated: async () => ({elapsedMs: 1}),
             closeScenario: async ({scenario}) => ({scenario, controllerLifecyclePassed: true, candidateExited: true,
                 candidateExitCode: scenario === "fresh-no-config-reset" ? 113 : 0, forced: false,
@@ -71,4 +74,3 @@ describe("Windows baseline guest seed documents", () => {
         }
     });
 });
-

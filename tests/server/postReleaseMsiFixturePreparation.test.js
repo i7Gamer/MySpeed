@@ -69,6 +69,11 @@ const baselinePayload = () => { const value = payload(); value.configuration = {
     value.wrapper = {bytes: 12_000_001, sha256: HASH("9")};
     value.inventory[1] = {path: "File/MySpeedService.exe", ...value.wrapper};
     value.inventory[2] = {path: "File/MySpeedService.xml", ...value.configuration}; return value; };
+const historicalPayload = bindingId => { const value = predecessorPayload();
+    const suffix = bindingId === "authentic-1.6.0-baseline-msi" ? "a" : "b";
+    value.exe = {...value.exe, bytes: value.exe.bytes - (suffix === "a" ? 1 : 2), sha256: HASH(suffix)};
+    value.inventory[0] = {path: "File/MySpeed.exe", bytes: value.exe.bytes, sha256: value.exe.sha256};
+    return value; };
 
 describe("hosted post-release MSI fixture preparation", () => {
     it("builds two deterministic lower-version source clones and retains inspected payload identities", async () => {
@@ -84,7 +89,9 @@ describe("hosted post-release MSI fixture preparation", () => {
             initialize: async root => { calls.push(["initialize", root]); },
             inspectPayload: async input => { calls.push(["inspect", input.bindingId]);
                 return input.bindingId === "candidate-default" ? payload()
-                    : input.bindingId === "candidate-baseline" ? baselinePayload() : predecessorPayload(); },
+                    : input.bindingId === "candidate-baseline" ? baselinePayload()
+                        : input.bindingId === "authentic-1.6.0-default-msi" ? predecessorPayload()
+                            : historicalPayload(input.bindingId); },
             buildClone: async input => { calls.push(["build", input.bindingId]); return {
                 bindingId: input.bindingId, path: input.destinationPath, bytes: 40_000_000,
                 sha256: input.bindingId === "lower-stamp-fixture" ? HASH("e") : HASH("f"),
@@ -95,6 +102,8 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.deepEqual(calls, [["initialize", "C:\\prepare\\fixtures"], ["inspect", "candidate-default"],
             ["inspect", "candidate-baseline"],
             ["inspect", "authentic-1.6.0-default-msi"],
+            ["inspect", "authentic-1.6.0-baseline-msi"],
+            ["inspect", "authentic-1.1.0-msi"],
             ["build", "lower-stamp-fixture"],
             ["build", "safe-rollback-predecessor"]]);
         assert.equal(result.installerExecution, false);
@@ -105,6 +114,12 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.equal(result.candidatePayload.inventory.length, 4);
         assert.deepEqual(result.candidateBaselinePayload, baselinePayload());
         assert.equal(result.predecessorPayload.inventory.length, 3);
+        assert.deepEqual(result.authenticPayloads, [
+            {bindingId: "authentic-1.6.0-default-msi", payload: predecessorPayload()},
+            {bindingId: "authentic-1.6.0-baseline-msi", payload: historicalPayload(
+                "authentic-1.6.0-baseline-msi")},
+            {bindingId: "authentic-1.1.0-msi", payload: historicalPayload("authentic-1.1.0-msi")}
+        ]);
         assert.deepEqual(result.fixtures[1].payloadInventory, predecessorPayload().inventory);
         assert.equal(result.fixtures[0].sourceBindingId, "authentic-1.6.0-default-msi");
         assert.notEqual(result.fixtures[0].exeSha256, result.candidatePayload.exe.sha256);
@@ -130,7 +145,9 @@ describe("hosted post-release MSI fixture preparation", () => {
         const plan = fixturePlan();
         const base = {initialize: async () => {}, inspectPayload: async input =>
             input.bindingId === "candidate-default" ? payload()
-                : input.bindingId === "candidate-baseline" ? baselinePayload() : predecessorPayload(),
+                : input.bindingId === "candidate-baseline" ? baselinePayload()
+                    : input.bindingId === "authentic-1.6.0-default-msi" ? predecessorPayload()
+                        : historicalPayload(input.bindingId),
         buildClone: async input => ({
             bindingId: input.bindingId, path: input.destinationPath, bytes: 10, sha256: HASH("e"),
             properties: {ProductCode: input.productCode, ProductVersion: input.productVersion,

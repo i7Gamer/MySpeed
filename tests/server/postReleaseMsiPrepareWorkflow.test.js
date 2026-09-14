@@ -8,6 +8,7 @@ import {runV161PostReleaseMsiPrepare} from
     "../../scripts/release/post-release-msi-prepare-controller.mjs";
 import {createPostReleaseV161Target} from "../helpers/post-release-v161-target-fixture.mjs";
 import {createCandidateBaselineFixtureSource} from "../helpers/baseline-fixture-source.mjs";
+import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
 
 const WORKFLOW = fs.readFileSync(".github/workflows/post-release-msi-prepare.yml", "utf8");
 const HASH = character => character.repeat(64);
@@ -81,6 +82,13 @@ describe("post-release MSI hosted preparation workflow", () => {
             powershellPath: "C:\\hostedtoolcache\\pwsh.exe", operations, fixtureOperations,
             now: () => new Date("2026-09-14T12:30:00Z")});
             assert.equal(result.target.candidate.sourceSha, target.candidate.sourceSha);
+            const {manifestBytesBase64, ...targetInput} = result.targetInput;
+            const rebound = bindV161PostReleaseTarget({...targetInput,
+                manifestBytes: Buffer.from(manifestBytesBase64, "base64")});
+            assert.deepEqual(rebound, result.target);
+            assert.equal(result.targetInput.manifestBytesBase64,
+                fs.readFileSync("tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json")
+                    .toString("base64"));
             assert.equal(result.envelope.harness.imageVersion, "20260907.229.1");
             assert.deepEqual(result.windowsPreparation.preparation, result.acquisition.preparation);
             assert.equal(result.inspections.length, 5);
@@ -89,6 +97,8 @@ describe("post-release MSI hosted preparation workflow", () => {
             assert.equal(result.fixturePreparation.fixtures[0].exeFileVersion, "1.6.0.44");
             assert.equal(result.fixturePreparation.installerExecution, false);
             assert.deepEqual(result.fixturePreparation.candidateBaselinePayload, candidatePayload());
+            assert.deepEqual(result.fixturePreparation.authenticPayloads.map(item => item.bindingId),
+                ["authentic-1.6.0-default-msi", "authentic-1.6.0-baseline-msi", "authentic-1.1.0-msi"]);
             assert.deepEqual(result.releaseGatesCleared, []);
             assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, "utf8")), result);
             assert.deepEqual(JSON.parse(fs.readFileSync(fixtureProofPath, "utf8")),

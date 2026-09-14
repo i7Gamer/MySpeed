@@ -10,10 +10,84 @@ const MAX_STREAM_BYTES = 4 * 1024 * 1024;
 const MAX_CANDIDATE_BYTES = 512 * 1024 * 1024;
 const MAX_FIXTURE_BYTES = 64 * 1024 * 1024;
 const MAX_FAILURE_CHARACTERS = 512;
-const EXECUTOR_TIMEOUT_MILLISECONDS = 14_400_000;
+const BASELINE_SCENARIO_COUNT = 3;
+const CONTROLLER_HARD_DEADLINE_MILLISECONDS = 310_000;
+const GUARD_TIMEOUT_MILLISECONDS = 30_000;
+const OPEN_GRAPH_DEADLINE_MILLISECONDS = 120_000;
+const EXECUTOR_TIMEOUT_MILLISECONDS = (BASELINE_SCENARIO_COUNT * CONTROLLER_HARD_DEADLINE_MILLISECONDS) +
+    GUARD_TIMEOUT_MILLISECONDS + OPEN_GRAPH_DEADLINE_MILLISECONDS;
 const EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
 const SUCCESS_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
+
+const BASELINE_JOB_SOURCE = `using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Text;
+
+namespace MySpeed.Qualification {
+  public sealed class BaselineJobResult {
+    public int ExitCode; public bool TimedOut,Forced,AssignedBeforeResume,Resumed,ProcessTreeExitProven,HandlesClosed;
+  }
+  public static class BaselineJob {
+    const uint CREATE_SUSPENDED=0x4,CREATE_NO_WINDOW=0x08000000,EXTENDED_STARTUPINFO_PRESENT=0x00080000;
+    const uint STARTF_USESHOWWINDOW=1,STARTF_USESTDHANDLES=0x100,JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE=0x2000;
+    const uint WAIT_OBJECT_0=0,WAIT_TIMEOUT=258,GENERIC_READ=0x80000000,GENERIC_WRITE=0x40000000;
+    const uint FILE_SHARE_READ=1,CREATE_NEW=1,OPEN_EXISTING=3,FILE_ATTRIBUTE_NORMAL=0x80;
+    const uint PROC_THREAD_ATTRIBUTE_HANDLE_LIST=0x20002,ERROR_INSUFFICIENT_BUFFER=122,FAILURE_EXIT_CODE=1;
+    const int JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION=1,JOB_OBJECT_EXTENDED_LIMIT_INFORMATION=9;
+    const int CLEANUP_POLL_MILLISECONDS=10,MAX_ATTRIBUTE_LIST_BYTES=1048576;
+    [StructLayout(LayoutKind.Sequential)] struct SECURITY_ATTRIBUTES { public uint nLength; public IntPtr lpSecurityDescriptor; [MarshalAs(UnmanagedType.Bool)] public bool bInheritHandle; }
+    [StructLayout(LayoutKind.Sequential,CharSet=CharSet.Unicode)] struct STARTUPINFO { public uint cb; public IntPtr lpReserved,lpDesktop,lpTitle; public uint dwX,dwY,dwXSize,dwYSize,dwXCountChars,dwYCountChars,dwFillAttribute,dwFlags; public ushort wShowWindow,cbReserved2; public IntPtr lpReserved2,hStdInput,hStdOutput,hStdError; }
+    [StructLayout(LayoutKind.Sequential)] struct STARTUPINFOEX { public STARTUPINFO StartupInfo; public IntPtr lpAttributeList; }
+    [StructLayout(LayoutKind.Sequential)] struct PROCESS_INFORMATION { public IntPtr hProcess,hThread; public uint dwProcessId,dwThreadId; }
+    [StructLayout(LayoutKind.Sequential)] struct IO_COUNTERS { public ulong a,b,c,d,e,f; }
+    [StructLayout(LayoutKind.Sequential)] struct BASIC_LIMIT { public long a,b; public uint flags; public UIntPtr min,max; public uint active; public UIntPtr affinity; public uint priority,scheduling; }
+    [StructLayout(LayoutKind.Sequential)] struct EXTENDED_LIMIT { public BASIC_LIMIT basic; public IO_COUNTERS io; public UIntPtr processMemory,jobMemory,peakProcess,peakJob; }
+    [StructLayout(LayoutKind.Sequential)] struct ACCOUNTING { public long a,b,c,d; public uint faults,total,active,terminated; }
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true,EntryPoint="CreateProcessW")] static extern bool CreateProcess(string app,StringBuilder command,IntPtr pa,IntPtr ta,bool inherit,uint flags,IntPtr env,string cwd,ref STARTUPINFOEX si,out PROCESS_INFORMATION pi);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true,EntryPoint="CreateFileW")] static extern IntPtr CreateFile(string name,uint access,uint share,ref SECURITY_ATTRIBUTES sa,uint disposition,uint flags,IntPtr template);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr attributes,string name);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job,int kind,ref EXTENDED_LIMIT info,uint length);
+    [DllImport("kernel32.dll",SetLastError=true,EntryPoint="QueryInformationJobObject")] static extern bool QueryLimits(IntPtr job,int kind,ref EXTENDED_LIMIT info,uint length,IntPtr returned);
+    [DllImport("kernel32.dll",SetLastError=true,EntryPoint="QueryInformationJobObject")] static extern bool QueryAccounting(IntPtr job,int kind,ref ACCOUNTING info,uint length,IntPtr returned);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool AssignProcessToJobObject(IntPtr job,IntPtr process);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool IsProcessInJob(IntPtr process,IntPtr job,out bool result);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool TerminateJobObject(IntPtr job,uint code);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool TerminateProcess(IntPtr process,uint code);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle,uint milliseconds);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr process,out uint code);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr list,int count,uint flags,ref UIntPtr size);
+    [DllImport("kernel32.dll",SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr list,uint flags,UIntPtr attribute,IntPtr value,UIntPtr size,IntPtr previous,IntPtr returned);
+    [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
+    static Exception Error(string operation){return new Win32Exception(Marshal.GetLastWin32Error(),operation);}
+    static string Quote(string value){if(value.IndexOf((char)0)>=0)throw new ArgumentException("Argument contains NUL");if(value.Length>0&&value.IndexOfAny(new[]{' ','\\t','"'})<0)return value;StringBuilder b=new StringBuilder("\\\"");int slash=0;foreach(char c in value){if(c=='\\\\'){slash++;continue;}if(c=='"'){b.Append('\\\\',slash*2+1).Append(c);slash=0;continue;}if(slash>0){b.Append('\\\\',slash);slash=0;}b.Append(c);}if(slash>0)b.Append('\\\\',slash*2);return b.Append('"').ToString();}
+    static uint Active(IntPtr job){ACCOUNTING value=new ACCOUNTING();if(!QueryAccounting(job,JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,ref value,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero))throw Error("QueryInformationJobObject accounting");return value.active;}
+    static void Close(ref IntPtr handle,List<Exception> failures){if(handle==IntPtr.Zero||handle.ToInt64()==-1){handle=IntPtr.Zero;return;}if(!CloseHandle(handle))failures.Add(Error("CloseHandle"));else handle=IntPtr.Zero;}
+    static bool WaitForZero(IntPtr job,uint timeout){Stopwatch watch=Stopwatch.StartNew();while(true){if(Active(job)==0)return true;long remaining=(long)timeout-watch.ElapsedMilliseconds;if(remaining<=0)return false;System.Threading.Thread.Sleep((int)Math.Max(1,Math.Min(CLEANUP_POLL_MILLISECONDS,remaining)));}}
+    public static BaselineJobResult Run(string executable,string[] arguments,string cwd,string stdoutPath,string stderrPath,uint timeout,uint cleanupTimeout){
+      IntPtr job=IntPtr.Zero,input=IntPtr.Zero,output=IntPtr.Zero,error=IntPtr.Zero,list=IntPtr.Zero,values=IntPtr.Zero;PROCESS_INFORMATION pi=new PROCESS_INFORMATION();bool listInitialized=false,created=false,assigned=false,resumed=false,forced=false;Exception primary=null;int exitCode=0;bool timedOut=false,tree=false;
+      try{
+        SECURITY_ATTRIBUTES sa=new SECURITY_ATTRIBUTES();sa.nLength=(uint)Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));sa.bInheritHandle=true;
+        input=CreateFile("NUL",GENERIC_READ,FILE_SHARE_READ,ref sa,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);output=CreateFile(stdoutPath,GENERIC_WRITE,FILE_SHARE_READ,ref sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);error=CreateFile(stderrPath,GENERIC_WRITE,FILE_SHARE_READ,ref sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);if(input.ToInt64()==-1||output.ToInt64()==-1||error.ToInt64()==-1)throw Error("CreateFile standard handle");
+        job=CreateJobObject(IntPtr.Zero,null);if(job==IntPtr.Zero)throw Error("CreateJobObject");EXTENDED_LIMIT limits=new EXTENDED_LIMIT();limits.basic.flags=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;if(!SetInformationJobObject(job,JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,ref limits,(uint)Marshal.SizeOf(typeof(EXTENDED_LIMIT))))throw Error("SetInformationJobObject");EXTENDED_LIMIT observed=new EXTENDED_LIMIT();if(!QueryLimits(job,JOB_OBJECT_EXTENDED_LIMIT_INFORMATION,ref observed,(uint)Marshal.SizeOf(typeof(EXTENDED_LIMIT)),IntPtr.Zero)||observed.basic.flags!=JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)throw new InvalidOperationException("Job limits differ");
+        UIntPtr bytes=UIntPtr.Zero;bool queried=InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref bytes);int queryError=Marshal.GetLastWin32Error();ulong attributeBytes=bytes.ToUInt64();if(queried||queryError!=(int)ERROR_INSUFFICIENT_BUFFER||attributeBytes==0||attributeBytes>MAX_ATTRIBUTE_LIST_BYTES)throw new InvalidOperationException("Attribute-list size differs");list=Marshal.AllocHGlobal((int)attributeBytes);if(!InitializeProcThreadAttributeList(list,1,0,ref bytes))throw Error("InitializeProcThreadAttributeList");listInitialized=true;IntPtr[] inherited=new[]{input,output,error};values=Marshal.AllocHGlobal(IntPtr.Size*inherited.Length);Marshal.Copy(inherited,0,values,inherited.Length);if(!UpdateProcThreadAttribute(list,0,(UIntPtr)PROC_THREAD_ATTRIBUTE_HANDLE_LIST,values,(UIntPtr)(IntPtr.Size*inherited.Length),IntPtr.Zero,IntPtr.Zero))throw Error("UpdateProcThreadAttribute");
+        STARTUPINFOEX startup=new STARTUPINFOEX();startup.StartupInfo.cb=(uint)Marshal.SizeOf(typeof(STARTUPINFOEX));startup.StartupInfo.dwFlags=STARTF_USESHOWWINDOW|STARTF_USESTDHANDLES;startup.StartupInfo.hStdInput=input;startup.StartupInfo.hStdOutput=output;startup.StartupInfo.hStdError=error;startup.lpAttributeList=list;StringBuilder command=new StringBuilder(Quote(executable));foreach(string argument in arguments)command.Append(' ').Append(Quote(argument));
+        if(!CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,CREATE_SUSPENDED|CREATE_NO_WINDOW|EXTENDED_STARTUPINFO_PRESENT,IntPtr.Zero,cwd,ref startup,out pi))throw Error("CreateProcessW");created=true;if(!AssignProcessToJobObject(job,pi.hProcess))throw Error("AssignProcessToJobObject");assigned=true;bool member;if(!IsProcessInJob(pi.hProcess,job,out member)||!member)throw Error("IsProcessInJob");if(ResumeThread(pi.hThread)==UInt32.MaxValue)throw Error("ResumeThread");resumed=true;
+        List<Exception> launchCleanup=new List<Exception>();Close(ref pi.hThread,launchCleanup);Close(ref input,launchCleanup);Close(ref output,launchCleanup);Close(ref error,launchCleanup);if(listInitialized){DeleteProcThreadAttributeList(list);listInitialized=false;}if(list!=IntPtr.Zero){Marshal.FreeHGlobal(list);list=IntPtr.Zero;}if(values!=IntPtr.Zero){Marshal.FreeHGlobal(values);values=IntPtr.Zero;}if(launchCleanup.Count>0)throw new AggregateException("Launch handle cleanup failed",launchCleanup);
+        uint wait=WaitForSingleObject(pi.hProcess,timeout);if(wait!=WAIT_OBJECT_0&&wait!=WAIT_TIMEOUT)throw Error("WaitForSingleObject");timedOut=wait==WAIT_TIMEOUT;if(timedOut||Active(job)!=0){forced=true;if(!TerminateJobObject(job,FAILURE_EXIT_CODE))throw Error("TerminateJobObject");}if(WaitForSingleObject(pi.hProcess,cleanupTimeout)!=WAIT_OBJECT_0||!WaitForZero(job,cleanupTimeout))throw new InvalidOperationException("Owned executor process tree cleanup is unproven");tree=true;if(!timedOut){uint code;if(!GetExitCodeProcess(pi.hProcess,out code))throw Error("GetExitCodeProcess");exitCode=unchecked((int)code);}else exitCode=(int)FAILURE_EXIT_CODE;
+      }catch(Exception failure){primary=failure;}
+      List<Exception> cleanupFailures=new List<Exception>();if(primary!=null&&created){try{if(assigned){if(!TerminateJobObject(job,FAILURE_EXIT_CODE))throw Error("TerminateJobObject failure cleanup");}else if(!TerminateProcess(pi.hProcess,FAILURE_EXIT_CODE))throw Error("TerminateProcess unassigned failure cleanup");if(WaitForSingleObject(pi.hProcess,cleanupTimeout)!=WAIT_OBJECT_0)throw new InvalidOperationException("Executor failure cleanup deadline expired");if(assigned&&!WaitForZero(job,cleanupTimeout))throw new InvalidOperationException("Executor failure Job did not become empty");tree=true;}catch(Exception cleanup){cleanupFailures.Add(cleanup);}}
+      Close(ref pi.hThread,cleanupFailures);Close(ref pi.hProcess,cleanupFailures);Close(ref input,cleanupFailures);Close(ref output,cleanupFailures);Close(ref error,cleanupFailures);if(listInitialized){try{DeleteProcThreadAttributeList(list);}catch(Exception cleanup){cleanupFailures.Add(cleanup);}listInitialized=false;}if(list!=IntPtr.Zero){Marshal.FreeHGlobal(list);list=IntPtr.Zero;}if(values!=IntPtr.Zero){Marshal.FreeHGlobal(values);values=IntPtr.Zero;}Close(ref job,cleanupFailures);
+      if(primary!=null){if(cleanupFailures.Count>0){cleanupFailures.Insert(0,primary);throw new AggregateException("Baseline executor launch failed and cleanup also failed",cleanupFailures);}throw primary;}if(cleanupFailures.Count>0)throw new AggregateException("Baseline executor handle cleanup failed",cleanupFailures);
+      return new BaselineJobResult{ExitCode=exitCode,TimedOut=timedOut,Forced=forced,AssignedBeforeResume=assigned,Resumed=resumed,ProcessTreeExitProven=tree,HandlesClosed=true};
+    }
+  }
+}`;
 
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const exactString = (value, pattern, label) => {
@@ -46,18 +120,25 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$BASELINE_MAX_FAILURE_CHARACTERS=${MAX_FAILURE_CHARACTERS}\r\n` +
         `$BASELINE_EXECUTOR_TIMEOUT=${EXECUTOR_TIMEOUT_MILLISECONDS}\r\n` +
         `$BASELINE_EXECUTOR_CLEANUP_TIMEOUT=${EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
+        `$BASELINE_JOB_SOURCE=@'\r\n${BASELINE_JOB_SOURCE}\r\n'@\r\n` +
+        `function Get-MyspeedBaselineOutputAuthority{` +
+        `$output=@(Get-Volume -FileSystemLabel MYSPEEDOUT -ErrorAction Stop);if($output.Count -ne 1 -or ` +
+        `[string]$output[0].DriveType -cne 'Fixed'){throw 'Baseline output authority differs'};` +
+        `$root=[string]$output[0].DriveLetter+':\\';$item=Get-Item -LiteralPath $root -Force -ErrorAction Stop;` +
+        `if(-not $item.PSIsContainer -or ($item.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){` +
+        `throw 'Baseline output authority path differs'};return $root}\r\n` +
         `function Get-MyspeedActualBaselineGuard{` +
         `$seed=@(Get-Volume -FileSystemLabel MYSPEEDSEED -ErrorAction Stop);` +
-        `$output=@(Get-Volume -FileSystemLabel MYSPEEDOUT -ErrorAction Stop);` +
+        `$output=Get-MyspeedBaselineOutputAuthority;` +
         `$physical=@(Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop|Where-Object{$_.PhysicalAdapter -eq $true});` +
         `$enabled=@(Get-NetAdapter -IncludeHidden -ErrorAction Stop|Where-Object{$_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Loopback'});` +
         `$routes=@(Get-NetRoute -ErrorAction Stop|Where-Object{$_.InterfaceAlias -notmatch 'Loopback'});` +
         `if([Environment]::OSVersion.Platform.ToString() -cne 'Win32NT' -or -not [Environment]::Is64BitProcess -or ` +
         `$PSVersionTable.PSVersion.Major -ne 5 -or $PSVersionTable.PSVersion.Minor -ne 1 -or ` +
-        `$seed.Count -ne 1 -or [string]$seed[0].DriveType -cne 'CD-ROM' -or $output.Count -ne 1 -or ` +
-        `[string]$output[0].DriveType -cne 'Fixed' -or $physical.Count -ne 0 -or $enabled.Count -ne 0 -or ` +
+        `$seed.Count -ne 1 -or [string]$seed[0].DriveType -cne 'CD-ROM' -or ` +
+        `$physical.Count -ne 0 -or $enabled.Count -ne 0 -or ` +
         `$routes.Count -ne 0){throw 'Baseline guest boundary differs'};` +
-        `return [pscustomobject]@{seed=([string]$seed[0].DriveLetter+':\\');output=([string]$output[0].DriveLetter+':\\')}}\r\n` +
+        `return [pscustomobject]@{seed=([string]$seed[0].DriveLetter+':\\');output=$output}}\r\n` +
         `function Write-MyspeedExclusive([string]$Path,[byte[]]$Bytes){` +
         `$temporary=$Path+'.tmp';$stream=$null;try{$stream=[IO.File]::Open($temporary,[IO.FileMode]::CreateNew,` +
         `[IO.FileAccess]::ReadWrite,[IO.FileShare]::None);$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true);` +
@@ -130,34 +211,79 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `throw 'Baseline input cleanup identity differs'}}finally{$stream.Dispose()}};` +
         `foreach($name in @('MySpeed.exe','fixture-bundle.json')){[IO.File]::Delete((Join-Path $Root $name))};` +
         `[IO.Directory]::Delete($Root,$false);return [pscustomobject]@{cleanupProven=(-not[IO.Directory]::Exists($Root))}}\r\n` +
-        `function Invoke-MyspeedBaselineExecutor([string]$RuntimeRoot,[string]$Seed){` +
-        `$result=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline-executor-result.json';` +
-        `$stdout=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline-executor.stdout';` +
-        `$stderr=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline-executor.stderr';` +
-        `foreach($target in @($result,$stdout,$stderr)){if([IO.File]::Exists($target)){throw 'Baseline executor path is not fresh'}};` +
+        `function Initialize-MyspeedBaselineJobType{if(-not('MySpeed.Qualification.BaselineJob'-as[type])){` +
+        `Add-Type -TypeDefinition $BASELINE_JOB_SOURCE -Language CSharp}}\r\n` +
+        `function Read-MyspeedBaselineDiagnostic([string]$Path,[int64]$Maximum,[switch]$AllowEmpty){` +
+        `if(-not[IO.File]::Exists($Path)){return $null};if(([IO.File]::GetAttributes($Path)-band` +
+        `[IO.FileAttributes]::ReparsePoint)-ne 0){throw 'Baseline diagnostic is a reparse point'};` +
+        `$stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read);try{` +
+        `$length=$stream.Length;if($length -gt $Maximum -or (-not $AllowEmpty -and $length -lt 2)){` +
+        `throw 'Baseline diagnostic size differs'};$bytes=[byte[]]::new([int]$length);$offset=0;while($offset-lt$bytes.Length){` +
+        `$count=$stream.Read($bytes,$offset,$bytes.Length-$offset);if($count-lt 1){throw 'Baseline diagnostic read was short'};` +
+        `$offset+=$count};if($stream.Length-ne$length){throw 'Baseline diagnostic changed while reading'};return $bytes}` +
+        `finally{$stream.Dispose()}}\r\n` +
+        `function Get-MyspeedBaselineDiagnosticText([byte[]]$Bytes){if($null-eq$Bytes-or$Bytes.Length-eq 0){return $null};` +
+        `try{$text=[Text.UTF8Encoding]::new($false,$true).GetString($Bytes)}catch{return $null};` +
+        `$text=[regex]::Replace($text,'[\\x00-\\x1f\\x7f]+',' ').Trim();if($text.Length-gt` +
+        `$BASELINE_MAX_FAILURE_CHARACTERS){$text=$text.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)};` +
+        `if($text.Length-eq 0){return $null};return $text}\r\n` +
+        `function Throw-MyspeedBaselineExecutorFailure([string]$Message,[object[]]$Diagnostics,[string]$Context){` +
+        `if($Context){$remaining=$BASELINE_MAX_FAILURE_CHARACTERS-[Math]::Min($Message.Length,$BASELINE_MAX_FAILURE_CHARACTERS);` +
+        `if($remaining-gt 3){$Message=$Message+'; '+$Context.Substring(0,[Math]::Min($Context.Length,$remaining-2))}};` +
+        `$exception=[InvalidOperationException]::new($Message);$exception.Data['MyspeedDiagnostics']=$Diagnostics;throw $exception}\r\n` +
+        `function Invoke-MyspeedBaselineExecutor([string]$RuntimeRoot,[string]$Seed,` +
+        `[scriptblock]$ResolveTaskRoot={Join-Path $env:SystemRoot ('Temp\\myspeed-baseline-executor-'+$EXPECTED_NONCE)},` +
+        `[scriptblock]$Launch={param($Node,$Arguments,$Working,$Stdout,$Stderr)Initialize-MyspeedBaselineJobType;` +
+        `[MySpeed.Qualification.BaselineJob]::Run($Node,[string[]]$Arguments,$Working,$Stdout,$Stderr,` +
+        `[uint32]$BASELINE_EXECUTOR_TIMEOUT,[uint32]$BASELINE_EXECUTOR_CLEANUP_TIMEOUT)}){` +
+        `$taskRoot=& $ResolveTaskRoot;if($taskRoot-isnot[string]-or-not[IO.Path]::IsPathRooted($taskRoot)-or` +
+        `[IO.Path]::GetFullPath($taskRoot)-cne$taskRoot){throw 'Baseline executor root path differs'};` +
+        `if([IO.Directory]::Exists($taskRoot)-or[IO.File]::Exists($taskRoot)){throw 'Baseline executor root is not fresh'};` +
+        `$null=[IO.Directory]::CreateDirectory($taskRoot);$rootItem=Get-Item -LiteralPath $taskRoot -Force;` +
+        `if(-not$rootItem.PSIsContainer-or($rootItem.Attributes-band[IO.FileAttributes]::ReparsePoint)-ne 0){` +
+        `throw 'Baseline executor root differs'};$result=Join-Path $taskRoot 'result.json';` +
+        `$stdout=Join-Path $taskRoot 'stdout';$stderr=Join-Path $taskRoot 'stderr';` +
         `$executor=Join-Path $RuntimeRoot 'scripts\\qualification\\windows-baseline-guest-executor.mjs';` +
-        `$process=Start-Process -FilePath (Join-Path $Seed 'node.exe') -ArgumentList @($executor,'--request',` +
-        `(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',$EXPECTED_REQUEST_SHA,'--execution',` +
-        `(Join-Path $Seed '${EXECUTION_NAME}'),'--execution-sha256',$EXPECTED_EXECUTION_SHA,'--result',$result) ` +
-        `-NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr;` +
-        `try{$null=$process.Handle;if(-not $process.WaitForExit($BASELINE_EXECUTOR_TIMEOUT)){` +
-        `$process.Kill();if(-not $process.WaitForExit($BASELINE_EXECUTOR_CLEANUP_TIMEOUT)){` +
-        `throw 'Baseline executor cleanup exceeded its deadline'};throw 'Baseline executor exceeded its deadline'};` +
-        `$exit=$process.ExitCode;if($exit -isnot [int] -or $exit -notin @(${SUCCESS_EXIT_CODE},${FAILURE_EXIT_CODE})){` +
-        `throw 'Baseline executor exit differs'};$stdoutBytes=[IO.File]::ReadAllBytes($stdout);` +
-        `$stderrBytes=[IO.File]::ReadAllBytes($stderr);if($stdoutBytes.Length -gt $BASELINE_MAX_STREAM_BYTES -or ` +
-        `$stderrBytes.Length -gt $BASELINE_MAX_STREAM_BYTES -or $stdoutBytes.Length -ne 0 -or $stderrBytes.Length -ne 0){` +
-        `throw 'Baseline executor streams differ'};$bytes=[IO.File]::ReadAllBytes($result);` +
-        `if($bytes.Length -lt 2 -or $bytes.Length -gt $BASELINE_MAX_RESULT_BYTES){throw 'Baseline executor result size differs'};` +
+        `$arguments=@($executor,'--request',(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',` +
+        `$EXPECTED_REQUEST_SHA,'--execution',(Join-Path $Seed '${EXECUTION_NAME}'),'--execution-sha256',` +
+        `$EXPECTED_EXECUTION_SHA,'--result',$result);$launchResult=$null;$primary=$null;` +
+        `$diagnostics=[Collections.Generic.List[object]]::new();try{` +
+        `try{$launchResult=& $Launch (Join-Path $Seed 'node.exe') $arguments $RuntimeRoot $stdout $stderr}catch{` +
+        `$primary=[string]$_.Exception.Message};if($null-ne$launchResult){` +
+        `if($launchResult.AssignedBeforeResume-ne$true-or$launchResult.Resumed-ne$true-or` +
+        `$launchResult.ProcessTreeExitProven-ne$true-or$launchResult.HandlesClosed-ne$true){` +
+        `$primary='Baseline executor containment proof differs'}elseif($launchResult.TimedOut-eq$true){` +
+        `$primary='Baseline executor exceeded its deadline'}elseif($launchResult.Forced-eq$true){` +
+        `$primary='Baseline executor left an owned descendant'}elseif($launchResult.ExitCode-isnot[int]-or` +
+        `$launchResult.ExitCode-notin@(${SUCCESS_EXIT_CODE},${FAILURE_EXIT_CODE})){` +
+        `$primary='Baseline executor exit differs'}};` +
+        `$stdoutBytes=$null;$stderrBytes=$null;$bytes=$null;try{` +
+        `$stdoutBytes=Read-MyspeedBaselineDiagnostic $stdout $BASELINE_MAX_STREAM_BYTES -AllowEmpty}catch{` +
+        `if($null-eq$primary){$primary='Baseline executor stdout diagnostic differs'}};try{` +
+        `$stderrBytes=Read-MyspeedBaselineDiagnostic $stderr $BASELINE_MAX_STREAM_BYTES -AllowEmpty}catch{` +
+        `if($null-eq$primary){$primary='Baseline executor stderr diagnostic differs'}};try{` +
+        `$bytes=Read-MyspeedBaselineDiagnostic $result $BASELINE_MAX_RESULT_BYTES}catch{` +
+        `if($null-eq$primary){$primary='Baseline executor result diagnostic differs'}};` +
+        `if($null-ne$stdoutBytes-and$stdoutBytes.Length-gt 0){$diagnostics.Add([pscustomobject]@{` +
+        `name='baseline-executor.stdout';bytes=$stdoutBytes})};if($null-ne$stderrBytes-and$stderrBytes.Length-gt 0){` +
+        `$diagnostics.Add([pscustomobject]@{name='baseline-executor.stderr';bytes=$stderrBytes})};` +
+        `if($null-ne$bytes){$diagnostics.Add([pscustomobject]@{name='baseline-result.raw.json';bytes=$bytes})};` +
+        `if($null-ne$primary){Throw-MyspeedBaselineExecutorFailure $primary $diagnostics ` +
+        `(Get-MyspeedBaselineDiagnosticText $stderrBytes)};if(($null-ne$stdoutBytes-and$stdoutBytes.Length-ne 0)-or` +
+        `($null-ne$stderrBytes-and$stderrBytes.Length-ne 0)){Throw-MyspeedBaselineExecutorFailure ` +
+        `'Baseline executor streams differ' $diagnostics (Get-MyspeedBaselineDiagnosticText $stderrBytes)};` +
         `try{$semantic=([Text.UTF8Encoding]::new($false,$true).GetString($bytes)|ConvertFrom-Json)}catch{` +
-        `throw 'Baseline executor result is invalid'};if($semantic.schemaVersion -ne 1 -or ` +
-        `$semantic.profile -cne $BASELINE_PROFILE -or $semantic.status -notin @('observed','failed') -or ` +
-        `$semantic.cleanupProven -isnot [bool] -or ($semantic.status -ceq 'observed' -and ` +
-        `($exit -ne ${SUCCESS_EXIT_CODE} -or -not $semantic.cleanupProven)) -or ($semantic.status -ceq 'failed' -and ` +
-        `$exit -ne ${FAILURE_EXIT_CODE})){throw 'Baseline executor result identity differs'};return $bytes}` +
-        `finally{$process.Dispose()}}\r\n` +
+        `Throw-MyspeedBaselineExecutorFailure 'Baseline executor result is invalid' $diagnostics $null};` +
+        `if($semantic.schemaVersion-ne 1-or$semantic.profile-cne$BASELINE_PROFILE-or` +
+        `$semantic.status-notin@('observed','failed')-or$semantic.cleanupProven-isnot[bool]-or` +
+        `($semantic.status-ceq'observed'-and($launchResult.ExitCode-ne${SUCCESS_EXIT_CODE}-or-not$semantic.cleanupProven))-or` +
+        `($semantic.status-ceq'failed'-and$launchResult.ExitCode-ne${FAILURE_EXIT_CODE})){` +
+        `Throw-MyspeedBaselineExecutorFailure 'Baseline executor result identity differs' $diagnostics $null};` +
+        `return [pscustomobject]@{bytes=$bytes;status=[string]$semantic.status;diagnostics=@()}}catch{` +
+        `if(-not$_.Exception.Data.Contains('MyspeedDiagnostics')){$_.Exception.Data['MyspeedDiagnostics']=$diagnostics.ToArray()};throw}}\r\n` +
         `function Invoke-MyspeedBaselineBootstrap(` +
         `[scriptblock]$ObserveGuard={Get-MyspeedActualBaselineGuard},` +
+        `[scriptblock]$ObserveOutputAuthority={Get-MyspeedBaselineOutputAuthority},` +
         `[scriptblock]$ResolveInputRoot={'C:\\Windows\\Temp\\myspeed-baseline-input-'+$EXPECTED_NONCE},` +
         `[scriptblock]$StageInputs={param($Seed,$Root)Install-MyspeedBaselineInputs $Seed $Root},` +
         `[scriptblock]$InstallRuntime={param($Seed,$Root). (Join-Path $Seed '${RUNTIME_INSTALLER_NAME}') -Mode Library;` +
@@ -172,21 +298,30 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `[scriptblock]$RemoveInputs={param($Seed,$Root)Remove-MyspeedBaselineInputs $Seed $Root},` +
         `[scriptblock]$Publish={param($Path,$Bytes)Write-MyspeedExclusive $Path $Bytes},` +
         `[scriptblock]$Shutdown={Stop-Computer -Force}){` +
-        `$failure=$null;$failureStage='guest-bootstrap';$boundary=$null;$cpuOperations=$null;$cpu=$null;` +
-        `$baselineBytes=$null;$runtimeRoot=Join-Path $env:SystemRoot ('Temp\\myspeed-baseline-runtime-'+$EXPECTED_NONCE);` +
-        `$inputRoot=& $ResolveInputRoot;if($inputRoot -isnot [string] -or $inputRoot.Length -lt 1){` +
-        `throw 'Baseline input root differs'};` +
+        `$failure=$null;$failureStage='guest-bootstrap';$boundary=$null;$publicationOutput=$null;` +
+        `$cpuOperations=$null;$cpu=$null;$baselineBytes=$null;$baselineStatus='unavailable';` +
+        `$diagnostics=@();$runtimeRoot=Join-Path $env:SystemRoot ('Temp\\myspeed-baseline-runtime-'+$EXPECTED_NONCE);` +
+        `$inputRoot=$null;` +
         `$runtimeInstalled=$false;$inputCleanupRequired=$false;$modeChanged=$false;$previousMode=[uint32]0;` +
-        `try{$boundary=& $ObserveGuard;$inputs=& $StageInputs $boundary.seed $inputRoot;` +
+        `try{$failureStage='guard';$boundary=& $ObserveGuard;$publicationOutput=$boundary.output;` +
+        `$failureStage='input-staging';$inputRoot=& $ResolveInputRoot;if($inputRoot-isnot[string]-or$inputRoot.Length-lt 1){` +
+        `throw 'Baseline input root differs'};$inputs=& $StageInputs $boundary.seed $inputRoot;` +
         `if($inputs.installed -ne $true -or $inputs.root -cne $inputRoot){throw 'Baseline input staging differs'};` +
         `$inputCleanupRequired=$true;` +
-        `$runtime=& $InstallRuntime $boundary.seed $runtimeRoot;` +
+        `$failureStage='runtime-installation';$runtime=& $InstallRuntime $boundary.seed $runtimeRoot;` +
         `if($runtime.installed -ne $true -or $runtime.root -cne $runtimeRoot){throw 'Baseline runtime installation differs'};` +
-        `$runtimeInstalled=$true;$cpuOperations=& $LoadCpu $boundary.seed;` +
-        `$previousMode=& $cpuOperations.SetErrorMode 3;if($previousMode -isnot [uint32]){throw 'Previous error mode is invalid'};` +
-        `$modeChanged=$true;$cpu=& $cpuOperations.CollectEvidence $boundary.seed;` +
-        `$baselineBytes=& $StartExecutor $runtimeRoot $boundary.seed}` +
-        `catch{$failure=$_}` +
+        `$runtimeInstalled=$true;$failureStage='cpu-loading';$cpuOperations=& $LoadCpu $boundary.seed;` +
+        `$failureStage='error-mode-change';$previousMode=& $cpuOperations.SetErrorMode 3;` +
+        `if($previousMode -isnot [uint32]){throw 'Previous error mode is invalid'};` +
+        `$modeChanged=$true;$failureStage='evidence-collection';$cpu=& $cpuOperations.CollectEvidence $boundary.seed;` +
+        `$failureStage='executor-invocation';$executorResult=& $StartExecutor $runtimeRoot $boundary.seed;` +
+        `if($executorResult.bytes-isnot[byte[]]-or$executorResult.status-notin@('observed','failed')-or` +
+        `$executorResult.diagnostics-isnot[array]){throw 'Baseline executor return differs'};` +
+        `$baselineBytes=$executorResult.bytes;$baselineStatus=[string]$executorResult.status;` +
+        `if($baselineStatus-ceq'failed'){try{$baselineSemantic=[Text.UTF8Encoding]::new($false,$true).GetString(` +
+        `$baselineBytes)|ConvertFrom-Json;$baselineFailure=[string]$baselineSemantic.failure}catch{` +
+        `$baselineFailure='invalid failed result'};throw ('Baseline executor reported failure: '+$baselineFailure)}}` +
+        `catch{$failure=$_;if($_.Exception.Data.Contains('MyspeedDiagnostics')){$diagnostics=@($_.Exception.Data['MyspeedDiagnostics'])}}` +
         `finally{try{if($runtimeInstalled){try{$cleanup=& $RemoveRuntime $runtimeRoot $boundary.seed;` +
         `if($cleanup.cleanupProven -ne $true){throw 'Baseline runtime cleanup is incomplete'}}catch{if($null -eq $failure){` +
         `$failure=$_;$failureStage='runtime-cleanup'}}};if($inputCleanupRequired){try{` +
@@ -194,18 +329,31 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `throw 'Baseline input cleanup is incomplete'}}catch{if($null -eq $failure){$failure=$_;` +
         `$failureStage='input-cleanup'}}}}finally{try{if($modeChanged){try{` +
         `$null=& $cpuOperations.SetErrorMode $previousMode}catch{if($null -eq $failure){$failure=$_;$failureStage='error-mode-restore'}}}}` +
-        `finally{try{if($null -ne $boundary){if($null -eq $failure){` +
-        `& $Publish (Join-Path $boundary.output '${RESULT_NAME}') $baselineBytes;` +
+        `finally{try{if($null-eq$publicationOutput){try{$publicationOutput=& $ObserveOutputAuthority}catch{}};` +
+        `if($publicationOutput-is[string]-and$publicationOutput.Length-gt 0){if($null-eq$failure){` +
+        `try{& $Publish (Join-Path $publicationOutput '${RESULT_NAME}') $baselineBytes;` +
         `$cpuBytes=[Text.UTF8Encoding]::new($false).GetBytes(($cpu|ConvertTo-Json -Compress -Depth 8));` +
-        `& $Publish (Join-Path $boundary.output '${CPU_RESULT_NAME}') $cpuBytes}else{` +
+        `& $Publish (Join-Path $publicationOutput '${CPU_RESULT_NAME}') $cpuBytes}catch{$failure=$_;$failureStage='publication'}};` +
+        `if($null-ne$failure){if($baselineStatus-ceq'failed'-and$baselineBytes-is[byte[]]){` +
+        `try{& $Publish (Join-Path $publicationOutput '${RESULT_NAME}') $baselineBytes}catch{}};` +
+        `$retained=[Collections.Generic.List[string]]::new();foreach($diagnostic in @($diagnostics)){` +
+        `if($diagnostic.name-notin@('baseline-result.raw.json','baseline-executor.stdout','baseline-executor.stderr')-or` +
+        `$diagnostic.bytes-isnot[byte[]]){continue};$maximum=if($diagnostic.name-ceq'baseline-result.raw.json'){` +
+        `$BASELINE_MAX_RESULT_BYTES}else{$BASELINE_MAX_STREAM_BYTES};if($diagnostic.bytes.Length-lt 1-or` +
+        `$diagnostic.bytes.Length-gt$maximum){continue};try{& $Publish (Join-Path $publicationOutput $diagnostic.name) ` +
+        `$diagnostic.bytes;$retained.Add([string]$diagnostic.name)}catch{}};` +
         `$message=[regex]::Replace([string]$failure.Exception.Message,'[\\x00-\\x1f\\x7f]+',' ');` +
         `if($message.Length -gt $BASELINE_MAX_FAILURE_CHARACTERS){` +
         `$message=$message.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)};` +
         `if($message.Length -eq 0){$message='unspecified failure'};` +
-        `$record=[ordered]@{schemaVersion=1;status='failed';nonce=$EXPECTED_NONCE;stage=$failureStage;failure=$message};` +
+        `$message=$failureStage+': '+$message;if($message.Length-gt$BASELINE_MAX_FAILURE_CHARACTERS){` +
+        `$message=$message.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)};` +
+        `$record=[ordered]@{schemaVersion=1;status='failed';nonce=$EXPECTED_NONCE;stage='guest-bootstrap';failure=$message};` +
         `$bytes=[Text.UTF8Encoding]::new($false).GetBytes(($record|ConvertTo-Json -Compress -Depth 4));` +
-        `& $Publish (Join-Path $boundary.output '${CPU_RESULT_NAME}') $bytes}}}` +
-        `finally{& $Shutdown}}}};if($null -ne $failure){throw $failure}}\r\n` +
+        `try{& $Publish (Join-Path $publicationOutput '${CPU_RESULT_NAME}') $bytes}catch{` +
+        `try{& $Publish (Join-Path $publicationOutput 'bootstrap-failure.json') $bytes}catch{}}}}}` +
+        `finally{try{& $Shutdown}catch{if($null-eq$failure){$failure=$_;$failureStage='shutdown'}}}}}};` +
+        `if($null -ne $failure){throw $failure}}\r\n` +
         `if(-not $LibraryMode){Invoke-MyspeedBaselineBootstrap}\r\n`;
     return Buffer.from(script, "utf8");
 }
@@ -213,4 +361,3 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
 export const WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS = Object.freeze({CPU_RESULT_NAME, EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS,
     EXECUTOR_TIMEOUT_MILLISECONDS, MAX_CANDIDATE_BYTES, MAX_FAILURE_CHARACTERS, MAX_FIXTURE_BYTES, MAX_RESULT_BYTES,
     MAX_STREAM_BYTES, PROFILE, RESULT_NAME});
-

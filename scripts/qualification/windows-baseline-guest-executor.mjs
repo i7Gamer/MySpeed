@@ -101,9 +101,15 @@ function assertActualGuest(spawnSync = spawnSyncChild) {
     const result = spawnSync(shell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
         "-File", WRAPPER_PATH, "-Mode", "TestActualGuard"], {encoding: "utf8", windowsHide: true,
         timeout: GUARD_TIMEOUT_MILLISECONDS, maxBuffer: GUARD_STREAM_BYTES});
+    validateWindowsBaselineGuestGuardProcessResult(result);
+}
+
+export function validateWindowsBaselineGuestGuardProcessResult(result) {
+    if (!isObject(result)) throw new Error("baseline guest guard process result differs");
     if (result.error !== undefined || result.signal !== null || result.status !== SUCCESS_EXIT_CODE ||
         result.stderr !== "" || Buffer.byteLength(result.stdout ?? "", "utf8") > GUARD_STREAM_BYTES)
-        throw new Error("baseline guest guard process failed");
+        throw new Error(failure(new Error(`baseline guest guard process failed: `
+            + `${result.error?.message ?? ""} ${result.stderr ?? ""}`)).failure);
     let value;
     try { value = JSON.parse(result.stdout); }
     catch { throw new TypeError("baseline guest guard output is invalid"); }
@@ -122,7 +128,17 @@ function defaultRuntime(request, execution, configuration = {}) {
 }
 
 export async function executeWindowsBaselineGuest(input, dependencies = {}) {
+    const functionNames = ["assertGuest", "readJson", "writeResult", "createRuntime", "createOperations", "runGuest"];
+    if (!isObject(dependencies) || Object.keys(dependencies).some(name =>
+        name !== "runtimeConfiguration" && (!functionNames.includes(name) || typeof dependencies[name] !== "function")))
+        return {exitCode: FAILURE_EXIT_CODE, result: failure(new TypeError("baseline executor dependencies differ"))};
+    if (Object.hasOwn(dependencies, "runtimeConfiguration") && (!isObject(dependencies.runtimeConfiguration)
+        || Object.keys(dependencies.runtimeConfiguration).some(name => !["powershellPath", "dependencies"].includes(name))))
+        return {exitCode: FAILURE_EXIT_CODE, result: failure(new TypeError("baseline runtime configuration differs"))};
     const runtimeConfiguration = dependencies.runtimeConfiguration ?? {};
+    if ((Object.hasOwn(runtimeConfiguration, "powershellPath") && typeof runtimeConfiguration.powershellPath !== "string")
+        || (Object.hasOwn(runtimeConfiguration, "dependencies") && !isObject(runtimeConfiguration.dependencies)))
+        return {exitCode: FAILURE_EXIT_CODE, result: failure(new TypeError("baseline runtime configuration differs"))};
     const io = {assertGuest: assertActualGuest, readJson: readOwnedJson, writeResult: writeNewResult,
         createRuntime: (request, execution) => defaultRuntime(request, execution, runtimeConfiguration),
         createOperations: createWindowsBaselineGuestOperations,
@@ -164,4 +180,3 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLTo
 
 export const WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS = Object.freeze({GUARD_TIMEOUT_MILLISECONDS,
     MAX_FAILURE_CHARACTERS, MAX_JSON_BYTES, PROFILE});
-

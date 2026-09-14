@@ -10,7 +10,7 @@ const MAX_FAILURE_CHARACTERS = 512;
 const MAX_OPEN_GRAPH_ELAPSED_MILLISECONDS = 120_000;
 const MAX_SUMMARY_STRING_CHARACTERS = 256;
 const EXPECTED_SCENARIOS = Object.freeze(["populated-first-boot", "populated-restart", "fresh-no-config-reset"]);
-const OPERATION_NAMES = Object.freeze(["awaitReady", "checkPopulated", "checkPopulatedDatabase",
+const OPERATION_NAMES = Object.freeze(["awaitOwnedListener", "awaitReady", "checkPopulated", "checkPopulatedDatabase",
     "checkResetDatabase", "cleanupFixture", "closeScenario", "observeNetwork", "openScenario", "prepareFixture"]);
 
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -125,10 +125,26 @@ function validateClose(value, scenario) {
     return clone(value);
 }
 
-function failureMessage(error) {
+function validateOwnedListener(value, ready, port) {
+    exactKeys(value, ["candidateCreationTime", "candidatePid", "listenerOwned", "port"],
+        "baseline owned listener receipt");
+    if (value.listenerOwned !== true || value.candidatePid !== ready.candidatePid ||
+        value.candidateCreationTime !== ready.candidateCreationTime || value.port !== port)
+        throw new TypeError("baseline owned listener receipt differs");
+    return clone(value);
+}
+
+function failureMessage(error, maxCharacters = MAX_FAILURE_CHARACTERS) {
     const text = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/gu, " ")
-        .slice(0, MAX_FAILURE_CHARACTERS);
+        .slice(0, maxCharacters);
     return text || "unspecified failure";
+}
+
+function combinedFailureMessage(primary, secondary, label) {
+    const separator = `; ${label}: `;
+    const partCharacters = Math.max(1, Math.floor((MAX_FAILURE_CHARACTERS - separator.length) / 2));
+    return `${failureMessage(primary, partCharacters)}${separator}${failureMessage(secondary, partCharacters)}`
+        .slice(0, MAX_FAILURE_CHARACTERS);
 }
 
 export async function runWindowsBaselineGuest(input, operationValue) {
@@ -155,6 +171,7 @@ export async function runWindowsBaselineGuest(input, operationValue) {
         network = validateNetwork(await operations.observeNetwork({request: clone(request)}));
         for (const scenario of request.scenarios) {
             openAttempted = true;
+            let scenarioFailure = null;
             try {
                 currentSession = await operations.openScenario({request: clone(request), fixture: clone(fixture),
                     scenario: scenario.scenario, port: scenario.port});
@@ -165,12 +182,19 @@ export async function runWindowsBaselineGuest(input, operationValue) {
                     ready.candidatePid > MAX_PROCESS_ID ||
                     typeof ready.candidateCreationTime !== "string" || !/^[0-9a-f]{16}$/u.test(ready.candidateCreationTime))
                     throw new TypeError("baseline scenario readiness differs");
+                if (scenario.scenario !== "fresh-no-config-reset")
+                    validateOwnedListener(await operations.awaitOwnedListener({request: clone(request),
+                        session: currentSession, ready: clone(ready), scenario: scenario.scenario, port: scenario.port}),
+                    ready, scenario.port);
                 processes.push({scenario: scenario.scenario, pid: ready.candidatePid});
                 if (scenario.scenario !== "fresh-no-config-reset") {
                     const checked = await operations.checkPopulated({request: clone(request), session: currentSession,
                         ready: clone(ready), scenario: scenario.scenario, port: scenario.port});
                     openGraphChecks.push({scenario: scenario.scenario, ...validatePopulated(checked)});
                 }
+            } catch (error) {
+                scenarioFailure = error;
+                throw error;
             } finally {
                 if (currentSession !== null) {
                     try {
@@ -178,7 +202,12 @@ export async function runWindowsBaselineGuest(input, operationValue) {
                             fixture: clone(fixture), session: currentSession, scenario: scenario.scenario}),
                         scenario.scenario);
                         shutdownProofs.push(closed);
-                    } catch (error) { cleanupProven = false; throw error; }
+                    } catch (error) {
+                        cleanupProven = false;
+                        if (scenarioFailure !== null)
+                            throw new Error(combinedFailureMessage(scenarioFailure, error, "closeScenario"));
+                        throw error;
+                    }
                     finally { currentSession = null; }
                 }
             }
@@ -198,8 +227,18 @@ export async function runWindowsBaselineGuest(input, operationValue) {
     finally {
         try {
             const cleaned = await operations.cleanupFixture({request: clone(request), fixture, openAttempted});
-            if (!isObject(cleaned) || cleaned.cleanupProven !== true) cleanupProven = false;
-        } catch (error) { cleanupProven = false; if (failure === null) failure = error; }
+            if (!isObject(cleaned) || cleaned.cleanupProven !== true) {
+                cleanupProven = false;
+                const cleanupFailure = isObject(cleaned) && Object.hasOwn(cleaned, "failure") ?
+                    new Error(failureMessage(cleaned.failure)) : null;
+                if (cleanupFailure !== null)
+                    failure = failure === null ? cleanupFailure :
+                        new Error(combinedFailureMessage(failure, cleanupFailure, "cleanupFixture"));
+            }
+        } catch (error) {
+            cleanupProven = false;
+            failure = failure === null ? error : new Error(combinedFailureMessage(failure, error, "cleanupFixture"));
+        }
     }
     if (failure !== null || !cleanupProven) return {schemaVersion: SCHEMA_VERSION, status: "failed", profile: PROFILE,
         cleanupProven, failure: failureMessage(failure ?? new Error("baseline cleanup is incomplete"))};
@@ -212,4 +251,3 @@ export async function runWindowsBaselineGuest(input, operationValue) {
 
 export const WINDOWS_BASELINE_GUEST_CONSTANTS = Object.freeze({ARTIFACT_NAME, EXPECTED_SCENARIOS,
     MAX_FAILURE_CHARACTERS, PROFILE, REQUEST_KIND});
-

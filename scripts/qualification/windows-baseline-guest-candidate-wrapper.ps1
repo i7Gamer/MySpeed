@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','TestGuard','TestActualGuard','TestControllerBinding','InspectCandidate','InvokeGuestCandidate')]
+    [ValidateSet('Library','TestGuard','TestActualGuard','TestControllerBinding','TestOwnedListener','ObserveOwnedListener','InspectCandidate','InvokeGuestCandidate')]
     [string] $Mode='Library',
     [string] $InputJson='{}',
     [string] $RequestPath='',
@@ -17,7 +17,10 @@ param(
     [string] $ExpectedNonce='',
     [string] $InspectedCandidatePath='',
     [string] $ExpectedCandidateSha256='',
-    [int64] $MaximumCandidateBytes=0
+    [int64] $MaximumCandidateBytes=0,
+    [int64] $CandidatePid=0,
+    [string] $CandidateCreationTime='',
+    [int64] $CandidatePort=0
 )
 
 Set-StrictMode -Version Latest
@@ -167,6 +170,50 @@ function Get-MyspeedBaselineGuestCandidateIdentity {
     }
 }
 
+function Assert-MyspeedBaselineOwnedListener {
+    param([object]$Process,[object[]]$Listeners,[int64]$ExpectedPid,[string]$ExpectedCreation,[int64]$ExpectedPort)
+    [void](Assert-MyspeedBaselineGuestInteger $ExpectedPid 'Baseline listener candidate PID' 1 4294967295)
+    [void](Assert-MyspeedBaselineGuestString $ExpectedCreation 'Baseline listener candidate creation time' '\A[0-9a-f]{16}\z')
+    [void](Assert-MyspeedBaselineGuestInteger $ExpectedPort 'Baseline listener port' 1 65535)
+    Assert-MyspeedBaselineGuestKeys $Process @('pid','creationTime','exited') 'Baseline listener process'
+    if((Assert-MyspeedBaselineGuestInteger $Process.pid 'Baseline listener observed PID' 1 4294967295) -ne $ExpectedPid -or
+        (Assert-MyspeedBaselineGuestString $Process.creationTime 'Baseline listener observed creation time' '\A[0-9a-f]{16}\z') -cne $ExpectedCreation -or
+        (Assert-MyspeedBaselineGuestBoolean $Process.exited 'Baseline listener process exited')){throw 'Baseline listener process identity differs'}
+    $onPort=@($Listeners|Where-Object{[int64]$_.port -eq $ExpectedPort})
+    foreach($listener in $onPort){
+        Assert-MyspeedBaselineGuestKeys $listener @('address','port','pid') 'Baseline listener observation'
+        [void](Assert-MyspeedBaselineGuestInteger $listener.port 'Baseline listener observed port' 1 65535)
+        [void](Assert-MyspeedBaselineGuestInteger $listener.pid 'Baseline listener owner PID' 1 4294967295)
+        [void](Assert-MyspeedBaselineGuestString $listener.address 'Baseline listener address')
+        if($listener.address -in @('0.0.0.0','::','*')){throw 'Baseline candidate exposed a wildcard listener'}
+        if($listener.address -notin @('127.0.0.1','::1') -or [int64]$listener.pid -ne $ExpectedPid){
+            throw 'Baseline listener owner or address differs'
+        }
+    }
+    $exact=@($onPort|Where-Object{$_.address -ceq '127.0.0.1'})
+    if($exact.Count -eq 0){return [pscustomobject][ordered]@{listenerOwned=$false;candidatePid=$ExpectedPid
+            candidateCreationTime=$ExpectedCreation;port=$ExpectedPort}}
+    return [pscustomobject][ordered]@{listenerOwned=$true;candidatePid=$ExpectedPid
+        candidateCreationTime=$ExpectedCreation;port=$ExpectedPort}
+}
+
+function Get-MyspeedBaselineOwnedListener {
+    param([int64]$ExpectedPid,[string]$ExpectedCreation,[int64]$ExpectedPort)
+    [void](Assert-MyspeedBaselineGuestGuard (Get-MyspeedBaselineGuestActualGuard))
+    $process=Get-Process -Id $ExpectedPid -ErrorAction Stop
+    try{
+        $observed=[pscustomobject]@{pid=[int64]$process.Id;creationTime=([uint64]($process.StartTime.ToFileTimeUtc())).ToString('x16')
+            exited=[bool]$process.HasExited}
+        $listeners=@(Get-NetTCPConnection -State Listen -ErrorAction Stop|Where-Object{$_.LocalPort -eq $ExpectedPort}|ForEach-Object{
+            [pscustomobject]@{address=[string]$_.LocalAddress;port=[int64]$_.LocalPort;pid=[int64]$_.OwningProcess}})
+        $process.Refresh()
+        $after=[pscustomobject]@{pid=[int64]$process.Id;creationTime=([uint64]($process.StartTime.ToFileTimeUtc())).ToString('x16')
+            exited=[bool]$process.HasExited}
+        [void](Assert-MyspeedBaselineOwnedListener $after $listeners $ExpectedPid $ExpectedCreation $ExpectedPort)
+        return Assert-MyspeedBaselineOwnedListener $observed $listeners $ExpectedPid $ExpectedCreation $ExpectedPort
+    }finally{$process.Dispose()}
+}
+
 function Invoke-MyspeedBaselineGuestCandidate {
     param([string]$Path,[string]$Sha,[string]$CandidatePath,[string]$CandidateSha,
         [string]$CleanPath,[string]$CleanSha,[string]$RunId,[string]$RunAttempt,[string]$EventSha,
@@ -215,6 +262,9 @@ try{
         'TestActualGuard' {Assert-MyspeedBaselineGuestGuard (Get-MyspeedBaselineGuestActualGuard)}
         'TestControllerBinding' {Assert-MyspeedBaselineGuestControllerBinding $RequestPath $ExpectedRequestSha256 `
             $CleanStopControllerPath $ExpectedCleanStopControllerSha256|Select-Object accepted}
+        'TestOwnedListener' {$value=$InputJson|ConvertFrom-Json
+            Assert-MyspeedBaselineOwnedListener $value.process @($value.listeners) $CandidatePid $CandidateCreationTime $CandidatePort}
+        'ObserveOwnedListener' {Get-MyspeedBaselineOwnedListener $CandidatePid $CandidateCreationTime $CandidatePort}
         'InspectCandidate' {Get-MyspeedBaselineGuestCandidateIdentity $InspectedCandidatePath `
             $ExpectedCandidateSha256 $MaximumCandidateBytes $CandidateControllerPath `
             $ExpectedCandidateControllerSha256 $CleanStopControllerPath $ExpectedCleanStopControllerSha256}
@@ -222,4 +272,3 @@ try{
     }
     $output|ConvertTo-Json -Compress -Depth 30
 }catch{[Console]::Error.WriteLine($_.Exception.Message);exit 1}
-

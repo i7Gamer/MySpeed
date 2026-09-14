@@ -757,14 +757,18 @@ describe("hosted Stage 2 native adapter preparation", () => {
             privilegeMode: "unreviewed", argv: ["-nic", "none"]}), /privilege mode/i);
     });
 
-    it("extracts bounded guest failure evidence only after clean QEMU teardown", async () => {
+    for (const source of ["primary", "secondary", "invalid-secondary"])
+        it(`extracts only valid bounded ${source} failure evidence after clean QEMU teardown`, async () => {
+        const secondary = source !== "primary";
         const failure = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
             failure: "synthetic provider failure"};
+        if (source === "invalid-secondary") failure.status = "observed";
         const extracted = [];
         const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
             inspectOwned: rootFileIdentity,
             inspectDirectory: directoryIdentity,
             runOwned: async (_command, argv) => { extracted.push(argv.find(value => value.startsWith("::")));
+                if (secondary && argv.includes("::result.json")) throw new Error("primary publication unavailable");
                 return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
             runMonitoredQemu: async () => ({observation: {process: okProcess, stdout: Buffer.alloc(0),
                 stderr: Buffer.alloc(0)}, identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
@@ -782,8 +786,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
         mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
         const result = await adapter.launchOwnedQemu({paths: paths(), toolchain,
             privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
-        assert.deepEqual(result.guest, failure);
-        assert.deepEqual(extracted, ["::result.json"]);
+        assert.deepEqual(result.guest, source === "invalid-secondary" ? null : failure);
+        assert.deepEqual(extracted, secondary ? ["::result.json", "::bootstrap-failure.json"] : ["::result.json"]);
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
     });

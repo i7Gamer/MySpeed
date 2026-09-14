@@ -20,8 +20,8 @@ const MAX_PORT = 65_535;
 const MAX_PROCESS_ID = 0xffff_ffff;
 const MAX_FAILURE_CHARACTERS = 512;
 const REQUIRED_DEPENDENCIES = Object.freeze(["checkPopulated", "checkPopulatedDatabase", "checkResetDatabase",
-    "cleanup", "inspectCandidate", "materialize", "observeListener", "observeNetwork", "readReady", "readResult",
-    "startController", "waitController", "writeStop"]);
+    "cleanup", "inspectCandidate", "materialize", "observeListener", "observeNetwork", "observeOwnedListener",
+    "readFailedResult", "readReady", "readResult", "startController", "stopController", "waitController", "writeStop"]);
 
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const exactKeys = (value, expected, label) => {
@@ -116,6 +116,42 @@ const validateControllerExit = value => {
         throw new Error("baseline candidate controller process failed");
 };
 
+function validateFailedCandidateDiagnostic(value, request, ready) {
+    const keys = ["schemaVersion", "kind", "status", "qualifying", "releaseGatesCleared", "alias",
+        "artifactLogicalName", "scenario", "stopKind", "candidatePid", "candidateCreationTime", "candidateExited",
+        "exitCode", "forced", "jobActiveProcesses", "handleCleanupAttempted", "handlesClosed",
+        "processTreeExitProven", "listenerGone", "elapsedMs", "failures", "failureDetails"];
+    exactKeys(value, keys, "baseline failed candidate diagnostic");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== CONTROLLER_RESULT_KIND || value.status !== "failed"
+        || value.qualifying !== false || !Array.isArray(value.releaseGatesCleared)
+        || value.releaseGatesCleared.length !== 0 || value.alias !== request.alias
+        || value.artifactLogicalName !== request.artifactLogicalName || value.scenario !== request.scenario
+        || !Array.isArray(value.failures) || value.failures.length < 1 || value.failures.length > 4
+        || !Array.isArray(value.failureDetails) || value.failureDetails.length < 1 || value.failureDetails.length > 4)
+        throw new TypeError("baseline failed candidate diagnostic differs");
+    if (ready !== null && (value.candidatePid !== ready.candidatePid
+        || value.candidateCreationTime !== ready.candidateCreationTime))
+        throw new TypeError("baseline failed candidate process identity differs");
+    for (const entry of value.failures)
+        exactString(entry, /^[a-z][a-z0-9-]{0,127}$/u, "baseline failed candidate failure");
+    const details = value.failureDetails.map(entry => {
+        exactKeys(entry, ["failure", "phase"], "baseline failed candidate detail");
+        exactString(entry.phase, /^(?:lifecycle|cleanup|handle-cleanup|proof)$/u,
+            "baseline failed candidate phase");
+        if (typeof entry.failure !== "string" || entry.failure.length < 1
+            || entry.failure.length > MAX_FAILURE_CHARACTERS)
+            throw new TypeError("baseline failed candidate detail text differs");
+        return `${entry.phase}: ${failureMessage(entry.failure)}`;
+    });
+    return details.join("; ").slice(0, MAX_FAILURE_CHARACTERS);
+}
+
+const withDiagnostic = (primary, diagnostic) => {
+    const first = failureMessage(primary);
+    const suffix = failureMessage(diagnostic);
+    return new Error(`${first}; diagnostic: ${suffix}`.slice(0, MAX_FAILURE_CHARACTERS));
+};
+
 function validateReady(value, request) {
     exactKeys(value, ["schemaVersion", "kind", "nonce", "manifestSha256", "alias", "scenario",
         "artifactLogicalName", "candidateSha256", "candidatePid", "candidateCreationTime",
@@ -190,7 +226,7 @@ export function createWindowsBaselineGuestOperations({request, execution, depend
                 execution: clone(checkedExecution)}));
             const controllerRequest = buildControllerRequest(request, checkedExecution, scenario, port, candidateIdentity);
             const state = {scenario, port, request: controllerRequest, started: null, ready: null,
-                startAttempted: true};
+                startAttempted: true, controllerStopAttempted: false};
             sessions.set(scenario, state);
             state.started = await io.startController({request: clone(controllerRequest),
                 requestPath: controllerPaths(request, scenario).request,
@@ -203,6 +239,14 @@ export function createWindowsBaselineGuestOperations({request, execution, depend
             state.ready = validateReady(await io.readReady({request: clone(state.request), started: state.started}),
                 state.request);
             return clone(state.ready);
+        },
+        async awaitOwnedListener({session, ready, port}) {
+            const state = sessions.get(session.scenario);
+            if (state !== session || state.ready === null || !same(state.ready, ready) || state.port !== port)
+                throw new TypeError("baseline owned listener input differs");
+            return clone(await io.observeOwnedListener({port, candidatePid: ready.candidatePid,
+                candidateCreationTime: ready.candidateCreationTime, started: state.started,
+                request: clone(state.request)}));
         },
         async checkPopulated({session, port}) {
             if (sessions.get(session.scenario) !== session || session.ready === null)
@@ -218,7 +262,42 @@ export function createWindowsBaselineGuestOperations({request, execution, depend
                     manifestSha256: checkedExecution.manifestSha256, alias: ALIAS, scenario,
                     candidatePid: state.ready.candidatePid,
                     candidateCreationTime: state.ready.candidateCreationTime}});
-            validateControllerExit(await io.waitController({request: clone(state.request), started: state.started}));
+            let processResult;
+            try { processResult = await io.waitController({request: clone(state.request), started: state.started}); }
+            catch (error) {
+                if (!state.controllerStopAttempted) {
+                    state.controllerStopAttempted = true;
+                    try { await io.stopController({request: clone(state.request), started: state.started}); }
+                    catch { /* mitigation never establishes cleanup authority */ }
+                }
+                throw error;
+            }
+            if (processResult.exitCode !== SUCCESS_EXIT_CODE || processResult.signal !== null) {
+                const primary = new Error("baseline candidate controller process failed");
+                try {
+                    const diagnostic = await io.readFailedResult({request: clone(state.request), started: state.started});
+                    exactKeys(diagnostic, ["captureFailure", "result", "resultFailure", "stderr", "stdout"],
+                        "baseline failed controller diagnostic");
+                    for (const name of ["captureFailure", "resultFailure", "stderr", "stdout"])
+                        if (typeof diagnostic[name] !== "string" || diagnostic[name].length > MAX_FAILURE_CHARACTERS
+                            || /[\x00-\x1f\x7f]/u.test(diagnostic[name]))
+                            throw new TypeError("baseline failed controller diagnostic text differs");
+                    const details = [];
+                    if (diagnostic.result !== null) {
+                        try { details.push(validateFailedCandidateDiagnostic(diagnostic.result, state.request, state.ready)); }
+                        catch { /* malformed result has no diagnostic authority */ }
+                    }
+                    if (diagnostic.stderr) details.push(`stderr: ${failureMessage(diagnostic.stderr)}`);
+                    if (diagnostic.captureFailure) details.push(`capture: ${failureMessage(diagnostic.captureFailure)}`);
+                    if (details.length > 0) throw withDiagnostic(primary, details.join("; "));
+                    throw primary;
+                } catch (error) {
+                    if (error instanceof Error && error.message.startsWith(`${primary.message}; diagnostic:`)) throw error;
+                    throw primary;
+                }
+            }
+            validateControllerExit(processResult);
+            if (state.ready === null) throw new Error("baseline candidate ready receipt is missing");
             const result = validateCandidateResult(await io.readResult({request: clone(state.request),
                 started: state.started}), state.request, state.ready);
             validateAbsentListener(await io.observeListener({port: state.port, candidatePid: state.ready.candidatePid,
@@ -236,6 +315,11 @@ export function createWindowsBaselineGuestOperations({request, execution, depend
             return clone(await io.checkResetDatabase({work: request.paths.resetWork, scenario}));
         },
         async cleanupFixture({openAttempted}) {
+            for (const state of sessions.values()) if (!state.controllerStopAttempted && state.started !== null) {
+                state.controllerStopAttempted = true;
+                try { await io.stopController({request: clone(state.request), started: state.started}); }
+                catch { /* mitigation never establishes cleanup authority */ }
+            }
             try { return clone(await io.cleanup({request: clone(request), execution: clone(checkedExecution),
                 sessions: [...sessions.values()], fixtureState, openAttempted})); }
             catch (error) { return {cleanupProven: false, failure: failureMessage(error)}; }
@@ -245,4 +329,3 @@ export function createWindowsBaselineGuestOperations({request, execution, depend
 
 export const WINDOWS_BASELINE_GUEST_OPERATION_CONSTANTS = Object.freeze({ALIAS, ARTIFACT_LOGICAL_NAME,
     EXECUTION_KIND, HARD_DEADLINE_MILLISECONDS, NORMAL_DEADLINE_MILLISECONDS});
-

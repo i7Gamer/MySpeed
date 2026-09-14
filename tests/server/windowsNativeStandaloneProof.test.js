@@ -287,7 +287,8 @@ describe("Windows native standalone proof operation factory", () => {
             createWindowsNativeStandaloneRuntime(pathDrift, pathHarness.dependencies));
         assert.equal(pathResult.status, "failed");
         assert.deepEqual(pathResult.adapter.failures[0],
-            {stage: "open-owned-session", classification: "failed"});
+            {stage: "open-owned-session", classification: "failed",
+                detail: "Candidate controller request binding differs: candidatePath"});
 
         const manifestDrift = proofRequest();
         const manifestHarness = makeActualRuntimeDependencies(manifestDrift);
@@ -298,7 +299,8 @@ describe("Windows native standalone proof operation factory", () => {
             createWindowsNativeStandaloneRuntime(manifestDrift, manifestHarness.dependencies));
         assert.equal(manifestResult.status, "failed");
         assert.deepEqual(manifestResult.adapter.failures[0],
-            {stage: "open-owned-session", classification: "failed"});
+            {stage: "open-owned-session", classification: "failed",
+                detail: "Candidate controller request binding differs: manifestSha256"});
     });
 
     it("runs the proof through the accepted adapter and never upgrades its nonqualifying result", async () => {
@@ -571,6 +573,9 @@ describe("Windows native standalone proof operation factory", () => {
         const proof = proofRequest();
         const harness = makeActualRuntimeDependencies(proof);
         let removed = false;
+        let killed = 0;
+        harness.dependencies.startController = () => ({child: {kill: () => { killed++; }},
+            completion: Promise.reject(new Error("controller failed"))});
         harness.dependencies.readReady = async () => { throw new Error("ready absent"); };
         harness.dependencies.removeOwnedWork = () => { removed = true; };
         const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
@@ -587,5 +592,98 @@ describe("Windows native standalone proof operation factory", () => {
         await assert.rejects(runtime.observeOffline({alias: candidate.alias, scenario: ownership.scenario,
             phase: "after-stop"}), /outer Job cleanup/iu);
         assert.equal(removed, false);
+        assert.equal(killed, 1);
+    });
+
+    it("does not claim cleanup for an absent retained fixture state", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let removed = 0;
+        harness.dependencies.removeOwnedWork = () => { removed++; };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+
+        const cleaned = await runtime.cleanupFixture({state: undefined,
+            ownership: {alias: "default", fixtureId: "not-retained"}});
+        assert.deepEqual(cleaned, {cleanupProven: false});
+        assert.equal(removed, 0);
+    });
+
+    it("cancels the losing readiness poll when the controller fails early", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let signal;
+        harness.dependencies.startController = () => ({child: {kill: () => {}},
+            completion: Promise.reject(new Error("early controller failure"))});
+        harness.dependencies.readReady = (_request, _deadline, _clock, abortSignal) => {
+            signal = abortSignal;
+            return new Promise((resolve, reject) => abortSignal?.addEventListener("abort",
+                () => reject(new Error("poll cancelled")), {once: true}));
+        };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "early-exit", alias: candidate.alias, scenario: "populated-first-boot"};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+        await assert.rejects(runtime.launchSession(opened), /early controller failure/u);
+        assert.equal(signal?.aborted, true);
+    });
+
+    it("reserves host headroom and clamps every owned wait to the remaining coordinator budget", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let now = 1_000;
+        const timeouts = [];
+        harness.dependencies.clock = () => now;
+        harness.dependencies.observeOffline = async (_value, timeout) => {
+            timeouts.push(timeout);
+            return {boundarySha256: OFFLINE_SHA, boundaryBase64: OFFLINE_BASE64, offlineBoundaryPassed: true};
+        };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+
+        await runtime.observeOffline({alias: "default", scenario: "populated-first-boot", phase: "before-start"});
+        now = 400_000;
+        await runtime.observeOffline({alias: "default", scenario: "populated-first-boot", phase: "after-stop"});
+        now = 541_000;
+        await assert.rejects(runtime.observeOffline({alias: "default", scenario: "populated-first-boot",
+            phase: "after-stop"}), /coordinator deadline expired/iu);
+        assert.deepEqual(timeouts, [310_000, 141_000]);
+        assert.equal(540_000 + 60_000, proof.normalDeadlineMs,
+            "the coordinator wait budget and reserved host headroom no longer equal the host normal window");
+    });
+
+    it("retains a bounded validated candidate failure when the controller exits nonzero", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        harness.dependencies.startController = () => ({completion: Promise.resolve({exitCode: 1, signal: null})});
+        harness.dependencies.readResult = async value => ({schemaVersion: 1,
+            kind: "myspeed-windows-native-candidate-result", status: "failed", qualifying: false,
+            releaseGatesCleared: [], alias: value.alias, artifactLogicalName: value.artifactLogicalName,
+            scenario: value.scenario, stopKind: "ctrl-c", candidatePid: 9001,
+            candidateCreationTime: "1".repeat(16), candidateExited: true, exitCode: 1, forced: false,
+            jobActiveProcesses: 0, handleCleanupAttempted: true, handlesClosed: true,
+            processTreeExitProven: true, listenerGone: false, elapsedMs: 100,
+            failures: ["candidate-lifecycle-failed"],
+            failureDetails: [{phase: "lifecycle", failure: "candidate-lifecycle-failed"}]});
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "failed", alias: candidate.alias, scenario: "populated-first-boot"};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+        await runtime.launchSession(opened);
+
+        await assert.rejects(runtime.closeSession({state: opened.state, ownership}),
+            /Candidate controller process failed: candidate-lifecycle-failed/u);
+    });
+
+    it("retains completed self-validation failure as a bounded failed record", async () => {
+        const proof = proofRequest();
+        proof.fixtures[0].manifestSha256 = "0".repeat(64);
+        const harness = makeRuntime();
+
+        const result = await runWindowsNativeStandaloneProof(proof, harness.runtime);
+        assert.equal(result.status, "failed");
+        assert.deepEqual(result.failureDetails.map(value => value.phase), ["self-validation"]);
+        assert.match(result.failureDetails[0].failure, /fixture manifest binding differs/iu);
+        assert.ok(result.failureDetails[0].failure.length <= 512);
     });
 });

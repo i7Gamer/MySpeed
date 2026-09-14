@@ -7,6 +7,7 @@ const SHA = character => character.repeat(64);
 const SOURCE_SHA = "1".repeat(40);
 const EVENT_SHA = "2".repeat(40);
 const NONCE = "3".repeat(32);
+const NUL = String.fromCodePoint(0);
 const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
 const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
     qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
@@ -33,6 +34,9 @@ function fixture(overrides = {}) {
         async openScenario(input) { calls.push(["open", input.scenario]); return {scenario: input.scenario}; },
         async awaitReady(input) { calls.push(["ready", input.session.scenario]); return {candidatePid: 100,
             candidateCreationTime: "7".repeat(16)}; },
+        async awaitOwnedListener(input) { calls.push(["listener", input.scenario]); return {listenerOwned: true,
+            candidatePid: input.ready.candidatePid, candidateCreationTime: input.ready.candidateCreationTime,
+            port: input.port}; },
         async checkPopulated(input) { calls.push(["http", input.scenario]); return {elapsedMs: 10}; },
         async closeScenario(input) { calls.push(["close", input.session.scenario]); return closeProof(input.session.scenario); },
         async checkPopulatedDatabase(input) { calls.push(["database", input.scenario]); return populatedDatabase; },
@@ -55,9 +59,9 @@ describe("Windows baseline guest runner", () => {
             "after-first-shutdown", "after-second-shutdown", "fresh-no-config-reset"]);
         assert.deepEqual(result.summary.openGraphChecks.map(record => record.scenario), SCENARIOS.slice(0, 2));
         assert.deepEqual(result.summary.shutdownProofs.map(record => record.candidateExitCode), [0, 0, 113]);
-        assert.deepEqual(value.calls.map(call => call[0]), ["prepare", "network", "open", "ready", "http",
-            "close", "database", "open", "ready", "http", "close", "database", "open", "ready", "close",
-            "reset-database", "cleanup"]);
+        assert.deepEqual(value.calls.map(call => call[0]), ["prepare", "network", "open", "ready", "listener",
+            "http", "close", "database", "open", "ready", "listener", "http", "close", "database", "open",
+            "ready", "close", "reset-database", "cleanup"]);
     });
 
     it("closes a partially opened scenario and cleans the fixture before failing", async () => {
@@ -70,6 +74,109 @@ describe("Windows baseline guest runner", () => {
         assert.equal(value.calls.filter(call => call[0] === "close").length, 2);
         assert.deepEqual(value.calls.at(-1), ["cleanup", true]);
         assert.equal(result.cleanupProven, true);
+    });
+
+    it("preserves a readiness failure when closing the scenario also fails", async () => {
+        const value = fixture({
+            async awaitReady() { throw new Error("ready failed"); },
+            async closeScenario() { throw new Error("close failed\u0000with control"); }
+        });
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "failed");
+        assert.equal(result.cleanupProven, false);
+        assert.match(result.failure, /ready failed/u);
+        assert.match(result.failure, /close failed with control/u);
+        assert.equal(result.failure.includes(NUL), false);
+    });
+
+    it("bounds both primary and close failures without losing either failure prefix", async () => {
+        const value = fixture({
+            async awaitReady() { throw new Error(`ready failed ${"p".repeat(4_096)}`); },
+            async closeScenario() { throw new Error(`close failed ${"c".repeat(4_096)}`); }
+        });
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "failed");
+        assert.equal(result.cleanupProven, false);
+        assert.match(result.failure, /^ready failed/u);
+        assert.match(result.failure, /closeScenario: close failed/u);
+        assert.equal(result.failure.includes(NUL), false);
+        assert.ok(result.failure.length <= 512);
+    });
+
+    it("carries fixture-cleanup failure text for sole and secondary failures", async () => {
+        for (const overrides of [
+            {async cleanupFixture() { return {cleanupProven: false, failure: "fixture cleanup failed\u0000"}; }},
+            {async awaitReady() { throw new Error("ready failed"); },
+                async cleanupFixture() { return {cleanupProven: false, failure: "fixture cleanup failed\u0000"}; }},
+            {async awaitReady() { throw new Error("ready failed"); },
+                async cleanupFixture() { throw new Error("fixture cleanup threw\u0000"); }}
+        ]) {
+            const value = fixture(overrides);
+            const result = await runWindowsBaselineGuest(request(), value.operations);
+            assert.equal(result.status, "failed");
+            assert.equal(result.cleanupProven, false);
+            assert.match(result.failure, /fixture cleanup (?:failed|threw)/u);
+            if (overrides.awaitReady) assert.match(result.failure, /ready failed/u);
+            assert.equal(result.failure.includes(NUL), false);
+            assert.ok(result.failure.length <= 512);
+        }
+    });
+
+    it("requires owned-listener proof for serving scenarios and bypasses it for reset", async () => {
+        let listenerCalls = 0;
+        const value = fixture({async awaitOwnedListener(input) {
+            listenerCalls++;
+            if (input.scenario === "populated-first-boot") return {listenerOwned: false,
+                candidatePid: input.ready.candidatePid, candidateCreationTime: input.ready.candidateCreationTime,
+                port: input.port};
+            return {listenerOwned: true, candidatePid: input.ready.candidatePid,
+                candidateCreationTime: input.ready.candidateCreationTime, port: input.port};
+        }});
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /owned listener/u);
+        assert.equal(listenerCalls, 1);
+        assert.deepEqual(value.calls.map(call => call[0]), ["prepare", "network", "open", "ready", "close", "cleanup"]);
+    });
+
+    it("does not invoke owned-listener proof for the reset scenario", async () => {
+        let listenerCalls = 0;
+        const value = fixture({async awaitOwnedListener(input) {
+            listenerCalls++;
+            assert.notEqual(input.scenario, "fresh-no-config-reset");
+            return {listenerOwned: true, candidatePid: input.ready.candidatePid,
+                candidateCreationTime: input.ready.candidateCreationTime, port: input.port};
+        }});
+        const result = await runWindowsBaselineGuest(request(), value.operations);
+        assert.equal(result.status, "observed", result.failure);
+        assert.equal(listenerCalls, 2);
+    });
+
+    it("rejects owned-listener receipts with changed identity, port, or schema", async () => {
+        for (const mutate of [
+            receipt => { receipt.candidatePid++; },
+            receipt => { receipt.candidateCreationTime = "8".repeat(16); },
+            receipt => { receipt.port++; },
+            receipt => { receipt.extra = true; }
+        ]) {
+            const value = fixture({async awaitOwnedListener(input) {
+                const receipt = {listenerOwned: true, candidatePid: input.ready.candidatePid,
+                    candidateCreationTime: input.ready.candidateCreationTime, port: input.port};
+                mutate(receipt);
+                return receipt;
+            }});
+            const result = await runWindowsBaselineGuest(request(), value.operations);
+            assert.equal(result.status, "failed");
+            assert.match(result.failure, /owned listener/u);
+            assert.equal(value.calls.some(call => call[0] === "http"), false);
+        }
+        for (const invalid of [null, undefined]) {
+            const value = fixture({async awaitOwnedListener() { return invalid; }});
+            const result = await runWindowsBaselineGuest(request(), value.operations);
+            assert.equal(result.status, "failed");
+            assert.match(result.failure, /owned listener/u);
+            assert.equal(value.calls.some(call => call[0] === "http"), false);
+        }
     });
 
     it("never reports cleanup when close or fixture cleanup is incomplete", async () => {
@@ -115,4 +222,3 @@ describe("Windows baseline guest runner", () => {
         }
     });
 });
-

@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import {describe, it} from "node:test";
 
-import {executeWindowsBaselineGuest} from "../../scripts/qualification/windows-baseline-guest-executor.mjs";
+import {executeWindowsBaselineGuest, validateWindowsBaselineGuestGuardProcessResult} from
+    "../../scripts/qualification/windows-baseline-guest-executor.mjs";
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const SOURCE_SHA = "1".repeat(40);
@@ -86,6 +87,41 @@ function candidateResult(scenario) {
 }
 
 describe("Windows baseline guest executable entry", () => {
+    it("retains bounded sanitized guard diagnostics without accepting failed processes", () => {
+        const valid = {status: 0, signal: null, stdout: JSON.stringify({accepted: true, profile: "baseline-cpu"}),
+            stderr: ""};
+        assert.doesNotThrow(() => validateWindowsBaselineGuestGuardProcessResult(valid));
+        for (const result of [{...valid, status: 1, stderr: "guard failed\nwith detail"},
+            {...valid, error: new Error("spawn failed\u0000with detail")},
+            {...valid, stderr: "warning".repeat(1000)}, {...valid, signal: "SIGTERM"}]) {
+            assert.throws(() => validateWindowsBaselineGuestGuardProcessResult(result), error => {
+                assert.match(error.message, /^baseline guest guard process failed/u);
+                assert.ok(error.message.length <= 512);
+                assert.equal(error.message.includes(String.fromCodePoint(0)), false);
+                assert.equal(error.message.includes("\n"), false);
+                if (result.error) assert.match(error.message, /spawn failed with detail/u);
+                if (result.status === 1) assert.match(error.message, /guard failed with detail/u);
+                return true;
+            });
+        }
+        for (const stdout of ["not JSON", JSON.stringify({accepted: false, profile: "baseline-cpu"}),
+            JSON.stringify({accepted: true, profile: "baseline-cpu", extra: true})])
+            assert.throws(() => validateWindowsBaselineGuestGuardProcessResult({...valid, stdout}));
+    });
+
+    it("rejects dependency typos before any native guard, reads, or writes", async () => {
+        let calls = 0;
+        const forbidden = () => { calls++; throw new Error("unexpected operation"); };
+        for (const invalid of [{assertGuesst: forbidden}, {runGuest: null}, {runtimeConfiguration: {typo: true}},
+            {runtimeConfiguration: null}, {runtimeConfiguration: {powershellPath: null}},
+            {runtimeConfiguration: {dependencies: null}}]) {
+            const output = await executeWindowsBaselineGuest({}, {assertGuest: forbidden, readJson: forbidden,
+                writeResult: forbidden, ...invalid});
+            assert.equal(output.exitCode, 1);
+            assert.match(output.result.failure, /dependencies|configuration/u);
+        }
+        assert.equal(calls, 0);
+    });
     it("passes actual runtime factory output through the actual operations and runner consumers", async () => {
         const value = actualFactoryFixture();
         const expected = {ping: "123.456", resultId: "qualification-seed-row", passwordValueSha256: SHA("9")};
@@ -108,6 +144,8 @@ describe("Windows baseline guest executable entry", () => {
                         checkPopulated: async () => ({elapsedMs: 10}),
                         checkPopulatedDatabase: () => expected,
                         checkResetDatabase: () => ({integrity: "ok", configTable: false}),
+                        observeOwnedListener: input => ({listenerOwned: true, candidatePid: input.candidatePid,
+                            candidateCreationTime: input.candidateCreationTime, port: input.port}),
                         observeListener: () => ({listenerGone: true}),
                         cleanup: () => ({cleanupProven: true})
                     }}
