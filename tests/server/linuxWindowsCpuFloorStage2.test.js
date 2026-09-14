@@ -200,6 +200,33 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         }
     });
 
+    it("accepts signed Ubuntu tilde-version package paths without permitting unsafe paths", () => {
+        // https://packages.ubuntu.com/noble-updates/amd64/libgcc-s1/download
+        const dependency = {name: "libgcc-s1", version: "14.2.0-4ubuntu2~24.04.1", architecture: "amd64",
+            filename: "pool/main/g/gcc-14/libgcc-s1_14.2.0-4ubuntu2~24.04.1_amd64.deb", bytes: "78392",
+            sha256: "aa7fadbe33b78bcf99885318040601c550c208929565b179891d9a3cc2aa68cd", dependsOn: []};
+        const candidate = packageClosure();
+        const fixtureIndex = candidate.packages.findIndex(record => record.name === "libfixture");
+        const previous = candidate.packages[fixtureIndex];
+        const oldReference = `${previous.name}:${previous.architecture}=${previous.version}`;
+        const newReference = `${dependency.name}:${dependency.architecture}=${dependency.version}`;
+        candidate.packages[fixtureIndex] = dependency;
+        for (const record of candidate.packages)
+            record.dependsOn = record.dependsOn.map(reference => reference === oldReference ? newReference : reference);
+        const accepted = validatePackageClosure(candidate);
+        assert.deepEqual(accepted.packages.find(record => record.name === dependency.name), dependency);
+        for (const filename of [
+            "../outside.deb", "pool/../outside.deb", "/pool/outside.deb", "pool//file.deb",
+            "pool/./file.deb", "pool/%2e%2e/file.deb", "pool/file%2fother.deb", "pool\\file.deb",
+            "https://example.invalid/file.deb", `${dependency.filename}?query=1`, `${dependency.filename}#fragment`,
+            `${dependency.filename}\n`, `${dependency.filename}\r\n`, "pool/space name.deb", "pool/file\0.deb"
+        ]) {
+            const invalid = structuredClone(candidate);
+            invalid.packages[fixtureIndex].filename = filename;
+            assert.throws(() => validatePackageClosure(invalid), /package filename is invalid/u, filename);
+        }
+    });
+
     it("selects the exact unique supported Server Core edition from observed WIM metadata", () => {
         assert.deepEqual(selectWindowsImage(imageInventory()), imageInventory()[0]);
         assert.throws(() => selectWindowsImage([...imageInventory(), imageInventory()[0]]), /duplicated|unique/u);
