@@ -23,7 +23,13 @@ const MODULE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const HASH = "a".repeat(64);
 const SOURCE_SHA = "b".repeat(40);
 const EVENT_SHA = "c".repeat(40);
-const NONCE = "0123456789abcdef0123456789abcdef";
+const EXPECTED_RUN_ID = "12345";
+const EXPECTED_RUN_ATTEMPT = "2";
+const NONCE = crypto.createHash("sha256").update(`${EXPECTED_RUN_ID}\0${EXPECTED_RUN_ATTEMPT}\0${EVENT_SHA}`)
+    .digest("hex").slice(0, 32);
+const CANDIDATE_CONTROLLER = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+    "../../scripts/qualification/windows-native-candidate-controller.ps1");
+const TEST_TIMEOUT_MS = 30_000;
 const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const PRESEAL_ARCHIVE_DIGEST = `sha256:${"9".repeat(64)}`;
 const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: true, withFileTypes: true})
@@ -70,7 +76,7 @@ const executionInput = () => {
     const closure = `${taskRoot}\\closure`;
     const scenarios = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
     return {schemaVersion: 1, kind: "myspeed-windows-native-standalone-execution-input", qualifying: false,
-        expectedRunId: "12345", expectedRunAttempt: "2", expectedEventSha: EVENT_SHA,
+        expectedRunId: EXPECTED_RUN_ID, expectedRunAttempt: EXPECTED_RUN_ATTEMPT, expectedEventSha: EVENT_SHA,
         expectedSourceSha: SOURCE_SHA, expectedImageVersion: "20260914.1", nonce: NONCE,
         qualification: {sourceSha: SOURCE_SHA, runId: "98765", runAttempt: "3", manifestSha256: HASH,
             artifactId: "8001", artifactDigest: `sha256:${"f".repeat(64)}`}, taskRoot,
@@ -136,6 +142,23 @@ const acquiredExecutionInput = () => {
 };
 
 describe("Windows native standalone hosted request factory", () => {
+    it("emits candidate requests accepted by the exact trusted runner scope", {skip: process.platform !== "win32"}, () => {
+        const plan = buildWindowsNativeStandaloneExecutionPlan(executionInput());
+        const values = plan.controllerRequests.map(record => record.value);
+        const encoded = Buffer.from(JSON.stringify({values}), "utf8").toString("base64");
+        const command = `. '${CANDIDATE_CONTROLLER.replaceAll("'", "''")}' -Mode Library;`
+            + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'));`
+            + "$values=@((ConvertFrom-Json $json).values);foreach($value in $values){"
+            + "[void](Assert-MyspeedCandidateRequest $value 'C:\\runner')};[Console]::Out.Write($values.Count)";
+        const powershell = `${process.env.SystemRoot || "C:\\Windows"}`
+            + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        const result = childProcess.spawnSync(powershell,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, "6");
+    });
+
     it("binds an acquired same-run preseal and both exact candidate artifacts before building requests", async () => {
         const acquired = acquiredExecutionInput();
         const plan = await buildWindowsNativeStandaloneAcquiredExecutionPlan(acquired.input, {

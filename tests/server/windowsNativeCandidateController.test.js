@@ -1,6 +1,7 @@
 import {describe, it} from "node:test";
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
@@ -123,6 +124,81 @@ const invoke = (mode, value = null) => {
     assert.equal(result.error, undefined, result.error?.message);
     if (result.status !== 0) throw new Error(result.stderr || result.stdout);
     return JSON.parse(result.stdout);
+};
+
+const invokeTrustedRequest = (value, runnerTemp = "C:\\a\\_temp") => {
+    const encoded = Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+    const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library;`
+        + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'));`
+        + `$value=ConvertFrom-MyspeedCandidateJson $json 'Candidate fixture';`
+        + `[void](Assert-MyspeedCandidateRequest $value '${runnerTemp.replaceAll("'", "''")}');`
+        + "$value|ConvertTo-Json -Depth 30 -Compress";
+    const result = childProcess.spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+        {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+    assert.equal(result.error, undefined, result.error?.message);
+    if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+};
+
+const validateTrustedRequests = (values, runnerTemp = "C:\\a\\_temp") => {
+    const encoded = Buffer.from(JSON.stringify({values}), "utf8").toString("base64");
+    const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library;`
+        + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'));`
+        + "$values=@((ConvertFrom-MyspeedCandidateJson $json 'Candidate fixtures').values);$results=@();"
+        + "foreach($value in $values){try{[void](Assert-MyspeedCandidateRequest $value "
+        + `'${runnerTemp.replaceAll("'", "''")}');$results+=$true}catch{$results+=$false}};`
+        + "[pscustomobject]@{results=[object[]]$results}|ConvertTo-Json -Compress";
+    const result = childProcess.spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+        {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout).results;
+};
+
+const invokeTrustedLifecycle = (value, runnerTemp = "C:\\a\\_temp") => {
+    const encoded = Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+    const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library;`
+        + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'));`
+        + `$value=ConvertFrom-MyspeedCandidateJson $json 'Candidate lifecycle fixture';`
+        + `Invoke-MyspeedCandidateInjectedLifecycle $value '${runnerTemp.replaceAll("'", "''")}'|`
+        + "ConvertTo-Json -Depth 30 -Compress";
+    const result = childProcess.spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+        {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+    assert.equal(result.error, undefined, result.error?.message);
+    if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    return JSON.parse(result.stdout);
+};
+
+const derivedNonce = (...parts) => crypto.createHash("sha256").update(parts.join("\0"), "utf8")
+    .digest("hex").slice(0, 32);
+
+const standaloneRequest = (alias, scenario) => {
+    const value = request(scenario);
+    value.alias = alias;
+    value.artifactLogicalName = alias === "default" ? "MySpeed-windows-x64.exe" : "MySpeed-windows-x64-baseline.exe";
+    const executionNonce = derivedNonce(value.expectedRunId, value.expectedRunAttempt, value.expectedEventSha);
+    value.nonce = derivedNonce(executionNonce, alias, scenario);
+    value.taskRoot = `C:\\a\\_temp\\myspeed-native-candidate-${value.nonce}`;
+    const suffix = scenario === "fresh-no-config-reset" ? "reset" : "populated";
+    value.workingDirectory = `C:\\a\\_temp\\myspeed-native-standalone-${executionNonce}\\fixture-${alias}-${suffix}`;
+    for (const [name, leaf] of [["candidatePath", "MySpeed.exe"], ["stdoutPath", "candidate.stdout.log"],
+        ["stderrPath", "candidate.stderr.log"], ["readyPath", "candidate.ready.json"],
+        ["stopRequestPath", "candidate.stop.json"], ["resultPath", "candidate.result.json"],
+        ["controllerPath", "windows-clean-stop-controller.ps1"]]) value[name] = `${value.taskRoot}\\${leaf}`;
+    return value;
+};
+
+const standaloneLifecycle = (alias, scenario) => {
+    const value = lifecycle(scenario);
+    value.request = standaloneRequest(alias, scenario);
+    if (value.stop) {
+        value.stop.nonce = value.request.nonce;
+        value.stop.alias = alias;
+    }
+    value.launch.candidateImagePath = value.request.candidatePath;
+    return value;
 };
 
 describe("Windows native candidate controller", () => {
@@ -284,6 +360,47 @@ describe("Windows native candidate controller", () => {
         assert.equal(invoke("ValidateRequest", highPort).environment.SERVER_PORT, "65499");
         highPort.environment.SERVER_PORT = "65536";
         assert.throws(() => invoke("ValidateRequest", highPort));
+    });
+
+    powershellIt("authorizes only the context-derived shared standalone fixture", () => {
+        const accepted = ["default", "baseline"].flatMap(alias =>
+            ["populated-first-boot", "populated-restart", "fresh-no-config-reset"]
+                .map(scenario => standaloneRequest(alias, scenario)));
+        assert.throws(() => invoke("ValidateRequest", accepted[0]), /outside task root/u,
+            "the public validation mode must not grant hosted sibling authority");
+        assert.deepEqual(validateTrustedRequests(accepted), accepted.map(() => true));
+        assert.equal(accepted[0].workingDirectory, accepted[1].workingDirectory,
+            "first boot and restart must share one populated database");
+        assert.equal(accepted[3].workingDirectory, accepted[4].workingDirectory,
+            "each alias must share its own populated database");
+        assert.equal(invokeTrustedLifecycle(standaloneLifecycle("default", "populated-first-boot")).status,
+            "completed", "the lifecycle's second validation pass must retain trusted runner authority");
+
+        const rejected = [
+            value => { value.workingDirectory += "-escape"; },
+            value => { value.workingDirectory = value.workingDirectory.replace("fixture-default", "fixture-baseline"); },
+            value => { value.workingDirectory = value.workingDirectory.replace("-populated", "-reset"); },
+            value => { value.workingDirectory = value.workingDirectory.replace("myspeed-native-standalone-", "other-"); },
+            value => { value.workingDirectory += "\\..\\fixture-default-populated"; },
+            value => { value.expectedRunId = "54321"; },
+            value => { value.expectedRunAttempt = "3"; },
+            value => { value.expectedEventSha = "e".repeat(40); },
+            value => { value.nonce = "f".repeat(32); },
+            value => {
+                const original = value.taskRoot;
+                value.taskRoot = value.taskRoot.replace("myspeed-native-candidate-", "other-");
+                for (const name of ["candidatePath", "stdoutPath", "stderrPath", "readyPath", "stopRequestPath",
+                    "resultPath", "controllerPath"]) value[name] = value[name].replace(original, value.taskRoot);
+            }
+        ];
+        const rejectedValues = rejected.map(mutate => {
+            const value = standaloneRequest("default", "populated-first-boot");
+            mutate(value);
+            return value;
+        });
+        assert.deepEqual(validateTrustedRequests(rejectedValues), rejectedValues.map(() => false));
+        assert.throws(() => invokeTrustedRequest(standaloneRequest("default", "populated-first-boot"),
+            "C:\\a\\other"), /nonce differs/u, "stale runner authority must not grant a sibling path");
     });
 
     powershellIt("uses one lifecycle for Ctrl+C and natural reset exit", () => {

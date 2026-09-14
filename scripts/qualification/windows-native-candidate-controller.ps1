@@ -37,6 +37,7 @@ $script:ResetExit=113
 $script:MaximumPort=65535
 $script:Win32CodeMask=65535
 $script:SharingViolationCode=32
+$script:NonceCharacters=32
 $script:AllowedAliases=@('default','baseline')
 $script:AllowedScenarios=@('populated-first-boot','populated-restart','fresh-no-config-reset')
 $script:AllowedEnvironment=@('PATH','SystemRoot','WINDIR','ComSpec','PATHEXT','TEMP','TMP','TMPDIR','TZ','LANG','LC_ALL',
@@ -101,6 +102,34 @@ function Assert-MyspeedCandidateDescendant {
     throw "$Label is outside task root"
 }
 
+function Get-MyspeedCandidateDerivedNonce {
+    param([string[]]$Parts)
+    $text=[string]::Join([char]0,$Parts)
+    $algorithm=[Security.Cryptography.SHA256]::Create()
+    try{$digest=$algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes($text))}finally{$algorithm.Dispose()}
+    return [BitConverter]::ToString($digest).Replace('-','').ToLowerInvariant().Substring(0,$script:NonceCharacters)
+}
+
+function Assert-MyspeedCandidateWorkingDirectory {
+    param([object]$Request,[string]$Root,[string]$Alias,[string]$Scenario,[string]$HostedRunnerTemp='')
+    $working=Assert-MyspeedCandidatePath $Request.workingDirectory 'Candidate workingDirectory'
+    $prefix=$Root.TrimEnd('\')+'\'
+    if($working -ieq $Root -or $working.StartsWith($prefix,[StringComparison]::OrdinalIgnoreCase)){return $working}
+    if(-not $HostedRunnerTemp){throw 'Candidate workingDirectory is outside task root'}
+    $runnerTemp=Assert-MyspeedCandidatePath $HostedRunnerTemp 'Candidate hosted runner temporary root'
+    $executionNonce=Get-MyspeedCandidateDerivedNonce -Parts @($Request.expectedRunId,$Request.expectedRunAttempt,
+        $Request.expectedEventSha)
+    $scenarioNonce=Get-MyspeedCandidateDerivedNonce -Parts @($executionNonce,$Alias,$Scenario)
+    $expectedRoot=[IO.Path]::GetFullPath((Join-Path $runnerTemp "myspeed-native-candidate-$scenarioNonce"))
+    if($Request.nonce -cne $scenarioNonce -or $Root -ine $expectedRoot){
+        throw 'Candidate shared fixture nonce differs'}
+    $suffix=if($Scenario -ceq 'fresh-no-config-reset'){'reset'}else{'populated'}
+    $standaloneRoot=[IO.Path]::GetFullPath((Join-Path $runnerTemp "myspeed-native-standalone-$executionNonce"))
+    $expected=[IO.Path]::GetFullPath((Join-Path $standaloneRoot "fixture-$Alias-$suffix"))
+    if($working -ine $expected){throw 'Candidate workingDirectory is outside its authorized fixture'}
+    return $working
+}
+
 function Assert-MyspeedCandidateFileIdentity {
     param([object]$Observation,[string]$Path,[string]$ExpectedSha256,[int64]$MaximumBytes)
     $canonical=Assert-MyspeedCandidatePath $Path 'Candidate identity path'
@@ -144,7 +173,7 @@ function ConvertFrom-MyspeedCandidateJson {
 }
 
 function Assert-MyspeedCandidateRequest {
-    param([object]$Request)
+    param([object]$Request,[string]$HostedRunnerTemp='')
     $keys=@('schemaVersion','kind','expectedRunId','expectedRunAttempt','expectedEventSha','expectedSourceSha',
         'expectedImageVersion','nonce','manifestSha256','alias','artifactLogicalName','scenario','taskRoot','candidatePath',
         'candidateSha256','candidateVolumeSerial','candidateFileId','workingDirectory','arguments','environment','stdoutPath',
@@ -168,8 +197,9 @@ function Assert-MyspeedCandidateRequest {
     if($logical -cne $expectedLogical){throw 'Candidate artifact logical identity differs'}
     $scenario=Assert-MyspeedCandidateString $Request.scenario 'Candidate scenario';if($script:AllowedScenarios -cnotcontains $scenario){throw 'Candidate scenario differs'}
     $root=Assert-MyspeedCandidatePath $Request.taskRoot 'Candidate task root'
-    $paths=@('candidatePath','workingDirectory','stdoutPath','stderrPath','readyPath','stopRequestPath','resultPath','controllerPath')
-    foreach($name in $paths){$path=Assert-MyspeedCandidatePath $Request.$name "Candidate $name";Assert-MyspeedCandidateDescendant $root $path "Candidate $name" -AllowRoot:($name -ceq 'workingDirectory')}
+    $paths=@('candidatePath','stdoutPath','stderrPath','readyPath','stopRequestPath','resultPath','controllerPath')
+    foreach($name in $paths){$path=Assert-MyspeedCandidatePath $Request.$name "Candidate $name";Assert-MyspeedCandidateDescendant $root $path "Candidate $name"}
+    [void](Assert-MyspeedCandidateWorkingDirectory $Request $root $alias $scenario $HostedRunnerTemp)
     $unique=@('candidatePath','stdoutPath','stderrPath','readyPath','stopRequestPath','resultPath','controllerPath')
     for($left=0;$left -lt $unique.Count;$left++){for($right=$left+1;$right -lt $unique.Count;$right++){
         if($Request.($unique[$left]) -ieq $Request.($unique[$right])){throw 'Candidate owned paths collide'}}}
@@ -245,8 +275,8 @@ function Assert-MyspeedCandidateNativeResult {
 }
 
 function Invoke-MyspeedCandidateLifecycleCore {
-    param([object]$Request,[object]$Operations)
-    [void](Assert-MyspeedCandidateRequest $Request)
+    param([object]$Request,[object]$Operations,[string]$HostedRunnerTemp='')
+    [void](Assert-MyspeedCandidateRequest $Request $HostedRunnerTemp)
     $required=@('elapsed','assertConsoleFree','launch','writeReady','stopExists','readStop','sleep','stop','lastResult','active','force','close')
     Assert-MyspeedCandidateKeys $Operations $required 'Candidate lifecycle operations'
     $failures=[Collections.Generic.List[string]]::new();$failureDetails=[Collections.Generic.List[object]]::new();$session=$null;$native=$null;$nativeEvidence=$null;$handlesClosed=$false;$handleCleanupAttempted=$false;$active=$null;$ready=$null
@@ -328,7 +358,7 @@ function Invoke-MyspeedCandidateLifecycleCore {
 }
 
 function Invoke-MyspeedCandidateInjectedLifecycle {
-    param([object]$Value)
+    param([object]$Value,[string]$HostedRunnerTemp='')
     Assert-MyspeedCandidateKeys $Value @('request','clock','stopAvailable','stopReadNulls','launch','stop','nativeResult','activeProcesses','handlesClosed') 'Injected candidate lifecycle'
     if($Value.clock -isnot [object[]] -or $Value.clock.Count -lt 2 -or $Value.clock.Count -gt 64){throw 'Injected candidate clock differs'}
     $clock=@($Value.clock);$previous=-1L
@@ -351,7 +381,7 @@ function Invoke-MyspeedCandidateInjectedLifecycle {
         active={param($session)return [int64]$value.activeProcesses}.GetNewClosure()
         force={param($session,$timeout)$state.native=$value.nativeResult}.GetNewClosure()
         close={param($session)return [bool]$value.handlesClosed}.GetNewClosure()}
-    return Invoke-MyspeedCandidateLifecycleCore $Value.request $operations
+    return Invoke-MyspeedCandidateLifecycleCore $Value.request $operations $HostedRunnerTemp
 }
 
 function Assert-MyspeedCandidateHostedContext {
@@ -449,7 +479,7 @@ function Invoke-MyspeedHostedCandidate {
     $canonicalRequestPath=Assert-MyspeedCandidatePath $Path 'Candidate request path'
     Assert-MyspeedCandidateDescendant $expectedTaskRoot $canonicalRequestPath 'Candidate request path'
     $loaded=Read-MyspeedCandidateJson $canonicalRequestPath $Sha
-    $request=Assert-MyspeedCandidateRequest $loaded.value
+    $request=Assert-MyspeedCandidateRequest $loaded.value $runnerTemp
     if($request.taskRoot -cne $expectedTaskRoot){throw 'Candidate task root differs from hosted ownership root'}
     foreach($binding in @{expectedRunId=$RunId;expectedRunAttempt=$RunAttempt;expectedEventSha=$EventSha;expectedSourceSha=$SourceSha
         expectedImageVersion=$ImageVersion;nonce=$ExpectedNonce}.GetEnumerator()){if($request.($binding.Key) -cne $binding.Value){throw 'Hosted candidate identity differs'}}
@@ -478,7 +508,7 @@ function Invoke-MyspeedHostedCandidate {
     }finally{Remove-Module $controllerModule -Force}
     Add-Type -TypeDefinition $nativeSource -Language CSharp
     $operations=New-MyspeedCandidateNativeOperations $request $watch
-    $result=Invoke-MyspeedCandidateLifecycleCore $request $operations
+    $result=Invoke-MyspeedCandidateLifecycleCore $request $operations $runnerTemp
     Write-MyspeedCandidateJson $request.resultPath $result
     if($result.status -cne 'completed'){throw 'Hosted candidate lifecycle did not pass'}
     return $result
