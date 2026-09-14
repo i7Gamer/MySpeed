@@ -27,6 +27,8 @@ $script:MaximumJsonBytes=262144
 $script:MaximumEntryFailurePrefixBytes=512
 $script:MaximumInitialConsoleProcesses=64
 $script:ConsoleInvalidHandleError=6
+$script:SharingViolationWin32Code=32
+$script:MaximumExceptionInnerDepth=8
 $script:Repository='i7Gamer/MySpeed'
 $script:ImageOS='win25-vs2026'
 $script:LaunchKind='myspeed-windows-clean-stop-launch'
@@ -768,7 +770,7 @@ function Invoke-MyspeedCleanLifecycleCore {
             $now=& $Operations.elapsed;$sleep=Get-MyspeedCleanStopPollMilliseconds $now $stopDeadline
             if(& $Operations.stdoutReadinessExists){break};& $Operations.sleep $sleep
         }
-        & $Operations.record 'validateStdoutReadiness';$stdoutReadinessLoaded=& $Operations.readStdoutReadiness
+        & $Operations.record 'validateStdoutReadiness';$stdoutReadinessLoaded=& $Operations.readStdoutReadiness $stopDeadline
         [void](Assert-MyspeedCleanStdoutReadiness $Request $RequestSha $AbiSha $readySha $stdoutReadinessLoaded.value)
         & $Operations.record 'awaitStopRequest'
         while($true){
@@ -777,7 +779,7 @@ function Invoke-MyspeedCleanLifecycleCore {
             if(& $Operations.stopExists){break}
             & $Operations.sleep $sleep
         }
-        & $Operations.record 'validateStopRequest';$stopLoaded=& $Operations.readStop
+        & $Operations.record 'validateStopRequest';$stopLoaded=& $Operations.readStop $stopDeadline
         [void](Assert-MyspeedCleanStopRequest $Request $RequestSha $AbiSha $readySha $stopLoaded.value)
         if($stopLoaded.value.stdoutReadinessSha256 -cne $stdoutReadinessLoaded.sha256){throw 'Stop request stdout readiness binding differs'}
         if((& $Operations.elapsed) -ge $stopDeadline){throw 'Stop request deadline expired during validation'}
@@ -905,6 +907,36 @@ function Read-MyspeedCleanBoundedJson {
     return [pscustomobject]@{value=ConvertFrom-MyspeedCleanJson ($utf8.GetString($bytes)) 'Bounded';sha256=$hash}
 }
 
+function Test-MyspeedCleanSharingViolation {
+    param([object]$Exception)
+    $current=$Exception
+    for($depth=0;$depth -lt $script:MaximumExceptionInnerDepth -and $null -ne $current;$depth++){
+        if($current -is [IO.IOException] -and (($current.HResult -band 0xffff) -eq $script:SharingViolationWin32Code)){
+            return $true
+        }
+        $current=$current.InnerException
+    }
+    return $false
+}
+
+function Read-MyspeedCleanBoundedJsonUntilStable {
+    param([string]$Path,[string]$ExpectedSha,[int64]$DeadlineMs,[object]$Operations)
+    [void](Assert-MyspeedCleanInteger $DeadlineMs 'JSON publication deadline' 0 $script:CONTROLLER_HARD_DEADLINE_MS)
+    Assert-MyspeedCleanExactKeys $Operations @('elapsed','sleep') 'JSON publication operations'
+    while($true){
+        try{$loaded=Read-MyspeedCleanBoundedJson $Path $ExpectedSha}catch{
+            if(-not (Test-MyspeedCleanSharingViolation $_.Exception)){throw}
+            $now=Assert-MyspeedCleanInteger (& $Operations.elapsed) 'JSON publication elapsed time' 0 $script:CONTROLLER_HARD_DEADLINE_MS
+            if($now -ge $DeadlineMs){throw 'JSON publication remained exclusively locked through its deadline'}
+            & $Operations.sleep ([int][Math]::Min($script:STOP_REQUEST_POLL_MS,$DeadlineMs-$now))
+            continue
+        }
+        $completed=Assert-MyspeedCleanInteger (& $Operations.elapsed) 'JSON publication completion time' 0 $script:CONTROLLER_HARD_DEADLINE_MS
+        if($completed -ge $DeadlineMs){throw 'JSON publication completed at or after its deadline'}
+        return $loaded
+    }
+}
+
 function Write-MyspeedCleanCreateNewJson {
     param([string]$Path,[object]$Value)
     $bytes=[Text.UTF8Encoding]::new($false).GetBytes(($Value|ConvertTo-Json -Depth 20 -Compress))
@@ -962,7 +994,10 @@ function Invoke-MyspeedHostedCleanStopController {
     $abi=New-MyspeedCleanAbiObservation ([pscustomobject]$observedAbi)
     $abiSha=Write-MyspeedCleanCreateNewJson $request.abiPath $abi
     if(-not $abi.matched){throw 'Native ABI differs from the reviewed x64 contract'}
-    $physical=${function:Assert-MyspeedCleanPhysicalPath};$readJson=${function:Read-MyspeedCleanBoundedJson};$writeJson=${function:Write-MyspeedCleanCreateNewJson}
+    $physical=${function:Assert-MyspeedCleanPhysicalPath};$readStable=${function:Read-MyspeedCleanBoundedJsonUntilStable};$writeJson=${function:Write-MyspeedCleanCreateNewJson}
+    $stableReadOperations=[pscustomobject]@{
+        elapsed={return [int64]$watch.ElapsedMilliseconds}.GetNewClosure()
+        sleep={param($milliseconds)Start-Sleep -Milliseconds $milliseconds}}
     $events=[Collections.Generic.List[string]]::new()
     $operations=[pscustomobject]@{
         record={param($phase)[void]$events.Add($phase)}.GetNewClosure()
@@ -975,10 +1010,10 @@ function Invoke-MyspeedHostedCleanStopController {
         launchForced={return [MySpeed.Qualification.CleanStop.Session]::LastLaunchForced}
         writeReady={param($ready)return & $writeJson $request.readyPath $ready}.GetNewClosure()
         stdoutReadinessExists={return Test-Path -LiteralPath $request.stdoutReadinessPath -PathType Leaf}.GetNewClosure()
-        readStdoutReadiness={& $physical $request.stdoutReadinessPath 'Stdout readiness path' 'File';return & $readJson $request.stdoutReadinessPath ''}.GetNewClosure()
+        readStdoutReadiness={param($deadline)& $physical $request.stdoutReadinessPath 'Stdout readiness path' 'File';return & $readStable $request.stdoutReadinessPath '' $deadline $stableReadOperations}.GetNewClosure()
         stopExists={return Test-Path -LiteralPath $request.stopRequestPath -PathType Leaf}.GetNewClosure()
         sleep={param($milliseconds)Start-Sleep -Milliseconds $milliseconds}
-        readStop={& $physical $request.stopRequestPath 'Stop request path' 'File';return & $readJson $request.stopRequestPath ''}.GetNewClosure()
+        readStop={param($deadline)& $physical $request.stopRequestPath 'Stop request path' 'File';return & $readStable $request.stopRequestPath '' $deadline $stableReadOperations}.GetNewClosure()
         stop={param($candidateSession,$grace,$cleanup)return $candidateSession.Stop([uint32]$PID,[uint32]$grace,[uint32]$cleanup)}
         lastResult={param($candidateSession)return $candidateSession.LastResult}
         cleanupAttempted={param($candidateSession)return $candidateSession.StopCleanupAttempted}

@@ -1,6 +1,7 @@
 import {describe, it} from "node:test";
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
@@ -11,6 +12,7 @@ const POWERSHELL = (process.env.SystemRoot || "C:\\Windows")
     + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const TEST_TIMEOUT_MS = 15_000;
 const TEST_CASE_TIMEOUT_MS = 30_000;
+const EXCLUSIVE_PUBLICATION_DEADLINE_MS = 2_000;
 const RUN_ID = "12345";
 const RUN_ATTEMPT = "2";
 const EVENT_SHA = "a".repeat(40);
@@ -33,6 +35,7 @@ const LIFECYCLE_PHASES = [
 const powershellAvailable = process.platform === "win32" && fs.existsSync(POWERSHELL);
 const powershellIt = (name, body) => (powershellAvailable ? it : it.skip)(name,
     {timeout: TEST_CASE_TIMEOUT_MS}, body);
+const cryptoSha256 = value => crypto.createHash("sha256").update(value).digest("hex");
 
 const invoke = (mode, value = null) => {
     const args = ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", SCRIPT, "-Mode", mode];
@@ -611,6 +614,10 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$request \$loaded\.sha256 \$abiSha \$operations/u);
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$launchRequest \('d'\*64\) \('8'\*64\) \$operations/u);
         assert.match(source, /Assert-MyspeedCleanPhysicalLaunchPaths \$request[\s\S]*?entryDiagnosticPath[\s\S]*?try\{[\s\S]*?Add-Type[\s\S]*?Write-MyspeedCleanEntryFailure/u);
+        assert.match(source, /SharingViolationWin32Code\s*=\s*32/u);
+        assert.match(source, /Read-MyspeedCleanBoundedJsonUntilStable[\s\S]*Test-MyspeedCleanSharingViolation/u);
+        assert.match(source, /readStdoutReadiness=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
+        assert.match(source, /readStop=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
     });
 
     powershellIt("binds the exact launch environment to generic IDictionary", () => {
@@ -643,6 +650,60 @@ describe("Windows clean-stop controller prototype", () => {
             assert.deepEqual(JSON.parse(fs.readFileSync(diagnosticPath, "utf8")), result);
             assert.throws(() => invoke("TestEntryFailure", {path: diagnosticPath, message}));
         } finally { fs.rmSync(directory, {recursive: true, force: true}); }
+    });
+
+    powershellIt("waits only for an in-progress exclusive JSON publication", () => {
+        const command = [
+            ". $env:MYSPEED_SCRIPT -Mode Library;",
+            "function New-ReadFixture { param($reader,$path,$sha,$deadline,$stream,$elapsed,$release);",
+            "$state=[pscustomobject]@{elapsed=[int64]$elapsed;sleepCalls=0;stream=$stream;release=[bool]$release};",
+            "$operations=[pscustomobject]@{elapsed={return $state.elapsed}.GetNewClosure();",
+            "sleep={param($milliseconds)$state.sleepCalls++;if($state.release -and $null -ne $state.stream){$state.stream.Dispose();$state.stream=$null};$state.elapsed+=$milliseconds}.GetNewClosure()};",
+            "$callback={return & $reader $path $sha $deadline $operations}.GetNewClosure();",
+            "return [pscustomobject]@{callback=$callback;state=$state}};",
+            "$directory=[IO.Directory]::CreateDirectory($env:MYSPEED_JSON_DIRECTORY).FullName;",
+            "$json='{" + '"schemaVersion":1,"status":"ready"' + "}';$bytes=[Text.UTF8Encoding]::new($false).GetBytes($json);",
+            "$sha=[BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($bytes)).Replace('-','').ToLowerInvariant();",
+            "$reader=${function:Read-MyspeedCleanBoundedJsonUntilStable};",
+            "$positivePath=[IO.Path]::Combine($directory,'positive.json');",
+            "$positiveStream=[IO.File]::Open($positivePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);",
+            "$positiveStream.Write($bytes,0,$bytes.Length);$positiveStream.Flush($true);",
+            "$positive=New-ReadFixture $reader $positivePath $sha $env:MYSPEED_JSON_DEADLINE $positiveStream 0 $true;",
+            "$loaded=& $positive.callback;",
+            "$deadlinePath=[IO.Path]::Combine($directory,'deadline.json');",
+            "$deadlineStream=[IO.File]::Open($deadlinePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);",
+            "$deadlineStream.Write($bytes,0,$bytes.Length);$deadlineStream.Flush($true);",
+            "$deadline=New-ReadFixture $reader $deadlinePath $sha $env:MYSPEED_JSON_DEADLINE $deadlineStream $env:MYSPEED_JSON_DEADLINE $false;",
+            "$deadlineRejected=$false;try{& $deadline.callback}catch{$deadlineRejected=$_.Exception.Message -match 'deadline'}finally{$deadlineStream.Dispose()};",
+            "$hashPath=[IO.Path]::Combine($directory,'hash.json');[IO.File]::WriteAllBytes($hashPath,$bytes);",
+            "$hash=New-ReadFixture $reader $hashPath ('0'*64) $env:MYSPEED_JSON_DEADLINE $null 0 $false;",
+            "$hashRejected=$false;try{& $hash.callback}catch{$hashRejected=$_.Exception.Message -match 'SHA differs'};",
+            "$malformedPath=[IO.Path]::Combine($directory,'malformed.json');[IO.File]::WriteAllText($malformedPath,'{]',[Text.UTF8Encoding]::new($false));",
+            "$malformed=New-ReadFixture $reader $malformedPath '' $env:MYSPEED_JSON_DEADLINE $null 0 $false;",
+            "$malformedRejected=$false;try{& $malformed.callback}catch{$malformedRejected=$true};",
+            "$crossed=New-ReadFixture $reader $hashPath $sha $env:MYSPEED_JSON_DEADLINE $null $env:MYSPEED_JSON_DEADLINE $false;",
+            "$crossedRejected=$false;try{$null=& $crossed.callback}catch{$crossedRejected=$_.Exception.Message -match 'deadline'};",
+            "[pscustomobject]@{status=$loaded.value.status;sha256=$loaded.sha256;positiveSleeps=$positive.state.sleepCalls;",
+            "deadlineRejected=$deadlineRejected;deadlineSleeps=$deadline.state.sleepCalls;hashRejected=$hashRejected;hashSleeps=$hash.state.sleepCalls;",
+            "malformedRejected=$malformedRejected;malformedSleeps=$malformed.state.sleepCalls;crossedRejected=$crossedRejected;crossedSleeps=$crossed.state.sleepCalls}|ConvertTo-Json -Compress"
+        ].join("");
+        const directory = fs.mkdtempSync(path.join(process.env.TEMP, "myspeed-clean-json-"));
+        try {
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+                    encoding: "utf8", timeout: TEST_TIMEOUT_MS,
+                    env: {...process.env, MYSPEED_SCRIPT: SCRIPT, MYSPEED_JSON_DIRECTORY: directory,
+                        MYSPEED_JSON_DEADLINE: String(EXCLUSIVE_PUBLICATION_DEADLINE_MS)}
+                });
+            assert.equal(result.status, 0, result.stderr);
+            assert.deepEqual(JSON.parse(result.stdout), {
+                status: "ready", sha256: cryptoSha256('{"schemaVersion":1,"status":"ready"}'), positiveSleeps: 1,
+                deadlineRejected: true, deadlineSleeps: 0, hashRejected: true, hashSleeps: 0,
+                malformedRejected: true, malformedSleeps: 0, crossedRejected: true, crossedSleeps: 0
+            });
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
     });
 
     powershellIt("rejects the native entry locally before native code", () => {

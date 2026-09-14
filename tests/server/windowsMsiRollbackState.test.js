@@ -257,7 +257,6 @@ describe("sacrificial MSI rollback callback state", () => {
             completion => { completion.msiReturnCode = 1641; },
             completion => { completion.msiReturnCode = 3010; },
             completion => { completion.msiReturnCode = 1604; },
-            completion => { completion.msiReturnCode = 1603; },
             completion => { completion.writeFailureObserved = false; },
             completion => { completion.controllerCancelIssued = false; },
             completion => { completion.rollbackObserved = false; },
@@ -274,6 +273,28 @@ describe("sacrificial MSI rollback callback state", () => {
             assert.equal(result.completion.accepted, false);
             assert.equal(result.completion.qualifying, false);
             assert.deepEqual(result.completion.releaseGatesCleared, []);
+        }
+    });
+
+    boundedTest("accepts the observed fatal install return only with the full rollback proof", () => {
+        const observed = validSimulation();
+        observed.completion.msiReturnCode = 1603;
+        assert.equal(run(observed).completion.accepted, true);
+
+        for (const mutate of [
+            completion => { completion.writeFailureObserved = false; },
+            completion => { completion.controllerCancelIssued = false; },
+            completion => { completion.rollbackObserved = false; },
+            completion => { completion.predecessorRestored = false; },
+            completion => { completion.candidateAbsent = false; },
+            completion => { completion.denyAcePresent = true; },
+            completion => { completion.originalSecurity = differentSecurityDescriptor(); },
+            completion => { completion.manualCancellation = true; }
+        ]) {
+            const input = validSimulation();
+            input.completion.msiReturnCode = 1603;
+            mutate(input.completion);
+            assert.equal(run(input).completion.accepted, false);
         }
     });
 

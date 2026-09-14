@@ -31,6 +31,7 @@ $script:ExpectedSystemErrorParameterIndex = 0
 $script:ExpectedTargetParameterIndex = 1
 $script:RetryCancelStyle = 0x00000005
 $script:InstallUserExit = 1602
+$script:InstallFailure = 1603
 
 function Test-MyspeedExactInteger {
     param($Value)
@@ -602,7 +603,8 @@ function Complete-MyspeedRollbackState {
 
     $accepted = (Test-MyspeedOrdinalEqual $State.phase 'cancel-requested') -and
         -not $State.denyAceMayBeActive -and $State.expectedErrorSeen -and
-        [long]$Completion.msiReturnCode -eq $script:InstallUserExit -and
+        ([long]$Completion.msiReturnCode -eq $script:InstallUserExit -or
+        [long]$Completion.msiReturnCode -eq $script:InstallFailure) -and
         $Completion.writeFailureObserved -eq $true -and $Completion.controllerCancelIssued -eq $true -and
         $Completion.rollbackObserved -eq $true -and $Completion.predecessorRestored -eq $true -and
         $Completion.candidateAbsent -eq $true -and $Completion.denyAcePresent -eq $false -and

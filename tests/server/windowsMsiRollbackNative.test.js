@@ -44,7 +44,7 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.equal(contract.kind, "myspeed-msi-sacrificial-native-contract");
         assert.equal(contract.qualifying, false);
         assert.equal(contract.nativeExecutionAuthorized, false);
-        assert.equal(contract.requiredInstallReturn, 1602);
+        assert.deepEqual(contract.acceptedInstallReturns, [1602, 1603]);
         assert.deepEqual(contract.requiredCallbackMessages,
             ["FATALEXIT", "ERROR", "ACTIONSTART", "ACTIONDATA", "INSTALLSTART", "INSTALLEND"]);
         assert.equal(contract.requiredCallbackFilter, 0x0C000303);
@@ -330,6 +330,23 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.match(source, /if\(predecessorInstallAttempted\)Attempt\(cleanupFailures,"predecessor-uninstall"/);
         assert.doesNotMatch(source, /catch\s*\{\s*\}/);
         assert.doesNotMatch(source, /Win32_Product|Get-WmiObject|msiexec/i);
+    });
+
+    it("observes complete rollback state before accepting only the two reviewed installer returns", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        const installCall = source.indexOf("output.CandidateInstallReturn=MsiInstallProductW(candidateMsi");
+        const predecessorState = source.indexOf("output.PredecessorAfterRollback=MsiQueryProductStateW", installCall);
+        const observationComplete = source.indexOf("output.postReturnStateObserved=true", predecessorState);
+        const returnCheck = source.indexOf("ErrorInstallUserExit", observationComplete);
+        const rollbackCheck = source.indexOf("Rollback state differs", observationComplete);
+        assert.ok(installCall > 0 && predecessorState > installCall && observationComplete > predecessorState);
+        assert.ok(returnCheck > observationComplete && rollbackCheck > observationComplete,
+            "installer return and rollback acceptance must follow post-return observations");
+        assert.match(source, /ErrorInstallUserExit\s*=\s*1602/);
+        assert.match(source, /ErrorInstallFailure\s*=\s*1603/);
+        assert.match(source,
+            /CandidateInstallReturn!=ErrorInstallUserExit&&output\.CandidateInstallReturn!=ErrorInstallFailure/);
+        assert.match(source, /postReturnStateObserved/);
     });
 
     it("retains nonqualifying bounded evidence on native failure without claiming authorization", () => {
