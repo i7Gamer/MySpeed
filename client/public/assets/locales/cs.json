@@ -62,6 +62,8 @@
       "cloudflare_desc": "Rychlé testování přes CDN",
       "iperf3_desc": "Váš vlastní server iperf3, ve vaší síti",
       "openspeedtest_desc": "Váš vlastní server OpenSpeedTest, ve vaší síti",
+      "ost_skip_tls_verification": "Přeskočit ověření certifikátu TLS",
+      "ost_skip_tls_warning": "Používejte pouze pro důvěryhodný server s neplatným nebo vlastnoručně podepsaným certifikátem. Ověření certifikátu je vypnuto pro tento cíl i jeho přesměrování; útočník mezi stranami by mohl změnit cíl nebo výsledky. Upřednostněte platný certifikát.",
       "iperf_advanced": "Nastavení běhu",
       "iperf_duration": "Sekund na směr",
       "iperf_streams": "Paralelní toky",

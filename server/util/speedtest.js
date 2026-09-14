@@ -483,7 +483,9 @@ export const runsOf = (provider) => provider.runs ?? SINGLE_RUN;
  * to hand over - and every caller that predates this argument - is unchanged,
  * and an explicit null is as harmless as an omission.
  */
-export default async (mode, serverId, serverUrl, onProgress, tuning = undefined) => {
+export default async (mode, serverId, serverUrl, onProgress, tuning = undefined, runtime = undefined) => {
+    const spawnProcess = runtime?.spawnProcess ?? spawn;
+    const ensureProviderBinary = runtime?.ensureProviderBinary ?? ensureBinary;
     // Throws for a mode the registry does not know - the old ternary's else
     // branch handed anything unrecognised cfspeedtest's path instead, and the
     // run then failed naming a binary that had nothing to do with it.
@@ -502,14 +504,15 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
     // arguments rather than beside the spawn, so that nothing between writing
     // the librespeed server file below and starting the CLI can throw and leave
     // it behind - and so a download is not counted as time the test took.
-    await ensureBinary(mode, binaryPath);
+    await ensureProviderBinary(mode, binaryPath);
 
     const startTime = new Date().getTime();
 
     const built = provider.buildArgs(
         {serverId, endpoint: serverUrl,
             iperfDuration: tuning?.iperfDuration, iperfStreams: tuning?.iperfStreams,
-            iperfUdp: tuning?.iperfUdp, iperfBitrate: tuning?.iperfBitrate},
+            iperfUdp: tuning?.iperfUdp, iperfBitrate: tuning?.iperfBitrate,
+            ostSkipCertificateVerification: tuning?.ostSkipCertificateVerification},
         {name: currentInterface, address: interfaceIp});
     const args = built.args;
 
@@ -574,7 +577,7 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined)
         // No stdin: nothing here ever writes to the child, and a pipe left
         // open is what a CLI that stops to ask something waits on - until the
         // run's own timeout. EOF makes it fail at once instead.
-        const testProcess = trackProcess(spawn(binaryPath, [...args, ...runArgs],
+        const testProcess = trackProcess(spawnProcess(binaryPath, [...args, ...runArgs],
             {windowsHide: true, stdio: ["ignore", "pipe", "pipe"]}));
 
         let timedOut = false;

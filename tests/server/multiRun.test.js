@@ -51,7 +51,7 @@ describe("how the runner performs them", () => {
     it("gives each invocation its own child and timers", () => {
         const once = bodyOf(run, "const runOnce = async");
 
-        assert.match(once, /trackProcess\(spawn\(/);
+        assert.match(once, /trackProcess\(spawnProcess\(/);
         assert.match(once, /const timeout = setTimeout\(/);
         assert.doesNotMatch(once, /removeTemporaryServer\(/,
             "the first of several runs takes away the file the rest still need");

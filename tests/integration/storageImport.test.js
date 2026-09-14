@@ -532,6 +532,43 @@ describe("PUT /api/storage/config and the targets it carries", () => {
         assert.equal((await listTargets()).length, 0);
     });
 
+    it("defaults old target backups to verified TLS and accepts SQLite boolean spellings", async () => {
+        for (const value of [undefined, false, true, 0, 1]) {
+            const target = {name: "LAN", provider: "openspeedtest", endpoint: "https://speed.lan:3001"};
+            if (value !== undefined) target.ostSkipCertificateVerification = value;
+
+            assert.equal((await importConfig(fullBackup({targets: [target]}))).status, 200,
+                JSON.stringify(value));
+            assert.equal(Boolean((await listTargets())[0].ostSkipCertificateVerification),
+                value === true || value === 1);
+        }
+    });
+
+    it("rejects malformed certificate settings before replacing any target", async () => {
+        await seedTarget({provider: "ookla", name: "keep-me"});
+
+        for (const value of ["false", "true", null, 2, {}]) {
+            const {status, body} = await importConfig(fullBackup({targets: [{
+                name: "LAN", provider: "openspeedtest", endpoint: "https://speed.lan:3001",
+                ostSkipCertificateVerification: value
+            }]}));
+            assert.equal(status, 500, JSON.stringify(value));
+            assert.match(body.message, /target/i);
+            assert.equal((await listTargets())[0].name, "keep-me");
+        }
+    });
+
+    it("exports the certificate setting as a JSON boolean", async () => {
+        await seedTarget({provider: "openspeedtest", name: "LAN",
+            endpoint: "https://speed.lan:3001", ostSkipCertificateVerification: 1});
+
+        for (const query of ["", "?includeSecrets=true"]) {
+            const {body} = await api(server.baseUrl, `/storage/config${query}`);
+            assert.equal(body.targets[0].ostSkipCertificateVerification, true);
+            assert.equal(typeof body.targets[0].ostSkipCertificateVerification, "boolean");
+        }
+    });
+
     it("keeps a same-instance id, and with it the history filed under it", async () => {
         const mine = await seedTarget({provider: "ookla", name: "WAN"});
         await seedTests(server.tests, [{created: "2026-01-01T00:00:00.000Z", targetId: mine.id}]);

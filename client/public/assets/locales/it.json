@@ -62,6 +62,8 @@
       "cloudflare_desc": "Test veloci basati su CDN",
       "iperf3_desc": "Il tuo server iperf3, sulla tua rete",
       "openspeedtest_desc": "Il tuo server OpenSpeedTest, sulla tua rete",
+      "ost_skip_tls_verification": "Ignora la verifica del certificato TLS",
+      "ost_skip_tls_warning": "Usa questa opzione solo per un server attendibile con un certificato non valido o autofirmato. La verifica del certificato è disattivata per questa destinazione e i suoi reindirizzamenti; un attacco man-in-the-middle potrebbe modificare la destinazione o i risultati. Preferisci un certificato valido.",
       "iperf_advanced": "Impostazioni del test",
       "iperf_duration": "Secondi per direzione",
       "iperf_streams": "Flussi paralleli",

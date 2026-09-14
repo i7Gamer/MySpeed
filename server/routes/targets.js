@@ -13,7 +13,13 @@ const app = express.Router();
 // typo to ignore rather than a column to invent.
 const WRITABLE = ["name", "provider", "serverId", "endpoint", "enabled", "alerts",
     "optimalPing", "optimalDownload", "optimalUpload", "iperfDuration", "iperfStreams",
-    "iperfUdp", "iperfBitrate", "baselinePercent"];
+    "iperfUdp", "iperfBitrate", "baselinePercent", "ostSkipCertificateVerification"];
+
+const OST_CERTIFICATE_FLAG = "ostSkipCertificateVerification";
+const certificateFlagProblem = (fields) => Object.hasOwn(fields, OST_CERTIFICATE_FLAG)
+    && typeof fields[OST_CERTIFICATE_FLAG] !== "boolean"
+    ? "The OpenSpeedTest certificate verification flag must be true or false"
+    : null;
 
 const writableFields = (body) =>
     Object.fromEntries(WRITABLE.filter((key) => key in (body ?? {})).map((key) => [key, body[key]]));
@@ -38,7 +44,7 @@ app.get("/", password(true), async (req, res) => {
 app.put("/", password(false), previewReadOnly, async (req, res) => mutateAdminEntities(async () => {
     const fields = writableFields(req.body);
 
-    const problem = targets.targetProblem(fields);
+    const problem = certificateFlagProblem(fields) ?? targets.targetProblem(fields);
     if (problem !== null) return res.status(400).json({message: problem});
 
     // The name is the key the history backup files rows under, so two targets
@@ -88,6 +94,8 @@ app.patch("/:id", password(false), previewReadOnly, async (req, res) => mutateAd
      * next patch would trip over again.
      */
     const named = writableFields(req.body);
+    const namedProblem = certificateFlagProblem(named);
+    if (namedProblem !== null) return res.status(400).json({message: namedProblem});
     const fields = {...named, ...targets.retiredByPatch(current, named)};
     const merged = {...current, ...fields};
 

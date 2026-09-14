@@ -62,6 +62,8 @@
       "cloudflare_desc": "Snabb CDN-baserad testning",
       "iperf3_desc": "Din egen iperf3-server, i ditt nätverk",
       "openspeedtest_desc": "Din egen OpenSpeedTest-server, i ditt nätverk",
+      "ost_skip_tls_verification": "Hoppa över verifiering av TLS-certifikat",
+      "ost_skip_tls_warning": "Använd bara detta för en betrodd server med ett ogiltigt eller självsignerat certifikat. Certifikatverifiering är avstängd för målet och dess omdirigeringar; en mellanhand kan ändra destinationen eller resultaten. Föredra ett giltigt certifikat.",
       "iperf_advanced": "Körinställningar",
       "iperf_duration": "Sekunder per riktning",
       "iperf_streams": "Parallella strömmar",

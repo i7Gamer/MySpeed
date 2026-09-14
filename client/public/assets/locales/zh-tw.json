@@ -62,6 +62,8 @@
       "cloudflare_desc": "以 CDN 為基礎的快速測試",
       "iperf3_desc": "您自己的 iperf3 伺服器，就在您的網路上",
       "openspeedtest_desc": "您自己的 OpenSpeedTest 伺服器，就在您的網路上",
+      "ost_skip_tls_verification": "略過 TLS 憑證驗證",
+      "ost_skip_tls_warning": "僅用於採用無效或自簽憑證的受信任伺服器。此目標及其重新導向會停用憑證驗證；中間人攻擊者可能變更目的地或結果。請優先使用有效憑證。",
       "iperf_advanced": "執行設定",
       "iperf_duration": "每個方向的秒數",
       "iperf_streams": "平行串流數",

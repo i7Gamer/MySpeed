@@ -46,9 +46,11 @@ const requiresEndpoint = (provider) => provider === "iperf3" || provider === "op
 const FIRST_PRINTABLE_CODE_POINT = 0x20;
 const DELETE_CODE_POINT = 0x7f;
 const URL_USERINFO = /^https?:\/\/[^/?#]*@/i;
+const FORMAT_CHARACTER = /\p{Cf}/u;
 const hasWhitespaceOrControl = (value) => [...value].some((character) => {
     const codePoint = character.codePointAt(0);
-    return /\s/.test(character) || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
+    return /\s/.test(character) || FORMAT_CHARACTER.test(character)
+        || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
 });
 
 /** What is wrong with an OpenSpeedTest base URL, or null when nothing is. */
@@ -115,6 +117,14 @@ export const retiredByPatch = (current, fields) => {
     };
 
     const provider = Object.hasOwn(fields, "provider") ? fields.provider : current.provider;
+
+    const endpointChanges = Object.hasOwn(fields, "endpoint")
+        && (typeof fields.endpoint !== "string" || typeof current.endpoint !== "string"
+            || fields.endpoint.trim() !== current.endpoint.trim());
+    if ((provider !== current.provider || endpointChanges)
+        && (current.ostSkipCertificateVerification === true
+            || current.ostSkipCertificateVerification === 1))
+        set("ostSkipCertificateVerification", false);
 
     // The run shape describes a run this target no longer makes.
     if (current.provider === "iperf3" && provider !== "iperf3") {
@@ -362,6 +372,24 @@ const flagProblem = (value, name) => {
     return null;
 };
 
+const ostCertificateProblem = (target) => {
+    const value = target.ostSkipCertificateVerification;
+    if (value === undefined) return null;
+    if (!FLAG_VALUES.includes(value))
+        return "The OpenSpeedTest certificate verification flag must be true or false";
+    if (value !== true && value !== 1) return null;
+    if (target.provider !== "openspeedtest")
+        return "Certificate verification can be skipped only for OpenSpeedTest";
+
+    try {
+        if (new URL(target.endpoint.trim()).protocol !== "https:")
+            return "Certificate verification can be skipped only for an HTTPS OpenSpeedTest server";
+    } catch {
+        return "Certificate verification can be skipped only for an HTTPS OpenSpeedTest server";
+    }
+    return null;
+};
+
 /** What is wrong with a target, or null when nothing is. */
 export const targetProblem = (target) => {
     const name = typeof target.name === "string" ? target.name.trim() : "";
@@ -425,7 +453,8 @@ export const targetProblem = (target) => {
             : "An OpenSpeedTest target needs the OpenSpeedTest server URL to measure against";
     }
 
-    return flagProblem(target.enabled, "enabled")
+    return ostCertificateProblem(target)
+        ?? flagProblem(target.enabled, "enabled")
         ?? flagProblem(target.alerts, "alerts")
         ?? optimalProblem(target.optimalPing, "ping")
         ?? optimalProblem(target.optimalDownload, "download")
@@ -712,6 +741,8 @@ export const create = async (target) => await targets.create({
     provider: target.provider,
     serverId: target.serverId ?? null,
     endpoint: target.endpoint ?? null,
+    ostSkipCertificateVerification: target.ostSkipCertificateVerification === true
+        || target.ostSkipCertificateVerification === 1,
     enabled: target.enabled ?? true,
     alerts: target.alerts ?? true,
     optimalPing: target.optimalPing ?? null,

@@ -80,6 +80,28 @@ describe("PUT /api/targets", () => {
         const [row] = await targets.listAll();
         assert.equal(row.provider, "openspeedtest");
         assert.equal(row.endpoint, endpoint);
+        assert.equal(Boolean(row.ostSkipCertificateVerification), false);
+    });
+
+    it("accepts only a JSON boolean for the certificate bypass", async () => {
+        for (const value of [1, 0, "true", "false", null]) {
+            const {status, body} = await put({name: `LAN-${String(value)}`, provider: "openspeedtest",
+                endpoint: "https://speed.lan:3001", ostSkipCertificateVerification: value});
+            assert.equal(status, 400, JSON.stringify(value));
+            assert.match(body.message, /certificate|TLS/i);
+        }
+
+        const {status} = await put({name: "LAN", provider: "openspeedtest",
+            endpoint: "https://speed.lan:3001", ostSkipCertificateVerification: true});
+        assert.equal(status, 200);
+        assert.equal(Boolean((await targets.listAll())[0].ostSkipCertificateVerification), true);
+    });
+
+    it("refuses certificate bypass on HTTP", async () => {
+        const {status, body} = await put({name: "LAN", provider: "openspeedtest",
+            endpoint: "http://speed.lan:3000", ostSkipCertificateVerification: true});
+        assert.equal(status, 400);
+        assert.match(body.message, /HTTPS/i);
     });
 
     it("refuses an OpenSpeedTest target without its server URL", async () => {
@@ -727,5 +749,38 @@ describe("PATCH /api/targets/:id retiring what it replaces", () => {
 
         assert.equal(status, 400);
         assert.match(body.message, /bitrate/i);
+    });
+
+    it("keeps a waiver for unrelated edits but clears it when the destination changes", async () => {
+        const {body: created} = await put({name: "LAN", provider: "openspeedtest",
+            endpoint: "https://first.lan:3001", ostSkipCertificateVerification: true});
+
+        assert.equal((await patch(`/${created.id}`, {alerts: false})).status, 200);
+        assert.equal(Boolean((await targets.listAll())[0].ostSkipCertificateVerification), true);
+
+        assert.equal((await patch(`/${created.id}`, {endpoint: "https://second.lan:3001"})).status, 200);
+        assert.equal(Boolean((await targets.listAll())[0].ostSkipCertificateVerification), false);
+    });
+
+    it("preserves a waiver only when a changed HTTPS endpoint explicitly reaffirms it", async () => {
+        const {body: created} = await put({name: "LAN", provider: "openspeedtest",
+            endpoint: "https://first.lan:3001", ostSkipCertificateVerification: true});
+
+        const {status} = await patch(`/${created.id}`, {endpoint: "https://second.lan:3001",
+            ostSkipCertificateVerification: true});
+        assert.equal(status, 200);
+        assert.equal(Boolean((await targets.listAll())[0].ostSkipCertificateVerification), true);
+    });
+
+    it("clears the waiver on a provider change and rejects non-boolean PATCH values", async () => {
+        const {body: created} = await put({name: "LAN", provider: "openspeedtest",
+            endpoint: "https://first.lan:3001", ostSkipCertificateVerification: true});
+
+        const refused = await patch(`/${created.id}`, {ostSkipCertificateVerification: 1});
+        assert.equal(refused.status, 400);
+        assert.match(refused.body.message, /certificate|TLS/i);
+
+        assert.equal((await patch(`/${created.id}`, {provider: "ookla"})).status, 200);
+        assert.equal(Boolean((await targets.listAll())[0].ostSkipCertificateVerification), false);
     });
 });
