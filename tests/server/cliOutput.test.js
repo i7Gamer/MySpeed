@@ -422,6 +422,27 @@ describe("a whole-document OpenSpeedTest result", () => {
             "connection reset");
     });
 
+    it("reports a plain-text stdout failure when stderr is silent", () => {
+        assert.equal(parseCliOutput("openspeedtest", "error: server refused the connection", "").error,
+            "error: server refused the connection");
+    });
+
+    it("keeps a useful plain-text IPv6 failure", () => {
+        const message = "error: Get http://[::1]:3000/: connection refused";
+
+        assert.equal(parseCliOutput("openspeedtest", message, "").error, message);
+    });
+
+    it("does not expose fragments of malformed pretty-printed JSON as an error", () => {
+        const malformed = OST_RESULT.slice(0, -2);
+
+        assert.deepEqual(parseCliOutput("openspeedtest", malformed, ""), {});
+    });
+
+    it("does not expose an inline JSON fragment after plain-text chatter", () => {
+        assert.deepEqual(parseCliOutput("openspeedtest", 'error: {"token":"private"', ""), {});
+    });
+
     it("preserves stderr for the exact partial-result shape emitted on exit 4", () => {
         const partial = JSON.stringify({
             type: "result", timestamp: "2026-09-14T12:00:00Z",

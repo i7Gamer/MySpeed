@@ -83,7 +83,7 @@ describe("stripConnectionIdentity", () => {
  * /api/speedtests, by the CSV export, and by the dashboard's own status
  * payload.
  *
- * Only the two providers whose "server" is a machine the operator runs. An
+ * Only the providers whose "server" is a machine the operator runs. An
  * ookla or cloudflare host is a public endpoint out of a published list, and
  * masking it would withhold something a viewer can read off the provider's own
  * website while telling them a measurement was hidden.
@@ -106,10 +106,12 @@ describe("the server address a viewer may know", () => {
 
     it("does not expose a private endpoint carried by a failure", () => {
         const error = "WARNING: TLS certificate verification failed for https://speed.internal";
-        const stripped = stripConnectionIdentity({provider: "openspeedtest", error});
+        for (const provider of ["iperf3", "libre", "openspeedtest"]) {
+            const stripped = stripConnectionIdentity({provider, error});
 
-        assert.equal(stripped.error, "Private server test failed");
-        assert.doesNotMatch(stripped.error, /speed\.internal/);
+            assert.equal(stripped.error, "Private server test failed", provider);
+            assert.doesNotMatch(stripped.error, /speed\.internal/);
+        }
     });
 
     it("leaves a private provider's absent error absent", () => {

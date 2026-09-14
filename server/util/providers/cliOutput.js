@@ -131,10 +131,21 @@ const wholeRecord = (stdout) => {
 
     try {
         const data = JSON.parse(document);
-        return data !== null && typeof data === "object" && !Array.isArray(data) ? [data] : [];
+        return {
+            records: data !== null && typeof data === "object" && !Array.isArray(data) ? [data] : [],
+            allowPlainText: false
+        };
     } catch (error) {
         console.error("JSON parse error:", error.message);
-        return [];
+        // A broken pretty-printed document can contain lines which look like
+        // ordinary prose after plainTextLines removes its braces. Keep those
+        // private fragments out of the stored error, including one appended
+        // after prose on the same line. Only a stream with no JSON-document
+        // opening at all is genuinely plain-text output.
+        const hasJsonArrayLine = document.split(/\r?\n/)
+            .some((line) => line.trimStart().startsWith("["));
+        const hasJsonOpening = document.includes("{") || hasJsonArrayLine || /\[\s*"/.test(document);
+        return {records: [], allowPlainText: !hasJsonOpening};
     }
 };
 
@@ -151,6 +162,7 @@ const wholeRecord = (stdout) => {
 export const parseCliOutput = (mode, stdout, stderr) => {
     let result = {};
     let hasResult = false;
+    let allowPlainText = !descriptor(mode).wholeOutput;
 
     if (stdout.trim()) {
         // Trimmed per line rather than once over the whole stream, which only
@@ -161,7 +173,12 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         // point from the Windows side, where the CLIs write CRLF and every line
         // but the last would otherwise keep a trailing carriage return. The
         // helper above and the progress reader both already read lines this way.
-        const records = descriptor(mode).wholeOutput ? wholeRecord(stdout) : lineRecords(mode, stdout);
+        let records;
+        if (descriptor(mode).wholeOutput) {
+            const whole = wholeRecord(stdout);
+            records = whole.records;
+            allowPlainText = whole.allowPlainText;
+        } else records = lineRecords(mode, stdout);
         for (const data of records) {
 
             // The unwrap above can leave nothing behind, and this read used to
@@ -221,7 +238,7 @@ export const parseCliOutput = (mode, stdout, stderr) => {
         // The JSON lines are skipped because they are progress records, not an
         // explanation: reporting those would make every interrupted run cite
         // its own progress log as the reason it stopped.
-        const text = stderr.trim() || (descriptor(mode).wholeOutput ? "" : plainTextLines(stdout));
+        const text = stderr.trim() || (allowPlainText ? plainTextLines(stdout) : "");
 
         if (text) result.error = normaliseError(text);
     }

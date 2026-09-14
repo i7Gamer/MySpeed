@@ -11,12 +11,12 @@ import { missingInterfaceMessage } from "../../server/util/speedtest.js";
  */
 describe("missingInterfaceMessage", () => {
     it("says nothing while the interface has an address", () => {
-        for (const mode of ["ookla", "libre", "cloudflare", "openspeedtest"])
+        for (const mode of ["ookla", "libre", "cloudflare", "iperf3", "openspeedtest"])
             assert.equal(missingInterfaceMessage(mode, "linux", "eth0", "192.168.1.2"), null);
     });
 
     it("names the configured interface when it has no address", () => {
-        for (const mode of ["libre", "cloudflare", "openspeedtest"]) {
+        for (const mode of ["libre", "cloudflare", "iperf3"]) {
             const message = missingInterfaceMessage(mode, "linux", "eth7", undefined);
 
             assert.equal(typeof message, "string", `${mode} ran with an unusable interface`);
@@ -34,5 +34,11 @@ describe("missingInterfaceMessage", () => {
     // one combination keeps running.
     it("lets ookla elsewhere bind by name", () => {
         assert.equal(missingInterfaceMessage("ookla", "linux", "eth0", undefined), null);
+    });
+
+    it("lets OpenSpeedTest use OS routing without a selected-interface address", () => {
+        for (const platform of ["linux", "win32", "darwin"])
+            for (const address of [undefined, null, ""])
+                assert.equal(missingInterfaceMessage("openspeedtest", platform, "missing-adapter", address), null);
     });
 });

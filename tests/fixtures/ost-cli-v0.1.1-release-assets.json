@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "repository": "ajthom90/ost-cli",
+  "releaseId": 366330179,
+  "tag": "v0.1.1",
+  "checksumAsset": {
+    "id": 504106770,
+    "name": "SHA256SUMS",
+    "bytes": 459,
+    "sha256": "8a135602abd6d398928fe7cdf289f225bd7f19b809f478f9654c88d6f6852746"
+  },
+  "assets": [
+    {
+      "id": 504106769,
+      "name": "ost-cli_darwin_all.zip",
+      "bytes": 5182260,
+      "sha256": "d8ee715fc94628aa4d84cbb6f50bb13998de2b98c6f689597766087058b22278"
+    },
+    {
+      "id": 504106761,
+      "name": "ost-cli_linux_amd64.tar.gz",
+      "bytes": 2637964,
+      "sha256": "592403a20be8e4a1f0f399b181e0148efb66279b469aecc2ba40ccb167657680"
+    },
+    {
+      "id": 504106764,
+      "name": "ost-cli_linux_arm64.tar.gz",
+      "bytes": 2394105,
+      "sha256": "2eda7833f1be250dca89677702753ccbd7fc6bab7892c2e088628f1734575c7a"
+    },
+    {
+      "id": 504106762,
+      "name": "ost-cli_windows_amd64.zip",
+      "bytes": 2690943,
+      "sha256": "8ad556761999223473aba2147b5d8c70101cf03830ad610bddbd895c61d042dd"
+    },
+    {
+      "id": 504106763,
+      "name": "ost-cli_windows_arm64.zip",
+      "bytes": 2415083,
+      "sha256": "47c1636e862bb13598ffeb58bcf26d36f2cce5187c164f933ca6f9c396022d30"
+    }
+  ]
+}

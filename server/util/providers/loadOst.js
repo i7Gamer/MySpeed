@@ -34,7 +34,6 @@ export const downloadFile = async ({platform = process.platform, arch = process.
     });
 };
 
-export const load = async ({exists = fileExists, download = downloadFile,
-    hold = heldDownload} = {}) => {
-    if (!await exists()) await hold("openspeedtest", download);
+export const load = async () => {
+    if (!await fileExists()) await heldDownload("openspeedtest", downloadFile);
 };

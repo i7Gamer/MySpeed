@@ -254,6 +254,8 @@ Lege ein OpenSpeedTest-Ziel mit der HTTP- oder HTTPS-Basis-URL deines Servers an
 
 OpenSpeedTest folgt der Routingtabelle des Betriebssystems: Die CLI kann sich nicht an die in MySpeed ausgewählte Netzwerkschnittstelle binden. Die Messung kann daher eine andere Verbindung betreffen. Konfiguriere nur Server, denen der Administrator vertraut. MySpeed lehnt direkt angegebene Metadaten- und Link-Local-Adressen ab, begrenzt damit aber nicht die DNS-Auflösung, Proxy-Nutzung oder Weiterleitungen der externen CLI. Ein Hostname oder eine Weiterleitung kann solche Ziele weiterhin erreichen.
 
+Leser ohne Verwaltungsrechte erhalten bei OpenSpeedTest-, iperf3- und LibreSpeed-Tests eine allgemeine Fehlermeldung, da CLI-Diagnosen private Serveradressen oder Zugangsdaten enthalten können. Auch Details zu einer Ratenbegrenzung werden dabei verborgen; angemeldete Betreiber und gespeicherte Ergebnisse behalten die ursprüngliche Diagnose.
+
 #### Verbindungsänderungen
 
 Tests mit Ookla, LibreSpeed und Cloudflare speichern die externe IP-Adresse, die der jeweilige Anbieter sieht. Ookla und LibreSpeed liefern außerdem den Namen des Internetanbieters. Ändert sich einer dieser Werte, erscheint der Wechsel unter *Einstellungen → Verbindungsänderungen*. Discord, Telegram, E-Mail, Gotify, ntfy, Pushover und Webhooks können darüber benachrichtigen; der Webhook sendet das Ereignis `IP_CHANGED`.

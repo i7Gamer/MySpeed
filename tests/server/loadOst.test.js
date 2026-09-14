@@ -1,10 +1,17 @@
-import { beforeEach, describe, it } from "node:test";
+import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { forgetDownloadHolds, heldDownload } from "../../server/util/providers/downloadHold.js";
-import { downloadFile, load, selectBinary } from "../../server/util/providers/loadOst.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { downloadFile, fileExists, selectBinary } from "../../server/util/providers/loadOst.js";
 
 describe("the OpenSpeedTest loader", () => {
-    beforeEach(() => forgetDownloadHolds());
+    const temporaryDirectories = [];
+
+    afterEach(() => {
+        for (const directory of temporaryDirectories.splice(0))
+            fs.rmSync(directory, {recursive: true, force: true});
+    });
 
     it("selects each published platform and refuses an unsupported one", () => {
         assert.equal(selectBinary({platform: "linux", arch: "x64"}).suffix,
@@ -28,26 +35,13 @@ describe("the OpenSpeedTest loader", () => {
         });
     });
 
-    it("does not consult the hold or downloader when a manual binary exists", async () => {
-        let held = 0;
-        let downloaded = 0;
+    it("recognises only the platform's exact installed binary name", async () => {
+        const outputDir = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-ost-loader-"));
+        temporaryDirectories.push(outputDir);
 
-        await load({exists: async () => true, download: async () => { downloaded++; },
-            hold: async () => { held++; }});
-
-        assert.equal(held, 0);
-        assert.equal(downloaded, 0);
-    });
-
-    it("replays a held failure without downloading again", async () => {
-        let downloads = 0;
-        const options = {exists: async () => false, download: async () => {
-            downloads++;
-            throw new Error("synthetic digest mismatch");
-        }, hold: heldDownload};
-
-        await assert.rejects(() => load(options), /digest mismatch/);
-        await assert.rejects(() => load(options), /digest mismatch/);
-        assert.equal(downloads, 1);
+        assert.equal(await fileExists({platform: "linux", outputDir}), false);
+        fs.writeFileSync(path.join(outputDir, "ost-cli.exe"), "synthetic fixture");
+        assert.equal(await fileExists({platform: "linux", outputDir}), false);
+        assert.equal(await fileExists({platform: "win32", outputDir}), true);
     });
 });

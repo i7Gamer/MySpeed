@@ -142,9 +142,8 @@ describe("the loaders that install a CLI", () => {
     it("download through the hold rather than straight", () => {
         for (const {path, source} of loaders) {
             const load = bodyOf(source, "export const load = async");
-            const held = path.endsWith("loadOst.js") ? /await hold\(/ : /await heldDownload\(/;
 
-            assert.match(load, held,
+            assert.match(load, /await heldDownload\(/,
                 `${path} fetches the archive again on every tick a permanent failure lasts`);
             assert.doesNotMatch(load, /await downloadFile\(\)/,
                 `${path} still has a path that downloads without asking the hold`);
@@ -156,11 +155,8 @@ describe("the loaders that install a CLI", () => {
     // than waiting out a hold left by the download it made unnecessary.
     it("ask the hold only when the binary is missing", () => {
         for (const {path, source} of loaders) {
-            const expected = path.endsWith("loadOst.js")
-                ? /if \(!await exists\(\)\) await hold\(/
-                : /if \(!await fileExists\(\)\) await heldDownload\(/;
-
-            assert.match(bodyOf(source, "export const load = async"), expected,
+            assert.match(bodyOf(source, "export const load = async"),
+                /if \(!await fileExists\(\)\) await heldDownload\(/,
                 `${path} holds a provider whose binary is already installed`);
         }
     });
@@ -168,9 +164,7 @@ describe("the loaders that install a CLI", () => {
     // One name each, and its own: the hold is keyed by it, so two providers
     // sharing a name would hold each other and a typo would hold nothing.
     it("name themselves distinctly to the hold", () => {
-        const names = loaders.map(({path, source}) => (path.endsWith("loadOst.js")
-            ? /hold\("(\w+)"/.exec(source)
-            : /heldDownload\("(\w+)"/.exec(source))?.[1]);
+        const names = loaders.map(({source}) => /heldDownload\("(\w+)"/.exec(source)?.[1]);
 
         assert.equal(new Set(names).size, loaders.length,
             `two loaders share a hold key: ${names.join(", ")}`);

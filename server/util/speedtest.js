@@ -290,9 +290,12 @@ export const exitError = (code, result, signal = null, stopping = false) =>
  *
  * Ookla anywhere but Windows binds by interface *name*, which can be usable
  * even when the address probe came up empty, so that combination passes.
+ * OpenSpeedTest cannot bind an interface at all: it uses OS routing, so an
+ * address missing from MySpeed's selected interface must not block its run.
  */
 export const missingInterfaceMessage = (mode, platform, currentInterface, interfaceIp) => {
     if (interfaceIp) return null;
+    if (mode === "openspeedtest") return null;
     if (mode === "ookla" && platform !== "win32") return null;
 
     return `The configured network interface "${currentInterface}" has no usable address. ` +

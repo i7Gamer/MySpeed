@@ -178,21 +178,21 @@ export const iperfList = [
 ];
 
 /**
- * OpenSpeedTest CLI v0.1.1 release assets. The digests are GitHub's published
- * asset digests, independently checked against the bytes served for the tag.
+ * OpenSpeedTest CLI v0.1.1 release assets. GitHub's asset digests, the release
+ * SHA256SUMS file, and independently downloaded archive bytes all agree.
  */
 export const ostVersion = "0.1.1";
 export const ostList = [
-    {os: 'darwin', arch: 'x64', suffix: 'ost-cli_darwin_all.tar.gz',
-        sha256: 'd8ee715fc5963c0a4589beb3ced12cf4ac057442eed27631847179982571023d'},
-    {os: 'darwin', arch: 'arm64', suffix: 'ost-cli_darwin_all.tar.gz',
-        sha256: 'd8ee715fc5963c0a4589beb3ced12cf4ac057442eed27631847179982571023d'},
+    {os: 'darwin', arch: 'x64', suffix: 'ost-cli_darwin_all.zip',
+        sha256: 'd8ee715fc94628aa4d84cbb6f50bb13998de2b98c6f689597766087058b22278'},
+    {os: 'darwin', arch: 'arm64', suffix: 'ost-cli_darwin_all.zip',
+        sha256: 'd8ee715fc94628aa4d84cbb6f50bb13998de2b98c6f689597766087058b22278'},
     {os: 'linux', arch: 'x64', suffix: 'ost-cli_linux_amd64.tar.gz',
-        sha256: '592403a29390beb51a507c627a580b3a595e1d260f0291f484735474c87f78f0'},
+        sha256: '592403a20be8e4a1f0f399b181e0148efb66279b469aecc2ba40ccb167657680'},
     {os: 'linux', arch: 'arm64', suffix: 'ost-cli_linux_arm64.tar.gz',
-        sha256: '2eda78339eb8019262511cac030a849e96760eed3c1f35ae91f27754fe9cd2a0'},
+        sha256: '2eda7833f1be250dca89677702753ccbd7fc6bab7892c2e088628f1734575c7a'},
     {os: 'win32', arch: 'x64', suffix: 'ost-cli_windows_amd64.zip',
-        sha256: '8ad55676a21cc45d5fbf49d64df313f741e65f151d8e24dc18d9ddc76a27ff36'},
+        sha256: '8ad556761999223473aba2147b5d8c70101cf03830ad610bddbd895c61d042dd'},
     {os: 'win32', arch: 'arm64', suffix: 'ost-cli_windows_arm64.zip',
         sha256: '47c1636e862bb13598ffeb58bcf26d36f2cce5187c164f933ca6f9c396022d30'}
 ];

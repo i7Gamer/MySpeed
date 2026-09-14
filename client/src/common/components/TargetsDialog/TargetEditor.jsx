@@ -230,10 +230,9 @@ export const TargetEditor = ({open, onClose, target}) => {
     // every provider that takes an endpoint.
     const sentinelTyped = takesEndpoint(provider) && typedEndpoint === "none";
     const isUsingCustomUrl = provider === "libre" && Boolean(typedEndpoint) && !sentinelTyped;
-    // An iperf3 target with no host has nothing to measure against, and the
-    // server refuses one - as it refuses a host it cannot dial, so the same
-    // rule it applies is asked here. Said as a button that will not press,
-    // rather than as a red toast after the fact.
+    // An endpoint must pass the portable shape check before Save. The server
+    // additionally applies its literal-host policy, which depends on trusted
+    // server-side context and can still answer with a red toast.
     const hasEndpoint = !requiresEndpoint(provider)
         || (isIperf ? iperfHostAccepted(endpoint) : ostEndpointAccepted(endpoint));
     // Typed and wrong, which is not the same as not typed yet: iperfHostAccepted

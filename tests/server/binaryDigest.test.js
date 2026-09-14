@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { cloudflareList, iperfList, libreList, ooklaList, ostList } from "../../server/config/binaries.js";
+import { cloudflareList, iperfList, libreList, ooklaList, ostList, ostVersion } from "../../server/config/binaries.js";
 import { DigestMismatchError, downloadAndExtract, verifyDigest } from "../../server/util/providers/downloadHelper.js";
 
 /**
@@ -31,6 +31,8 @@ import { DigestMismatchError, downloadAndExtract, verifyDigest } from "../../ser
  * change underneath an instance afterwards.
  */
 const SHA256 = /^[a-f0-9]{64}$/;
+const OST_V011_RELEASE = JSON.parse(fs.readFileSync(new URL(
+    "../fixtures/ost-cli-v0.1.1-release-assets.json", import.meta.url), "utf8"));
 
 describe("the pinned manifest", () => {
     const everyEntry = [
@@ -100,6 +102,17 @@ describe("the pinned manifest", () => {
 
             byDigest.set(entry.sha256, asset);
         }
+    });
+
+    it("pins the exact official ost-cli v0.1.1 release archives", () => {
+        assert.equal(`v${ostVersion}`, OST_V011_RELEASE.tag);
+        const uniquePins = [...new Map(ostList.map(({suffix, sha256}) =>
+            [suffix, {name: suffix, sha256}])).values()];
+        const officialPins = OST_V011_RELEASE.assets.map(({name, sha256}) => ({name, sha256}));
+
+        assert.deepEqual(uniquePins, officialPins);
+        for (const {os, arch, suffix, sha256} of ostList)
+            assert.equal(sha256, officialPins.find(asset => asset.name === suffix)?.sha256, `${os}-${arch}`);
     });
 });
 

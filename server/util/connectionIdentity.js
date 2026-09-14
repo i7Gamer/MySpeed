@@ -21,8 +21,8 @@
  * An iperf3 or OpenSpeedTest target's endpoint is always one, and a
  * librespeed target's may be. They are exactly what routes/targets.js already
  * withholds from a viewer, and are copied onto the row as `serverHost` by
- * their parsers - so the
- * address the targets route refuses to give was handed to the same reader by
+ * their parsers. Without masking, the address the targets route refuses to
+ * give would reach the same reader through
  * the speedtest list, the CSV export and the dashboard's status payload.
  *
  * Ookla and cloudflare are not here. Their servers come out of a published
