@@ -108,15 +108,15 @@ function toolchain() {
         sha256: "d".repeat(64), ownership},
     mformat: {path: `${portable}/usr/bin/mformat`, invocationPath: `${portable}/usr/bin/mformat`, bytes: "4096",
         sha256: "9".repeat(64), ownership},
-    sevenZip: {path: `${portable}/usr/bin/7zz`, invocationPath: `${portable}/usr/bin/7zz`, bytes: "4096",
+    sevenZip: {path: `${portable}/usr/lib/7zip/7z`, invocationPath: `${portable}/usr/lib/7zip/7z`, bytes: "4096",
         sha256: "e".repeat(64), ownership},
     wiminfo: {path: `${portable}/usr/bin/wiminfo`, invocationPath: `${portable}/usr/bin/wiminfo`, bytes: "4096",
         sha256: "f".repeat(64), ownership},
     ovmfCode: {path: `${portable}/usr/share/OVMF/OVMF_CODE_4M.fd`, bytes: "4096", sha256: "1".repeat(64), ownership},
     ovmfVarsTemplate: {path: `${portable}/usr/share/OVMF/OVMF_VARS_4M.fd`, bytes: "4096", sha256: "2".repeat(64), ownership},
     runtime: {loader: {path: `${portable}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
-        bytes: "4096", sha256: "4".repeat(64), ownership}, libraryPath: [`${portable}/lib/x86_64-linux-gnu`,
-        `${portable}/usr/lib/x86_64-linux-gnu`]},
+        bytes: "4096", sha256: "4".repeat(64), ownership}, libraryPath: [`${portable}/usr/lib/x86_64-linux-gnu`,
+        `${portable}/usr/lib/7zip`]},
     packageClosureSha256: HASH(Buffer.from(JSON.stringify(validatePackageClosure(packageClosure())))),
     installedFilesManifest: {bytes: "10000", sha256: "6".repeat(64)},
     licensesManifest: {bytes: "2000", sha256: "7".repeat(64)},
@@ -445,6 +445,15 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             ["toolchain alias", {extractPortableTools: async () => {
                 const changed = toolchain(); changed.wiminfo.invocationPath = `${paths().portableRoot}/usr/bin/wimlib-imagex`;
                 return changed;
+            }}, "toolchain"],
+            ["legacy sevenZip path", {extractPortableTools: async () => {
+                const changed = toolchain();
+                changed.sevenZip.path = `${paths().portableRoot}/usr/bin/7zz`;
+                changed.sevenZip.invocationPath = changed.sevenZip.path;
+                return changed;
+            }}, "toolchain"],
+            ["sevenZip module path absent", {extractPortableTools: async () => {
+                const changed = toolchain(); changed.runtime.libraryPath.pop(); return changed;
             }}, "toolchain"],
             ["guest", {launchOwnedQemu: async input => ({process: {exitCode: 0, signal: null, timedOut: false,
                 cleanupProven: true, treeGone: true}, argv: input.argv, guest: {...guestEvidence(), cpu: {

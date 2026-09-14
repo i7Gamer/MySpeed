@@ -407,7 +407,10 @@ describe("hosted Stage 2 native adapter preparation", () => {
             downloadPinned: async request => { calls.push(["download", request.url, request.path, request.sha256]);
                 return {path: request.path, bytes: request.bytes, sha256: request.sha256}; },
             runOwned: async (command, argv, options) => { calls.push(["run", command, argv, options]);
-                return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
+                const stdout = argv.includes(`${paths().portableRoot}/usr/lib/7zip/7z`) && argv.includes("i") ?
+                    Buffer.from(`Libs:\n 0 : 23.01 : ${paths().portableRoot}/usr/lib/7zip/7z.so\n\n` +
+                        "Formats:\n 0  ED       m  Iso      iso img        CD001\n") : Buffer.alloc(0);
+                return {process: okProcess, stdout, stderr: Buffer.alloc(0)}; },
             inspectOwned: target => ({path: target.endsWith("/usr/bin/wiminfo") ?
                 `${paths().portableRoot}/usr/bin/wimlib-imagex` :
                 target.endsWith("/usr/bin/mformat") || target.endsWith("/usr/bin/mcopy") ?
@@ -442,6 +445,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(toolchain.wiminfo.invocationPath, `${paths().portableRoot}/usr/bin/wiminfo`);
         assert.equal(toolchain.mformat.path, `${paths().portableRoot}/usr/bin/mtools`);
         assert.equal(toolchain.mformat.invocationPath, `${paths().portableRoot}/usr/bin/mformat`);
+        assert.equal(toolchain.sevenZip.path, `${paths().portableRoot}/usr/lib/7zip/7z`);
+        assert.equal(toolchain.sevenZip.invocationPath, `${paths().portableRoot}/usr/lib/7zip/7z`);
         const extract = calls.find(call => call[0] === "run" && call[2].some(value => value.endsWith("/dpkg-deb")));
         assert.deepEqual(extract[2].slice(0, 8), ["-n", "--", "/usr/bin/timeout", "--foreground", "--signal=KILL",
             "25s", "/usr/bin/dpkg-deb", "-x"]);
@@ -450,8 +455,36 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(version[1], loader);
         assert.deepEqual(version[2].slice(0, 5), ["--argv0", `${paths().portableRoot}/usr/bin/qemu-system-x86_64`,
             "--library-path",
-            `${paths().portableRoot}/usr/lib/x86_64-linux-gnu`,
+            `${paths().portableRoot}/usr/lib/x86_64-linux-gnu:${paths().portableRoot}/usr/lib/7zip`,
             `${paths().portableRoot}/usr/bin/qemu-system-x86_64`]);
+        const sevenZipInfo = calls.find(call => call[0] === "run" && call[2].includes(toolchain.sevenZip.path) &&
+            call[2].includes("i"));
+        assert.equal(sevenZipInfo[1], loader);
+        assert.deepEqual(sevenZipInfo[2], ["--argv0", toolchain.sevenZip.invocationPath, "--library-path",
+            `${paths().portableRoot}/usr/lib/x86_64-linux-gnu:${paths().portableRoot}/usr/lib/7zip`,
+            toolchain.sevenZip.path, "i"]);
+
+        const sevenZipExtractionInput = {packageClosure: closure,
+            acquisition: {packages: closure.packages.map(value => ({
+                reference: `${value.name}:${value.architecture}=${value.version}`,
+                path: `${paths().packageRoot}/${value.name}.deb`, bytes: value.bytes, sha256: value.sha256}))},
+            paths: paths(), privilegeMode: "reviewed-sudo-kvm"};
+        const withoutModule = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+            ...dependencies,
+            runOwned: async (command, argv) => ({process: okProcess,
+                stdout: argv.includes(`${paths().portableRoot}/usr/lib/7zip/7z`) && argv.includes("i") ?
+                    Buffer.from("Formats:\n 0  ED       m  Iso      iso img        CD001\n") : Buffer.alloc(0),
+                stderr: Buffer.alloc(0)})
+        }});
+        await assert.rejects(withoutModule.extractPortableTools(sevenZipExtractionInput), /7-Zip module/u);
+        const withoutIso = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+            ...dependencies,
+            runOwned: async (command, argv) => ({process: okProcess,
+                stdout: argv.includes(`${paths().portableRoot}/usr/lib/7zip/7z`) && argv.includes("i") ?
+                    Buffer.from(`Libs:\n 0 : 23.01 : ${paths().portableRoot}/usr/lib/7zip/7z.so\n`) : Buffer.alloc(0),
+                stderr: Buffer.alloc(0)})
+        }});
+        await assert.rejects(withoutIso.extractPortableTools(sevenZipExtractionInput), /7-Zip ISO support/u);
         const launch = await adapter.launchOwnedQemu({paths: paths(), toolchain,
             privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
         assert.equal(launch.guest, null);
@@ -730,9 +763,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
         const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
             runOwned: async (command, argv, options) => {
                 calls.push([command, argv, options]);
-                const stdout = argv.includes("info") && argv.includes(`${paths().portableRoot}/usr/bin/qemu-img`) ?
-                    Buffer.from(JSON.stringify({format: "qcow2",
-                    "virtual-size": 51_539_607_552})) : Buffer.alloc(0);
+                const stdout = argv.includes(`${paths().portableRoot}/usr/lib/7zip/7z`) && argv.includes("i") ?
+                    Buffer.from(`Libs:\n 0 : 23.01 : ${paths().portableRoot}/usr/lib/7zip/7z.so\n\n` +
+                        "Formats:\n 0  ED       m  Iso      iso img        CD001\n") :
+                    argv.includes("info") && argv.includes(`${paths().portableRoot}/usr/bin/qemu-img`) ?
+                        Buffer.from(JSON.stringify({format: "qcow2",
+                        "virtual-size": 51_539_607_552})) : Buffer.alloc(0);
                 return {process: okProcess, stdout, stderr: Buffer.alloc(0)};
             },
             inspectOwned: identity,

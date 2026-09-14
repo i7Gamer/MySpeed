@@ -45,6 +45,11 @@ const MAXIMUM_TASK_BYTES = 63_986_931_712n;
 const ILLEGAL_INSTRUCTION_EXIT = 3_221_225_501;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const REQUIRED_PROBE_ROLES = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
+const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
+const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
+const SEVEN_ZIP_MODULE_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z.so`;
+const SEVEN_ZIP_VERSION = "23.01";
+const SEVEN_ZIP_ISO_FORMAT_PATTERN = /(?:^|\r?\n)[^\r\n]*\bIso\s+iso(?:\s|$)/u;
 
 function sha256(bytes) {
     return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -1139,10 +1144,15 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 throw failures.at(-1) ?? new Error("portable tool identity is unavailable");
             };
             const qemu = identifyCommand("usr/bin/qemu-system-x86_64");
+            const sevenZip = identifyCommand(SEVEN_ZIP_RELATIVE_PATH);
+            const sevenZipModule = identify(SEVEN_ZIP_MODULE_RELATIVE_PATH);
             const loader = identifyFirst(["usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2",
                 "lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"]);
-            const runtime = {loader, libraryPath: [path.posix.dirname(loader.path)]};
-            assertPortableAncestry(io, installRoot, [qemu.path, runtime.loader.path], runtime.libraryPath);
+            const runtime = {loader, libraryPath: [path.posix.dirname(loader.path),
+                `${installRoot}/${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}`]};
+            assertPortableAncestry(io, installRoot,
+                [qemu.path, sevenZip.path, sevenZipModule.path, runtime.loader.path],
+                runtime.libraryPath);
             const invokeQemu = argv => portableInvocation({runtime}, qemu, argv);
             let invocation = invokeQemu(["--version"]);
             const version = assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
@@ -1156,13 +1166,21 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             invocation = invokeQemu(["-device", "help"]);
             const deviceHelp = assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
                 {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "QEMU device help").stdout.toString("utf8");
+            invocation = portableInvocation({runtime}, sevenZip, ["i"]);
+            const sevenZipInfo = assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
+                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "7-Zip format inspection").stdout.toString("utf8");
+            const expectedModuleLine = ` 0 : ${SEVEN_ZIP_VERSION} : ${sevenZipModule.path}`;
+            if (!sevenZipInfo.split(/\r?\n/u).includes(expectedModuleLine))
+                throw new Error("7-Zip module was not loaded from the pinned portable runtime");
+            if (!SEVEN_ZIP_ISO_FORMAT_PATTERN.test(sevenZipInfo))
+                throw new Error("7-Zip ISO support is unavailable through the pinned portable runtime");
             const installedInventory = io.inventoryOwnedTree(installRoot);
             const licenseInventory = io.inventoryOwnedTree(installRoot,
                 relative => /^usr\/share\/doc\/[^/]+\/copyright$/u.test(relative));
             return {qemu: {...qemu, version}, qemuImg: identifyCommand("usr/bin/qemu-img"),
                 genisoimage: identifyCommand("usr/bin/genisoimage"), mcopy: identifyCommand("usr/bin/mcopy"),
                 mformat: identifyCommand("usr/bin/mformat"),
-                sevenZip: identifyCommand("usr/bin/7zz"), wiminfo: identifyCommand("usr/bin/wiminfo"),
+                sevenZip, wiminfo: identifyCommand("usr/bin/wiminfo"),
                 ovmfCode: identify("usr/share/OVMF/OVMF_CODE_4M.fd"),
                 ovmfVarsTemplate: identify("usr/share/OVMF/OVMF_VARS_4M.fd"),
                 runtime,

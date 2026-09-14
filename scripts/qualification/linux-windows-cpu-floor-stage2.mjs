@@ -23,6 +23,8 @@ const GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
+const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
+const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
 const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 Standard Evaluation", architecture: "x64",
     editionId: "ServerStandardEval", installationType: "Server Core"});
@@ -282,7 +284,7 @@ function validateToolchain(value, portableRoot) {
         "ovmfCode", "ovmfVarsTemplate", "packageClosureSha256", "qemu", "qemuImg", "runtime", "sevenZip", "wiminfo"];
     assertKeys(value, toolKeys, "portable toolchain");
     const commandPaths = {genisoimage: "usr/bin/genisoimage", mcopy: "usr/bin/mcopy", mformat: "usr/bin/mformat",
-        qemu: "usr/bin/qemu-system-x86_64", qemuImg: "usr/bin/qemu-img", sevenZip: "usr/bin/7zz",
+        qemu: "usr/bin/qemu-system-x86_64", qemuImg: "usr/bin/qemu-img", sevenZip: SEVEN_ZIP_RELATIVE_PATH,
         wiminfo: "usr/bin/wiminfo"};
     for (const key of ["genisoimage", "mcopy", "mformat", "ovmfCode", "ovmfVarsTemplate", "qemu", "qemuImg", "sevenZip",
         "wiminfo"]) {
@@ -317,10 +319,10 @@ function validateToolchain(value, portableRoot) {
         value.runtime.loader.ownership.ordinaryUserWritable !== false ||
         !/^[4567][045][045]$/u.test(value.runtime.loader.ownership.mode))
         throw new TypeError("portable runtime loader ownership is invalid");
-    if (!Array.isArray(value.runtime.libraryPath) || value.runtime.libraryPath.length < 1 ||
-        value.runtime.libraryPath.length > 2 || new Set(value.runtime.libraryPath).size !== value.runtime.libraryPath.length ||
-        value.runtime.libraryPath.some(item => typeof item !== "string" || !item.startsWith(`${portableRoot}/`) ||
-            path.posix.normalize(item) !== item))
+    const expectedLibraryPath = [path.posix.dirname(value.runtime.loader.path),
+        `${portableRoot}/${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}`];
+    if (!Array.isArray(value.runtime.libraryPath) ||
+        JSON.stringify(value.runtime.libraryPath) !== JSON.stringify(expectedLibraryPath))
         throw new TypeError("portable runtime library path is invalid");
     if (!value.qemu.version.startsWith("QEMU emulator version 8.2.2 "))
         throw new TypeError("QEMU version is invalid");
