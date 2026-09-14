@@ -185,13 +185,15 @@ jobs:
           CLOSURE_ARTIFACT_DIGEST: ${{ needs.prepare.outputs.artifact_digest }}
         with:
           script: |
+            const expectedDigest = process.env.CLOSURE_ARTIFACT_DIGEST;
             const {data: artifact} = await github.rest.actions.getArtifact({
               owner: context.repo.owner, repo: context.repo.repo,
               artifact_id: Number(process.env.CLOSURE_ARTIFACT_ID)
             });
-            if (String(artifact.id) !== process.env.CLOSURE_ARTIFACT_ID
+            if (!/^[0-9a-f]{64}$/u.test(expectedDigest)
+              || String(artifact.id) !== process.env.CLOSURE_ARTIFACT_ID
               || artifact.name !== 'myspeed-v1.6.1-post-release-closure'
-              || artifact.digest !== process.env.CLOSURE_ARTIFACT_DIGEST || artifact.expired
+              || artifact.digest !== `sha256:${expectedDigest}` || artifact.expired
               || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > 134217728
               || artifact.workflow_run?.id !== context.runId
               || artifact.workflow_run?.head_sha !== context.sha)
@@ -380,13 +382,15 @@ jobs:
           EVIDENCE_ARTIFACT_DIGEST: ${{ needs.execute.outputs.artifact_digest }}
         with:
           script: |
+            const expectedDigest = process.env.EVIDENCE_ARTIFACT_DIGEST;
             const {data: artifact} = await github.rest.actions.getArtifact({
               owner: context.repo.owner, repo: context.repo.repo,
               artifact_id: Number(process.env.EVIDENCE_ARTIFACT_ID)
             });
-            if (String(artifact.id) !== process.env.EVIDENCE_ARTIFACT_ID
+            if (!/^[0-9a-f]{64}$/u.test(expectedDigest)
+              || String(artifact.id) !== process.env.EVIDENCE_ARTIFACT_ID
               || artifact.name !== 'myspeed-v1.6.1-post-release-native-evidence'
-              || artifact.digest !== process.env.EVIDENCE_ARTIFACT_DIGEST || artifact.expired
+              || artifact.digest !== `sha256:${expectedDigest}` || artifact.expired
               || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > 10485760
               || artifact.workflow_run?.id !== context.runId
               || artifact.workflow_run?.head_sha !== context.sha)

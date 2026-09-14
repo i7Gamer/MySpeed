@@ -21,6 +21,7 @@ const GUEST_DISK_BYTES = "51539607552";
 const GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
+const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
@@ -28,6 +29,7 @@ const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
 const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 Standard Evaluation", architecture: "x64",
     editionId: "ServerStandardEval", installationType: "Server Core"});
+const WIM_SELECTION_DIAGNOSTIC_KIND = "windows-server-2025-wim-selection-diagnostic";
 
 export const TOP_LEVEL_PACKAGE_PINS = deepFreeze([
     {name: "7zip", version: "23.01+dfsg-11", architecture: "amd64",
@@ -77,6 +79,13 @@ function deepFreeze(value) {
         for (const child of Object.values(value)) deepFreeze(child);
     }
     return value;
+}
+
+class WimSelectionError extends TypeError {
+    constructor(diagnostic) {
+        super("WIM supported image is not unique");
+        this.diagnostic = diagnostic;
+    }
 }
 
 function assertKeys(value, expected, name) {
@@ -251,7 +260,15 @@ export function selectWindowsImage(inventory) {
     const matches = inventory.filter(image => image.name === EXPECTED_IMAGE.name &&
         image.architecture === EXPECTED_IMAGE.architecture && image.editionId === EXPECTED_IMAGE.editionId &&
         image.installationType === EXPECTED_IMAGE.installationType);
-    if (matches.length !== 1) throw new TypeError("WIM supported image is not unique");
+    if (matches.length !== 1) {
+        const observedImages = structuredClone(inventory);
+        const diagnostic = {schemaVersion: SCHEMA_VERSION, kind: WIM_SELECTION_DIAGNOSTIC_KIND,
+            expected: structuredClone(EXPECTED_IMAGE), matchCount: matches.length,
+            observedImages, inventorySha256: canonicalSha256(observedImages)};
+        if (Buffer.byteLength(JSON.stringify(diagnostic)) > MAX_WIM_SELECTION_DIAGNOSTIC_BYTES)
+            throw new TypeError("WIM selection diagnostic exceeds its bound");
+        throw new WimSelectionError(deepFreeze(diagnostic));
+    }
     return deepFreeze(structuredClone(matches[0]));
 }
 
@@ -683,9 +700,11 @@ function validateGuest(value, pathsValue, expectedNonce) {
 function failure(context, stage, error, cleanupProven = true) {
     const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ")
         .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
+    const diagnostic = stage === "wim-inspection" && error instanceof WimSelectionError ?
+        {wimSelection: structuredClone(error.diagnostic)} : {};
     return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
-        context: structuredClone(context), failure: message || "unspecified failure"});
+        context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic});
 }
 
 export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact}, operations) {

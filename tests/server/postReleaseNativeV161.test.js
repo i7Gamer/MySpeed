@@ -35,6 +35,7 @@ const HOSTED_RUN_ATTEMPT = "1";
 const HOSTED_NONCE = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
 const HOSTED_IMAGE_VERSION = "20260914.1";
 const RELEASE_URL = `https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}`;
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const asset = (id, name, size, digest, createdAt, updatedAt = createdAt) => ({
     id, name, size, digest: `sha256:${digest}`, state: "uploaded",
     url: `${RELEASE_URL}/${name}`, createdAt, updatedAt
@@ -83,6 +84,20 @@ const fixture = () => ({
 const cloneInput = input => ({...structuredClone({...input, manifestBytes: undefined}),
     manifestBytes: Buffer.from(input.manifestBytes)});
 const jsonSha256 = value => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const githubScriptForStep = (workflow, stepName) => {
+    const step = workflow.indexOf(`      - name: ${stepName}`);
+    assert.ok(step >= 0, `${stepName} is absent`);
+    const marker = "          script: |\n";
+    const start = workflow.indexOf(marker, step) + marker.length;
+    assert.ok(start >= marker.length, `${stepName} script is absent`);
+    const lines = [];
+    for (const line of workflow.slice(start).split("\n")) {
+        if (line !== "" && !line.startsWith("            ")) break;
+        lines.push(line === "" ? line : line.slice(12));
+    }
+    assert.ok(lines.some(Boolean), `${stepName} script is empty`);
+    return lines.join("\n");
+};
 const hostedContext = () => ({repository: REPOSITORY, runId: HOSTED_RUN_ID,
     runAttempt: HOSTED_RUN_ATTEMPT, eventSha: HARNESS_SHA,
     imageVersion: HOSTED_IMAGE_VERSION, nonce: HOSTED_NONCE});
@@ -583,5 +598,38 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.ok(closureValidation.indexOf("$item.Attributes") < closureValidation.indexOf("$sha256 ="));
         assert.doesNotMatch(executeJob, /actions\/checkout@/u);
         assert.doesNotMatch(workflow, /(?:gh\s+release|releases:\s*write|contents:\s*write)/u);
+    });
+
+    it("verifies bare upload digests against prefixed GitHub artifact metadata in both jobs", async () => {
+        const workflow = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        const digest = "9".repeat(64);
+        const headSha = "8".repeat(40);
+        const runId = 40_000_000_001;
+        for (const fixtureValue of [
+            {step: "Verify current-run closure artifact metadata", environmentName: "CLOSURE_ARTIFACT",
+                artifactId: "7001", artifactName: "myspeed-v1.6.1-post-release-closure", maximumBytes: 134_217_728},
+            {step: "Bind evidence archive to this run and harness", environmentName: "EVIDENCE_ARTIFACT",
+                artifactId: "7002", artifactName: "myspeed-v1.6.1-post-release-native-evidence", maximumBytes: 10_485_760}
+        ]) {
+            const script = githubScriptForStep(workflow, fixtureValue.step);
+            const execute = new AsyncFunction("github", "context", "process", script);
+            const environment = {[`${fixtureValue.environmentName}_ID`]: fixtureValue.artifactId,
+                [`${fixtureValue.environmentName}_DIGEST`]: digest};
+            const artifact = {id: Number(fixtureValue.artifactId), name: fixtureValue.artifactName,
+                digest: `sha256:${digest}`, expired: false, size_in_bytes: fixtureValue.maximumBytes,
+                workflow_run: {id: runId, head_sha: headSha}};
+            const run = value => execute({rest: {actions: {getArtifact: async () => ({data: value})}}},
+                {repo: {owner: "i7Gamer", repo: "MySpeed"}, runId, sha: headSha}, {env: environment});
+            await run(artifact);
+            for (const mutate of [value => { value.digest = digest; },
+                value => { value.workflow_run.id += 1; }, value => { value.workflow_run.head_sha = "7".repeat(40); }]) {
+                const changed = structuredClone(artifact); mutate(changed);
+                await assert.rejects(run(changed), /artifact metadata differs/u, fixtureValue.step);
+            }
+            const invalidEnvironment = {...environment, [`${fixtureValue.environmentName}_DIGEST`]: `A${digest.slice(1)}`};
+            await assert.rejects(execute({rest: {actions: {getArtifact: async () => ({data: artifact})}}},
+                {repo: {owner: "i7Gamer", repo: "MySpeed"}, runId, sha: headSha}, {env: invalidEnvironment}),
+            /artifact metadata differs/u, fixtureValue.step);
+        }
     });
 });

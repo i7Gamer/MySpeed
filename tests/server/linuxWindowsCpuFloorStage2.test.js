@@ -25,6 +25,7 @@ const HASH = value => crypto.createHash("sha256").update(value).digest("hex");
 const FILE_HASH = "a".repeat(64);
 const POWERSHELL_TEST_TIMEOUT_MILLISECONDS = 10_000;
 const EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
+const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "b".repeat(40),
@@ -232,6 +233,46 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.throws(() => selectWindowsImage([...imageInventory(), imageInventory()[0]]), /duplicated|unique/u);
         assert.throws(() => selectWindowsImage(imageInventory().map(value => ({...value, architecture: "arm64"}))),
             /unique/u);
+    });
+
+    it("retains bounded validated WIM metadata for zero and multiple selection matches", async () => {
+        const cases = [
+            {matchCount: 0, images: imageInventory().map(image => ({...image, architecture: "arm64"}))},
+            {matchCount: 2, images: [...imageInventory(), {...imageInventory()[0], index: 3}]}
+        ];
+        for (const {matchCount, images} of cases) {
+            const fixture = operations({inspectInstallWim: async input => ({images,
+                removal: {path: input.installWim.path, sha256: input.installWim.sha256, removed: true}})});
+            const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+                probeArtifact: probeArtifact()}, fixture.op);
+            assert.equal(result.status, "failed");
+            assert.equal(result.stage, "wim-inspection");
+            assert.deepEqual(Object.keys(result.wimSelection).sort(),
+                ["expected", "inventorySha256", "kind", "matchCount", "observedImages", "schemaVersion"]);
+            assert.equal(result.wimSelection.kind, "windows-server-2025-wim-selection-diagnostic");
+            assert.deepEqual(result.wimSelection.expected, STAGE2_PROVENANCE.expectedImage);
+            assert.equal(result.wimSelection.matchCount, matchCount);
+            assert.deepEqual(result.wimSelection.observedImages, images);
+            assert.equal(result.wimSelection.inventorySha256, HASH(Buffer.from(JSON.stringify(images))));
+            assert.equal(Object.isFrozen(result.wimSelection.observedImages[0]), true);
+            assert.ok(Buffer.byteLength(JSON.stringify(result.wimSelection)) <= MAX_WIM_SELECTION_DIAGNOSTIC_BYTES);
+            assert.doesNotMatch(JSON.stringify(result.wimSelection), /(?:install\.wim|stdout|stderr|process)/iu);
+        }
+    });
+
+    it("does not retain unvalidated WIM records or add diagnostics to successful results", async () => {
+        const malformed = imageInventory(); malformed[0].extra = true;
+        const fixture = operations({inspectInstallWim: async input => ({images: malformed,
+            removal: {path: input.installWim.path, sha256: input.installWim.sha256, removed: true}})});
+        const failed = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, fixture.op);
+        assert.equal(failed.status, "failed");
+        assert.equal("wimSelection" in failed, false);
+
+        const successful = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, operations().op);
+        assert.equal(successful.status, "observed", successful.failure);
+        assert.equal("wimSelection" in successful, false);
     });
 
     it("builds the fixed offline KVM vector without implicit or network devices", () => {
