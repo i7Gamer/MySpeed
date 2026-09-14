@@ -42,6 +42,9 @@ $script:MaximumOwnedAggregateBytes = 33554432
 $script:CompilerDeadlineMilliseconds = 30000
 $script:ServiceDeadlineSeconds = 10
 $script:RecoveryPollMilliseconds = 100
+$script:MaximumExceptionInnerDepth = 8
+$script:SharingViolationWin32Code = 32
+$script:MaximumRecoveryReadDeadlineMilliseconds = $script:ServiceDeadlineSeconds * $script:MillisecondsPerSecond
 $script:NativeControllerPhases = @('prepare','armRecovery','disableAdapters','verifyOffline','startService','probe',
     'teardownService','restoreAdapters','disarmRecovery','restoreEnvironment')
 $script:ChildResultFilename = 'probe.json'
@@ -1051,6 +1054,39 @@ function Read-MyspeedCanaryBoundedJson {
     catch { throw ('JSON file is invalid: ' + $_.Exception.Message) }
 }
 
+function Test-MyspeedCanarySharingViolation {
+    param([object]$Exception)
+    $current=$Exception
+    for($depth=0;$depth -lt $script:MaximumExceptionInnerDepth -and $null -ne $current;$depth++){
+        if($current -is [IO.IOException] -and (($current.HResult -band 0xffff) -eq $script:SharingViolationWin32Code)){
+            return $true
+        }
+        $current=$current.InnerException
+    }
+    return $false
+}
+
+function Read-MyspeedCanaryBoundedJsonUntilStable {
+    param([string]$Path,[int]$MaximumBytes,[int64]$DeadlineMilliseconds,[object]$Operations)
+    [void](Assert-MyspeedCanaryInteger $DeadlineMilliseconds 'Recovery readiness publication deadline' 1 `
+        $script:MaximumRecoveryReadDeadlineMilliseconds)
+    Assert-MyspeedCanaryExactKeys $Operations @('elapsed','sleep') 'Recovery readiness publication operations'
+    while($true){
+        try{$loaded=Read-MyspeedCanaryBoundedJson $Path $MaximumBytes}catch{
+            if(-not (Test-MyspeedCanarySharingViolation $_.Exception)){throw}
+            $now=Assert-MyspeedCanaryInteger (& $Operations.elapsed) 'Recovery readiness publication elapsed time' 0 `
+                $script:MaximumRecoveryReadDeadlineMilliseconds
+            if($now -ge $DeadlineMilliseconds){throw 'Recovery readiness publication remained exclusively locked through its deadline'}
+            & $Operations.sleep ([int][Math]::Min($script:RecoveryPollMilliseconds,$DeadlineMilliseconds-$now))
+            continue
+        }
+        $completed=Assert-MyspeedCanaryInteger (& $Operations.elapsed) 'Recovery readiness publication completion time' 0 `
+            $script:MaximumRecoveryReadDeadlineMilliseconds
+        if($completed -ge $DeadlineMilliseconds){throw 'Recovery readiness publication completed at or after its deadline'}
+        return $loaded
+    }
+}
+
 function Write-MyspeedCanaryCreateNewBytes {
     param([string]$Path,[byte[]]$Bytes,[int]$MaximumBytes)
     if ($Bytes.Length -le 0 -or $Bytes.Length -gt $MaximumBytes) { throw 'Owned output size is outside its bound' }
@@ -1377,6 +1413,7 @@ public static class MySpeedCanaryJob {
 '@
     $getClock={ $value=[uint64]0;if(-not [MySpeedCanaryClock]::QueryUnbiasedInterruptTime([ref]$value)){throw 'Monotonic clock failed'};return $value }
     $writeJson=${function:Write-MyspeedCanaryCreateNewJson};$readJson=${function:Read-MyspeedCanaryBoundedJson}
+    $readStableJson=${function:Read-MyspeedCanaryBoundedJsonUntilStable}
     $hashFile=${function:Get-MyspeedCanarySha256File};$expectedEnvironment=$script:ExpectedEnvironment
     $writeBytes=${function:Write-MyspeedCanaryCreateNewBytes};$generateChild=${function:Get-MyspeedCanaryInertChildSource}
     $enterLock=${function:Enter-MyspeedCanaryRecoveryLock}
@@ -1406,6 +1443,7 @@ public static class MySpeedCanaryJob {
     $knownAdapterStatuses=$script:KnownAdapterStatuses
     $offlineMaximum100ns=$script:OfflineMaximum100ns
     $poll=$script:RecoveryPollMilliseconds;$processDeadline=$script:CompilerDeadlineMilliseconds
+    $readinessDeadlineMilliseconds=$script:MaximumRecoveryReadDeadlineMilliseconds
     $processCleanup=$script:ProcessCleanupMilliseconds
     $serviceDeadline=$script:ServiceDeadlineSeconds;$endpoints=$script:LoopbackEndpoints;$testNet=$script:TestNetEndpoints
     $runProcess={
@@ -1533,7 +1571,16 @@ public static class MySpeedCanaryJob {
                 $actions[0].Arguments -cne $State.recoveryArguments){throw 'Owned recovery task drifted before cleanup'}
                 $taskRunning=$task.State -ceq 'Running'}
             $readyPresent=Test-Path -LiteralPath $State.request.readyPath -PathType Leaf
-            $cleanupReady=if($readyPresent){& $readJson $State.request.readyPath $maximumRequest}else{$null}
+            $cleanupReady=$null
+            if($readyPresent){
+                $cleanupReadTimer=[Diagnostics.Stopwatch]::StartNew()
+                $capturedCleanupReadTimer=$cleanupReadTimer
+                $cleanupReadOperations=[pscustomobject]@{
+                    elapsed={return [int64]$capturedCleanupReadTimer.ElapsedMilliseconds}.GetNewClosure()
+                    sleep={param([int]$milliseconds) Start-Sleep -Milliseconds $milliseconds}.GetNewClosure()}
+                $cleanupReady=& $readStableJson $State.request.readyPath $maximumRequest $readinessDeadlineMilliseconds `
+                    $cleanupReadOperations
+            }
             # Nested dynamic modules do not inherit the outer closure's captured
             # variables. Reuse its existing callback and explicitly bind locals
             # for the callbacks that need this cleanup invocation's readiness.
@@ -1635,9 +1682,15 @@ public static class MySpeedCanaryJob {
                 throw 'Registered recovery task identity differs'
             }
             Start-ScheduledTask -TaskName $State.request.taskName -ErrorAction Stop
-            $timer=[Diagnostics.Stopwatch]::StartNew();while(-not (Test-Path -LiteralPath $State.request.readyPath)){
+            $timer=[Diagnostics.Stopwatch]::StartNew();$State.readinessTimer=$timer
+            while(-not (Test-Path -LiteralPath $State.request.readyPath)){
                 if($timer.Elapsed.TotalSeconds -ge $serviceDeadline){throw 'Recovery task readiness timed out'};Start-Sleep -Milliseconds $poll}
-            $State.ready=& $readJson $State.request.readyPath $maximumRequest
+            $capturedReadinessTimer=$timer
+            $readinessOperations=[pscustomobject]@{
+                elapsed={return [int64]$capturedReadinessTimer.ElapsedMilliseconds}.GetNewClosure()
+                sleep={param([int]$milliseconds) Start-Sleep -Milliseconds $milliseconds}.GetNewClosure()}
+            $State.ready=& $readStableJson $State.request.readyPath $maximumRequest $readinessDeadlineMilliseconds `
+                $readinessOperations
             [void](& $assertRecoveryReadiness $State.ready $State.request $State.requestSha)
             $readyPid=& $assertInteger $State.ready.pid 'Recovery readiness PID' 1 4294967295
             $readyProcess=Get-Process -Id $readyPid -ErrorAction Stop
@@ -1656,7 +1709,12 @@ public static class MySpeedCanaryJob {
                 (& $hashFile $State.request.serviceXmlPath $maximumConfiguration) -cne $State.configurationSha){
                 throw 'Owned input changed before adapter disable'
             }
-            $ready=& $readJson $State.request.readyPath $maximumRequest
+            $capturedDisableReadinessTimer=$State.readinessTimer
+            $disableReadinessOperations=[pscustomobject]@{
+                elapsed={return [int64]$capturedDisableReadinessTimer.ElapsedMilliseconds}.GetNewClosure()
+                sleep={param([int]$milliseconds) Start-Sleep -Milliseconds $milliseconds}.GetNewClosure()}
+            $ready=& $readStableJson $State.request.readyPath $maximumRequest $readinessDeadlineMilliseconds `
+                $disableReadinessOperations
             [void](& $assertRecoveryReadiness $ready $State.request $State.requestSha)
             $readyPid=& $assertInteger $ready.pid 'Recovery readiness recheck PID' 1 4294967295;$readyProcess=& $getProcess ([int]$readyPid)
             if($null -eq $readyProcess -or $ready.creationFileTime -cne $readyProcess.StartTime.ToUniversalTime().ToFileTimeUtc().ToString('x16')){

@@ -12,6 +12,7 @@ const POWERSHELL = process.platform === "win32"
     : "pwsh";
 const PROCESS_TIMEOUT_MS = 10_000;
 const TEST_TIMEOUT_MS = 30_000;
+const RECOVERY_READ_DEADLINE_MS = 1_000;
 const HAS_POWERSHELL = childProcess.spawnSync(POWERSHELL,
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0"],
     {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS}).status === 0;
@@ -109,6 +110,7 @@ if(${inspectTaskCleanup ? "$true" : "$false"}){
     '$cancelRecoveryWhenAdaptersEnabled={ [void]$State.fixtureEvents.Add("cancel") }.GetNewClosure();'+
     '$waitRecoveryProcessGone={param($Ready) [void]$State.fixtureEvents.Add("processGone") }.GetNewClosure();'+
     '$readJson={param($Path,$Maximum) return [pscustomobject]@{fixture=$true} }.GetNewClosure();'+
+    '$readStableJson={param($Path,$Maximum,$Deadline,$Operations) if((& $Operations.elapsed) -ge $Deadline){throw "Cleanup reused expired readiness budget"};return [pscustomobject]@{fixture=$true} }.GetNewClosure();'+
     '$restore={')
 }
 if(${removeClosure ? "$true" : "$false"}){
@@ -181,6 +183,7 @@ if(${inspectTaskCleanup ? "$true" : "$false"}){
   $fixture.state.request=[pscustomobject]@{taskName='fixture-task';readyPath='fixture-ready'}
   $fixture.state.recoveryPowerShell='fixture-powershell'
   $fixture.state.recoveryArguments='fixture-arguments'
+  $fixture.state.readinessTimer=[pscustomobject]@{ElapsedMilliseconds=[int64]20000}
   $global:myspeedFixtureEvents=$fixture.state.fixtureEvents
   function global:Get-ScheduledTask {
     param([string]$TaskName)
@@ -394,6 +397,7 @@ describe("candidate-neutral WinSW offline canary contract", () => {
             .map(match => match[1]), [
             "validates the immutable restoration request and exact owned path derivation",
             "strictly binds the SYSTEM watchdog readiness used by every exit proof",
+            "waits only for an exclusively locked recovery readiness publication",
             "requires the whole owned WinSW executable path set gone before normal adapter restore",
             "retains nested recovery task cleanup callbacks after factory return",
             "generates an inert no-spawn child bound to exact loopback and TEST-NET literals"
@@ -604,6 +608,66 @@ Set-StrictMode -Version Latest
         assert.match(source, /cancelRecoveryWhenAdaptersEnabled/u);
         assert.match(source, /\[string\]::Equals\(\$_\.netLuid,\$target\.netLuid,\[StringComparison\]::Ordinal\) -and \$_\.enabled/u);
         assert.doesNotMatch(source, /Stop-ScheduledTask/u);
+    });
+
+    windowsFilesystemPowershellIt("waits only for an exclusively locked recovery readiness publication", () => {
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-canary-ready-"));
+        const command = [
+            ". $env:MYSPEED_SCRIPT -Mode Library;",
+            "function New-ReadFixture { param($reader,$path,$deadline,$stream,$elapsed,$release);",
+            "$state=[pscustomobject]@{elapsed=[int64]$elapsed;sleepCalls=0;stream=$stream;release=[bool]$release};",
+            "$operations=[pscustomobject]@{elapsed={return $state.elapsed}.GetNewClosure();",
+            "sleep={param($milliseconds)$state.sleepCalls++;if($state.release -and $null -ne $state.stream){$state.stream.Dispose();$state.stream=$null};$state.elapsed+=$milliseconds}.GetNewClosure()};",
+            "$callback={return & $reader $path 65536 $deadline $operations}.GetNewClosure();",
+            "return [pscustomobject]@{callback=$callback;state=$state}};",
+            "$reader=${function:Read-MyspeedCanaryBoundedJsonUntilStable};",
+            "$json='{" + '"schemaVersion":1,"status":"ready"' + "}';$bytes=[Text.UTF8Encoding]::new($false).GetBytes($json);",
+            "$positivePath=[IO.Path]::Combine($env:MYSPEED_READY_DIRECTORY,'positive.json');",
+            "$positiveStream=[IO.File]::Open($positivePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);",
+            "$positiveStream.Write($bytes,0,$bytes.Length);$positiveStream.Flush($true);",
+            "$positive=New-ReadFixture $reader $positivePath $env:MYSPEED_READY_DEADLINE $positiveStream 0 $true;",
+            "$loaded=& $positive.callback;",
+            "$deadlinePath=[IO.Path]::Combine($env:MYSPEED_READY_DIRECTORY,'deadline.json');",
+            "$deadlineStream=[IO.File]::Open($deadlinePath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None);",
+            "$deadlineStream.Write($bytes,0,$bytes.Length);$deadlineStream.Flush($true);",
+            "$deadline=New-ReadFixture $reader $deadlinePath $env:MYSPEED_READY_DEADLINE $deadlineStream $env:MYSPEED_READY_DEADLINE $false;",
+            "$deadlineRejected=$false;try{& $deadline.callback}catch{$deadlineRejected=$_.Exception.Message -match 'deadline'}finally{$deadlineStream.Dispose()};",
+            "$malformedPath=[IO.Path]::Combine($env:MYSPEED_READY_DIRECTORY,'malformed.json');",
+            "[IO.File]::WriteAllText($malformedPath,'{]',[Text.UTF8Encoding]::new($false));",
+            "$malformed=New-ReadFixture $reader $malformedPath $env:MYSPEED_READY_DEADLINE $null 0 $false;",
+            "$malformedRejected=$false;try{& $malformed.callback}catch{$malformedRejected=$_.Exception.Message -match 'JSON file is invalid'};",
+            "$missing=New-ReadFixture $reader ([IO.Path]::Combine($env:MYSPEED_READY_DIRECTORY,'missing.json')) $env:MYSPEED_READY_DEADLINE $null 0 $false;",
+            "$missingRejected=$false;try{& $missing.callback}catch{$missingRejected=$true};",
+            "$crossedPath=[IO.Path]::Combine($env:MYSPEED_READY_DIRECTORY,'crossed.json');[IO.File]::WriteAllBytes($crossedPath,$bytes);",
+            "$crossed=New-ReadFixture $reader $crossedPath $env:MYSPEED_READY_DEADLINE $null $env:MYSPEED_READY_DEADLINE $false;",
+            "$crossedRejected=$false;try{& $crossed.callback}catch{$crossedRejected=$_.Exception.Message -match 'deadline'};",
+            "[pscustomobject]@{status=$loaded.status;positiveSleeps=$positive.state.sleepCalls;",
+            "deadlineRejected=$deadlineRejected;deadlineSleeps=$deadline.state.sleepCalls;",
+            "malformedRejected=$malformedRejected;malformedSleeps=$malformed.state.sleepCalls;",
+            "missingRejected=$missingRejected;missingSleeps=$missing.state.sleepCalls;",
+            "crossedRejected=$crossedRejected;crossedSleeps=$crossed.state.sleepCalls}|ConvertTo-Json -Compress"
+        ].join("");
+        try {
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command], {
+                    encoding: "utf8", timeout: TEST_TIMEOUT_MS,
+                    env: {...process.env, MYSPEED_SCRIPT: SCRIPT, MYSPEED_READY_DIRECTORY: directory,
+                        MYSPEED_READY_DEADLINE: String(RECOVERY_READ_DEADLINE_MS)}
+                });
+            assert.equal(result.status, 0, result.stderr);
+            assert.deepEqual(JSON.parse(result.stdout), {
+                status: "ready", positiveSleeps: 1,
+                deadlineRejected: true, deadlineSleeps: 0,
+                malformedRejected: true, malformedSleeps: 0,
+                missingRejected: true, missingSleeps: 0,
+                crossedRejected: true, crossedSleeps: 0
+            });
+            const source = fs.readFileSync(SCRIPT, "utf8");
+            assert.equal((source.match(/=& \$readStableJson/gu) ?? []).length, 3);
+            assert.match(source, /Test-MyspeedCanarySharingViolation[\s\S]*?HResult -band 0xffff/gu);
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
     });
 
     powershellIt("keeps task cancellation, PID exit proof, and unregister ordered and fail closed", () => {
