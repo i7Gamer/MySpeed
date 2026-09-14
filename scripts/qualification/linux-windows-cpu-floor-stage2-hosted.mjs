@@ -5,7 +5,9 @@ import path from "node:path";
 
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
-import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS} from "./linux-windows-cpu-floor-stage2.mjs";
+import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, validateWindowsSystemTools} from
+    "./linux-windows-cpu-floor-stage2.mjs";
+import {runEarlyBootQmpSession} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const APT_GET = "/usr/bin/apt-get";
 const APT_CACHE = "/usr/bin/apt-cache";
@@ -27,15 +29,20 @@ const QEMU_OUTER_TIMEOUT_MILLISECONDS = 16_240_000;
 const MAX_WIMINFO_BYTES = 1_048_576;
 const MAX_GUEST_BYTES = 262_144;
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
+const MAX_GUEST_ACTIVATION_FILE_BYTES = 1_048_576;
+const MAX_GUEST_ACTIVATION_STRING_CHARACTERS = 1_024;
 const MAX_PROBE_MANIFEST_BYTES = 262_144;
 const MAX_STREAM_BYTES = 4_096;
 const MAX_TREE_ENTRIES = 131_072;
 const MAX_TREE_MANIFEST_BYTES = 33_554_432;
 const DEFAULT_STAGE2_STREAM_BYTES = 2_097_152;
 const QEMU_STREAM_BYTES = 65_536;
+const MAX_EARLY_BOOT_SCREENSHOT_BYTES = 1_048_576;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const PROCESS_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const QEMU_IDENTITY_TIMEOUT_MILLISECONDS = 30_000;
 const QEMU_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
+const MAX_MONITOR_FAILURE_MESSAGE_CHARACTERS = 512;
 const QEMU_IDENTITY_POLL_MILLISECONDS = 50;
 const RESOURCE_POLL_MILLISECONDS = 5_000;
 const LOW_MEMORY_ABORT_MILLISECONDS = 30_000;
@@ -50,6 +57,7 @@ const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const SEVEN_ZIP_MODULE_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z.so`;
 const SEVEN_ZIP_VERSION = "23.01";
 const SEVEN_ZIP_ISO_FORMAT_PATTERN = /(?:^|\r?\n)[^\r\n]*\bIso\s+iso(?:\s|$)/u;
+const INLINE_SEED_KINDS = new Set(["inline", "activation-handoff", "activation-inline", "activation-installer"]);
 
 function sha256(bytes) {
     return crypto.createHash("sha256").update(bytes).digest("hex");
@@ -91,7 +99,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
         catch (error) { if (error.code === "ESRCH") return false; throw error; }
     });
     return await new Promise((resolve, reject) => {
-        const child = spawnImpl(command, argv, {stdio: ["ignore", "pipe", "pipe"], detached: true,
+        const child = spawnImpl(command, argv, {stdio: [options.qmp ? "pipe" : "ignore", "pipe", "pipe"], detached: true,
             windowsHide: true, ...(options.env === undefined ? {} : {env: options.env})});
         const stdout = [], stderr = [];
         const stdoutState = {bytes: 0, overflow: false}, stderrState = {bytes: 0, overflow: false};
@@ -101,6 +109,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
             settled = true;
             if (executionTimer !== null) clearTimer(executionTimer);
             if (cleanupTimer !== null) clearTimer(cleanupTimer);
+            child.stdin?.destroy();
             resolve({process: {exitCode, signal, timedOut, stdoutOverflow: stdoutState.overflow,
                 stderrOverflow: stderrState.overflow, cleanupProven, errorObserved},
             stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr)});
@@ -117,7 +126,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
         };
         options.onTerminationReady?.(terminate);
         executionTimer = setTimer(() => { timedOut = true; terminate("deadline"); }, options.timeoutMs);
-        child.stdout.on("data", chunk => {
+        if (!options.qmp) child.stdout.on("data", chunk => {
             appendBounded(stdout, chunk, stdoutState, maximumBytes);
             if (stdoutState.overflow) terminate("stdout-overflow");
         });
@@ -138,6 +147,16 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 if (terminate("lingering-process-group")) resolveResult(code, signal, false);
             } else resolveResult(code, signal, true);
         });
+        if (options.qmp) {
+            const writeBytes = bytes => new Promise((writeResolve, writeReject) => {
+                if (!child.stdin || child.stdin.destroyed) return writeReject(new Error("QMP input pipe is unavailable"));
+                child.stdin.write(bytes, error => error ? writeReject(error) : writeResolve());
+            });
+            const qmpSession = runEarlyBootQmpSession({readable: child.stdout, writeBytes,
+                screenshotPaths: options.qmp.screenshotPaths}, options.qmpDependencies);
+            qmpSession.catch(() => undefined);
+            options.onQmpSession?.(qmpSession);
+        }
     });
 }
 
@@ -390,11 +409,34 @@ function parseControl(run, role, expectedExit, expectedResult) {
         throw new TypeError(`${role} control failed`);
 }
 
+function parseGuestActivation(value) {
+    requireKeys(value, ["files", "nativeMsiExecutionStarted", "setupCompleted", "startupTask",
+        "startupTaskInstalled", "state"], "guest activation");
+    if (value.state !== "windows-setup-complete-startup-dispatch-ready" || value.setupCompleted !== true ||
+        value.startupTaskInstalled !== true || value.nativeMsiExecutionStarted !== false)
+        throw new TypeError("guest activation state is invalid");
+    requireKeys(value.files, ["dispatcher", "setupComplete"], "guest activation files");
+    for (const [name, expectedPath] of [["setupComplete", "C:\\Windows\\Setup\\Scripts\\SetupComplete.cmd"],
+        ["dispatcher", "C:\\Windows\\Setup\\Scripts\\myspeed-msi-setupcomplete.ps1"]]) {
+        const file = value.files[name];
+        requireKeys(file, ["bytes", "path", "sha256"], `guest activation ${name}`);
+        if (file.path !== expectedPath || !Number.isSafeInteger(file.bytes) || file.bytes < 1 ||
+            file.bytes > MAX_GUEST_ACTIVATION_FILE_BYTES || typeof file.sha256 !== "string" ||
+            !SHA256_PATTERN.test(file.sha256)) throw new TypeError(`guest activation ${name} is invalid`);
+    }
+    requireKeys(value.startupTask, ["arguments", "executable", "name", "path", "principal", "runLevel", "trigger"],
+        "guest activation startup task");
+    for (const field of Object.values(value.startupTask))
+        if (typeof field !== "string" || field.length < 1 || field.length > MAX_GUEST_ACTIVATION_STRING_CHARACTERS ||
+            /[\x00-\x1f\x7f]/u.test(field)) throw new TypeError("guest activation startup task is invalid");
+    return structuredClone(value);
+}
+
 export function parseGuestOutput(bytes, expectedNonce) {
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_GUEST_BYTES)
         throw new TypeError("guest result exceeded its bound");
     const value = parseJson(bytes, "guest result");
-    requireKeys(value, ["network", "nonce", "runs", "schemaVersion"], "guest result");
+    requireKeys(value, ["activation", "network", "nonce", "runs", "schemaVersion", "systemTools"], "guest result");
     if (value.schemaVersion !== 1 || value.nonce !== expectedNonce || !Array.isArray(value.runs) ||
         value.runs.length !== REQUIRED_PROBE_ROLES.length) throw new TypeError("guest result header is invalid");
     const runs = new Map();
@@ -441,8 +483,10 @@ export function parseGuestOutput(bytes, expectedNonce) {
     requireKeys(value.network, ["enabledNonLoopbackInterfaces", "hardwareNics", "nonLoopbackRoutes"], "guest network");
     if (![value.network.hardwareNics, value.network.enabledNonLoopbackInterfaces,
         value.network.nonLoopbackRoutes].every(item => item === 0)) throw new TypeError("guest network was not isolated");
-    return {cpu: recomputed, instructions: {sse42: "completed", popcnt: "completed",
-        avx: "illegal-instruction", avx2: "illegal-instruction"}, network: structuredClone(value.network)};
+    return {activation: parseGuestActivation(value.activation), cpu: recomputed,
+        instructions: {sse42: "completed", popcnt: "completed", avx: "illegal-instruction",
+            avx2: "illegal-instruction"}, network: structuredClone(value.network),
+        systemTools: validateWindowsSystemTools(value.systemTools)};
 }
 
 export function parseGuestFailure(bytes, expectedNonce) {
@@ -626,12 +670,12 @@ function defaultInspectDirectory(target) {
         ordinaryUserWritable: (stat.mode & 0o022n) !== 0n, sticky: (stat.mode & 0o1000n) !== 0n};
 }
 
-function defaultReadOwnedVerified(target, maximumBytes) {
+function defaultReadOwnedVerified(target, maximumBytes, options = {}) {
     const canonical = fs.realpathSync(target);
     const descriptor = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     try {
         const before = fs.fstatSync(descriptor);
-        if (!before.isFile() || before.size < 1 || before.size > maximumBytes)
+        if (!before.isFile() || (!options.allowEmpty && before.size < 1) || before.size > maximumBytes)
             throw new Error("owned file read bound is invalid");
         const bytes = Buffer.allocUnsafe(before.size);
         let offset = 0;
@@ -760,16 +804,43 @@ function waitMilliseconds(milliseconds) {
     return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+function diagnosticIdentity(value) {
+    if (value?.state === "absent") return {state: "absent"};
+    if (value?.state !== "present") return null;
+    const integer = candidate => Number.isInteger(candidate) && candidate > 0 && candidate <= 0x7fff_ffff ?
+        candidate : null;
+    const text = (candidate, pattern) => typeof candidate === "string" && pattern.test(candidate) ? candidate : null;
+    return {state: "present", pid: integer(value.pid), processGroupId: integer(value.processGroupId),
+        startTicks: text(value.startTicks, /^[1-9][0-9]{0,23}$/u),
+        executablePath: text(value.executablePath, /^\/[\x20-\x7e]{1,511}$/u)};
+}
+
+function boundedMonitorFailure(phase, error, identity) {
+    const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/gu, " ")
+        .slice(0, MAX_MONITOR_FAILURE_MESSAGE_CHARACTERS);
+    return {phase, message: message || "unspecified monitor failure", identity};
+}
+
 export async function runMonitoredQemu(io, request) {
     let finished = false;
     let outerProcessGroupId = null;
     let requestOwnedSettlement = null;
+    let qmpSession = null;
+    let qmpObservation = null;
+    let qmpState = request.qmp ? "missing" : "unused";
+    let monitorFailure = null;
+    const identityAttempt = {pid: null, expected: {processGroupId: null,
+        executablePath: request.expectedExecutable}, observed: null};
     const terminationReasons = [];
     const operation = io.runOwned(request.command, request.argv,
         {timeoutMs: request.timeoutMs, maxStreamBytes: request.maxStreamBytes,
             onSpawn: pid => { outerProcessGroupId = pid; },
             onTerminationRequested: reason => { terminationReasons.push(reason); return true; },
-            onTerminationReady: requestTermination => { requestOwnedSettlement = requestTermination; }})
+            onTerminationReady: requestTermination => { requestOwnedSettlement = requestTermination; },
+            ...(request.qmp ? {qmp: request.qmp, qmpDependencies: request.qmpDependencies,
+                onQmpSession: value => { qmpSession = value; qmpState = "pending";
+                    value.then(observation => { qmpObservation = observation; qmpState = "complete"; },
+                        () => { qmpState = "failed"; }); }} : {})})
         .finally(() => { finished = true; });
     const identityDeadline = io.monotonicMilliseconds() + QEMU_IDENTITY_TIMEOUT_MILLISECONDS;
     let identity = null;
@@ -777,8 +848,16 @@ export async function runMonitoredQemu(io, request) {
     try {
         while (!finished && io.monotonicMilliseconds() <= identityDeadline) {
             if (io.pathExists(request.pidPath)) {
-                const pid = parsePidBytes(io.readOwnedVerified(request.pidPath, 32).bytes);
+                const pidBytes = io.readOwnedVerified(request.pidPath, 32, {allowEmpty: true}).bytes;
+                if (pidBytes.length === 0) {
+                    await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
+                    continue;
+                }
+                const pid = parsePidBytes(pidBytes);
+                identityAttempt.pid = pid;
+                identityAttempt.expected.processGroupId = outerProcessGroupId;
                 const observed = await io.readQemuProcessIdentity(pid);
+                identityAttempt.observed = diagnosticIdentity(observed);
                 if (observed.state !== "present" || observed.executablePath !== request.expectedExecutable ||
                     typeof observed.startTicks !== "string" || !/^[1-9][0-9]{0,23}$/u.test(observed.startTicks) ||
                     observed.processGroupId !== outerProcessGroupId)
@@ -790,9 +869,17 @@ export async function runMonitoredQemu(io, request) {
             await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
         }
         if (!finished && identity === null) terminationReasons.push("identity-timeout");
-    } catch { monitorFailed = true; terminationReasons.push("identity-observation-failed"); }
+    } catch (error) {
+        monitorFailed = true;
+        monitorFailure = boundedMonitorFailure("identity-observation", error, identityAttempt);
+        terminationReasons.push("identity-observation-failed");
+    }
     let lowMemorySince = null;
     while (!finished && terminationReasons.length === 0) {
+        if (request.qmp && (qmpState === "missing" || qmpState === "failed")) {
+            terminationReasons.push("qmp-failed");
+            break;
+        }
         try {
             const sample = await io.observeRuntimeResources(request.resources);
             const now = io.monotonicMilliseconds();
@@ -805,6 +892,10 @@ export async function runMonitoredQemu(io, request) {
             if (now >= request.executionDeadline) terminationReasons.push("deadline");
         } catch { terminationReasons.push("telemetry-failed"); }
         if (!finished && terminationReasons.length === 0) await io.wait(RESOURCE_POLL_MILLISECONDS);
+    }
+    if (request.qmp && qmpState === "pending" && finished) {
+        try { qmpObservation = await qmpSession; qmpState = "complete"; }
+        catch { qmpState = "failed"; terminationReasons.push("qmp-failed"); }
     }
     let teardownProven = true;
     if (terminationReasons.length > 0 && outerProcessGroupId !== null) {
@@ -835,7 +926,7 @@ export async function runMonitoredQemu(io, request) {
         }
     }
     if (monitorFailed || identity === null || !teardownProven)
-        return {observation, identity, absentAfter: false, processGroupGone: false,
+        return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
             terminationReason: terminationReasons[0] ?? null};
     const cleanupDeadline = io.monotonicMilliseconds() + QEMU_CLEANUP_TIMEOUT_MILLISECONDS;
     while (io.monotonicMilliseconds() <= cleanupDeadline) {
@@ -847,15 +938,16 @@ export async function runMonitoredQemu(io, request) {
                 monitorFailed = true;
                 terminationReasons.push("group-observation-failed");
             }
-            return {observation, identity, absentAfter: true, processGroupGone,
+            return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: true, processGroupGone,
                 terminationReason: terminationReasons[0] ?? null};
         }
         if (after.startTicks !== identity.startTicks || after.executablePath !== identity.executablePath)
-            return {observation, identity, absentAfter: false, processGroupGone: false,
+            return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
+                processGroupGone: false,
                 terminationReason: terminationReasons[0] ?? null};
         await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
     }
-    return {observation, identity, absentAfter: false, processGroupGone: false,
+    return {observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
         terminationReason: terminationReasons[0] ?? null};
 }
 
@@ -1006,9 +1098,12 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
         throw new TypeError("QEMU privilege mode is invalid");
     assertPortableAncestry(io, input.paths.portableRoot,
-        [input.toolchain.runtime.loader.path, input.toolchain.qemu.path], input.toolchain.runtime.libraryPath);
+        [input.toolchain.runtime.loader.path, input.toolchain.qemu.path, input.toolchain.firmware.kvmvapic.path,
+            input.toolchain.firmware.vga.path], [...input.toolchain.runtime.libraryPath, input.toolchain.firmware.searchPath]);
     assertCriticalFileUnchanged(io, input.toolchain.runtime.loader, "portable runtime loader");
     assertCriticalFileUnchanged(io, input.toolchain.qemu, "QEMU executable");
+    assertCriticalFileUnchanged(io, input.toolchain.firmware.kvmvapic, "QEMU kvmvapic firmware");
+    assertCriticalFileUnchanged(io, input.toolchain.firmware.vga, "QEMU VGA firmware");
     const qemuInvocation = portableInvocation(input.toolchain, input.toolchain.qemu, input.argv);
     const launcher = input.privilegeMode === "reviewed-sudo-kvm" ? {
         command: SUDO, argv: ["-n", "--", TIMEOUT, "--foreground", "--signal=KILL",
@@ -1028,11 +1123,14 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     const executionDeadline = Math.min(launchTime + QEMU_TIMEOUT_SECONDS * 1_000,
         stageStartedMilliseconds + QEMU_TIMEOUT_SECONDS * 1_000);
     if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
+    const screenshotPaths = [`${input.paths.root}/early-boot-1.png`, `${input.paths.root}/early-boot-2.png`];
+    if (screenshotPaths.some(target => io.pathExists(target)))
+        throw new Error("early-boot screenshot target already exists");
     const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
         timeoutMs: QEMU_OUTER_TIMEOUT_MILLISECONDS, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
         executionDeadline, resources: {taskPath: path.posix.dirname(input.paths.root),
-            roots: [input.paths.root, input.paths.portableRoot]}});
+            roots: [input.paths.root, input.paths.portableRoot]}, qmp: {screenshotPaths}});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
         monitored.absentAfter === true && monitored.processGroupGone === true;
@@ -1041,6 +1139,21 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         launcherExecutablePath: monitored.identity?.executablePath ?? null,
         processGroupId: monitored.identity?.processGroupId ?? null,
         qemuPidAbsentAfter: monitored.absentAfter, terminationReason: monitored.terminationReason ?? null};
+    let earlyBoot = null;
+    if (monitored.qmp?.inputSent === false && monitored.qmp.running === true && monitored.qmp.status === "running" &&
+        JSON.stringify(monitored.qmp.screenshotPaths) === JSON.stringify(screenshotPaths)) {
+        try {
+            const screenshots = screenshotPaths.map(target => {
+                const observed = io.readOwnedVerified(target, MAX_EARLY_BOOT_SCREENSHOT_BYTES);
+                if (observed.identity.path !== target || observed.bytes.length < PNG_SIGNATURE.length ||
+                    !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE))
+                    throw new Error("early-boot screenshot is invalid");
+                return {...observed.identity, bytesBase64: observed.bytes.toString("base64")};
+            });
+            earlyBoot = {schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+                version: structuredClone(monitored.qmp.version), status: monitored.qmp.status, running: true, screenshots};
+        } catch { /* a missing or changed screenshot keeps the launch non-acceptable */ }
+    }
     const result = {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
         timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
         treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
@@ -1048,14 +1161,15 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         launcherExecutablePath: processRecord.launcherExecutablePath,
         processGroupId: processRecord.processGroupId,
         qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-        terminationReason: processRecord.terminationReason}, argv: input.argv};
+        terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot};
     const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
         && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
-        && !processRecord.stdoutOverflow && !processRecord.stderrOverflow;
+        && !processRecord.stdoutOverflow && !processRecord.stderrOverflow && earlyBoot !== null;
     const processFlags = {errorObserved: processRecord.errorObserved,
         stdoutOverflow: processRecord.stdoutOverflow, stderrOverflow: processRecord.stderrOverflow};
     if (!guestParsingAllowed) result.failureDiagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
-        process: structuredClone(result.process), processFlags: structuredClone(processFlags), stderr: {
+        process: structuredClone(result.process), processFlags: structuredClone(processFlags),
+        monitorFailure: monitored.monitorFailure ?? null, stderr: {
             bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
             bytesBase64: observation.stderr.toString("base64")}};
     return {result, guestParsingAllowed, processFlags};
@@ -1157,9 +1271,12 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 "lib/x86_64-linux-gnu/ld-linux-x86-64.so.2"]);
             const runtime = {loader, libraryPath: [path.posix.dirname(loader.path),
                 `${installRoot}/${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}`]};
+            const firmware = {searchPath: `${installRoot}/usr/share/qemu`,
+                kvmvapic: identify("usr/share/qemu/kvmvapic.bin"),
+                vga: identify("usr/share/seabios/vgabios-stdvga.bin")};
             assertPortableAncestry(io, installRoot,
-                [qemu.path, sevenZip.path, sevenZipModule.path, runtime.loader.path],
-                runtime.libraryPath);
+                [qemu.path, sevenZip.path, sevenZipModule.path, runtime.loader.path, firmware.kvmvapic.path,
+                    firmware.vga.path], [...runtime.libraryPath, firmware.searchPath]);
             const invokeQemu = argv => portableInvocation({runtime}, qemu, argv);
             let invocation = invokeQemu(["--version"]);
             const version = assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
@@ -1190,13 +1307,14 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 sevenZip, wiminfo: identifyCommand("usr/bin/wiminfo"),
                 ovmfCode: identify("usr/share/OVMF/OVMF_CODE_4M.fd"),
                 ovmfVarsTemplate: identify("usr/share/OVMF/OVMF_VARS_4M.fd"),
-                runtime,
+                firmware, runtime,
                 packageClosureSha256: sha256(Buffer.from(JSON.stringify(input.packageClosure))),
                 installedFilesManifest: {bytes: installedInventory.bytes, sha256: installedInventory.sha256},
                 licensesManifest: {bytes: licenseInventory.bytes, sha256: licenseInventory.sha256},
                 capabilities: {cpuModels: cpuHelp.includes("Westmere-v2") ? ["Westmere-v2"] : [],
                     machines: machineHelp.includes("q35") ? ["q35"] : [],
-                    devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial"].filter(item => deviceHelp.includes(item)),
+                    devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA", "qemu-xhci", "usb-kbd"]
+                        .filter(item => deviceHelp.includes(item)),
                     accelerator: "kvm"}};
         },
         async acquireProbeClosure(input) {
@@ -1267,7 +1385,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             io.mkdirExclusive(seedRoot);
             for (const file of input.seedSpec.files) {
                 const target = directChild(seedRoot, `${seedRoot}/${file.name}`, file.name);
-                if (file.kind === "inline") {
+                if (INLINE_SEED_KINDS.has(file.kind)) {
                     const bytes = Buffer.from(file.bytesBase64, "base64");
                     if (String(bytes.length) !== file.bytes || sha256(bytes) !== file.sha256)
                         throw new Error("inline seed file identity is invalid");
@@ -1341,7 +1459,8 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 const output = io.inspectOwned(input.paths.outputDisk);
                 return {...launched,
                     guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
-                    instructions: parsed.instructions, network: parsed.network,
+                    instructions: parsed.instructions, network: parsed.network, activation: parsed.activation,
+                    systemTools: parsed.systemTools,
                     output: {path: output.path, bytes: output.bytes, sha256: output.sha256}}};
             } catch {
                 return {...launched, guest: null};

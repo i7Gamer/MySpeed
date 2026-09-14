@@ -14,6 +14,8 @@ const PREDECESSOR_SOURCE_BINDING = "authentic-1.6.0-default-msi";
 const MYSPEED_UPGRADE_CODE = "{A1B2C3D4-5E6F-7890-ABCD-EF1234567890}";
 const CANDIDATE_WINDOWS_STAMP = "1.6.1.45";
 const MAX_FILE_BYTES = 1_073_741_824;
+const MIN_PAYLOAD_FILE_COUNT = 3;
+const MAX_PAYLOAD_FILE_COUNT = 128;
 const HOST_OPERATION_TIMEOUT_MS = 600_000;
 const HASH = /^[0-9a-f]{64}$/u;
 const SOURCE_SHA = /^[0-9a-f]{40}$/u;
@@ -111,7 +113,8 @@ const validatePayload = (value, label) => {
             scalar(item.productVersion, VERSION, `${label} executable product version`);
         }
     }
-    if (!Array.isArray(value.inventory) || value.inventory.length < 4 || value.inventory.length > 128)
+    if (!Array.isArray(value.inventory) || value.inventory.length < MIN_PAYLOAD_FILE_COUNT ||
+        value.inventory.length > MAX_PAYLOAD_FILE_COUNT)
         fail(`${label} payload inventory differs`);
     const paths = [];
     for (const item of value.inventory) {

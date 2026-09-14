@@ -17,8 +17,9 @@ const ARCHIVE_SHA = "b".repeat(64);
 const NONCE = "0123456789abcdef0123456789abcdef";
 const ROLES = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
 const CLOSURE_FILES = ["linux-windows-cpu-floor-admission.mjs", "linux-windows-cpu-floor-stage2-controller.mjs",
-    "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2.mjs",
-    "linux-kvm-capability.mjs", "linux-kvm-privileged-capability.mjs"]
+    "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2-qmp.mjs",
+    "linux-windows-cpu-floor-stage2.mjs", "linux-kvm-capability.mjs", "linux-kvm-privileged-capability.mjs",
+    "windows-msi-post-setup-activation.mjs"]
     .map(name => `scripts/qualification/${name}`);
 const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 
@@ -84,13 +85,14 @@ describe("hosted Windows CPU-floor Stage 2 workflow", () => {
         assert.match(workflow.jobs.execute.if, /RUN-CANDIDATE-NEUTRAL-STAGE2/u);
     });
 
-    it("seals the six runtime modules and executes without a source checkout", () => {
+    it("seals the eight runtime modules and executes without a source checkout", () => {
         const workflow = parse(fs.readFileSync(WORKFLOW, "utf8"));
         const prepare = workflow.jobs.prepare.steps.map(step => step.run ?? "").join("\n");
         const execute = workflow.jobs.execute.steps;
         for (const member of ["linux-kvm-capability.mjs", "linux-kvm-privileged-capability.mjs",
             "linux-windows-cpu-floor-admission.mjs", "linux-windows-cpu-floor-stage2.mjs",
-            "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2-controller.mjs"])
+            "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2-qmp.mjs",
+            "linux-windows-cpu-floor-stage2-controller.mjs", "windows-msi-post-setup-activation.mjs"])
             assert.match(prepare, new RegExp(member.replaceAll(".", "\\."), "u"));
         assert.equal(execute.some(step => String(step.uses ?? "").startsWith("actions/checkout@")), false);
         const run = execute.map(step => step.run ?? "").join("\n");

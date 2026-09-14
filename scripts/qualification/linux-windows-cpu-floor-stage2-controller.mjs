@@ -88,9 +88,11 @@ function validateRequest(request) {
     const closureNames = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
+        "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
         "scripts/qualification/linux-kvm-capability.mjs",
-        "scripts/qualification/linux-kvm-privileged-capability.mjs"];
+        "scripts/qualification/linux-kvm-privileged-capability.mjs",
+        "scripts/qualification/windows-msi-post-setup-activation.mjs"];
     if (request.closure.root !== closureRoot || !Array.isArray(request.closure.files) ||
         request.closure.files.length !== closureNames.length) throw new TypeError("Stage 2 closure is invalid");
     for (const [index, name] of closureNames.entries()) {

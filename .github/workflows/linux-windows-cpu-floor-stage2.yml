@@ -81,7 +81,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorStage2Controller.test.js \
             tests/server/linuxWindowsCpuFloorStage2Workflow.test.js
 
-      - name: Seal exact six-module closure
+      - name: Seal exact eight-module closure
         id: seal
         shell: bash
         run: |
@@ -96,9 +96,11 @@ jobs:
           install -m 600 scripts/qualification/linux-windows-cpu-floor-admission.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-kvm-capability.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/windows-msi-post-setup-activation.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-kvm-capability.mjs "$kvm_root/"
           install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$kvm_root/"
           node "$kvm_root/linux-kvm-capability.mjs" emit-manifest \
@@ -118,9 +120,11 @@ jobs:
           const names = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
             "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
             "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
             "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
             "scripts/qualification/linux-kvm-capability.mjs",
-            "scripts/qualification/linux-kvm-privileged-capability.mjs"];
+            "scripts/qualification/linux-kvm-privileged-capability.mjs",
+            "scripts/qualification/windows-msi-post-setup-activation.mjs"];
           const files = names.map(name => { const bytes = fs.readFileSync(path.join(root, name)); return {name,
             bytes: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex")}; });
           fs.writeFileSync(path.join(root, "stage2-closure.json"), `${JSON.stringify({schemaVersion: 1, files})}\n`,
@@ -183,7 +187,8 @@ jobs:
           exactDirectory(path.join(stage2, "scripts", "qualification"), ["linux-kvm-capability.mjs",
             "linux-kvm-privileged-capability.mjs", "linux-windows-cpu-floor-admission.mjs",
             "linux-windows-cpu-floor-stage2-controller.mjs", "linux-windows-cpu-floor-stage2-hosted.mjs",
-            "linux-windows-cpu-floor-stage2.mjs"]);
+            "linux-windows-cpu-floor-stage2-qmp.mjs", "linux-windows-cpu-floor-stage2.mjs",
+            "windows-msi-post-setup-activation.mjs"]);
           exactDirectory(kvm, ["closure.json", "linux-kvm-capability.mjs",
             "linux-kvm-privileged-capability.mjs", "privileged-closure.json"]);
           NODE

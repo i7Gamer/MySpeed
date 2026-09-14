@@ -62,7 +62,9 @@ const predecessorPayload = () => { const value = payload(); value.exe = {bytes: 
     value.inventory[1] = {path: "File/MySpeedService.exe", bytes: value.wrapper.bytes,
         sha256: value.wrapper.sha256};
     value.inventory[2] = {path: "File/MySpeedService.xml", bytes: value.configuration.bytes,
-        sha256: value.configuration.sha256}; return value; };
+        sha256: value.configuration.sha256};
+    value.inventory = value.inventory.filter(item => item.path !== "File/WinSW-LICENSE.txt");
+    return value; };
 
 describe("hosted post-release MSI fixture preparation", () => {
     it("builds two deterministic lower-version source clones and retains inspected payload identities", async () => {
@@ -94,6 +96,8 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.equal(result.fixtures[1].configurationSha256, HASH("4"));
         assert.equal(result.fixtures[1].serviceWrapperSha256, HASH("5"));
         assert.equal(result.fixtures[0].packageCode, plan.fixtures[0].packageCode);
+        assert.equal(result.candidatePayload.inventory.length, 4);
+        assert.equal(result.predecessorPayload.inventory.length, 3);
         assert.deepEqual(result.fixtures[1].payloadInventory, predecessorPayload().inventory);
         assert.equal(result.fixtures[0].sourceBindingId, "authentic-1.6.0-default-msi");
         assert.notEqual(result.fixtures[0].exeSha256, result.candidatePayload.exe.sha256);

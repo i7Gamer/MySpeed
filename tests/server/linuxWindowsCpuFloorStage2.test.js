@@ -19,15 +19,24 @@ import {
 import {STAGE2_LIMITS} from "../../scripts/qualification/linux-windows-cpu-floor-admission.mjs";
 import {createHostedStage2Operations} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
+    "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
 const HASH = value => crypto.createHash("sha256").update(value).digest("hex");
 const FILE_HASH = "a".repeat(64);
 const POWERSHELL_TEST_TIMEOUT_MILLISECONDS = 10_000;
+const SYSTEM_TOOLS = [
+    {role: "msiexec", path: "C:\\Windows\\System32\\msiexec.exe", bytes: "1024", sha256: "8".repeat(64)},
+    {role: "sc", path: "C:\\Windows\\System32\\sc.exe", bytes: "2048", sha256: "9".repeat(64)},
+    {role: "powershell", path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+        bytes: "4096", sha256: "b".repeat(64)}
+];
 const EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
 const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "b".repeat(40),
@@ -35,6 +44,15 @@ function context() {
         environment: {GITHUB_ACTIONS: "true", CI: "true", RUNNER_OS: "Linux", RUNNER_ARCH: "X64",
             RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24", ImageVersion: "20260907.1"}};
 }
+
+const activation = () => {
+    const value = context();
+    return buildWindowsMsiSetupCompleteActivation({repository: value.repository, sourceSha: value.sourceSha,
+        eventSha: value.eventSha, runId: value.runId, runAttempt: value.runAttempt, nonce: value.nonce});
+};
+const activationReceipt = () => {
+    return getCompletedWindowsMsiActivationEvidence(activation());
+};
 
 function admission() {
     return {schemaVersion: 1, status: "admitted", admitted: true,
@@ -117,6 +135,11 @@ function toolchain() {
         sha256: "f".repeat(64), ownership},
     ovmfCode: {path: `${portable}/usr/share/OVMF/OVMF_CODE_4M.fd`, bytes: "4096", sha256: "1".repeat(64), ownership},
     ovmfVarsTemplate: {path: `${portable}/usr/share/OVMF/OVMF_VARS_4M.fd`, bytes: "4096", sha256: "2".repeat(64), ownership},
+    firmware: {searchPath: `${portable}/usr/share/qemu`,
+        kvmvapic: {path: `${portable}/usr/share/qemu/kvmvapic.bin`, bytes: "4096",
+            sha256: "3".repeat(64), ownership},
+        vga: {path: `${portable}/usr/share/seabios/vgabios-stdvga.bin`, bytes: "4096",
+            sha256: "5".repeat(64), ownership}},
     runtime: {loader: {path: `${portable}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
         bytes: "4096", sha256: "4".repeat(64), ownership}, libraryPath: [`${portable}/usr/lib/x86_64-linux-gnu`,
         `${portable}/usr/lib/7zip`]},
@@ -124,15 +147,24 @@ function toolchain() {
     installedFilesManifest: {bytes: "10000", sha256: "6".repeat(64)},
     licensesManifest: {bytes: "2000", sha256: "7".repeat(64)},
     capabilities: {cpuModels: ["Westmere-v2"], machines: ["q35"], devices: ["ich9-ahci", "ide-cd", "ide-hd",
-        "isa-serial"], accelerator: "kvm"}};
+        "isa-serial", "VGA", "qemu-xhci", "usb-kbd"], accelerator: "kvm"}};
 }
 
 function guestEvidence() {
     return {schemaVersion: 1, status: "observed", cpu: {sse42: true, popcnt: true, osxsave: false,
         avx: false, avx2: false, xcr0: null}, instructions: {sse42: "completed", popcnt: "completed",
         avx: "illegal-instruction", avx2: "illegal-instruction"}, network: {hardwareNics: 0,
-        enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}, output: {path: paths().outputDisk,
+        enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}, activation: activationReceipt(),
+        systemTools: structuredClone(SYSTEM_TOOLS),
+        output: {path: paths().outputDisk,
         bytes: "67108864", sha256: "3".repeat(64)}};
+}
+
+function earlyBoot() {
+    return {schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+        version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+        screenshots: [1, 2].map(index => ({path: `${paths().root}/early-boot-${index}.png`,
+            bytes: String(PNG.length), sha256: HASH(PNG), bytesBase64: PNG.toString("base64")}))};
 }
 
 function operations(overrides = {}) {
@@ -165,7 +197,8 @@ function operations(overrides = {}) {
         async launchOwnedQemu(input) { calls.push("launch"); return {process: {exitCode: 0, signal: null,
             timedOut: false, cleanupProven: true, treeGone: true, qemuPid: 2345,
             qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path, processGroupId: 2300,
-            qemuPidAbsentAfter: true, terminationReason: null}, argv: input.argv, guest: guestEvidence()}; },
+            qemuPidAbsentAfter: true, terminationReason: null}, argv: input.argv, earlyBoot: earlyBoot(),
+            guest: guestEvidence()}; },
         ...overrides
     };
     return {op, calls, seen};
@@ -280,12 +313,20 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
 
     it("builds the fixed offline KVM vector without implicit or network devices", () => {
         const argv = buildQemuArguments({paths: paths(), toolchain: toolchain()});
-        assert.deepEqual(argv.slice(0, 16), ["-nodefaults", "-no-user-config", "-display", "none", "-monitor",
-            "none", "-accel", "kvm", "-machine", "q35", "-cpu", "Westmere-v2", "-smp",
+        assert.deepEqual(argv.slice(0, 20), ["-nodefaults", "-no-user-config", "-display", "none", "-monitor",
+            "none", "-qmp", "stdio", "-L", toolchain().firmware.searchPath, "-accel", "kvm", "-machine", "q35",
+            "-cpu", "Westmere-v2", "-smp",
             "2,sockets=1,cores=2,threads=1", "-m", "6144M"]);
         assert.equal(argv.includes("-nic"), true);
         assert.equal(argv[argv.indexOf("-nic") + 1], "none");
         assert.equal(argv.includes("-no-reboot"), false);
+        const vgaIndex = argv.findIndex(value => value.startsWith("VGA,id=video0,"));
+        assert.deepEqual(argv.slice(vgaIndex - 1, argv.indexOf("-nic")),
+            ["-device", `VGA,id=video0,romfile=${toolchain().firmware.vga.path}`, "-device", "qemu-xhci,id=usb0",
+                "-device", "usb-kbd,bus=usb0.0"]);
+        assert.equal(argv[argv.indexOf("-qmp") + 1], "stdio");
+        assert.equal(argv[argv.indexOf("-L") + 1], toolchain().firmware.searchPath);
+        assert.ok(argv.includes(`VGA,id=video0,romfile=${toolchain().firmware.vga.path}`));
         assert.equal(argv[argv.indexOf("-boot") + 1], "once=d,order=c,strict=on");
         assert.equal(argv.some(value => /(?:^|[,=])(?:tap|user|socket|vsock)(?:[,=]|$)|virtfs|9p|fat:|nbd:|ssh:|http:/iu
             .test(value)), false);
@@ -306,6 +347,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(result.qualifying, false);
         assert.equal(result.releaseGateCleared, false);
         assert.equal(result.guest.network.hardwareNics, 0);
+        assert.deepEqual(result.guest.systemTools, SYSTEM_TOOLS);
         assert.equal(result.selectedImage.index, 2);
         assert.equal(result.privilegeMode, "reviewed-sudo-kvm");
         assert.equal(result.qemuProcess.qemuStartTicks, "77");
@@ -333,6 +375,12 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.match(bootstrap, /status='failed';nonce=\$EXPECTED_NONCE;stage='guest-bootstrap'/u);
         assert.match(bootstrap, /\$temporaryPath = \$Path \+ '\.tmp'/u);
         assert.match(bootstrap, /StructuralEqualityComparer\.Equals\(\$observed,\$Bytes\)/u);
+        assert.match(bootstrap, /ObserveActivation/u);
+        for (const tool of SYSTEM_TOOLS) assert.match(bootstrap, new RegExp(tool.path.replaceAll("\\", "\\\\"), "u"));
+        assert.match(bootstrap, /FileShare\]::Read/u);
+        assert.ok(bootstrap.indexOf("record.systemTools = & $Operations.ObserveSystemTools") <
+            bootstrap.indexOf("& $Shutdown"));
+        assert.ok(bootstrap.indexOf("ObserveActivation") < bootstrap.indexOf("successBytes"));
         assert.match(bootstrap, /\[IO\.File\]::Move\(\$temporaryPath,\$Path\)/u);
         assert.match(bootstrap, /finally \{\r\n\s+try \{\r\n\s+if \(\$errorModeChanged\)/u);
         assert.match(bootstrap, /\} finally \{\r\n\s+& \$Shutdown\r\n\s+\}/u);
@@ -340,6 +388,17 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.ok(bootstrap.indexOf("Stop-Computer -Force") > bootstrap.indexOf("finally {"));
         assert.ok(bootstrap.indexOf("Operations.SetErrorMode $previousErrorMode") < bootstrap.indexOf("& $Shutdown"));
         assert.doesNotMatch(bootstrap, /Enable-NetAdapter|New-NetIPAddress|Set-Net/u);
+        assert.deepEqual(seen.seedSpec.files.filter(file => file.kind === "activation-inline")
+            .map(file => file.name), ["SetupComplete.cmd", "myspeed-msi-setupcomplete.ps1"]);
+        assert.deepEqual(seen.seedSpec.files.filter(file => file.kind === "activation-installer")
+            .map(file => file.name), ["install-activation.ps1"]);
+        assert.deepEqual(seen.seedSpec.files.filter(file => file.kind === "activation-handoff")
+            .map(file => file.name), ["myspeed-base-calibration-handoff.json"]);
+        const unattendXml = Buffer.from(seen.seedSpec.files.find(file => file.name === "Autounattend.xml").bytesBase64,
+            "base64").toString("utf8");
+        assert.match(unattendXml, /install-activation\.ps1/u);
+        assert.doesNotMatch(unattendXml, /bootstrap\.ps1|WillReboot/u);
+        assert.deepEqual(result.guest.activation, activationReceipt());
         assert.deepEqual(seen.seedSpec.files.filter(file => file.kind === "owned-file").map(file => file.name),
             PROBE_ROLES.map(role => `${role}.exe`));
         assert.equal(seen.seedSpec.files.find(file => file.name === "known-good.exe").sourcePath,
@@ -349,7 +408,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
     it("captures native collector constants in its returned detached closure", {skip: process.platform !== "win32"}, () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-native-closure-"));
         const script = path.join(root, "bootstrap.ps1");
-        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        fs.writeFileSync(script, renderGuestBootstrap(context()));
         const harness = `$ErrorActionPreference='Stop';$global:timeouts=[Collections.Generic.List[int]]::new();` +
             `$global:lifecycle=[Collections.Generic.List[string]]::new();$global:nullExit=$false;` +
             `$global:testRoot='${root.replaceAll("'", "''")}';` +
@@ -391,16 +450,62 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
+    it("captures activation identities when its native-operation factory is created in a nested scope",
+        {skip: process.platform !== "win32"}, () => {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-activation-closure-"));
+            const script = path.join(root, "bootstrap.ps1");
+            const setupRoot = path.join(root, "Setup", "Scripts");
+            const expected = activation();
+            fs.mkdirSync(setupRoot, {recursive: true});
+            fs.writeFileSync(script, renderGuestBootstrap(context()));
+            fs.writeFileSync(path.join(setupRoot, "SetupComplete.cmd"),
+                Buffer.from(expected.files.setupComplete.bytesBase64, "base64"));
+            fs.writeFileSync(path.join(setupRoot, "myspeed-msi-setupcomplete.ps1"),
+                Buffer.from(expected.files.dispatcher.bytesBase64, "base64"));
+            const harness = `$ErrorActionPreference='Stop';$global:testRoot='${setupRoot.replaceAll("'", "''")}';` +
+                `function global:Join-Path{param($Path,$ChildPath)if($ChildPath -ceq 'Setup\\Scripts'){` +
+                `$global:testRoot}else{[IO.Path]::Combine([string]$Path,[string]$ChildPath)}}` +
+                `function global:Add-Type{param($TypeDefinition,$Language)}` +
+                `function global:Get-ScheduledTask{param($TaskName,$TaskPath)[pscustomobject]@{` +
+                `Actions=@([pscustomobject]@{Execute='${expected.startupTask.executable.replaceAll("'", "''")}';` +
+                `Arguments='${expected.startupTask.arguments.replaceAll("'", "''")}'});` +
+                `Triggers=@([pscustomobject]@{Enabled=$true;CimClass=[pscustomobject]@{` +
+                `CimClassName='MSFT_TaskBootTrigger'}});Principal=[pscustomobject]@{` +
+                `UserId='${expected.startupTask.principal}';RunLevel='${expected.startupTask.runLevel}'}}};` +
+                `$ops=& {. '${script.replaceAll("'", "''")}' -LibraryMode;New-MyspeedGuestNativeOperations};` +
+                `$observed=& $ops.ObserveActivation;$capturedLimit=` +
+                `$ops.ObserveSystemTools.Module.SessionState.PSVariable.GetValue('maximumSystemToolBytes');` +
+                `[Console]::Out.Write(([ordered]@{activation=$observed;capturedLimit=$capturedLimit}|` +
+                `ConvertTo-Json -Compress -Depth 8))`;
+            try {
+                const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
+                    {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
+                assert.equal(result.status, 0, result.stderr);
+                const observed = JSON.parse(result.stdout);
+                const receipt = activationReceipt();
+                assert.equal(observed.capturedLimit, 268_435_456);
+                assert.deepEqual(observed.activation.startupTask, receipt.startupTask);
+                assert.deepEqual(observed.activation.files.setupComplete.bytes, receipt.files.setupComplete.bytes);
+                assert.deepEqual(observed.activation.files.setupComplete.sha256, receipt.files.setupComplete.sha256);
+                assert.deepEqual(observed.activation.files.dispatcher.bytes, receipt.files.dispatcher.bytes);
+                assert.deepEqual(observed.activation.files.dispatcher.sha256, receipt.files.dispatcher.sha256);
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+
     it("runs injected bootstrap failure, diagnostic, restoration and shutdown paths", {skip: process.platform !== "win32"}, () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-bootstrap-"));
         const script = path.join(root, "bootstrap.ps1");
-        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        fs.writeFileSync(script, renderGuestBootstrap(context()));
         const harness = `$ErrorActionPreference='Stop';. '${script.replaceAll("'", "''")}' -LibraryMode;` +
             `$events=[Collections.Generic.List[string]]::new();$resolveCount=0;` +
             `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);if($Mode -eq 3){return [uint32]77}};` +
             `ResolveVolume={param([string]$Label)$script:resolveCount++;$events.Add('resolve:'+$Label);` +
             `if($Label -eq 'MYSPEEDSEED'){'C:\\Seed\\'}else{'C:\\Output\\'}};` +
             `CollectEvidence={param([string]$Seed)$events.Add('collect');[ordered]@{ok=$true}};` +
+            `ObserveActivation={$events.Add('activation');'${JSON.stringify(activationReceipt())}'|` +
+            `ConvertFrom-Json};` +
+            `ObserveSystemTools={$events.Add('system-tools');'${JSON.stringify(SYSTEM_TOOLS)}'|ConvertFrom-Json};` +
             `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
             `if([IO.Path]::GetFileName($Path) -eq 'result.json'){throw 'synthetic write failure'}}};` +
             `try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {$events.Add('shutdown')}}` +
@@ -410,7 +515,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
                 ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
                 {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
             assert.equal(result.status, 0, result.stderr);
-            assert.equal(result.stdout, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,mode:77," +
+            assert.equal(result.stdout, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,system-tools,mode:77," +
                 "write:result.json,shutdown,caught");
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
@@ -418,13 +523,16 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
     it("still invokes shutdown when error-mode restoration fails", {skip: process.platform !== "win32"}, () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-restore-"));
         const script = path.join(root, "bootstrap.ps1");
-        fs.writeFileSync(script, renderGuestBootstrap(NONCE));
+        fs.writeFileSync(script, renderGuestBootstrap(context()));
         const harness = `$ErrorActionPreference='Stop';. '${script.replaceAll("'", "''")}' -LibraryMode;` +
             `$events=[Collections.Generic.List[string]]::new();$script:writtenBytes=$null;` +
             `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);` +
             `if($Mode -eq 3){return [uint32]77}else{throw 'restore failed'}};` +
             `ResolveVolume={param([string]$Label)$events.Add('resolve:'+$Label);'C:\\Output\\'};` +
             `CollectEvidence={param([string]$Seed)$events.Add('collect');[ordered]@{ok=$true}};` +
+            `ObserveActivation={$events.Add('activation');'${JSON.stringify(activationReceipt())}'|` +
+            `ConvertFrom-Json};` +
+            `ObserveSystemTools={$events.Add('system-tools');'${JSON.stringify(SYSTEM_TOOLS)}'|ConvertFrom-Json};` +
             `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
             `$script:writtenBytes=[byte[]]$Bytes.Clone()}};` +
             `try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {$events.Add('shutdown')}}` +
@@ -436,7 +544,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
                 {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
             assert.equal(result.status, 0, result.stderr);
             const observed = JSON.parse(result.stdout);
-            assert.equal(observed.events, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,mode:77," +
+            assert.equal(observed.events, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,system-tools,mode:77," +
                 "write:result.json,shutdown,caught");
             assert.deepEqual(observed.outcome, {schemaVersion: 1, status: "failed", nonce: NONCE,
                 stage: "guest-bootstrap", failure: "restore failed"});
@@ -486,6 +594,17 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             ["wim", {inspectInstallWim: async () => []}, "wim-inspection"],
             ["toolchain", {extractPortableTools: async () => ({...toolchain(), capabilities: {...toolchain().capabilities,
                 cpuModels: []}})}, "toolchain"],
+            ...["VGA", "qemu-xhci", "usb-kbd"].map(device => [`toolchain missing ${device}`,
+                {extractPortableTools: async () => { const changed = toolchain();
+                    changed.capabilities.devices = changed.capabilities.devices.filter(value => value !== device);
+                    return changed; }}, "toolchain"]),
+            ["toolchain missing firmware", {extractPortableTools: async () => {
+                const changed = toolchain(); delete changed.firmware.kvmvapic; return changed;
+            }}, "toolchain"],
+            ["toolchain firmware alias", {extractPortableTools: async () => {
+                const changed = toolchain(); changed.firmware.vga.path = `${paths().portableRoot}/usr/share/qemu/vga.bin`;
+                return changed;
+            }}, "toolchain"],
             ["toolchain alias", {extractPortableTools: async () => {
                 const changed = toolchain(); changed.wiminfo.invocationPath = `${paths().portableRoot}/usr/bin/wimlib-imagex`;
                 return changed;
@@ -517,7 +636,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const bootstrap = operations({launchOwnedQemu: async input => ({process: {exitCode: 0, signal: null,
             timedOut: false, cleanupProven: true, treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
             launcherExecutablePath: toolchain().runtime.loader.path, processGroupId: 2300,
-            qemuPidAbsentAfter: true, terminationReason: null}, argv: input.argv, guest: {schemaVersion: 1,
+            qemuPidAbsentAfter: true, terminationReason: null}, argv: input.argv, earlyBoot: earlyBoot(), guest: {schemaVersion: 1,
             status: "failed", nonce: context().nonce, stage: "guest-bootstrap", failure: "probe execution failed"}})});
         const bootstrapResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
             probeArtifact: probeArtifact()}, bootstrap.op);
@@ -532,9 +651,13 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null};
         const diagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
             processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            monitorFailure: {phase: "identity-observation", message: "QEMU live process identity differs",
+                identity: {pid: 2345, expected: {processGroupId: 2300,
+                    executablePath: toolchain().runtime.loader.path}, observed: {state: "present", pid: 2345,
+                    processGroupId: 999, startTicks: "77", executablePath: "/unexpected/qemu"}}},
             stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}};
-        const fixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv, guest: null,
-            failureDiagnostic: diagnostic})});
+        const fixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: diagnostic})});
         const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
             probeArtifact: probeArtifact()},
             fixture.op);
@@ -545,10 +668,18 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(result.qualifying, false);
         assert.deepEqual(result.qemuLaunch, diagnostic);
         assert.equal(Object.isFrozen(result.qemuLaunch), true);
+        const cleanProcess = {...process, exitCode: 0, cleanupProven: true, treeGone: true};
+        const cleanDiagnostic = {...diagnostic, process: structuredClone(cleanProcess)};
+        const missingEarlyBoot = operations({launchOwnedQemu: async input => ({process: cleanProcess,
+            argv: input.argv, earlyBoot: null, guest: null, failureDiagnostic: cleanDiagnostic})});
+        const missingEarlyBootResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, missingEarlyBoot.op);
+        assert.equal(missingEarlyBootResult.status, "failed");
+        assert.deepEqual(missingEarlyBootResult.qemuLaunch, cleanDiagnostic);
         const oversized = structuredClone(diagnostic);
         oversized.stderr.bytesBase64 = "A".repeat(MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS + 1);
-        const rejected = operations({launchOwnedQemu: async input => ({process, argv: input.argv, guest: null,
-            failureDiagnostic: oversized})});
+        const rejected = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: oversized})});
         const rejectedResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
             probeArtifact: probeArtifact()}, rejected.op);
         assert.equal("qemuLaunch" in rejectedResult, false);

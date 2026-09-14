@@ -3,9 +3,17 @@ import path from "node:path";
 
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
+import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
+    getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 
 const SCHEMA_VERSION = 1;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+const MAX_SYSTEM_TOOL_BYTES = 268_435_456n;
+export const WINDOWS_SYSTEM_TOOL_PATHS = deepFreeze([
+    {role: "msiexec", path: "C:\\Windows\\System32\\msiexec.exe"},
+    {role: "sc", path: "C:\\Windows\\System32\\sc.exe"},
+    {role: "powershell", path: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"}
+]);
 const DECIMAL_PATTERN = /^(?:0|[1-9][0-9]*)$/u;
 const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9+.-]{0,127}$/u;
 const VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9.+:~_-]{0,127}$/u;
@@ -24,6 +32,9 @@ const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
 const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
+const MAX_EARLY_BOOT_SCREENSHOT_BYTES = 1_048_576;
+const MAX_EARLY_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_EARLY_BOOT_SCREENSHOT_BYTES / 3) * 4;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
@@ -83,6 +94,15 @@ function deepFreeze(value) {
     return value;
 }
 
+function buildPostSetupActivation(context) {
+    return buildWindowsMsiSetupCompleteActivation({repository: context.repository, sourceSha: context.sourceSha,
+        eventSha: context.eventSha, runId: context.runId, runAttempt: context.runAttempt, nonce: context.nonce});
+}
+
+function activationEvidence(activation) {
+    return getCompletedWindowsMsiActivationEvidence(activation);
+}
+
 class WimSelectionError extends TypeError {
     constructor(diagnostic) {
         super("WIM supported image is not unique");
@@ -91,9 +111,10 @@ class WimSelectionError extends TypeError {
 }
 
 class QemuLaunchError extends Error {
-    constructor(diagnostic) {
+    constructor(diagnostic, earlyBoot = null) {
         super("QEMU process did not complete cleanly");
         this.diagnostic = diagnostic;
+        this.earlyBoot = earlyBoot;
     }
 }
 
@@ -306,8 +327,9 @@ export function validateStage2Paths(value, context) {
 }
 
 function validateToolchain(value, portableRoot) {
-    const toolKeys = ["capabilities", "genisoimage", "installedFilesManifest", "licensesManifest", "mcopy", "mformat",
-        "ovmfCode", "ovmfVarsTemplate", "packageClosureSha256", "qemu", "qemuImg", "runtime", "sevenZip", "wiminfo"];
+    const toolKeys = ["capabilities", "firmware", "genisoimage", "installedFilesManifest", "licensesManifest", "mcopy",
+        "mformat", "ovmfCode", "ovmfVarsTemplate", "packageClosureSha256", "qemu", "qemuImg", "runtime", "sevenZip",
+        "wiminfo"];
     assertKeys(value, toolKeys, "portable toolchain");
     const commandPaths = {genisoimage: "usr/bin/genisoimage", mcopy: "usr/bin/mcopy", mformat: "usr/bin/mformat",
         qemu: "usr/bin/qemu-system-x86_64", qemuImg: "usr/bin/qemu-img", sevenZip: SEVEN_ZIP_RELATIVE_PATH,
@@ -331,6 +353,22 @@ function validateToolchain(value, portableRoot) {
             value[key].ownership.ordinaryUserWritable !== false ||
             !/^[4567][045][045]$/u.test(value[key].ownership.mode))
             throw new TypeError(`portable ${key} ownership is invalid`);
+    }
+    assertKeys(value.firmware, ["kvmvapic", "searchPath", "vga"], "portable QEMU firmware");
+    if (value.firmware.searchPath !== `${portableRoot}/usr/share/qemu`)
+        throw new TypeError("portable QEMU firmware search path is invalid");
+    for (const [key, expectedPath] of [["kvmvapic", `${portableRoot}/usr/share/qemu/kvmvapic.bin`],
+        ["vga", `${portableRoot}/usr/share/seabios/vgabios-stdvga.bin`]]) {
+        const firmware = value.firmware[key];
+        assertKeys(firmware, ["bytes", "ownership", "path", "sha256"], `portable QEMU ${key} firmware`);
+        if (firmware.path !== expectedPath) throw new TypeError(`portable QEMU ${key} firmware path is invalid`);
+        exactString(firmware.sha256, SHA256_PATTERN, `portable QEMU ${key} firmware hash`);
+        decimal(firmware.bytes, `portable QEMU ${key} firmware bytes`, {positive: true});
+        assertKeys(firmware.ownership, ["gid", "mode", "ordinaryUserWritable", "uid"],
+            `portable QEMU ${key} firmware ownership`);
+        if (firmware.ownership.uid !== "0" || firmware.ownership.gid !== "0" ||
+            firmware.ownership.ordinaryUserWritable !== false || !/^[4567][045][045]$/u.test(firmware.ownership.mode))
+            throw new TypeError(`portable QEMU ${key} firmware ownership is invalid`);
     }
     assertKeys(value.runtime, ["libraryPath", "loader"], "portable runtime");
     assertKeys(value.runtime.loader, ["bytes", "ownership", "path", "sha256"], "portable runtime loader");
@@ -361,7 +399,8 @@ function validateToolchain(value, portableRoot) {
     assertKeys(value.capabilities, ["accelerator", "cpuModels", "devices", "machines"], "QEMU capabilities");
     if (value.capabilities.accelerator !== "kvm" || !value.capabilities.cpuModels.includes(CPU_MODEL) ||
         !value.capabilities.machines.includes(MACHINE_MODEL) ||
-        !["ich9-ahci", "ide-cd", "ide-hd", "isa-serial"].every(item => value.capabilities.devices.includes(item)))
+        !["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA", "qemu-xhci", "usb-kbd"]
+            .every(item => value.capabilities.devices.includes(item)))
         throw new TypeError("QEMU capability set is invalid");
     return deepFreeze(structuredClone(value));
 }
@@ -441,8 +480,11 @@ function drive(id, format, file, readOnly = false) {
 }
 
 export function buildQemuArguments({paths: value, toolchain}) {
-    const argv = ["-nodefaults", "-no-user-config", "-display", "none", "-monitor", "none", "-accel", "kvm",
+    const argv = ["-nodefaults", "-no-user-config", "-display", "none", "-monitor", "none", "-qmp", "stdio",
+        "-L", toolchain.firmware.searchPath, "-accel", "kvm",
         "-machine", MACHINE_MODEL, "-cpu", CPU_MODEL, "-smp", "2,sockets=1,cores=2,threads=1", "-m", "6144M",
+        "-device", `VGA,id=video0,romfile=${toolchain.firmware.vga.path}`, "-device", "qemu-xhci,id=usb0", "-device",
+        "usb-kbd,bus=usb0.0",
         "-nic", "none", "-drive", `if=pflash,format=raw,readonly=on,file=${toolchain.ovmfCode.path}`,
         "-drive", `if=pflash,format=raw,file=${value.ovmfVars}`, "-device", "ich9-ahci,id=sata",
         "-drive", drive("osdisk", "qcow2", value.systemDisk), "-device", "ide-hd,drive=osdisk,bus=sata.1",
@@ -535,7 +577,7 @@ function renderAutounattend(image, nonce) {
         `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><RunSynchronous>` +
         `<RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>powershell.exe -NoLogo -NoProfile ` +
         `-NonInteractive -ExecutionPolicy Bypass -Command &quot;$s=(Get-Volume -FileSystemLabel MYSPEEDSEED ` +
-        `-ErrorAction Stop).DriveLetter; &amp; ($s+':\\bootstrap.ps1')&quot;</Path>` +
+        `-ErrorAction Stop).DriveLetter; &amp; ($s+':\\install-activation.ps1')&quot;</Path>` +
         `</RunSynchronousCommand></RunSynchronous></component></settings>\r\n` +
         `<settings pass="oobeSystem"><component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" ` +
         `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><UserAccounts>` +
@@ -544,19 +586,39 @@ function renderAutounattend(image, nonce) {
     return Buffer.from(xml, "utf8");
 }
 
-export function renderGuestBootstrap(nonce) {
+export function renderGuestBootstrap(context) {
+    const activation = buildPostSetupActivation(context);
+    const nonce = context.nonce;
+    const setupComplete = activation.files.setupComplete;
+    const dispatcher = activation.files.dispatcher;
+    const startupTask = activation.startupTask;
     const roles = PROBE_ROLES.map(role => `'${role}'`).join(",");
     const script = `param([switch]$LibraryMode)\r\n$ErrorActionPreference = 'Stop'\r\nSet-StrictMode -Version Latest\r\n` +
         `$EXPECTED_NONCE = '${nonce}'\r\n$MAX_STREAM_BYTES = 4096\r\n$EXPECTED_ILLEGAL_EXIT = 3221225501L\r\n` +
         `$PROBE_TIMEOUT_MILLISECONDS = ${GUEST_PROBE_TIMEOUT_MILLISECONDS}\r\n` +
         `$PROBE_CLEANUP_TIMEOUT_MILLISECONDS = ${GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
         `$MAX_FAILURE_MESSAGE_CHARACTERS = ${MAX_GUEST_FAILURE_MESSAGE_CHARACTERS}\r\n` +
+        `$MAX_SYSTEM_TOOL_BYTES = ${MAX_SYSTEM_TOOL_BYTES}\r\n` +
+        `$EXPECTED_SETUP_COMPLETE_BYTES = ${setupComplete.bytes}\r\n` +
+        `$EXPECTED_SETUP_COMPLETE_SHA = '${setupComplete.sha256}'\r\n` +
+        `$EXPECTED_DISPATCHER_BYTES = ${dispatcher.bytes}\r\n` +
+        `$EXPECTED_DISPATCHER_SHA = '${dispatcher.sha256}'\r\n` +
+        `function Get-MyspeedGuestFileSha([IO.Stream]$Stream) {\r\n` +
+        `  $sha = [Security.Cryptography.SHA256]::Create()\r\n` +
+        `  try { return ([BitConverter]::ToString($sha.ComputeHash($Stream))).Replace('-','').ToLowerInvariant() } ` +
+        `finally { $sha.Dispose() }\r\n}\r\n` +
         `function New-MyspeedGuestNativeOperations {\r\n` +
         `  Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class ` +
         `MyspeedErrorMode { [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode); }'\r\n` +
         `  $probeTimeoutMilliseconds = $PROBE_TIMEOUT_MILLISECONDS\r\n` +
         `  $probeCleanupTimeoutMilliseconds = $PROBE_CLEANUP_TIMEOUT_MILLISECONDS\r\n` +
+        `  $expectedSetupCompleteBytes = $EXPECTED_SETUP_COMPLETE_BYTES\r\n` +
+        `  $expectedSetupCompleteSha = $EXPECTED_SETUP_COMPLETE_SHA\r\n` +
+        `  $expectedDispatcherBytes = $EXPECTED_DISPATCHER_BYTES\r\n` +
+        `  $expectedDispatcherSha = $EXPECTED_DISPATCHER_SHA\r\n` +
+        `  $getFileSha = \${function:Get-MyspeedGuestFileSha}.GetNewClosure()\r\n` +
         `  $maximumStreamBytes = $MAX_STREAM_BYTES\r\n` +
+        `  $maximumSystemToolBytes = $MAX_SYSTEM_TOOL_BYTES\r\n` +
         `  $expectedNonce = $EXPECTED_NONCE\r\n` +
         `  $collectEvidence = { param([string]$Seed)\r\n` +
         `    $runs = [Collections.Generic.List[object]]::new()\r\n    foreach ($role in @(${roles})) {\r\n` +
@@ -585,6 +647,70 @@ export function renderGuestBootstrap(nonce) {
         `    return [ordered]@{schemaVersion=1;nonce=$expectedNonce;runs=$runs;network=[ordered]@{` +
         `hardwareNics=$physical.Count;enabledNonLoopbackInterfaces=$enabled.Count;nonLoopbackRoutes=$routes.Count}}\r\n` +
         `  }.GetNewClosure()\r\n` +
+        `  $observeSystemTools = {\r\n` +
+        `    $systemTools = [Collections.Generic.List[object]]::new()\r\n` +
+        `    foreach ($expectedTool in @(` + WINDOWS_SYSTEM_TOOL_PATHS.map(tool =>
+            `[pscustomobject]@{role='${tool.role}';path='${tool.path}'}`).join(",") + `)) {\r\n` +
+        `      $toolItem = Get-Item -LiteralPath $expectedTool.path -Force -ErrorAction Stop\r\n` +
+        `      if ($toolItem -isnot [IO.FileInfo] -or ` +
+        `($toolItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $toolItem.Length -lt 1 -or ` +
+        `$toolItem.Length -gt $maximumSystemToolBytes) { throw 'Windows system tool identity differs' }\r\n` +
+        `      $toolStream = $null; try {\r\n` +
+        `        $toolStream = [IO.File]::Open($expectedTool.path,[IO.FileMode]::Open,[IO.FileAccess]::Read,` +
+        `[IO.FileShare]::Read)\r\n` +
+        `        if ($toolStream.Length -ne $toolItem.Length -or $toolStream.Length -lt 1 -or ` +
+        `$toolStream.Length -gt $maximumSystemToolBytes) { throw 'Windows system tool stream differs' }\r\n` +
+        `        $toolBytes = [string]$toolStream.Length; $toolSha = & $getFileSha $toolStream\r\n` +
+        `        if ($toolStream.Length -ne $toolItem.Length -or [string]$toolStream.Length -cne $toolBytes) { ` +
+        `throw 'Windows system tool changed while hashing' }\r\n` +
+        `        $systemTools.Add([ordered]@{role=$expectedTool.role;path=$expectedTool.path;` +
+        `bytes=$toolBytes;sha256=$toolSha})\r\n` +
+        `      } finally { if ($null -ne $toolStream) { $toolStream.Dispose() } }\r\n` +
+        `    }\r\n` +
+        `    return $systemTools\r\n` +
+        `  }.GetNewClosure()\r\n` +
+        `  $observeActivation = {\r\n` +
+        `    $root = Join-Path $env:SystemRoot 'Setup\\Scripts'\r\n` +
+        `    $rootItem = Get-Item -LiteralPath $root -Force -ErrorAction Stop\r\n` +
+        `    if ($rootItem -isnot [IO.DirectoryInfo] -or ` +
+        `($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { ` +
+        `throw 'MSI activation target root differs' }\r\n` +
+        `    $records = [ordered]@{}\r\n` +
+        `    foreach ($expected in @(` +
+        `[pscustomobject]@{key='setupComplete';name='SetupComplete.cmd';bytes=$expectedSetupCompleteBytes;` +
+        `sha=$expectedSetupCompleteSha},` +
+        `[pscustomobject]@{key='dispatcher';name='myspeed-msi-setupcomplete.ps1';` +
+        `bytes=$expectedDispatcherBytes;sha=$expectedDispatcherSha})) {\r\n` +
+        `      $target = Join-Path $root $expected.name; $targetItem = Get-Item -LiteralPath $target ` +
+        `-Force -ErrorAction Stop\r\n` +
+        `      if ($targetItem -isnot [IO.FileInfo] -or ` +
+        `($targetItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or ` +
+        `$targetItem.Length -ne [int64]$expected.bytes) { throw 'MSI activation installed file differs' }\r\n` +
+        `      $targetStream = $null; try {\r\n` +
+        `        $targetStream = [IO.File]::Open($target,[IO.FileMode]::Open,[IO.FileAccess]::Read,` +
+        `[IO.FileShare]::Read)\r\n` +
+        `        if ($targetStream.Length -ne [int64]$expected.bytes -or ` +
+        `(& $getFileSha $targetStream) -cne $expected.sha) { ` +
+        `throw 'MSI activation installed identity differs' }\r\n` +
+        `        $records[$expected.key] = [ordered]@{path=$target;bytes=[int64]$expected.bytes;` +
+        `sha256=[string]$expected.sha}\r\n` +
+        `      } finally { if ($null -ne $targetStream) { $targetStream.Dispose() } }\r\n` +
+        `    }\r\n` +
+        `    $tasks=@(Get-ScheduledTask -TaskName '${startupTask.name}' -TaskPath '${startupTask.path}' ` +
+        `-ErrorAction Stop);if($tasks.Count-ne 1){throw 'MSI startup task count differs'};$task=$tasks[0];` +
+        `$actions=@($task.Actions);$triggers=@($task.Triggers);if($actions.Count-ne 1-or$triggers.Count-ne 1-or` +
+        `[string]$actions[0].Execute-cne'${startupTask.executable}'-or` +
+        `[string]$actions[0].Arguments-cne'${startupTask.arguments}'-or` +
+        `[string]$task.Principal.UserId-cne'${startupTask.principal}'-or` +
+        `[string]$task.Principal.RunLevel-cne'${startupTask.runLevel}'-or` +
+        `[string]$triggers[0].CimClass.CimClassName-cne'MSFT_TaskBootTrigger'-or` +
+        `$triggers[0].Enabled-ne$true){throw 'MSI startup task identity differs'}\r\n` +
+        `    return [ordered]@{state='windows-setup-complete-startup-dispatch-ready';setupCompleted=$true;` +
+        `startupTaskInstalled=$true;nativeMsiExecutionStarted=$false;files=$records;startupTask=[ordered]@{` +
+        `name='${startupTask.name}';path='${startupTask.path}';trigger='${startupTask.trigger}';` +
+        `principal='${startupTask.principal}';runLevel='${startupTask.runLevel}';` +
+        `executable='${startupTask.executable}';arguments='${startupTask.arguments}'}}\r\n` +
+        `  }.GetNewClosure()\r\n` +
         `  $writeExclusive = { param([string]$Path,[byte[]]$Bytes)\r\n` +
         `    $temporaryPath = $Path + '.tmp'\r\n    try {\r\n` +
         `      $stream = [IO.FileStream]::new($temporaryPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,` +
@@ -599,13 +725,15 @@ export function renderGuestBootstrap(nonce) {
         `  }.GetNewClosure()\r\n` +
         `  return @{SetErrorMode={ param([uint32]$Mode) [MyspeedErrorMode]::SetErrorMode($Mode) };` +
         `ResolveVolume={ param([string]$Label) (Get-Volume -FileSystemLabel $Label -ErrorAction Stop).DriveLetter + ':\\' };` +
-        `CollectEvidence=$collectEvidence;WriteExclusive=$writeExclusive}\r\n}\r\n` +
+        `CollectEvidence=$collectEvidence;ObserveActivation=$observeActivation;ObserveSystemTools=$observeSystemTools;` +
+        `WriteExclusive=$writeExclusive}\r\n}\r\n` +
         `function Invoke-MyspeedGuestBootstrap {\r\n  param([hashtable]$Operations,` +
         `[scriptblock]$Shutdown = { Stop-Computer -Force })\r\n` +
         `  $bootstrapFailure = $null\r\n  $outputRoot = $null\r\n  $successBytes = $null\r\n` +
         `  $errorModeChanged = $false\r\n` +
         `  try {\r\n    if ($null -eq $Operations) { $Operations = New-MyspeedGuestNativeOperations }\r\n` +
-        `    foreach ($name in @('SetErrorMode','ResolveVolume','CollectEvidence','WriteExclusive')) { ` +
+        `    foreach ($name in @('SetErrorMode','ResolveVolume','CollectEvidence','ObserveActivation','ObserveSystemTools',` +
+        `'WriteExclusive')) { ` +
         `if ($Operations[$name] -isnot [scriptblock]) { throw ('Guest operation is absent: ' + $name) } }\r\n` +
         `    $previousErrorMode = & $Operations.SetErrorMode 3\r\n` +
         `    if ($previousErrorMode -isnot [uint32]) { throw 'Previous error mode is invalid' }\r\n` +
@@ -613,6 +741,8 @@ export function renderGuestBootstrap(nonce) {
         `    $seed = & $Operations.ResolveVolume 'MYSPEEDSEED'\r\n` +
         `    $outputRoot = & $Operations.ResolveVolume 'MYSPEEDOUT'\r\n` +
         `    $record = & $Operations.CollectEvidence $seed\r\n` +
+        `    $record.activation = & $Operations.ObserveActivation\r\n` +
+        `    $record.systemTools = & $Operations.ObserveSystemTools\r\n` +
         `    $successBytes = [Text.UTF8Encoding]::new($false).GetBytes(($record | ConvertTo-Json -Compress -Depth 8))\r\n` +
         `  } catch {\r\n    $bootstrapFailure = $_\r\n  } finally {\r\n    try {\r\n` +
         `      if ($errorModeChanged) {\r\n        try { $null = & $Operations.SetErrorMode $previousErrorMode } ` +
@@ -638,14 +768,26 @@ export function renderGuestBootstrap(nonce) {
     return Buffer.from(script, "utf8");
 }
 
-function buildSeedSpec(image, nonce, probes) {
-    const unattend = renderAutounattend(image, nonce);
-    const bootstrap = renderGuestBootstrap(nonce);
+function buildSeedSpec(image, context, probes, activation) {
+    const unattend = renderAutounattend(image, context.nonce);
+    const bootstrap = renderGuestBootstrap(context);
+    const handoff = createWindowsBaseCalibrationHandoff(activation, {name: "bootstrap.ps1",
+        bytes: bootstrap.length, sha256: sha256(bootstrap)});
+    const handoffBytes = Buffer.from(JSON.stringify(handoff), "utf8");
     const files = [
         {name: "Autounattend.xml", kind: "inline", bytes: String(unattend.length), sha256: sha256(unattend),
             bytesBase64: unattend.toString("base64")},
         {name: "bootstrap.ps1", kind: "inline", bytes: String(bootstrap.length), sha256: sha256(bootstrap),
             bytesBase64: bootstrap.toString("base64")},
+        {name: activation.seedInstaller.name, kind: "activation-installer",
+            bytes: String(activation.seedInstaller.bytes), sha256: activation.seedInstaller.sha256,
+            bytesBase64: activation.seedInstaller.bytesBase64},
+        {name: "myspeed-base-calibration-handoff.json", kind: "activation-handoff",
+            bytes: String(handoffBytes.length), sha256: sha256(handoffBytes),
+            bytesBase64: handoffBytes.toString("base64")},
+        ...Object.values(activation.files).map(file => ({name: path.win32.basename(file.path),
+            kind: "activation-inline", bytes: String(file.bytes), sha256: file.sha256,
+            bytesBase64: file.bytesBase64})),
         ...probes.files.map(file => ({name: `${file.role}.exe`, kind: "owned-file", bytes: file.bytes, sha256: file.sha256,
             sourcePath: file.path}))
     ];
@@ -676,7 +818,7 @@ function validatePreparedMedia(value, pathsValue, seedSpec, toolchain) {
     return deepFreeze(structuredClone(value));
 }
 
-function validateGuest(value, pathsValue, expectedNonce) {
+function validateGuest(value, pathsValue, expectedNonce, activation) {
     if (value?.status === "failed") {
         assertKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
         if (value.schemaVersion !== SCHEMA_VERSION || value.nonce !== expectedNonce ||
@@ -686,7 +828,9 @@ function validateGuest(value, pathsValue, expectedNonce) {
             /[\x00-\x1f\x7f]/u.test(value.failure)) throw new TypeError("guest failure evidence is invalid");
         throw new Error(`guest bootstrap failed: ${value.failure}`);
     }
-    assertKeys(value, ["cpu", "instructions", "network", "output", "schemaVersion", "status"], "guest evidence");
+    assertKeys(value, ["activation", "cpu", "instructions", "network", "output", "schemaVersion", "status",
+        "systemTools"],
+        "guest evidence");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed") throw new TypeError("guest header is invalid");
     assertKeys(value.cpu, ["avx", "avx2", "osxsave", "popcnt", "sse42", "xcr0"], "guest CPUID");
     if (value.cpu.sse42 !== true || value.cpu.popcnt !== true || value.cpu.osxsave !== false ||
@@ -699,6 +843,9 @@ function validateGuest(value, pathsValue, expectedNonce) {
     assertKeys(value.network, ["enabledNonLoopbackInterfaces", "hardwareNics", "nonLoopbackRoutes"], "guest network");
     if (value.network.hardwareNics !== 0 || value.network.enabledNonLoopbackInterfaces !== 0 ||
         value.network.nonLoopbackRoutes !== 0) throw new TypeError("guest network isolation is not proven");
+    validateWindowsSystemTools(value.systemTools);
+    if (!same(value.activation, activationEvidence(activation)))
+        throw new TypeError("guest MSI post-setup activation evidence is invalid");
     assertKeys(value.output, ["bytes", "path", "sha256"], "guest output");
     if (value.output.path !== pathsValue.outputDisk || value.output.bytes !== GUEST_OUTPUT_BYTES)
         throw new TypeError("guest output disk binding is invalid");
@@ -711,19 +858,66 @@ function failure(context, stage, error, cleanupProven = true) {
         .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
     const diagnostic = stage === "wim-inspection" && error instanceof WimSelectionError ?
         {wimSelection: structuredClone(error.diagnostic)} : stage === "qemu-launch" && error instanceof QemuLaunchError ?
-            {qemuLaunch: structuredClone(error.diagnostic)} : {};
+            {qemuLaunch: structuredClone(error.diagnostic), ...(error.earlyBoot === null ? {} :
+                {qemuEarlyBoot: structuredClone(error.earlyBoot)})} : {};
     return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
         context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic});
 }
 
+export function validateWindowsSystemTools(value) {
+    if (!Array.isArray(value) || value.length !== WINDOWS_SYSTEM_TOOL_PATHS.length)
+        throw new TypeError("Windows system tool identities are invalid");
+    for (let index = 0; index < WINDOWS_SYSTEM_TOOL_PATHS.length; index += 1) {
+        const observed = value[index];
+        const expected = WINDOWS_SYSTEM_TOOL_PATHS[index];
+        assertKeys(observed, ["bytes", "path", "role", "sha256"], "Windows system tool identity");
+        if (observed.role !== expected.role || observed.path !== expected.path ||
+            decimal(observed.bytes, "Windows system tool bytes", {positive: true}) > MAX_SYSTEM_TOOL_BYTES)
+            throw new TypeError("Windows system tool identity differs");
+        exactString(observed.sha256, SHA256_PATTERN, "Windows system tool SHA-256");
+    }
+    return deepFreeze(structuredClone(value));
+}
+
 function validateQemuLaunchDiagnostic(value, process) {
-    assertKeys(value, ["kind", "process", "processFlags", "schemaVersion", "stderr"], "QEMU failure diagnostic");
+    assertKeys(value, ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"],
+        "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
     assertKeys(value.processFlags, ["errorObserved", "stderrOverflow", "stdoutOverflow"], "QEMU process flags");
     if (!Object.values(value.processFlags).every(item => typeof item === "boolean"))
         throw new TypeError("QEMU process flags are invalid");
+    if (value.monitorFailure !== null) {
+        assertKeys(value.monitorFailure, ["identity", "message", "phase"], "QEMU monitor failure");
+        if (value.monitorFailure.phase !== "identity-observation" ||
+            typeof value.monitorFailure.message !== "string" ||
+            !/^[\x20-\x7e]{1,512}$/u.test(value.monitorFailure.message))
+            throw new TypeError("QEMU monitor failure is invalid");
+        const identity = value.monitorFailure.identity;
+        assertKeys(identity, ["expected", "observed", "pid"], "QEMU monitor identity");
+        assertKeys(identity.expected, ["executablePath", "processGroupId"], "QEMU expected monitor identity");
+        const validPid = candidate => candidate === null || Number.isInteger(candidate) && candidate > 0 &&
+            candidate <= 0x7fff_ffff;
+        if (!validPid(identity.pid) || !validPid(identity.expected.processGroupId) ||
+            typeof identity.expected.executablePath !== "string" ||
+            !/^\/[\x20-\x7e]{1,511}$/u.test(identity.expected.executablePath))
+            throw new TypeError("QEMU expected monitor identity is invalid");
+        if (identity.observed !== null) {
+            if (identity.observed.state === "absent") assertKeys(identity.observed, ["state"], "QEMU observed identity");
+            else {
+                assertKeys(identity.observed, ["executablePath", "pid", "processGroupId", "startTicks", "state"],
+                    "QEMU observed identity");
+                if (identity.observed.state !== "present" || !validPid(identity.observed.pid) ||
+                    !validPid(identity.observed.processGroupId) ||
+                    (identity.observed.startTicks !== null &&
+                        !/^[1-9][0-9]{0,23}$/u.test(identity.observed.startTicks)) ||
+                    (identity.observed.executablePath !== null &&
+                        !/^\/[\x20-\x7e]{1,511}$/u.test(identity.observed.executablePath)))
+                    throw new TypeError("QEMU observed identity is invalid");
+            }
+        }
+    }
     assertKeys(value.stderr, ["bytes", "bytesBase64", "sha256"], "QEMU stderr diagnostic");
     const byteCount = decimal(value.stderr.bytes, "QEMU stderr bytes");
     exactString(value.stderr.sha256, SHA256_PATTERN, "QEMU stderr hash");
@@ -734,6 +928,34 @@ function validateQemuLaunchDiagnostic(value, process) {
     const bytes = Buffer.from(value.stderr.bytesBase64, "base64");
     if (bytes.length !== Number(byteCount) || sha256(bytes) !== value.stderr.sha256)
         throw new TypeError("QEMU stderr diagnostic identity differs");
+    return deepFreeze(structuredClone(value));
+}
+
+export function validateEarlyBoot(value, pathsValue) {
+    assertKeys(value, ["inputSent", "kind", "running", "schemaVersion", "screenshots", "status", "version"],
+        "QEMU early-boot observation");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-early-boot-observation" ||
+        value.inputSent !== false || value.running !== true || value.status !== "running")
+        throw new TypeError("QEMU early-boot observation is invalid");
+    assertKeys(value.version, ["major", "micro", "minor"], "QEMU early-boot version");
+    if (!Object.values(value.version).every(item => Number.isSafeInteger(item) && item >= 0))
+        throw new TypeError("QEMU early-boot version is invalid");
+    if (!Array.isArray(value.screenshots) || value.screenshots.length !== 2)
+        throw new TypeError("QEMU early-boot screenshots are invalid");
+    for (const [index, screenshot] of value.screenshots.entries()) {
+        assertKeys(screenshot, ["bytes", "bytesBase64", "path", "sha256"], "QEMU early-boot screenshot");
+        const expectedPath = `${pathsValue.root}/early-boot-${index + 1}.png`;
+        const byteCount = decimal(screenshot.bytes, "QEMU early-boot screenshot bytes", {positive: true});
+        exactString(screenshot.sha256, SHA256_PATTERN, "QEMU early-boot screenshot hash");
+        if (screenshot.path !== expectedPath || byteCount > BigInt(MAX_EARLY_BOOT_SCREENSHOT_BYTES) ||
+            typeof screenshot.bytesBase64 !== "string" ||
+            screenshot.bytesBase64.length > MAX_EARLY_BOOT_SCREENSHOT_BASE64_CHARACTERS ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(screenshot.bytesBase64))
+            throw new TypeError("QEMU early-boot screenshot is invalid");
+        const bytes = Buffer.from(screenshot.bytesBase64, "base64");
+        if (bytes.length !== Number(byteCount) || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+            sha256(bytes) !== screenshot.sha256) throw new TypeError("QEMU early-boot screenshot identity differs");
+    }
     return deepFreeze(structuredClone(value));
 }
 
@@ -777,7 +999,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             wimInspection.removal.removed !== true) throw new TypeError("install WIM removal proof is invalid");
         const selectedImage = selectWindowsImage(wimInspection.images);
         stage = "offline-media";
-        const seedSpec = buildSeedSpec(selectedImage, context.nonce, probes);
+        const activation = buildPostSetupActivation(context);
+        const seedSpec = buildSeedSpec(selectedImage, context, probes, activation);
         const media = validatePreparedMedia(await operations.prepareOfflineMedia({context, paths: checkedPaths,
             toolchain, probes, selectedImage, seedSpec, transfer: STAGE2_PROVENANCE.transfer}), checkedPaths,
         seedSpec, toolchain);
@@ -785,9 +1008,12 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         stage = "qemu-launch";
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
             argv, selectedImage, privilegeMode, deadlines: {executionMinutes: 270, cleanupMinutes: 30}});
-        assertKeys(launchObservation, launchObservation?.failureDiagnostic === undefined ? ["argv", "guest", "process"] :
-            ["argv", "failureDiagnostic", "guest", "process"], "QEMU observation");
+        assertKeys(launchObservation, launchObservation?.failureDiagnostic === undefined ?
+            ["argv", "earlyBoot", "guest", "process"] :
+            ["argv", "earlyBoot", "failureDiagnostic", "guest", "process"], "QEMU observation");
         if (!same(launchObservation.argv, argv)) throw new TypeError("QEMU observed argv mismatch");
+        const earlyBoot = launchObservation.earlyBoot === null ? null : validateEarlyBoot(launchObservation.earlyBoot,
+            checkedPaths);
         assertKeys(launchObservation.process, ["cleanupProven", "exitCode", "launcherExecutablePath", "processGroupId",
             "qemuPid", "qemuPidAbsentAfter", "qemuStartTicks", "signal", "terminationReason", "timedOut", "treeGone"],
             "QEMU process observation");
@@ -802,14 +1028,16 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             launchObservation.process.terminationReason !== null ||
             launchObservation.process.qemuPidAbsentAfter !== true)
             throw new QemuLaunchError(validateQemuLaunchDiagnostic(launchObservation.failureDiagnostic,
-                launchObservation.process));
-        const guest = validateGuest(launchObservation.guest, checkedPaths, context.nonce);
+                launchObservation.process), earlyBoot);
+        if (earlyBoot === null) throw new QemuLaunchError(validateQemuLaunchDiagnostic(
+            launchObservation.failureDiagnostic, launchObservation.process));
+        const guest = validateGuest(launchObservation.guest, checkedPaths, context.nonce, activation);
         return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             cpuCalibrationAccepted: true, cleanupProven: true, privilegeMode, context: structuredClone(context),
             packageClosure, probeArtifact: checkedProbeArtifact, probes, iso, installWim,
             installWimRemoval: structuredClone(wimInspection.removal), selectedImage, toolchain,
-            media, argv, qemuProcess: structuredClone(launchObservation.process), guest});
+            media, argv, qemuProcess: structuredClone(launchObservation.process), earlyBoot, guest});
     } catch (error) {
         const cleanup = stage === "qemu-launch" && launchObservation?.process?.cleanupProven === true &&
             launchObservation?.process?.treeGone === true;

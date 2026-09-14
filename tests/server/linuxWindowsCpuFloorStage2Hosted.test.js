@@ -22,9 +22,13 @@ import {
     runHostedOwnedProcess,
     runMonitoredQemu
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
-import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
+    "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
     "../fixtures/linux-windows-cpu-floor-stage2/probe-build-34834310907.json", import.meta.url), "utf8"));
 
@@ -43,6 +47,42 @@ function paths() {
         outputDisk: `${root}/output.img`, systemDisk: `${root}/system.qcow2`, ovmfVars: `${root}/OVMF_VARS.fd`,
         serialLog: `${root}/serial.log`, qemuPid: `${root}/qemu.pid`};
 }
+
+const activationEvidence = () => { const value = context(); return getCompletedWindowsMsiActivationEvidence(
+    buildWindowsMsiSetupCompleteActivation({repository: value.repository, sourceSha: value.sourceSha,
+        eventSha: value.eventSha, runId: value.runId, runAttempt: value.runAttempt, nonce: value.nonce})); };
+const systemTools = () => WINDOWS_SYSTEM_TOOL_PATHS.map((tool, index) => ({...tool, bytes: String(index + 1),
+    sha256: String(index + 1).repeat(64)}));
+
+function successfulGuestOutput() {
+    const cpuid = {schemaVersion: 1, kind: "cpuid", maxBasicLeaf: 7,
+        leaf1: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00900000", edx: "0x00000000"},
+        leaf7Subleaf0: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00000000", edx: "0x00000000"},
+        xcr0: null, features: {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false}};
+    const output = role => Buffer.from(JSON.stringify({schemaVersion: 1, kind: role,
+        result: {"known-good": 42, "known-bad": 13, sse42: 2_276_049_685, popcnt: 32}[role]}) + "\n")
+        .toString("base64");
+    const runs = [{role: "cpuid", exitCode: 0,
+        stdoutBase64: Buffer.from(JSON.stringify(cpuid) + "\n").toString("base64"), stderrBase64: ""},
+    ...["known-good", "known-bad", "sse42", "popcnt"].map(role => ({role,
+        exitCode: role === "known-bad" ? 19 : 0, stdoutBase64: output(role), stderrBase64: ""})),
+    ...["illegal", "avx", "avx2"].map(role => ({role, exitCode: 3_221_225_501,
+        stdoutBase64: "", stderrBase64: ""}))];
+    return {schemaVersion: 1, nonce: NONCE, runs,
+        network: {hardwareNics: 0, enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0},
+        activation: activationEvidence(), systemTools: systemTools()};
+}
+
+function qmpObservation() {
+    return {version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+        screenshotPaths: [`${paths().root}/early-boot-1.png`, `${paths().root}/early-boot-2.png`], inputSent: false};
+}
+
+const screenshotRead = target => ({bytes: PNG, identity: {path: target, bytes: String(PNG.length),
+    sha256: crypto.createHash("sha256").update(PNG).digest("hex")}});
+const qemuFirmware = () => ({searchPath: `${paths().portableRoot}/usr/share/qemu`,
+    kvmvapic: rootFileIdentity(`${paths().portableRoot}/usr/share/qemu/kvmvapic.bin`),
+    vga: rootFileIdentity(`${paths().portableRoot}/usr/share/seabios/vgabios-stdvga.bin`)});
 
 const okProcess = {exitCode: 0, signal: null, timedOut: false, stdoutOverflow: false, stderrOverflow: false,
     cleanupProven: true, errorObserved: false};
@@ -196,6 +236,52 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(settlementReason, "monitor-identity-timeout");
         assert.equal(result.terminationReason, "identity-timeout");
         assert.equal(result.observation.process.cleanupProven, false);
+    });
+
+    it("retains a bounded sanitized identity-observer failure for launch diagnosis", async () => {
+        let finish;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137, cleanupProven: false},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: () => { throw new Error(`synthetic identity failure\n${"x".repeat(600)}`); },
+            monotonicMilliseconds: () => 1,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(result.terminationReason, "identity-observation-failed");
+        assert.equal(result.monitorFailure.phase, "identity-observation");
+        assert.match(result.monitorFailure.message, /^synthetic identity failure x+$/u);
+        assert.ok(result.monitorFailure.message.length <= 512);
+    });
+
+    it("retries an empty pidfile and retains the actual mismatched identity", async () => {
+        let finish, reads = 0;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const observed = {state: "present", pid: 2345, processGroupId: 999, startTicks: "77",
+            executablePath: "/unexpected/qemu"};
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137, cleanupProven: false},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true,
+            readOwnedVerified: (_target, _maximumBytes, options) => { assert.equal(options.allowEmpty, true);
+                reads += 1; return {bytes: reads === 1 ? Buffer.alloc(0) : Buffer.from("2345\n")}; },
+            readQemuProcessIdentity: () => observed,
+            monotonicMilliseconds: () => reads,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(reads, 2);
+        assert.deepEqual(result.monitorFailure.identity, {pid: 2345,
+            expected: {processGroupId: 2300, executablePath: "/owned/loader"}, observed});
     });
 
     it("counts a symbolic-link inode without traversing its target", () => {
@@ -366,34 +452,26 @@ describe("hosted Stage 2 native adapter preparation", () => {
     });
 
     it("recomputes guest CPU bits, exception exits and zero-network state from raw output", () => {
-        const cpuid = {schemaVersion: 1, kind: "cpuid", maxBasicLeaf: 7,
-            leaf1: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00900000", edx: "0x00000000"},
-            leaf7Subleaf0: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00000000", edx: "0x00000000"},
-            xcr0: null, features: {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false}};
-        const output = role => Buffer.from(JSON.stringify({schemaVersion: 1, kind: role,
-            result: {"known-good": 42, "known-bad": 13, sse42: 2276049685, popcnt: 32}[role]}) + "\n").toString("base64");
-        const runs = [
-            {role: "cpuid", exitCode: 0, stdoutBase64: Buffer.from(JSON.stringify(cpuid) + "\n").toString("base64"),
-                stderrBase64: ""},
-            ...["known-good", "known-bad", "sse42", "popcnt"].map(role => ({role,
-                exitCode: role === "known-bad" ? 19 : 0, stdoutBase64: output(role), stderrBase64: ""})),
-            ...["illegal", "avx", "avx2"].map(role => ({role, exitCode: 3221225501, stdoutBase64: "",
-                stderrBase64: ""}))
-        ];
-        const parsed = parseGuestOutput(Buffer.from(JSON.stringify({schemaVersion: 1, nonce: NONCE, runs,
-            network: {hardwareNics: 0, enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}})), NONCE);
+        const produced = successfulGuestOutput();
+        const parsed = parseGuestOutput(Buffer.from(JSON.stringify(produced)), NONCE);
+        const cpuid = JSON.parse(Buffer.from(produced.runs.find(run => run.role === "cpuid").stdoutBase64, "base64"));
         assert.deepEqual(parsed.cpu, cpuid.features);
         assert.deepEqual(parsed.instructions, {sse42: "completed", popcnt: "completed",
             avx: "illegal-instruction", avx2: "illegal-instruction"});
-        const altered = structuredClone({schemaVersion: 1, nonce: NONCE, runs, network: {hardwareNics: 0,
-            enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}});
+        assert.deepEqual(parsed.activation, activationEvidence());
+        assert.deepEqual(parsed.systemTools, systemTools());
+        const altered = structuredClone(produced);
         altered.runs.find(run => run.role === "avx").exitCode = 0;
         assert.throws(() => parseGuestOutput(Buffer.from(JSON.stringify(altered)), NONCE), /AVX|illegal/u);
-        const lowLeaf = structuredClone({schemaVersion: 1, nonce: NONCE, runs, network: {hardwareNics: 0,
-            enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}});
+        const lowLeaf = structuredClone(produced);
         const lowCpuid = structuredClone(cpuid); lowCpuid.maxBasicLeaf = 1;
         lowLeaf.runs.find(run => run.role === "cpuid").stdoutBase64 = Buffer.from(JSON.stringify(lowCpuid)).toString("base64");
         assert.throws(() => parseGuestOutput(Buffer.from(JSON.stringify(lowLeaf)), NONCE), /maximum basic leaf/u);
+        for (const mutate of [value => { value.activation.files.dispatcher.bytes = 0; },
+            value => { value.systemTools[0].bytes = "0"; }, value => { value.systemTools.reverse(); }]) {
+            const changed = structuredClone(produced); mutate(changed);
+            assert.throws(() => parseGuestOutput(Buffer.from(JSON.stringify(changed)), NONCE));
+        }
     });
 
     it("uses exact package URLs/hashes, root extraction vectors and reviewed sudo QEMU launcher", async () => {
@@ -526,7 +604,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 freeBytes: "90000000000", effectiveMemoryBytes: "15000000000"}),
             monotonicMilliseconds: () => identityReads, wait: async () => undefined
         }});
-        const toolchain = {runtime: {loader: rootFileIdentity(
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
             `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
         libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]}, qemu: commandIdentity(qemuPath),
         mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
@@ -542,7 +620,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
     it("exposes the normalized monitored QEMU process proof without parsing guest output", async () => {
         const calls = [];
         const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
-        const toolchain = {runtime: {loader: rootFileIdentity(loader),
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(loader),
             libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
         qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`)};
         const launcher = createHostedQemuProcessLauncher({context: context(), paths: paths(), dependencies: {
@@ -551,12 +629,16 @@ describe("hosted Stage 2 native adapter preparation", () => {
             runMonitoredQemu: async request => { calls.push(request); return {
                 observation: {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
                 identity: {pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: loader},
-                absentAfter: true, processGroupGone: true, terminationReason: null}; }
+                qmp: qmpObservation(), absentAfter: true, processGroupGone: true, terminationReason: null}; },
+            pathExists: () => false, readOwnedVerified: screenshotRead
         }});
         const result = await launcher({paths: paths(), toolchain,
             privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
-        assert.deepEqual(Object.keys(result).sort(), ["argv", "executionSucceeded", "process", "processFlags"]);
+        assert.deepEqual(Object.keys(result).sort(), ["argv", "earlyBoot", "executionSucceeded", "process",
+            "processFlags"]);
         assert.equal(result.executionSucceeded, true);
+        assert.equal(result.earlyBoot.inputSent, false);
+        assert.equal(result.earlyBoot.screenshots.length, 2);
         assert.deepEqual(result.processFlags, {errorObserved: false, stdoutOverflow: false, stderrOverflow: false});
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
@@ -566,9 +648,26 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(calls.some(call => call.argv?.some(value => value === "::result.json")), false);
     });
 
+    it("revalidates signed-closure firmware identities immediately before QEMU launch", async () => {
+        const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(loader),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`)};
+        let launched = false;
+        const launcher = createHostedQemuProcessLauncher({context: context(), dependencies: {
+            inspectOwned: target => target.endsWith("kvmvapic.bin") ?
+                {...rootFileIdentity(target), sha256: "0".repeat(64)} : rootFileIdentity(target),
+            inspectDirectory: directoryIdentity,
+            runMonitoredQemu: async () => { launched = true; throw new Error("unexpected launch"); }
+        }});
+        await assert.rejects(() => launcher({paths: paths(), toolchain,
+            privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]}), /kvmvapic firmware identity changed/u);
+        assert.equal(launched, false);
+    });
+
     it("keeps stream, process, cleanup, and privilege failures out of both parser and generic success", async () => {
         const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
-        const toolchain = {runtime: {loader: rootFileIdentity(loader),
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(loader),
             libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
         qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
         mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
@@ -594,6 +693,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 kind: "qemu-launch-failure-diagnostic", process: processOnly.process,
                 processFlags: {errorObserved: changedProcess.errorObserved,
                     stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow},
+                monitorFailure: null,
                 stderr: {bytes: "0", sha256: crypto.createHash("sha256").update(Buffer.alloc(0)).digest("hex"),
                     bytesBase64: ""}});
             assert.deepEqual(processOnly.processFlags, {errorObserved: changedProcess.errorObserved,
@@ -622,11 +722,13 @@ describe("hosted Stage 2 native adapter preparation", () => {
             runMonitoredQemu: async () => ({observation: {process: okProcess, stdout: Buffer.alloc(0),
                 stderr: Buffer.alloc(0)}, identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
                 executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
-            absentAfter: true, processGroupGone: true, terminationReason: null}),
-            readOwnedVerified: target => ({bytes: Buffer.from(JSON.stringify(failure)), identity: {
-                path: target, bytes: String(Buffer.byteLength(JSON.stringify(failure))), sha256: "1".repeat(64)}})
+            qmp: qmpObservation(), absentAfter: true, processGroupGone: true, terminationReason: null}),
+            pathExists: () => false,
+            readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                ({bytes: Buffer.from(JSON.stringify(failure)), identity: {
+                    path: target, bytes: String(Buffer.byteLength(JSON.stringify(failure))), sha256: "1".repeat(64)}})
         }});
-        const toolchain = {runtime: {loader: rootFileIdentity(
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
             `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
         libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
         qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
@@ -637,6 +739,31 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.deepEqual(extracted, ["::result.json"]);
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
+    });
+
+    it("retains activation and system-tool records from parsed guest output through the hosted launch", async () => {
+        const produced = successfulGuestOutput();
+        const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+            inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+            runOwned: async () => ({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}),
+            runMonitoredQemu: async () => ({observation: {process: okProcess, stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)}, identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+                executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+            qmp: qmpObservation(), absentAfter: true, processGroupGone: true, terminationReason: null}),
+            pathExists: () => false,
+            readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                ({bytes: Buffer.from(JSON.stringify(produced)), identity: {path: target,
+                    bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)}})
+        }});
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
+            `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+        libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+        mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+        const result = await adapter.launchOwnedQemu({paths: paths(), toolchain,
+            privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
+        assert.deepEqual(result.guest.activation, activationEvidence());
+        assert.deepEqual(result.guest.systemTools, systemTools());
     });
 
     it("aborts when no QEMU identity appears within the bounded startup window", async () => {
@@ -652,7 +779,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
             wait: async milliseconds => { clock += milliseconds; },
             isProcessGroupAlive: () => groupAlive
         }});
-        const toolchain = {runtime: {loader: rootFileIdentity(
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
             `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
         libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
         qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
@@ -680,6 +807,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     stderr: Buffer.alloc(0)});
                 options.onSpawn(2300);
                 options.onTerminationReady(reason => assert.equal(reason, "monitor-low-memory"));
+                options.onQmpSession(Promise.resolve(qmpObservation()));
                 return new Promise(resolve => { finish = resolve; });
             }, pathExists: target => target === paths().qemuPid,
             readOwnedVerified: target => ({bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5",
@@ -692,7 +820,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
             wait: async milliseconds => { clock += milliseconds; },
             isProcessGroupAlive: group => { assert.equal(group, 2300); return groupAlive; }
         }});
-        const toolchain = {runtime: {loader: rootFileIdentity(
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
             `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
         libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
         qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
@@ -803,9 +931,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
             paths: paths(), privilegeMode: "reviewed-sudo-kvm"});
         assert.deepEqual(toolchain.installedFilesManifest, {bytes: "512", sha256: "e".repeat(64)});
         assert.deepEqual(toolchain.licensesManifest, {bytes: "128", sha256: "d".repeat(64)});
+        assert.deepEqual(toolchain.firmware, {searchPath: `${paths().portableRoot}/usr/share/qemu`,
+            kvmvapic: identity(`${paths().portableRoot}/usr/share/qemu/kvmvapic.bin`),
+            vga: identity(`${paths().portableRoot}/usr/share/seabios/vgabios-stdvga.bin`)});
         const inline = Buffer.from("x");
         await adapter.prepareOfflineMedia({paths: paths(), toolchain, seedSpec: {sha256: "b".repeat(64), files: [{
-            name: "bootstrap.ps1", kind: "inline", bytes: "1", sha256: sha256ForTest(inline),
+            name: "bootstrap.ps1", kind: "activation-installer", bytes: "1", sha256: sha256ForTest(inline),
             bytesBase64: inline.toString("base64")}]}});
         assert.ok(calls.some(([command, argv]) => command === toolchain.runtime.loader.path &&
             JSON.stringify(argv.slice(-4)) === JSON.stringify([toolchain.qemuImg.path, "info", "--output=json",
