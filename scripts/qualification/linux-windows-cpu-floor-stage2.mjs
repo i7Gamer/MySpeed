@@ -22,6 +22,8 @@ const GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
+const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
+const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
@@ -84,6 +86,13 @@ function deepFreeze(value) {
 class WimSelectionError extends TypeError {
     constructor(diagnostic) {
         super("WIM supported image is not unique");
+        this.diagnostic = diagnostic;
+    }
+}
+
+class QemuLaunchError extends Error {
+    constructor(diagnostic) {
+        super("QEMU process did not complete cleanly");
         this.diagnostic = diagnostic;
     }
 }
@@ -701,10 +710,31 @@ function failure(context, stage, error, cleanupProven = true) {
     const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ")
         .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
     const diagnostic = stage === "wim-inspection" && error instanceof WimSelectionError ?
-        {wimSelection: structuredClone(error.diagnostic)} : {};
+        {wimSelection: structuredClone(error.diagnostic)} : stage === "qemu-launch" && error instanceof QemuLaunchError ?
+            {qemuLaunch: structuredClone(error.diagnostic)} : {};
     return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
         context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic});
+}
+
+function validateQemuLaunchDiagnostic(value, process) {
+    assertKeys(value, ["kind", "process", "processFlags", "schemaVersion", "stderr"], "QEMU failure diagnostic");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
+        !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
+    assertKeys(value.processFlags, ["errorObserved", "stderrOverflow", "stdoutOverflow"], "QEMU process flags");
+    if (!Object.values(value.processFlags).every(item => typeof item === "boolean"))
+        throw new TypeError("QEMU process flags are invalid");
+    assertKeys(value.stderr, ["bytes", "bytesBase64", "sha256"], "QEMU stderr diagnostic");
+    const byteCount = decimal(value.stderr.bytes, "QEMU stderr bytes");
+    exactString(value.stderr.sha256, SHA256_PATTERN, "QEMU stderr hash");
+    if (byteCount > BigInt(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES) || typeof value.stderr.bytesBase64 !== "string" ||
+        value.stderr.bytesBase64.length > MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value.stderr.bytesBase64))
+        throw new TypeError("QEMU stderr diagnostic is invalid");
+    const bytes = Buffer.from(value.stderr.bytesBase64, "base64");
+    if (bytes.length !== Number(byteCount) || sha256(bytes) !== value.stderr.sha256)
+        throw new TypeError("QEMU stderr diagnostic identity differs");
+    return deepFreeze(structuredClone(value));
 }
 
 export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact}, operations) {
@@ -755,7 +785,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         stage = "qemu-launch";
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
             argv, selectedImage, privilegeMode, deadlines: {executionMinutes: 270, cleanupMinutes: 30}});
-        assertKeys(launchObservation, ["argv", "guest", "process"], "QEMU observation");
+        assertKeys(launchObservation, launchObservation?.failureDiagnostic === undefined ? ["argv", "guest", "process"] :
+            ["argv", "failureDiagnostic", "guest", "process"], "QEMU observation");
         if (!same(launchObservation.argv, argv)) throw new TypeError("QEMU observed argv mismatch");
         assertKeys(launchObservation.process, ["cleanupProven", "exitCode", "launcherExecutablePath", "processGroupId",
             "qemuPid", "qemuPidAbsentAfter", "qemuStartTicks", "signal", "terminationReason", "timedOut", "treeGone"],
@@ -770,7 +801,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             launchObservation.process.launcherExecutablePath !== toolchain.runtime.loader.path ||
             launchObservation.process.terminationReason !== null ||
             launchObservation.process.qemuPidAbsentAfter !== true)
-            throw new Error("QEMU process did not complete cleanly");
+            throw new QemuLaunchError(validateQemuLaunchDiagnostic(launchObservation.failureDiagnostic,
+                launchObservation.process));
         const guest = validateGuest(launchObservation.guest, checkedPaths, context.nonce);
         return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,

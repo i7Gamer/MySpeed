@@ -26,6 +26,8 @@ const FILE_HASH = "a".repeat(64);
 const POWERSHELL_TEST_TIMEOUT_MILLISECONDS = 10_000;
 const EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
+const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
+const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "b".repeat(40),
@@ -524,8 +526,15 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
     });
 
     it("records failure and cleanup truth without treating a QEMU CPU name as calibration", async () => {
-        const fixture = operations({launchOwnedQemu: async input => ({process: {exitCode: null, signal: "SIGKILL",
-            timedOut: true, cleanupProven: false, treeGone: false}, argv: input.argv, guest: null})});
+        const stderr = Buffer.from("qemu-system-x86_64: synthetic launch failure\n");
+        const process = {exitCode: 1, signal: null, timedOut: false, cleanupProven: false, treeGone: false,
+            qemuPid: 2345, qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path,
+            processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null};
+        const diagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
+            processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}};
+        const fixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv, guest: null,
+            failureDiagnostic: diagnostic})});
         const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
             probeArtifact: probeArtifact()},
             fixture.op);
@@ -534,6 +543,15 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(result.cpuCalibrationAccepted, false);
         assert.equal(result.cleanupProven, false);
         assert.equal(result.qualifying, false);
+        assert.deepEqual(result.qemuLaunch, diagnostic);
+        assert.equal(Object.isFrozen(result.qemuLaunch), true);
+        const oversized = structuredClone(diagnostic);
+        oversized.stderr.bytesBase64 = "A".repeat(MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS + 1);
+        const rejected = operations({launchOwnedQemu: async input => ({process, argv: input.argv, guest: null,
+            failureDiagnostic: oversized})});
+        const rejectedResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, rejected.op);
+        assert.equal("qemuLaunch" in rejectedResult, false);
     });
 
     it("rejects changed package bodies and an unbound probe artifact before media acquisition", async () => {

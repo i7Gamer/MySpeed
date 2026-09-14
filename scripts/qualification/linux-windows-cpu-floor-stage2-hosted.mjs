@@ -1052,8 +1052,13 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
         && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
         && !processRecord.stdoutOverflow && !processRecord.stderrOverflow;
-    return {result, guestParsingAllowed, processFlags: {errorObserved: processRecord.errorObserved,
-        stdoutOverflow: processRecord.stdoutOverflow, stderrOverflow: processRecord.stderrOverflow}};
+    const processFlags = {errorObserved: processRecord.errorObserved,
+        stdoutOverflow: processRecord.stdoutOverflow, stderrOverflow: processRecord.stderrOverflow};
+    if (!guestParsingAllowed) result.failureDiagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
+        process: structuredClone(result.process), processFlags: structuredClone(processFlags), stderr: {
+            bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
+            bytesBase64: observation.stderr.toString("base64")}};
+    return {result, guestParsingAllowed, processFlags};
 }
 
 export function createHostedQemuProcessLauncher({context, dependencies = {}}) {

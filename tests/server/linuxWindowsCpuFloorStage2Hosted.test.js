@@ -590,6 +590,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
             const processOnly = await launcher({paths: paths(), toolchain,
                 privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
             assert.equal(processOnly.executionSucceeded, false);
+            assert.deepEqual(processOnly.failureDiagnostic, {schemaVersion: 1,
+                kind: "qemu-launch-failure-diagnostic", process: processOnly.process,
+                processFlags: {errorObserved: changedProcess.errorObserved,
+                    stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow},
+                stderr: {bytes: "0", sha256: crypto.createHash("sha256").update(Buffer.alloc(0)).digest("hex"),
+                    bytesBase64: ""}});
             assert.deepEqual(processOnly.processFlags, {errorObserved: changedProcess.errorObserved,
                 stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow});
             const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies});
