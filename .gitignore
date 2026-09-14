@@ -28,3 +28,6 @@
 
 # tooling caches
 .token-savior-cache.json
+
+# local agent instructions
+/AGENTS.md
