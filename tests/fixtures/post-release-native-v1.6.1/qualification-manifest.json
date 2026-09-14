@@ -1,0 +1,499 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "i7Gamer/MySpeed",
+    "sha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+    "version": "1.6.1",
+    "windowsStamp": "1.6.1.45"
+  },
+  "run": {
+    "id": 34829932391,
+    "attempt": 1
+  },
+  "evidence": {
+    "tests": "success",
+    "binaries": "success",
+    "msi": "success",
+    "docker": "success",
+    "dockerIndex": "success",
+    "ice": "success"
+  },
+  "runtimeVerification": {
+    "docker": [
+      {
+        "artifact": "qualified-oci-amd64",
+        "artifactSha256": "16b72935ffd7a503b978c186874539c92aade4e3515b70a5abf5db2581fdef7d",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "2d3c48daf740acfa0e6a1676665167f502713f402567d3c5de98e35e13e6f6d3",
+        "runtimeDocker": {
+          "containerId": "8d51b6f4b067d2cd4a25e11def8e3afce6e439f679f938c518996e7815a5792e",
+          "image": "sha256:ea0bf5093e52d11b8454ef622c8a1ca5d719039e8762818d9a49ac40be8dde7b",
+          "inspectionPath": "container-inspect.json",
+          "inspectionSha256": "03ffa2a13a31690c62cd7631e70f48e5ab2f104bfe5765e795c9f228256b65c3",
+          "inspectionSize": 14596
+        }
+      },
+      {
+        "artifact": "qualified-oci-arm64",
+        "artifactSha256": "1101cd0aa92ea214c2aaf4bb3761ca3c76a90aae0e6f94c07efb4e8c4f18a8fc",
+        "architecture": "arm64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "97f9d629b8bcd20f258ada0ec61dd54a55edaeb31d1866c965f14e67c41ab5fc",
+        "runtimeDocker": {
+          "containerId": "631d83b5efb85c8c2af4cbdccb9604ff09bdd206d33635c8a814d6629d40053a",
+          "image": "sha256:c798d01b13132761416ebcbcaad47a52dec7c408b21b6f6080b80d923ec1cb47",
+          "inspectionPath": "container-inspect.json",
+          "inspectionSha256": "9516f8dfcdab04f1392eb268c20b6d95a7673299693d255867a377666ab7a42a",
+          "inspectionSize": 14596
+        }
+      }
+    ],
+    "linux": [
+      {
+        "artifact": "MySpeed-linux-x64",
+        "artifactSha256": "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "49dc6fe53ec4afe0ccdcaa2bd33cc3df5205767e94e2afe4252794417083e561"
+      },
+      {
+        "artifact": "MySpeed-linux-x64-baseline",
+        "artifactSha256": "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "c9dfac05c59a36695ce53278d8b75f071bc0f9b8a501304f77df7fd85e73294a"
+      },
+      {
+        "artifact": "MySpeed-linux-arm64",
+        "artifactSha256": "2291f02f5b995729c7aa4e63b8064f121c10b573a5b95ae676db33f159e15aec",
+        "architecture": "arm64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "d251b64a10846b65a96eae25f52d60ca9283ae5a2f9d527ea0d1b845668b91f8"
+      }
+    ],
+    "macos": [
+      {
+        "artifact": "MySpeed-macos-x64",
+        "artifactSha256": "9203f8a2f12da52843bc8e0088b089ea51b632abd035181f4e3aa2ee9660df1a",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "darwin",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "561d0939a65664b4efb55bdba135172e6730d5e95bc21c1dacbc3a3855e1d727"
+      },
+      {
+        "artifact": "MySpeed-macos-arm64",
+        "artifactSha256": "dc0f6d0e856c34c429732a4c6bbdf45c0a34197d326a1d54dcf6543ed0c7ac4b",
+        "architecture": "arm64",
+        "mode": "full",
+        "platform": "darwin",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "a617c4309d4cad2439f5472103d492d8866d7e30ce638e29e5e5eb64b78beb41"
+      }
+    ],
+    "source": {
+      "node": {
+        "artifact": "MySpeed.zip",
+        "artifactSha256": "596b5144ff242737f1c1be6a5f0ccb3907dbba2482344143cb1a6898633402a9",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-node-summary.json",
+        "summarySha256": "ebc4a918e55abe1b3e2640a56d8741d0a823abe7a42df7b53e2c1e82f1eaea87"
+      },
+      "bun": {
+        "artifact": "MySpeed.zip",
+        "artifactSha256": "a83d263767d839e4d2649ca8e35d07159c7afc99afdc96d731ced29e056dda0c",
+        "architecture": "x64",
+        "mode": "full",
+        "platform": "linux",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-bun-summary.json",
+        "summarySha256": "566f815f820e52f3a6615f40f332e888da6db8607f6277962421fcd017dd5b05"
+      }
+    },
+    "windows": [
+      {
+        "artifact": "MySpeed-windows-x64.exe",
+        "artifactSha256": "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154",
+        "architecture": "x64",
+        "mode": "listener-free-reset",
+        "platform": "win32",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "042d5f2d2d761680891d3140ca2278f9aa358400c2a00601f8780b6bdfdf98ec",
+        "versionEvidencePath": "windows-version.json",
+        "versionEvidenceSha256": "3e0ab54aa3b0b9f85245fc68194970aedd9987ed8be3b59a74b41806c2925d50"
+      },
+      {
+        "artifact": "MySpeed-windows-x64-baseline.exe",
+        "artifactSha256": "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154",
+        "architecture": "x64",
+        "mode": "listener-free-reset",
+        "platform": "win32",
+        "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+        "summaryPath": "qualification-summary.json",
+        "summarySha256": "e8e8106aa6584fe99382a205842d78dbf83d21ae9fe8b4edafc6156cf2f29ddd",
+        "versionEvidencePath": "windows-version.json",
+        "versionEvidenceSha256": "57499eaf1a40d97add6985beea0a78b9f8cfa34767a66504952fed30c166a726"
+      }
+    ],
+    "wixIce": [
+      {
+        "artifact": "release-msi-MySpeed-installer.msi",
+        "logPath": "ice-validation.log",
+        "logSha256": "ac6876c2acca2f77a57da01cbe45f0280f82232c8879a0beca10d8d12dd8a267",
+        "mode": "wix-ice-with-reviewed-ICE61-suppression",
+        "provenancePath": "msi-build-provenance.json",
+        "provenanceSha256": "341c6113e37f077aa5ab1aacf525a74de09c9f00343d73e5b538e3bd9e0d982b",
+        "windowsStamp": "1.6.1.45"
+      },
+      {
+        "artifact": "release-msi-MySpeed-installer-baseline.msi",
+        "logPath": "ice-validation.log",
+        "logSha256": "21ca3594cac717ef5f88ba3c725fb10ef9f7b0b31f470fa7d6a5b9bacbcbaccb",
+        "mode": "wix-ice-with-reviewed-ICE61-suppression",
+        "provenancePath": "msi-build-provenance.json",
+        "provenanceSha256": "4baf3e857c430a24302192bf4b8dfd105519a76a9be318967d5533982f8ae3bf",
+        "windowsStamp": "1.6.1.45"
+      }
+    ],
+    "dockerIndex": {
+      "indexDigest": "sha256:6bc0edcc945e7f63465b0fa597f678b856a9351e4464f6aea732a8e10405eb20",
+      "mode": "content-addressed-combination",
+      "result": "success"
+    }
+  },
+  "promotion": {
+    "eligible": true,
+    "scope": {
+      "id": "owner-approved-reduced-v1.6.1",
+      "deferredChecks": [
+        "Windows native full verification with enforced outbound denial",
+        "Windows native CPU-floor verification",
+        "Disposable Windows MSI lifecycle acceptance"
+      ]
+    },
+    "evidence": {
+      "macosNative": {
+        "status": "passed",
+        "verifications": [
+          {
+            "architecture": "x64",
+            "artifactSha256": "9203f8a2f12da52843bc8e0088b089ea51b632abd035181f4e3aa2ee9660df1a",
+            "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+            "runId": 34829932391,
+            "runAttempt": 1,
+            "repository": "i7Gamer/MySpeed",
+            "summarySha256": "561d0939a65664b4efb55bdba135172e6730d5e95bc21c1dacbc3a3855e1d727",
+            "isolationRecordSha256": "54bbec4a6a8456dea492947b17c5a6efd01dbc146320313eba5568884a5304ce",
+            "runtimeProfileSha256": "3ac2079dcd8d9ed970cf4cf07385a615e9654b77c8181352190d0714ffa77178",
+            "canarySha256": "3af3b8f904f728f5eda576dffe78473d6da435405fe798123385ab0f7d25a990",
+            "canaryProfileSha256": "33b531f3dc04b7e80b7a3b4428077609f8d1757af18b4d8488530aa7a5a1e189",
+            "seedProfileSha256": "5c358b8d847211333e7ba22df82d84f796b5f30a41a2682209a949d783adbd08",
+            "verifierFiles": {
+              "check-artifact.mjs": "8d76a507ab0b75242a04b3b972d94bfedaf26a1da167ae792ee973da27cd634d",
+              "fixture.mjs": "c79803410c18bac749f292455f40e091f8a2cb322cd44958cc57a441f580e429",
+              "macos-isolation.mjs": "1aa099d63ecf8ef58c52600167ed90491246801cc182eda613bed8c76e886a12",
+              "safety.mjs": "f181b760521411a7f94993aa0a2c80c0b6264ad13f0d4fb32a19f82f5f80ed88",
+              "sqlite-check.mjs": "214a1075851ccf4d94ed42f49f5e2d775e1b52d6c5bde509de94ecbdbca80ce0"
+            }
+          },
+          {
+            "architecture": "arm64",
+            "artifactSha256": "dc0f6d0e856c34c429732a4c6bbdf45c0a34197d326a1d54dcf6543ed0c7ac4b",
+            "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+            "runId": 34829932391,
+            "runAttempt": 1,
+            "repository": "i7Gamer/MySpeed",
+            "summarySha256": "a617c4309d4cad2439f5472103d492d8866d7e30ce638e29e5e5eb64b78beb41",
+            "isolationRecordSha256": "ca6947778e34ddf45b1bf5202eb5a0516974ff07aaed308c335b99d7996e8acd",
+            "runtimeProfileSha256": "3ac2079dcd8d9ed970cf4cf07385a615e9654b77c8181352190d0714ffa77178",
+            "canarySha256": "8412dc258d3cf253477e220ff196d6bb30bc087aded7389f6b2335657e96b7e1",
+            "canaryProfileSha256": "33b531f3dc04b7e80b7a3b4428077609f8d1757af18b4d8488530aa7a5a1e189",
+            "seedProfileSha256": "5c358b8d847211333e7ba22df82d84f796b5f30a41a2682209a949d783adbd08",
+            "verifierFiles": {
+              "check-artifact.mjs": "8d76a507ab0b75242a04b3b972d94bfedaf26a1da167ae792ee973da27cd634d",
+              "fixture.mjs": "c79803410c18bac749f292455f40e091f8a2cb322cd44958cc57a441f580e429",
+              "macos-isolation.mjs": "1aa099d63ecf8ef58c52600167ed90491246801cc182eda613bed8c76e886a12",
+              "safety.mjs": "f181b760521411a7f94993aa0a2c80c0b6264ad13f0d4fb32a19f82f5f80ed88",
+              "sqlite-check.mjs": "214a1075851ccf4d94ed42f49f5e2d775e1b52d6c5bde509de94ecbdbca80ce0"
+            }
+          }
+        ]
+      },
+      "msiLifecycle": null,
+      "windowsCpuFloor": null,
+      "windowsNative": null
+    },
+    "blockers": []
+  },
+  "actionsArtifacts": [
+    {
+      "archiveDigest": "sha256:dfd8a170273eaceb7d12800444855994dbed422970fbd591cc611648865a017c",
+      "archiveSize": 45649364,
+      "id": 10341317919,
+      "name": "MySpeed-linux-arm64"
+    },
+    {
+      "archiveDigest": "sha256:28e9d098cfa0194e0bdb6ef90601c55c04f6c7001127b84ad304291345a77dea",
+      "archiveSize": 45308543,
+      "id": 10341209789,
+      "name": "MySpeed-linux-x64"
+    },
+    {
+      "archiveDigest": "sha256:a8b468451f9ff1fe61472d7701764042528a3b279a957d4910b94774c8e7ba30",
+      "archiveSize": 45308618,
+      "id": 10341733701,
+      "name": "MySpeed-linux-x64-baseline"
+    },
+    {
+      "archiveDigest": "sha256:bea652b096f4fdec7511e88e7efd962227e85615e56642edab82b22bd42ced80",
+      "archiveSize": 32578601,
+      "id": 10341389607,
+      "name": "MySpeed-macos-arm64"
+    },
+    {
+      "archiveDigest": "sha256:506d557f7ec3d1364c0b947f528eb74e9c2275b77d7f6bc30b16da3df46636fb",
+      "archiveSize": 34735176,
+      "id": 10341871819,
+      "name": "MySpeed-macos-x64"
+    },
+    {
+      "archiveDigest": "sha256:280b4a99c8a1f20aca5958c065b12ecb14519125769ee0460840168963db07ed",
+      "archiveSize": 46649471,
+      "id": 10341896645,
+      "name": "MySpeed-windows-x64-baseline.exe"
+    },
+    {
+      "archiveDigest": "sha256:debeee21cc4feb9b33e7dacf0fd7f11410c109b023c37a6b7ac3cfcf643948af",
+      "archiveSize": 46649470,
+      "id": 10342050759,
+      "name": "MySpeed-windows-x64.exe"
+    },
+    {
+      "archiveDigest": "sha256:391aa3d617fb39a223d264a81aea810d035b3e672ef9a1980502994df17fe54c",
+      "archiveSize": 2508837,
+      "id": 10342035790,
+      "name": "MySpeed.zip"
+    },
+    {
+      "archiveDigest": "sha256:c4f5c39d2c3e3c6266c68b78b9507bdda24c37201f0f3e3eb1848cd5e0dde71c",
+      "archiveSize": 83436553,
+      "id": 10341169773,
+      "name": "qualified-oci-amd64"
+    },
+    {
+      "archiveDigest": "sha256:fabab5589b1863e9c927a4294254df429eba84a05ba0faa49bb3aa569d69b1eb",
+      "archiveSize": 83721630,
+      "id": 10341129964,
+      "name": "qualified-oci-arm64"
+    },
+    {
+      "archiveDigest": "sha256:08047f7f9a393c13bfbee63b9462c6d6d96c0b08f08ee2d74957e7c58c506325",
+      "archiveSize": 167130824,
+      "id": 10341394562,
+      "name": "qualified-oci-index"
+    },
+    {
+      "archiveDigest": "sha256:96c71f18049ab491aaf10444a2d8cac1b1f3fec88e0a75a5cd71b3e7855463fa",
+      "archiveSize": 53450128,
+      "id": 10341702580,
+      "name": "release-msi-MySpeed-installer-baseline.msi"
+    },
+    {
+      "archiveDigest": "sha256:0778f5fa4133b14e9e904f477357dbafb964837d54ac7823974b4a93a73c7fdd",
+      "archiveSize": 53450103,
+      "id": 10341612782,
+      "name": "release-msi-MySpeed-installer.msi"
+    },
+    {
+      "archiveDigest": "sha256:527a9ec875a2bb37f8c8d3bff20fb2738b9c827760e2b06c2b9410463b18f825",
+      "archiveSize": 16547,
+      "id": 10341354398,
+      "name": "release-static"
+    }
+  ],
+  "releaseAssets": [
+    {
+      "artifact": "release-static",
+      "path": "chooser.sh",
+      "sha256": "498a962a39ffb4be3724e1760a884ea5db0589006339b80399fa2bb854dcbb01",
+      "size": 2147,
+      "name": "chooser.sh"
+    },
+    {
+      "artifact": "release-static",
+      "path": "docker-install.sh",
+      "sha256": "f86678e7c6eecb9eeded69e7a6a8dbc86b0e46513457860af1d1fee78a7fb973",
+      "size": 4029,
+      "name": "docker-install.sh"
+    },
+    {
+      "artifact": "release-static",
+      "path": "install.sh",
+      "sha256": "1d7af2bf2827546ee59dfea772dc6b2252edb3aa27979383b30116a9e49b0d24",
+      "size": 40748,
+      "name": "install.sh"
+    },
+    {
+      "artifact": "release-msi-MySpeed-installer-baseline.msi",
+      "path": "MySpeed-installer.msi",
+      "sha256": "7536c7668dcb0721c643493f595bf8714114d9aa4807357a8263ffe1c9c6bbed",
+      "size": 53702656,
+      "name": "MySpeed-installer-baseline.msi"
+    },
+    {
+      "artifact": "release-msi-MySpeed-installer.msi",
+      "path": "MySpeed-installer.msi",
+      "sha256": "5f9573c785ee8d51a661548e74da514a24c2932c200f1c0a1de6b6e0c1a03f6d",
+      "size": 53702656,
+      "name": "MySpeed-installer.msi"
+    },
+    {
+      "artifact": "MySpeed-linux-arm64",
+      "path": "MySpeed-linux-arm64",
+      "sha256": "2291f02f5b995729c7aa4e63b8064f121c10b573a5b95ae676db33f159e15aec",
+      "size": 109889832,
+      "name": "MySpeed-linux-arm64"
+    },
+    {
+      "artifact": "MySpeed-linux-x64",
+      "path": "MySpeed-linux-x64",
+      "sha256": "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d",
+      "size": 110970336,
+      "name": "MySpeed-linux-x64"
+    },
+    {
+      "artifact": "MySpeed-linux-x64-baseline",
+      "path": "MySpeed-linux-x64-baseline",
+      "sha256": "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d",
+      "size": 110970336,
+      "name": "MySpeed-linux-x64-baseline"
+    },
+    {
+      "artifact": "MySpeed-macos-arm64",
+      "path": "MySpeed-macos-arm64",
+      "sha256": "dc0f6d0e856c34c429732a4c6bbdf45c0a34197d326a1d54dcf6543ed0c7ac4b",
+      "size": 86846322,
+      "name": "MySpeed-macos-arm64"
+    },
+    {
+      "artifact": "MySpeed-macos-x64",
+      "path": "MySpeed-macos-x64",
+      "sha256": "9203f8a2f12da52843bc8e0088b089ea51b632abd035181f4e3aa2ee9660df1a",
+      "size": 94089488,
+      "name": "MySpeed-macos-x64"
+    },
+    {
+      "artifact": "MySpeed-windows-x64-baseline.exe",
+      "path": "MySpeed.exe",
+      "sha256": "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154",
+      "size": 111524352,
+      "name": "MySpeed-windows-x64-baseline.exe"
+    },
+    {
+      "artifact": "MySpeed-windows-x64.exe",
+      "path": "MySpeed.exe",
+      "sha256": "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154",
+      "size": 111524352,
+      "name": "MySpeed-windows-x64.exe"
+    },
+    {
+      "artifact": "MySpeed.zip",
+      "path": "MySpeed.zip",
+      "sha256": "94a59173b54fcac832792ba63991e9668e56e8f6b31e0d0eaa085378f90707e6",
+      "size": 2544233,
+      "name": "MySpeed.zip"
+    }
+  ],
+  "containers": [
+    {
+      "artifact": "qualified-oci-amd64",
+      "path": "myspeed-amd64.oci.tar",
+      "sha256": "3c0eea760c3a4db541cfbad67d12d0556710fbd7bd1c86f1f759f1b9d027f676",
+      "size": 83670016,
+      "platform": "linux/amd64",
+      "indexDigest": "sha256:83f85f5020f5a02b5f7be63a13f0a88211954e62cea77d4aff6e5a8c05449cd0",
+      "manifestDigest": "sha256:e13e437fb7914bec64f9920f449a9cfd43d5620acd69ab8f9944af5f9a1b826b",
+      "configDigest": "sha256:ea0bf5093e52d11b8454ef622c8a1ca5d719039e8762818d9a49ac40be8dde7b",
+      "layerDigests": [
+        "sha256:f7ee36c9aa34bbb665f975c76e5c0d1607f0674b94c84cfb0061f87006ea5d10",
+        "sha256:d28b3003702bebbef1fed310357a0fec59c367dc94f32f02b6aa9601fd6ebb98",
+        "sha256:adfaec35b0743e1bf814545feaa26fd2dcb7ef73797978ef9eba608268e1eb71",
+        "sha256:bfd10df2905c603069023451fbf585dc0a779104bc63784a69afa3cd16d856d4",
+        "sha256:fc5ac4e6215149f9f224f1113bc7fc90636ac2d988e5984c30bf789c3fa6b746",
+        "sha256:b216aceff86f6de8a6d89c1f2fe6f9836cce4753f4ddb9e3721034514a1ef9b2",
+        "sha256:d3ea7d8a91e2441241ab180b1eff0fac32d178a7f1699a34743b580afa70b8a2",
+        "sha256:3f95cce3c945e054a2d7116f2066470f7dcfb7ff51de657faf69b6126766653c",
+        "sha256:8d47ae1fac6513117ec3352ff2ea05b1e80c2d7b3e3aa38803466fd9c3852553",
+        "sha256:2716645d0cfafc4d4e49a7ee926809dbc5569c1f332c2a3189f980e3bf37daa1",
+        "sha256:6ccb0fd112da73dc5296d46a748e41deffde392d5e04865ec8d808d583ceb7bf",
+        "sha256:ac854b8d4f4a5b21fe452a9b3afa1d4e0a5a1d8188e1489d19af19d0f85e1a2c",
+        "sha256:88e3f3b66419e3444f2fc8b3026ce0686a5fea9f9ab700ccbdfd0d732c7d668b",
+        "sha256:1be8ef0c847fdca8738575064a1df0b5df1dd6f6706811d7a9801f1f5954369c",
+        "sha256:b9c01de997c4e2b724639a62538319c1d46c3330837962607dd0ed31f1e030a2",
+        "sha256:1155c94fe61e3dd1267c45ff41d239fd6624b9abbc21d803b81a2dce2cc02d2d"
+      ]
+    },
+    {
+      "artifact": "qualified-oci-arm64",
+      "path": "myspeed-arm64.oci.tar",
+      "sha256": "4fd066d5587c6481cb360f560409288cb3cf40510c7e6935106199fcbcdff2c6",
+      "size": 83957248,
+      "platform": "linux/arm64",
+      "indexDigest": "sha256:cde96e7e64f763a2d135996bf47e13836faa43e552f9b61e225af720cb29b1f1",
+      "manifestDigest": "sha256:d9290d4d3831ab48f3f85c59abe1b0eff98ed1e10cd35349a0ec6b765571243e",
+      "configDigest": "sha256:c798d01b13132761416ebcbcaad47a52dec7c408b21b6f6080b80d923ec1cb47",
+      "layerDigests": [
+        "sha256:738128faa30f570583b0e57efd831e0e6a2a9aacf1be88c8f4c1ef8a5b7033cc",
+        "sha256:7d978ccf94a3e2be75b3c62be60ffa86de6f4e0fe1a092812a69e8ff46446955",
+        "sha256:bb74cd0bf924a1c027feba78ae0bf074594d227014cb3f855282bb834af29cc8",
+        "sha256:b6cdeedd0611482e4d44c812b4f63a8b3a0c7b18f597f410162d1725c0ad2c84",
+        "sha256:b2337d4db50678944f87de8418b252f8410f3b36540f091c65b5f1845ccc9c91",
+        "sha256:9a10ea355f032da1d24835d300316d7aca2f57ed6687da64b5f2f2256aea64c0",
+        "sha256:0c896acbf6997a1d38210776e935c2f8d654e40d68ff1885c22c027702dae10a",
+        "sha256:43edcc63db00979fd95cbb8c5479475968c9d3da380442e7bd70f49717878faf",
+        "sha256:a9ebf411d8db51d14d11d0a10b24b4716ac7dec7098de7de7de47c731a47e963",
+        "sha256:a25265941061f4ab2fc279cdc95f810a817229566ce55821275c6012e07a32cd",
+        "sha256:4367e02adc48102835bee7b0bfd26bd1f009ad5bcaac904ac56567e72f298e3b",
+        "sha256:cd84c528e2b86626c7813a4c6f0e63d1a3ce6cbf413c60d47ccd4152d0393b74",
+        "sha256:819e381dc6855ef39e0407d66a1d48738652d88fb5a1aadc75d0ec605f3c758c",
+        "sha256:bf4c0c423f1a32f969c39d51f47a629d1fe512991a8791b9d9d661cba031524a",
+        "sha256:54c6e0f43521a7de49f5f2d5dc653771a4344612e8b70a8813bd1570a1491402",
+        "sha256:961fa41220e1370b80d8694ee77eda4eaf0092feb9f287bcbf84cd6c6bb1be54"
+      ]
+    }
+  ],
+  "containerIndex": {
+    "artifact": "qualified-oci-index",
+    "path": "myspeed-multiarch.oci.tar",
+    "sha256": "704564a79f38038f6957a86082ebed15528d05ed51d1136f6b66da8aa00aec0f",
+    "size": 167628800,
+    "indexDigest": "sha256:6bc0edcc945e7f63465b0fa597f678b856a9351e4464f6aea732a8e10405eb20",
+    "platforms": [
+      "linux/amd64",
+      "linux/arm64"
+    ],
+    "reference": "myspeed"
+  }
+}
