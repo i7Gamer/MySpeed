@@ -56,7 +56,7 @@ const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
         endpoint,
         // The wizard's own copy of the rule the server enforces, so a provider
         // that cannot measure without an address is created carrying one.
-        requiresEndpoint: (current) => current === "iperf3",
+        requiresEndpoint: (current) => current === "iperf3" || current === "openspeedtest",
         ping: 50,
         download: 100,
         upload: 40,
@@ -73,7 +73,8 @@ const runFinish = async ({previewMode = false, refuse = [], provider = "ookla",
             return {ok: !refuse.includes(path), status: refuse.includes(path) ? 403 : 200};
         },
         providerById: (id) => ({ookla: {id: "ookla", name: "Ookla"},
-            iperf3: {id: "iperf3", name: "iperf3"}})[id] ?? null,
+            iperf3: {id: "iperf3", name: "iperf3"},
+            openspeedtest: {id: "openspeedtest", name: "OpenSpeedTest"}})[id] ?? null,
         assertOk: async (response, _path) => {
             if (response.ok) return response;
             throw new StubRequestError(response.status,
@@ -191,6 +192,16 @@ describe("finishing the wizard on a provider that needs an address", () => {
                 // Trimmed here rather than at the server, which judges the row
                 // it would become: a padded host is a host it refuses.
                 endpoint: "10.0.0.5:5201"}}
+        ]);
+    });
+
+    it("creates an OpenSpeedTest target with its trimmed base URL", async () => {
+        const {created} = await runFinish({provider: "openspeedtest",
+            endpoint: "  http://192.168.1.50:3000  "});
+
+        assert.deepEqual(created, [
+            {path: "/targets", body: {name: "OpenSpeedTest", provider: "openspeedtest",
+                endpoint: "http://192.168.1.50:3000"}}
         ]);
     });
 

@@ -303,6 +303,30 @@ describe("connection identity in view mode", () => {
     const AS_OPERATOR = {headers: {"x-password": "Hunter2!"}};
     const EXPORT_RANGE = "from=2026-08-01&to=2026-08-07&tzOffset=0";
 
+    it("withholds private OpenSpeedTest errors across read-only routes without changing owner diagnostics", async (t) => {
+        t.diagnostic(`Isolated fixture: origin=${server.baseUrl}; pid=${process.pid}; data=${server.dataDir}`);
+        const endpoint = "https://private-ost.example.invalid:3000";
+        const diagnostic = `TLS certificate verification failed for ${endpoint}: unknown authority`;
+        await seedTests(server.tests, [{created: "2026-08-05T10:00:00.000Z", provider: "openspeedtest",
+            serverHost: endpoint, serverName: null, error: diagnostic, download: -1, upload: -1, ping: -1}]);
+        await setConfig(server.config, "password", "Hunter2!");
+        await setConfig(server.config, "passwordLevel", "read");
+        const {body: [original]} = await api(server.baseUrl, "/speedtests?limit=1", AS_OPERATOR);
+        assert.equal(original.error, diagnostic);
+        const routes = ["/speedtests?limit=1", `/speedtests/${original.id}`, "/speedtests/status",
+            `/speedtests/export?${EXPORT_RANGE}&format=json`, `/speedtests/export?${EXPORT_RANGE}&format=csv`];
+        for (const route of routes) {
+            const viewer = await api(server.baseUrl, route);
+            assert.equal(viewer.status, 200, route);
+            assert.equal(viewer.text.includes("private-ost.example.invalid"), false, route);
+            const owner = await api(server.baseUrl, route, AS_OPERATOR);
+            assert.equal(owner.status, 200, route);
+            assert.ok(owner.text.includes(diagnostic), route);
+        }
+        const stored = await server.tests.findByPk(original.id);
+        assert.equal(stored.error, diagnostic);
+    });
+
     const shareReadOnly = async () => {
         await seedTests(server.tests, [{
             created: "2026-08-05T10:00:00.000Z", isp: "Salt Mobile", externalIp: "203.0.113.7",

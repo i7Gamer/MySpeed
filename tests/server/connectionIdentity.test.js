@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { stripConnectionIdentity } from "../../server/util/connectionIdentity.js";
+import { isFailedTest } from "../../server/util/testOutcome.js";
 
 /**
  * Who the connection is - the operator's provider and external address - is
@@ -97,6 +98,38 @@ describe("the server address a viewer may know", () => {
 
     it("withholds a librespeed backend, which can carry a credential", () => {
         assert.equal(withHost("libre", "https://user:pass@speed.internal").serverHost, null);
+    });
+
+    it("withholds an OpenSpeedTest endpoint", () => {
+        assert.equal(withHost("openspeedtest", "http://192.168.1.50:3000").serverHost, null);
+    });
+
+    it("does not expose a private endpoint carried by a failure", () => {
+        const error = "WARNING: TLS certificate verification failed for https://speed.internal";
+        const stripped = stripConnectionIdentity({provider: "openspeedtest", error});
+
+        assert.equal(stripped.error, "Private server test failed");
+        assert.doesNotMatch(stripped.error, /speed\.internal/);
+    });
+
+    it("leaves a private provider's absent error absent", () => {
+        assert.equal(stripConnectionIdentity({provider: "openspeedtest", error: null}).error, null);
+        assert.equal(Object.hasOwn(stripConnectionIdentity({provider: "openspeedtest"}), "error"), false);
+    });
+
+    it("does not turn an empty private-provider diagnostic into a failure", () => {
+        for (const provider of ["iperf3", "libre", "openspeedtest"]) {
+            const stripped = stripConnectionIdentity({provider, error: "", ping: 5, download: 100, upload: 50});
+
+            assert.equal(stripped.error, "", provider);
+            assert.equal(isFailedTest(stripped), false, provider);
+        }
+    });
+
+    it("leaves a public provider's diagnostic unchanged", () => {
+        const error = "Cannot open socket to speedtest.arcade.ch";
+
+        assert.equal(stripConnectionIdentity({provider: "ookla", error}).error, error);
     });
 
     it("leaves a public provider's server alone", () => {

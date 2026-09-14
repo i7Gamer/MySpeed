@@ -61,6 +61,7 @@
       "libre_desc": "Open-Source-Speedtest zum Selbsthosten",
       "cloudflare_desc": "Schnelle CDN-basierte Tests",
       "iperf3_desc": "Dein eigener iperf3-Server, in deinem Netzwerk",
+      "openspeedtest_desc": "Dein eigener OpenSpeedTest-Server, in deinem Netzwerk",
       "iperf_advanced": "Testeinstellungen",
       "iperf_duration": "Sekunden je Richtung",
       "iperf_streams": "Parallele Streams",

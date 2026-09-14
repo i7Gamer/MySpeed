@@ -174,6 +174,8 @@ export const traceHost = (target, {serverHost = null, servers = {}} = {}) => {
 
     if (provider === "iperf3") return hostOf(target.endpoint);
 
+    if (provider === "openspeedtest") return hostOf(target.endpoint);
+
     return TRACE_FALLBACK_HOSTS[provider] ?? null;
 };
 

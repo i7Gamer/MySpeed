@@ -176,3 +176,23 @@ export const iperfList = [
     {os: 'linux', arch: 'ia32', suffix: 'iperf3-i386',
         sha256: '59daa2e73236f445763a34bb9c392ef72f80becd40cfe8a256eca6737a6605d6'}
 ];
+
+/**
+ * OpenSpeedTest CLI v0.1.1 release assets. The digests are GitHub's published
+ * asset digests, independently checked against the bytes served for the tag.
+ */
+export const ostVersion = "0.1.1";
+export const ostList = [
+    {os: 'darwin', arch: 'x64', suffix: 'ost-cli_darwin_all.tar.gz',
+        sha256: 'd8ee715fc5963c0a4589beb3ced12cf4ac057442eed27631847179982571023d'},
+    {os: 'darwin', arch: 'arm64', suffix: 'ost-cli_darwin_all.tar.gz',
+        sha256: 'd8ee715fc5963c0a4589beb3ced12cf4ac057442eed27631847179982571023d'},
+    {os: 'linux', arch: 'x64', suffix: 'ost-cli_linux_amd64.tar.gz',
+        sha256: '592403a29390beb51a507c627a580b3a595e1d260f0291f484735474c87f78f0'},
+    {os: 'linux', arch: 'arm64', suffix: 'ost-cli_linux_arm64.tar.gz',
+        sha256: '2eda78339eb8019262511cac030a849e96760eed3c1f35ae91f27754fe9cd2a0'},
+    {os: 'win32', arch: 'x64', suffix: 'ost-cli_windows_amd64.zip',
+        sha256: '8ad55676a21cc45d5fbf49d64df313f741e65f151d8e24dc18d9ddc76a27ff36'},
+    {os: 'win32', arch: 'arm64', suffix: 'ost-cli_windows_arm64.zip',
+        sha256: '47c1636e862bb13598ffeb58bcf26d36f2cce5187c164f933ca6f9c396022d30'}
+];

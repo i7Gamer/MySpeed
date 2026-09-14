@@ -15,10 +15,12 @@ import SelectableOption, {SelectableList} from "@/common/components/SelectableOp
 import ToggleSwitch from "@/common/components/ToggleSwitch";
 import Checkbox from "@/common/components/Checkbox";
 import {useSyncOnOpen} from "@/common/hooks/useSyncOnOpen";
-import {CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER} from "@/common/utils/InvariantText";
+import {
+    CUSTOM_BACKEND_PLACEHOLDER, IPERF_HOST_PLACEHOLDER, OPENSPEEDTEST_PLACEHOLDER
+} from "@/common/utils/InvariantText";
 import {
     baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT, bitrateAccepted,
-    durationAccepted, iperfHostAccepted, IPERF_DEFAULTS, providerById, providers,
+    durationAccepted, iperfHostAccepted, IPERF_DEFAULTS, ostEndpointAccepted, providerById, providers,
     requiresEndpoint, streamsAccepted, takesEndpoint, takesServerId, takesTuning,
     tuningAccepted, TUNING_BOUNDS
 } from "./providers";
@@ -232,7 +234,8 @@ export const TargetEditor = ({open, onClose, target}) => {
     // server refuses one - as it refuses a host it cannot dial, so the same
     // rule it applies is asked here. Said as a button that will not press,
     // rather than as a red toast after the fact.
-    const hasEndpoint = !requiresEndpoint(provider) || iperfHostAccepted(endpoint);
+    const hasEndpoint = !requiresEndpoint(provider)
+        || (isIperf ? iperfHostAccepted(endpoint) : ostEndpointAccepted(endpoint));
     // Typed and wrong, which is not the same as not typed yet: iperfHostAccepted
     // refuses an empty host too, so marking on hasEndpoint alone would paint a
     // fresh iperf3 target red before its operator had touched the field. The
@@ -423,7 +426,8 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                    : "dialog.provider.custom_url")}
                                                className={`dialog-input provider-input${sentinelTyped || badEndpoint ? " input-error" : ""}`}
                                                placeholder={isIperf ? IPERF_HOST_PLACEHOLDER
-                                                   : CUSTOM_BACKEND_PLACEHOLDER}
+                                                   : (provider === "openspeedtest" ? OPENSPEEDTEST_PLACEHOLDER
+                                                       : CUSTOM_BACKEND_PLACEHOLDER)}
                                                value={endpoint}
                                                onChange={(e) => handleEndpointChange(e.target.value)}/>
                                     </div>

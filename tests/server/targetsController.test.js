@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { alertingScope, iperfTuningProblem, targetProblem, viewerFacing,
+import { alertingScope, iperfTuningProblem, ostEndpointProblem, targetProblem, viewerFacing,
     TARGET_NAME_LIMIT } from "../../server/controller/targets.js";
 import { IPERF_MAX_DURATION_SECONDS, IPERF_MAX_STREAMS, IPERF_MIN_DURATION_SECONDS,
     IPERF_MIN_STREAMS } from "../../server/util/providers/registry.js";
@@ -49,6 +49,28 @@ describe("targetProblem", () => {
         assert.equal(targetProblem({...libre, endpoint: null}), null);
         assert.match(targetProblem({...libre, endpoint: "ftp://speed.example.net"}), /URL|protocol/i);
         assert.match(targetProblem({...libre, endpoint: "not a url"}), /URL/i);
+    });
+
+    it("accepts only complete OpenSpeedTest base URLs", () => {
+        const ost = {...valid, provider: "openspeedtest", serverId: null};
+
+        assert.equal(targetProblem({...ost, endpoint: "http://192.168.1.50:3000"}), null);
+        assert.equal(targetProblem({...ost, endpoint: "https://speed.lan/base/"}), null);
+        for (const endpoint of ["not a url", "ftp://speed.lan", "http://speed.lan/a b",
+            "http://user@speed.lan", "http://@speed.lan", "http://:@speed.lan",
+            "http://speed.lan?q=1", "http://speed.lan?",
+            "http://speed.lan/#result", "http://speed.lan#"])
+            assert.notEqual(targetProblem({...ost, endpoint}), null, endpoint);
+    });
+
+    it("keeps OpenSpeedTest validation strict over primitive input", () => {
+        for (const endpoint of [null, undefined, 3000, {}, ["http://speed.lan"]])
+            assert.notEqual(ostEndpointProblem(endpoint), null, JSON.stringify(endpoint));
+    });
+
+    it("names which private provider is missing its required endpoint", () => {
+        assert.match(targetProblem({name: "LAN", provider: "iperf3"}), /iperf3/i);
+        assert.match(targetProblem({name: "LAN", provider: "openspeedtest"}), /OpenSpeedTest/i);
     });
 
     it("refuses an endpoint on a provider that takes none", () => {
@@ -197,7 +219,7 @@ describe("iperfTuningProblem", () => {
      * dialog that lies about what the target will do.
      */
     it("refuses tuning on a provider that does not take it", () => {
-        for (const provider of ["ookla", "libre", "cloudflare"]) {
+        for (const provider of ["ookla", "libre", "cloudflare", "openspeedtest"]) {
             assert.match(tuned({iperfDuration: 30}, provider), /iperf3/i,
                 `${provider} accepted a duration it cannot run`);
             assert.match(tuned({iperfStreams: 8}, provider), /iperf3/i,

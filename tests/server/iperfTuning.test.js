@@ -396,8 +396,8 @@ describe("what a UDP target may ask for", () => {
     });
 
     it("refuses datagrams on a provider that runs no iperf3", () => {
-        assert.notEqual(iperfTuningProblem({provider: "ookla", iperfUdp: true, iperfBitrate: 100}),
-            null);
+        for (const provider of ["ookla", "openspeedtest"])
+            assert.notEqual(iperfTuningProblem({provider, iperfUdp: true, iperfBitrate: 100}), null);
     });
 
     /**
@@ -407,7 +407,7 @@ describe("what a UDP target may ask for", () => {
      * moment a backup was restored.
      */
     it("says nothing about a target that simply does not run UDP", () => {
-        for (const provider of ["ookla", "libre", "cloudflare", "iperf3"])
+        for (const provider of ["ookla", "libre", "cloudflare", "iperf3", "openspeedtest"])
             assert.equal(iperfTuningProblem({provider, endpoint: "nas.lan",
                 iperfUdp: false, iperfBitrate: null}), null,
             `a plain ${provider} target was refused for not running UDP`);

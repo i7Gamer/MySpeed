@@ -96,6 +96,9 @@ export const CUSTOM_BACKEND_PLACEHOLDER = "https://speed.test/backend/";
  */
 export const IPERF_HOST_PLACEHOLDER = "10.0.0.5:5201";
 
+/** The base URL of an OpenSpeedTest server on the operator's network. */
+export const OPENSPEEDTEST_PLACEHOLDER = "http://192.168.1.50:3000";
+
 /**
  * What each integration is called, where that is a product rather than a word.
  *

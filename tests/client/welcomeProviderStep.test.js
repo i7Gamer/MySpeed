@@ -55,6 +55,8 @@ describe("the providers the wizard offers", () => {
     it("moves on once the address it needs is filled in", () => {
         assert.equal(canAdvance({step: PROVIDER_STEP, provider: "iperf3", endpoint: "10.0.0.5:5201"}),
             true);
+        assert.equal(canAdvance({step: PROVIDER_STEP, provider: "openspeedtest",
+            endpoint: "http://192.168.1.50:3000"}), true);
     });
 
     /**
@@ -177,6 +179,12 @@ describe("the provider cards", () => {
             "the field has no label");
         assert.match(chooser, /IPERF_HOST_PLACEHOLDER/,
             "the empty field does not show the shape it takes");
+        assert.match(chooser, /dialog\.provider\.custom_url/,
+            "OpenSpeedTest is labelled as a URL");
+        assert.match(chooser, /OPENSPEEDTEST_PLACEHOLDER/,
+            "OpenSpeedTest does not show its base URL shape");
+        assert.match(chooser, /isIperf \? faServer : faLink/,
+            "the URL field still uses the host-only icon");
     });
 });
 

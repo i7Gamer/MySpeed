@@ -11,12 +11,12 @@ import { missingInterfaceMessage } from "../../server/util/speedtest.js";
  */
 describe("missingInterfaceMessage", () => {
     it("says nothing while the interface has an address", () => {
-        for (const mode of ["ookla", "libre", "cloudflare"])
+        for (const mode of ["ookla", "libre", "cloudflare", "openspeedtest"])
             assert.equal(missingInterfaceMessage(mode, "linux", "eth0", "192.168.1.2"), null);
     });
 
     it("names the configured interface when it has no address", () => {
-        for (const mode of ["libre", "cloudflare"]) {
+        for (const mode of ["libre", "cloudflare", "openspeedtest"]) {
             const message = missingInterfaceMessage(mode, "linux", "eth7", undefined);
 
             assert.equal(typeof message, "string", `${mode} ran with an unusable interface`);

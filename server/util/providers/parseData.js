@@ -38,6 +38,7 @@ export const OOKLA = "ookla";
 export const LIBRE = "libre";
 export const CLOUDFLARE = "cloudflare";
 export const IPERF3 = "iperf3";
+export const OPENSPEEDTEST = "openspeedtest";
 
 // Only ookla measures these, and a provider that did not measure something must
 // say so: left undefined they would store as NULL and read as a flawless line
@@ -634,6 +635,62 @@ export const parseIperf3 = (test) => {
     };
 };
 
+const ostBlock = (test, name) => {
+    const block = test?.[name];
+    if (block === null || typeof block !== "object" || Array.isArray(block))
+        throw new Error(`the OpenSpeedTest result reported no valid ${name} block`);
+    return block;
+};
+
+const ostFigure = (value, name) => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+        throw new Error(`the OpenSpeedTest result reported an invalid ${name}`);
+    return value;
+};
+
+const ostCount = (value, name, {positive = false} = {}) => {
+    const minimum = positive ? 1 : 0;
+    if (!Number.isSafeInteger(value) || value < minimum)
+        throw new Error(`the OpenSpeedTest result reported an invalid ${name}`);
+    return value;
+};
+
+export const parseOst = (test) => {
+    const pingBlock = ostBlock(test, "ping");
+    const downloadBlock = ostBlock(test, "download");
+    const uploadBlock = ostBlock(test, "upload");
+
+    const ping = ostFigure(pingBlock.latency_ms, "latency_ms");
+    const jitter = ostFigure(pingBlock.jitter_ms, "jitter_ms");
+    ostCount(pingBlock.samples, "samples", {positive: true});
+
+    const downloadBandwidth = ostFigure(downloadBlock.bandwidth_bps, "bandwidth_bps");
+    const downloadBytes = ostCount(downloadBlock.bytes, "bytes");
+    const downloadElapsed = ostCount(downloadBlock.elapsed_ms, "elapsed_ms");
+    const uploadBandwidth = ostFigure(uploadBlock.bandwidth_bps, "bandwidth_bps");
+    const uploadBytes = ostCount(uploadBlock.bytes, "bytes");
+    const uploadElapsed = ostCount(uploadBlock.elapsed_ms, "elapsed_ms");
+    const elapsed = ostCount(downloadElapsed + uploadElapsed, "combined elapsed_ms");
+
+    return {
+        ping: round(ping),
+        jitter: round(jitter),
+        download: roundSpeed(downloadBandwidth / BITS_PER_BYTE),
+        upload: roundSpeed(uploadBandwidth / BITS_PER_BYTE),
+        time: durationSeconds(elapsed),
+        serverName: null,
+        serverHost: text(test?.server?.url),
+        serverLocation: null,
+        resultId: null,
+        isp: null,
+        externalIp: null,
+        provider: OPENSPEEDTEST,
+        ...NO_QUALITY_FIGURES,
+        bytesDownloaded: downloadBytes,
+        bytesUploaded: uploadBytes
+    };
+};
+
 export const parseData = (provider, data) => {
     const parsed = (() => {
         switch (provider) {
@@ -645,6 +702,8 @@ export const parseData = (provider, data) => {
                 return parseCloudflare(data);
             case IPERF3:
                 return parseIperf3(data);
+            case OPENSPEEDTEST:
+                return parseOst(data);
             default:
                 throw {message: "Invalid provider"};
         }

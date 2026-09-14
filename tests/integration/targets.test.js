@@ -71,6 +71,23 @@ describe("PUT /api/targets", () => {
         assert.notEqual(row.id, 999);
         assert.equal(row.sortOrder, 0);
     });
+
+    it("creates and reads back an OpenSpeedTest target", async () => {
+        const endpoint = "http://192.168.1.50:3000";
+        const {status} = await put({name: "LAN", provider: "openspeedtest", endpoint});
+
+        assert.equal(status, 200);
+        const [row] = await targets.listAll();
+        assert.equal(row.provider, "openspeedtest");
+        assert.equal(row.endpoint, endpoint);
+    });
+
+    it("refuses an OpenSpeedTest target without its server URL", async () => {
+        const {status, body} = await put({name: "LAN", provider: "openspeedtest"});
+
+        assert.equal(status, 400);
+        assert.match(body.message, /OpenSpeedTest.*URL/i);
+    });
 });
 
 /**
@@ -671,6 +688,22 @@ describe("PATCH /api/targets/:id retiring what it replaces", () => {
         assert.equal(row.iperfBitrate, null);
         assert.equal(Boolean(row.iperfUdp), false,
             "the row still says it measures with datagrams under a provider that has none");
+    });
+
+    it("moves an iperf3 target to OpenSpeedTest while retiring its tuning", async () => {
+        const {body: created} = await iperfTarget();
+        const endpoint = "http://192.168.1.50:3000";
+
+        const {status, body} = await patch(`/${created.id}`, {provider: "openspeedtest", endpoint});
+        assert.equal(status, 200, body.message);
+
+        const [row] = await targets.listAll();
+        assert.equal(row.provider, "openspeedtest");
+        assert.equal(row.endpoint, endpoint);
+        assert.equal(row.iperfDuration, null);
+        assert.equal(row.iperfStreams, null);
+        assert.equal(row.iperfBitrate, null);
+        assert.equal(Boolean(row.iperfUdp), false);
     });
 
     it("turns a UDP run off without being told to clear the bitrate", async () => {

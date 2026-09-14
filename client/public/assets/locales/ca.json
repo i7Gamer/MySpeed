@@ -61,6 +61,7 @@
       "libre_desc": "Prova de velocitat de codi obert i autoallotjable",
       "cloudflare_desc": "Proves ràpides basades en CDN",
       "iperf3_desc": "El teu propi servidor iperf3, a la teva xarxa",
+      "openspeedtest_desc": "El teu propi servidor OpenSpeedTest, a la teva xarxa",
       "iperf_advanced": "Configuració de l'execució",
       "iperf_duration": "Segons per direcció",
       "iperf_streams": "Fluxos paral·lels",

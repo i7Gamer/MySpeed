@@ -33,13 +33,52 @@ const takesServerId = (provider) =>
     Object.hasOwn(REGISTRY, provider) && REGISTRY[provider].serverList !== null;
 
 // Providers whose targets carry an endpoint of their own, and what kind.
-// libre's is a URL to a backend; iperf3's is a host and port.
-const takesEndpoint = (provider) => provider === "libre" || provider === "iperf3";
+// libre's is a URL to a backend; iperf3's is a host and port; OpenSpeedTest's
+// is the base URL of the operator's own server.
+const takesEndpoint = (provider) =>
+    provider === "libre" || provider === "iperf3" || provider === "openspeedtest";
 
 // And the one that cannot do without it: a libre target with no endpoint uses
 // the public backend list, where an iperf3 target with no host has nothing to
 // measure against at all.
-const requiresEndpoint = (provider) => provider === "iperf3";
+const requiresEndpoint = (provider) => provider === "iperf3" || provider === "openspeedtest";
+
+const FIRST_PRINTABLE_CODE_POINT = 0x20;
+const DELETE_CODE_POINT = 0x7f;
+const URL_USERINFO = /^https?:\/\/[^/?#]*@/i;
+const hasWhitespaceOrControl = (value) => [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return /\s/.test(character) || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
+});
+
+/** What is wrong with an OpenSpeedTest base URL, or null when nothing is. */
+export const ostEndpointProblem = (endpoint) => {
+    if (typeof endpoint !== "string") return "The endpoint must be text";
+
+    const value = endpoint.trim();
+    if (value === "") return "An OpenSpeedTest target needs a server URL";
+    if (hasWhitespaceOrControl(value))
+        return "The OpenSpeedTest server URL cannot contain whitespace or control characters";
+
+    let url;
+    try {
+        url = new URL(value);
+    } catch {
+        return "The endpoint must be a URL";
+    }
+
+    if (!ALLOWED_PROTOCOLS.has(url.protocol)) return "The endpoint's protocol is not allowed";
+    if (URL_USERINFO.test(value) || url.username !== "" || url.password !== "")
+        return "The OpenSpeedTest server URL cannot contain credentials";
+    if (value.includes("?") || value.includes("#"))
+        return "The OpenSpeedTest server URL cannot contain a query or fragment";
+
+    // This is a literal-host policy, not DNS resolution. An administrator may
+    // intentionally name a private or loopback server; only the shared unsafe
+    // literal ranges remain blocked at the server boundary.
+    const outbound = checkOutboundHost(url.hostname);
+    return outbound.safe ? null : outbound.reason;
+};
 
 /**
  * The columns a PATCH retires without naming them.
@@ -352,6 +391,9 @@ export const targetProblem = (target) => {
         if (target.provider === "iperf3") {
             const problem = iperfEndpointProblem(target.endpoint);
             if (problem) return problem;
+        } else if (target.provider === "openspeedtest") {
+            const problem = ostEndpointProblem(target.endpoint);
+            if (problem) return problem;
         } else {
             let url;
             try {
@@ -378,7 +420,9 @@ export const targetProblem = (target) => {
         // never measure anything would otherwise be created happily and then
         // fail on a schedule, with the reason three clicks away in a row's
         // error column.
-        return "An iperf3 target needs the host of the iperf3 server to measure against";
+        return target.provider === "iperf3"
+            ? "An iperf3 target needs the host of the iperf3 server to measure against"
+            : "An OpenSpeedTest target needs the OpenSpeedTest server URL to measure against";
     }
 
     return flagProblem(target.enabled, "enabled")

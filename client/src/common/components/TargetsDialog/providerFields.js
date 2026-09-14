@@ -16,12 +16,41 @@
 export const takesServerId = (provider) => provider === "ookla" || provider === "libre";
 
 // An address of its own: a LibreSpeed backend URL, or an iperf3 host and port.
-export const takesEndpoint = (provider) => provider === "libre" || provider === "iperf3";
+export const takesEndpoint = (provider) =>
+    provider === "libre" || provider === "iperf3" || provider === "openspeedtest";
 
 // And the one that cannot do without it. A libre target with no endpoint uses
 // the public backend list; an iperf3 target with no host has nothing to
 // measure against at all.
-export const requiresEndpoint = (provider) => provider === "iperf3";
+export const requiresEndpoint = (provider) => provider === "iperf3" || provider === "openspeedtest";
+
+// ost-cli receives a base URL but discards credentials, query parameters and
+// fragments while constructing its request paths. Refuse those values rather
+// than saving an endpoint whose visible spelling is not what the CLI uses.
+const FIRST_PRINTABLE_CODE_POINT = 0x20;
+const DELETE_CODE_POINT = 0x7f;
+const URL_USERINFO = /^https?:\/\/[^/?#]*@/i;
+const hasWhitespaceOrControl = (value) => [...value].some((character) => {
+    const codePoint = character.codePointAt(0);
+    return /\s/.test(character) || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
+});
+
+/** Whether an OpenSpeedTest base URL has the shape the server accepts. */
+export const ostEndpointAccepted = (endpoint) => {
+    if (typeof endpoint !== "string") return false;
+
+    const value = endpoint.trim();
+    if (value === "" || hasWhitespaceOrControl(value)) return false;
+
+    try {
+        const url = new URL(value);
+        return ["http:", "https:"].includes(url.protocol)
+            && !URL_USERINFO.test(value) && url.username === "" && url.password === ""
+            && !value.includes("?") && !value.includes("#");
+    } catch {
+        return false;
+    }
+};
 
 // A TCP port is sixteen bits, and iperfEndpointProblem refuses anything outside
 // 1-65535 - 0 included, which is a port no server listens on.

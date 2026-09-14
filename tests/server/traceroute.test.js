@@ -328,6 +328,12 @@ describe("traceHost", () => {
             assert.equal(traceHost({provider: "iperf3", endpoint: "iperf.example.net:5201"}, {}), "iperf.example.net");
             assert.equal(traceHost({provider: "iperf3", endpoint: null}, {}), null);
         });
+
+        it("reads an OpenSpeedTest target's URL, and has nowhere to fall back to", () => {
+            assert.equal(traceHost({provider: "openspeedtest", endpoint: "http://192.168.1.50:3000"}, {}),
+                "192.168.1.50");
+            assert.equal(traceHost({provider: "openspeedtest", endpoint: null}, {}), null);
+        });
     });
 
     it("never traces a preview run", () => {

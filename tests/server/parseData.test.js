@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { parseData, parseOokla, parseLibre, parseCloudflare } from "../../server/util/providers/parseData.js";
+import { parseData, parseOokla, parseLibre, parseCloudflare, parseOst }
+    from "../../server/util/providers/parseData.js";
 import { FAILED_TEST, isFailedTest } from "../../server/util/testOutcome.js";
 import { readSource } from "../helpers/source.js";
 
@@ -951,5 +952,68 @@ describe("a result missing the blocks the parser needs", () => {
     it("refuses a libre result that is nothing at all", () => {
         assert.throws(() => parseLibre(null), (e) => e instanceof Error);
         assert.throws(() => parseLibre(undefined), (e) => e instanceof Error);
+    });
+});
+
+describe("parseOst", () => {
+    const result = {
+        type: "result",
+        server: {url: "http://192.168.1.50:3000", scheme: "http"},
+        ping: {latency_ms: 3.255, jitter_ms: 0, samples: 10},
+        download: {bandwidth_bps: 100000000, bytes: 187500000, elapsed_ms: 15001},
+        upload: {bandwidth_bps: 50000000, bytes: 93750000, elapsed_ms: 14999}
+    };
+
+    it("converts the complete result into the stored shape", () => {
+        assert.deepEqual(parseOst(result), {
+            ping: 3.25, jitter: 0, download: 100, upload: 50, time: 30,
+            serverName: null, serverHost: "http://192.168.1.50:3000", serverLocation: null,
+            resultId: null, isp: null, externalIp: null, provider: "openspeedtest",
+            packetLoss: null, downloadLatency: null, uploadLatency: null,
+            bytesDownloaded: 187500000, bytesUploaded: 93750000
+        });
+    });
+
+    it("dispatches through parseData", () => {
+        assert.equal(parseData("openspeedtest", result).download, 100);
+    });
+
+    for (const block of ["ping", "download", "upload"])
+        it(`refuses a result without its ${block} block`, () => {
+            const {[block]: _removed, ...incomplete} = result;
+            assert.throws(() => parseOst(incomplete), /ping|download|upload/i);
+        });
+
+    const malformed = [
+        ["ping latency", "ping", "latency_ms", "3.25"],
+        ["ping jitter", "ping", "jitter_ms", []],
+        ["ping samples", "ping", "samples", 1.5],
+        ["download bandwidth", "download", "bandwidth_bps", -1],
+        ["download bytes", "download", "bytes", true],
+        ["download elapsed", "download", "elapsed_ms", -1],
+        ["upload bandwidth", "upload", "bandwidth_bps", null],
+        ["upload bytes", "upload", "bytes", Number.MAX_SAFE_INTEGER + 1],
+        ["upload elapsed", "upload", "elapsed_ms", 0.5]
+    ];
+
+    for (const [name, block, field, value] of malformed)
+        it(`refuses malformed ${name}`, () => {
+            const candidate = {...result, [block]: {...result[block], [field]: value}};
+            assert.throws(() => parseOst(candidate), new RegExp(field.replace("_", ".*"), "i"));
+        });
+
+    it("refuses arrays where metric blocks belong", () => {
+        assert.throws(() => parseOst({...result, ping: []}), /ping/i);
+        assert.throws(() => parseOst({...result, download: []}), /download/i);
+    });
+
+    it("refuses elapsed times whose combined duration is not a safe integer", () => {
+        const unsafe = {
+            ...result,
+            download: {...result.download, elapsed_ms: Number.MAX_SAFE_INTEGER},
+            upload: {...result.upload, elapsed_ms: 1}
+        };
+
+        assert.throws(() => parseOst(unsafe), /elapsed/i);
     });
 });
