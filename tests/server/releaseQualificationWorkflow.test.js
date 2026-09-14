@@ -1,6 +1,7 @@
 import {describe, it} from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import {parse} from 'yaml';
 import {readSource} from '../helpers/source.js';
 
@@ -14,6 +15,16 @@ const HOURS_PER_DAY = 24;
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
 const MILLISECONDS_PER_SECOND = 1000;
+const RELEASE_VERSION = '1.6.1';
+const WINDOWS_STAMP = '1.6.1.4321';
+const QUALIFICATION_RUN_ID = 123;
+const QUALIFICATION_RUN_ATTEMPT = 1;
+const REDUCED_SCOPE = 'owner-approved-reduced-v1.6.1';
+const DEFERRED_WINDOWS_CHECKS = [
+    'Windows native full verification with enforced outbound denial',
+    'Windows native CPU-floor verification',
+    'Disposable Windows MSI lifecycle acceptance'
+];
 const QUALIFICATION_ARTIFACTS = [
     'MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe', 'MySpeed-linux-x64',
     'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64', 'MySpeed-macos-x64',
@@ -142,6 +153,73 @@ describe('read-only release qualification', () => {
 });
 
 describe('trusted artifact-only promotion', () => {
+    const executePromotionGuard = async (job, mutate = () => {}) => {
+        const script = job.steps.find(({name}) => name === 'Revalidate promotion immediately before mutation').with.script;
+        const manifest = {run: {id: QUALIFICATION_RUN_ID, attempt: QUALIFICATION_RUN_ATTEMPT},
+            source: {repository: 'i7Gamer/MySpeed', sha: SHA, version: RELEASE_VERSION, windowsStamp: WINDOWS_STAMP},
+            promotion: {eligible: true, blockers: [], scope: {id: REDUCED_SCOPE,
+                deferredChecks: [...DEFERRED_WINDOWS_CHECKS]},
+            evidence: {windowsNative: null, windowsCpuFloor: null, msiLifecycle: null}}};
+        const env = {MANIFEST: 'fixture-manifest.json', RUN_ID: String(QUALIFICATION_RUN_ID),
+            RUN_ATTEMPT: String(QUALIFICATION_RUN_ATTEMPT), SOURCE_SHA: SHA, VERSION: RELEASE_VERSION,
+            WINDOWS_STAMP, DEFAULT_BRANCH: 'development'};
+        const context = {repo: {owner: 'i7Gamer', repo: 'MySpeed'}, ref: 'refs/heads/development'};
+        const run = {run_attempt: QUALIFICATION_RUN_ATTEMPT, event: 'workflow_dispatch', conclusion: 'success',
+            path: '.github/workflows/qualify-release.yml', head_repository: {full_name: manifest.source.repository},
+            head_sha: SHA, head_branch: 'development', created_at: new Date().toISOString()};
+        const branch = {commit: {sha: SHA}};
+        mutate({manifest, env, context, run, branch});
+        const bytes = Buffer.from(JSON.stringify(manifest));
+        const seal = createHash('sha256').update(bytes).digest('hex');
+        await vm.runInNewContext(`(async () => {${script}})()`, {
+            process: {env}, context,
+            require: name => {
+                if (name === 'crypto') return {createHash};
+                assert.equal(name, 'fs');
+                return {lstatSync: () => ({isFile: () => true, nlink: 1, size: bytes.length}),
+                    readFileSync: file => {
+                        if (file === env.MANIFEST) return bytes;
+                        assert.equal(file, env.MANIFEST + '.sha256');
+                        return seal;
+                    }};
+            },
+            github: {rest: {
+                actions: {getWorkflowRun: async () => ({data: run})},
+                repos: {getBranch: async () => ({data: branch})}
+            }}
+        });
+    };
+
+    it('requires the exact release-only scope at all four pre-mutation boundaries', async () => {
+        const jobs = [workflow('create_release').jobs['create-draft'],
+            workflow('create_release').jobs['publish-assets'], workflow('publish-docker').jobs.publish,
+            workflow('finalize-release').jobs.finalize];
+        for (const job of jobs) {
+            await assert.doesNotReject(executePromotionGuard(job));
+            for (const mutate of [
+                ({manifest}) => { delete manifest.promotion.scope; },
+                ({manifest}) => { manifest.promotion.scope.id = 'full-native'; },
+                ({manifest}) => { manifest.promotion.scope.deferredChecks = []; },
+                ({manifest}) => { manifest.promotion.scope.deferredChecks.push('tests'); },
+                ({manifest}) => { manifest.promotion.evidence.windowsNative = {status: 'passed'}; },
+                ({manifest}) => { manifest.promotion.evidence.windowsCpuFloor = {status: 'passed'}; },
+                ({manifest}) => { manifest.promotion.evidence.msiLifecycle = {status: 'passed'}; },
+                ({manifest}) => { manifest.promotion.eligible = false; },
+                ({manifest}) => { manifest.promotion.blockers = ['required check']; },
+                ({manifest}) => { manifest.source.repository = 'fork/MySpeed'; },
+                ({manifest, context, run}) => { context.repo.owner = 'fork';
+                    manifest.source.repository = run.head_repository.full_name = 'fork/MySpeed'; },
+                ({manifest, env}) => { manifest.source.version = env.VERSION = '1.6.2';
+                    manifest.source.windowsStamp = env.WINDOWS_STAMP = '1.6.2.4321'; },
+                ({run}) => { run.conclusion = 'failure'; },
+                ({run}) => { run.event = 'pull_request'; },
+                ({run}) => { run.run_attempt++; },
+                ({run}) => { run.created_at = new Date(0).toISOString(); },
+                ({branch}) => { branch.commit.sha = 'b'.repeat(40); }
+            ]) await assert.rejects(executePromotionGuard(job, mutate), /qualification|scope/i);
+        }
+    });
+
     const executeRunGate = async (overrides = {}) => {
         const config = workflow('create_release');
         const script = config.jobs.validate.steps.find((step) => step.name

@@ -33,6 +33,17 @@ const PROMOTION_BLOCKERS = [
     'Windows native CPU-floor verification',
     'Disposable Windows MSI lifecycle acceptance'
 ];
+const REDUCED_RELEASE_VERSION = '1.6.1';
+const REDUCED_RELEASE_REPOSITORY = 'i7Gamer/MySpeed';
+const REDUCED_RELEASE_SCOPE = 'owner-approved-reduced-v1.6.1';
+
+// This records the owner's release-specific acceptance scope, not evidence that
+// the deferred checks passed. All mandatory artifact checks still run below.
+export const getQualificationScope = ({version, repository}) =>
+    version === REDUCED_RELEASE_VERSION && repository === REDUCED_RELEASE_REPOSITORY
+        ? {id: REDUCED_RELEASE_SCOPE,
+            deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)}
+        : {id: 'full-native', deferredChecks: []};
 
 const RELEASE_FILES = [
     ['MySpeed-windows-x64.exe', 'MySpeed.exe', 'MySpeed-windows-x64.exe'],
@@ -385,6 +396,9 @@ const buildManifest = async (options) => {
         || JSON.stringify(indexProvenance.platforms) !== JSON.stringify(inspectedIndex.platforms))
         throw new Error('Combined OCI index provenance mismatch');
 
+    const scope = getQualificationScope(options);
+    const blockers = PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER
+        && !scope.deferredChecks.includes(check));
     return {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
         source: {repository: options.repository, sha: options.candidateSha, version: options.version,
@@ -395,10 +409,11 @@ const buildManifest = async (options) => {
             dockerIndex: {indexDigest: indexProvenance.indexDigest,
                 mode: 'content-addressed-combination', result: options.evidence.dockerIndex}},
         promotion: {
-            eligible: false,
+            eligible: blockers.length === 0,
+            scope,
             evidence: {macosNative: {status: 'passed', verifications: macosNativeVerifications},
                 msiLifecycle: null, windowsCpuFloor: null, windowsNative: null},
-            blockers: PROMOTION_BLOCKERS.filter((blocker) => blocker !== MACOS_NATIVE_BLOCKER)
+            blockers
         },
         actionsArtifacts,
         releaseAssets,

@@ -54,6 +54,14 @@ describe("Bun runtime guidance", () => {
         assert.ok(body.includes("Nehalem/SSE4.2"));
         assert.ok(body.includes("compatibility alias"));
         assert.ok(!/no AVX2/i.test(body));
+        assert.match(body, /## Qualification scope and limitations/);
+        assert.match(body, /owner-approved-reduced-v1\.6\.1/);
+        assert.match(body, /Windows native HTTP\/service runtime.*not verified/i);
+        assert.match(body, /AVX-disabled.*not verified/i);
+        assert.match(body, /MSI install\/upgrade\/rollback\/uninstall lifecycle.*not verified/i);
+        assert.match(body, /listener-free reset.*WiX ICE/i);
+        assert.match(body, /compiler target.*Nehalem\/SSE4\.2/i);
+        assert.doesNotMatch(body, /binaries share the Nehalem\/SSE4\.2 floor/);
     });
 
     it("documents the verified source and Node development minimums", () => {

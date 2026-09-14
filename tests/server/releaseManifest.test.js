@@ -6,7 +6,8 @@ import path from "node:path";
 import {createHash} from "node:crypto";
 import {spawnSync} from "node:child_process";
 import tarStream from "tar-stream";
-import {createQualificationManifest, readSealedQualificationManifest, validateQualificationManifest}
+import {createQualificationManifest, readSealedQualificationManifest, validateQualificationManifest,
+    getQualificationScope}
     from "../../scripts/release/qualification-manifest.mjs";
 import {validateQualificationInputs} from "../../scripts/release/validate-inputs.mjs";
 import {inspectOciLayout} from "../../scripts/release/inspect-oci.mjs";
@@ -28,6 +29,12 @@ const SUCCESS_EVIDENCE = {tests: "success", binaries: "success", msi: "success",
     docker: "success", dockerIndex: "success", ice: "success"};
 const FULL_MODE = "full";
 const RESET_MODE = "listener-free-reset";
+const REDUCED_SCOPE = "owner-approved-reduced-v1.6.1";
+const DEFERRED_WINDOWS_CHECKS = [
+    "Windows native full verification with enforced outbound denial",
+    "Windows native CPU-floor verification",
+    "Disposable Windows MSI lifecycle acceptance"
+];
 const MAC_SOURCE_ROOT = "/Users/runner/work/MySpeed/MySpeed";
 const MAC_SOURCE_SENTINEL = `${MAC_SOURCE_ROOT}/package.json`;
 const MAC_WORK_ROOT = "/Users/runner/work/_temp/myspeed-macos-standalone/runtime/populated";
@@ -184,6 +191,23 @@ const writeMacosEvidence = ({directory, architecture, artifactSha256, summary}) 
     writeCheckedFile(directory, "macos-runtime-isolation.json", JSON.stringify(record));
 };
 
+describe("release qualification scope", () => {
+    it("limits the owner's reduced scope to this repository and v1.6.1", () => {
+        const approved = {repository: REPOSITORY, version: VERSION};
+        assert.deepEqual(getQualificationScope(approved), {
+            id: REDUCED_SCOPE, deferredChecks: DEFERRED_WINDOWS_CHECKS
+        });
+        for (const input of [
+            {...approved, version: "1.6.2"}, {...approved, version: "1.6.0"},
+            {...approved, version: "1.6.1-beta.1"}, {...approved, version: "1.6.1\n"},
+            {...approved, repository: "fork/MySpeed"}, {...approved, repository: "i7gamer/MySpeed"},
+            {}, {repository: null, version: null}
+        ]) assert.deepEqual(getQualificationScope(input), {id: "full-native", deferredChecks: []});
+        getQualificationScope(approved).deferredChecks.length = 0;
+        assert.deepEqual(getQualificationScope(approved).deferredChecks, DEFERRED_WINDOWS_CHECKS);
+    });
+});
+
 describe("qualification manifest", () => {
     let root;
     let output;
@@ -327,14 +351,16 @@ describe("qualification manifest", () => {
         assert.deepEqual(manifest.source, {repository: REPOSITORY, sha: SHA, version: VERSION,
             windowsStamp: WINDOWS_STAMP});
         assert.deepEqual(manifest.run, {id: RUN_ID, attempt: RUN_ATTEMPT});
-        assert.equal(manifest.promotion.eligible, false);
+        assert.equal(manifest.promotion.eligible, true);
+        assert.deepEqual(manifest.promotion.scope, {id: REDUCED_SCOPE,
+            deferredChecks: DEFERRED_WINDOWS_CHECKS});
         assert.equal(manifest.promotion.evidence.macosNative.status, "passed");
         assert.deepEqual(manifest.promotion.evidence.macosNative.verifications.map(({architecture}) => architecture),
             ["x64", "arm64"]);
         assert.deepEqual({...manifest.promotion.evidence, macosNative: null}, {
             macosNative: null, msiLifecycle: null, windowsCpuFloor: null, windowsNative: null
         });
-        assert.equal(manifest.promotion.blockers.length, 3);
+        assert.deepEqual(manifest.promotion.blockers, []);
         assert.equal(manifest.runtimeVerification.linux.length, 3);
         assert.equal(manifest.runtimeVerification.windows.length, 2);
         assert.equal(manifest.runtimeVerification.macos.length, 2);
@@ -368,6 +394,25 @@ describe("qualification manifest", () => {
         await createQualificationManifest(options());
         fs.appendFileSync(path.join(output, "qualification-manifest.json"), " ");
         await assert.rejects(readSealedQualificationManifest(output), /digest/i);
+    });
+
+    it("reconstructs scope and missing evidence instead of trusting a resealed policy claim", async () => {
+        const qualified = await createQualificationManifest(options());
+        for (const mutate of [
+            value => { delete value.promotion.scope; },
+            value => { value.promotion.scope.id = "full-native"; },
+            value => { value.promotion.scope.deferredChecks.pop(); },
+            value => { value.promotion.evidence.windowsNative = {status: "passed"}; },
+            value => { value.promotion.evidence.windowsCpuFloor = {status: "passed"}; },
+            value => { value.promotion.evidence.msiLifecycle = {status: "passed"}; }
+        ]) {
+            const manifest = structuredClone(qualified);
+            mutate(manifest);
+            writeCheckedFile(output, "qualification-manifest.json", JSON.stringify(manifest));
+            await assert.doesNotReject(readSealedQualificationManifest(output));
+            await assert.rejects(validateQualificationManifest({...options(), manifest,
+                summaryDirectory: output}), /manifest.*mismatch/i);
+        }
     });
 
     for (const artifact of ["MySpeed-linux-x64", "MySpeed-linux-x64-baseline", "MySpeed-linux-arm64"])
