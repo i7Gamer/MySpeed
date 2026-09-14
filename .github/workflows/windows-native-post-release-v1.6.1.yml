@@ -78,6 +78,8 @@ jobs:
           Set-StrictMode -Version Latest
           $MAXIMUM_FILE_BYTES = 33554432
           $MAXIMUM_CLOSURE_BYTES = 134217728
+          $EMPTY_FILE_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+          $EMPTY_FIXTURE_MEMBER = 'fixture/populated/data/storage.db-wal'
           $closureRoot = Join-Path $env:RUNNER_TEMP 'myspeed-v1.6.1-post-release-closure'
           if (Test-Path -LiteralPath $closureRoot) { throw 'Post-release closure already exists' }
           [void][IO.Directory]::CreateDirectory($closureRoot)
@@ -113,17 +115,30 @@ jobs:
             --work (Join-Path $fixtureRoot 'populated') --reset-work (Join-Path $fixtureRoot 'reset') `
             --manifest (Join-Path $fixtureRoot 'transport.json') --source-sha $env:CANDIDATE_SOURCE_SHA | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture closure creation failed' }
+          $transport = Get-Content -LiteralPath (Join-Path $fixtureRoot 'transport.json') -Raw |
+            ConvertFrom-Json -AsHashtable
+          $emptyFixtureMemberSha256 = $transport.populated.filesSha256['data/storage.db-wal']
           $records = [Collections.Generic.List[object]]::new()
           [int64]$aggregate = 0
           foreach ($item in @(Get-ChildItem -LiteralPath $closureRoot -File -Recurse -Force | Sort-Object FullName)) {
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType -or
-              $item.Length -le 0 -or $item.Length -gt $MAXIMUM_FILE_BYTES) { throw 'Closure member differs' }
+            $relativeName = [IO.Path]::GetRelativePath($closureRoot,$item.FullName).Replace('\','/')
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+              $null -ne $item.LinkType -or $item.Length -gt $MAXIMUM_FILE_BYTES) {
+              throw "Closure member differs: $relativeName"
+            }
+            $sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $isExpectedEmptyFixtureMember = $relativeName -ceq $EMPTY_FIXTURE_MEMBER -and
+              $item.Length -eq 0 -and $sha256 -ceq $EMPTY_FILE_SHA256 -and
+              $emptyFixtureMemberSha256 -ceq $EMPTY_FILE_SHA256
+            if ($item.Length -le 0 -and -not $isExpectedEmptyFixtureMember) {
+              throw "Closure member differs: $relativeName"
+            }
             $aggregate += $item.Length
             if ($aggregate -gt $MAXIMUM_CLOSURE_BYTES) { throw 'Closure aggregate exceeds its bound' }
             [void]$records.Add([pscustomobject][ordered]@{
-              name=[IO.Path]::GetRelativePath($closureRoot,$item.FullName).Replace('\','/');
+              name=$relativeName;
               bytes=[int64]$item.Length;
-              sha256=(Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              sha256=$sha256
             })
           }
           $manifest = [pscustomobject][ordered]@{
@@ -199,6 +214,8 @@ jobs:
           $MAXIMUM_FILE_BYTES = 33554432
           $MAXIMUM_CLOSURE_BYTES = 134217728
           $MAXIMUM_FILES = 256
+          $EMPTY_FILE_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'
+          $EMPTY_FIXTURE_MEMBER = 'fixture/populated/data/storage.db-wal'
           $closureRoot = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'myspeed-v1.6.1-post-release-closure'))
           $manifestPath = Join-Path $closureRoot 'closure.json'
           $manifestItem = Get-Item -LiteralPath $manifestPath -Force
@@ -224,11 +241,18 @@ jobs:
           for ($index = 0; $index -lt $actual.Count; $index++) {
             $item = $actual[$index];$expected = $manifest.files[$index]
             $name = [IO.Path]::GetRelativePath($closureRoot,$item.FullName).Replace('\','/')
-            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType -or
-              $item.Length -le 0 -or $item.Length -gt $MAXIMUM_FILE_BYTES -or $expected.name -cne $name -or
-              [int64]$expected.bytes -ne $item.Length -or $expected.sha256 -cnotmatch '\A[a-f0-9]{64}\z' -or
-              (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -cne
-                $expected.sha256) { throw 'Closure member identity differs' }
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+              $null -ne $item.LinkType -or $item.Length -gt $MAXIMUM_FILE_BYTES -or
+              $expected.name -cne $name -or [int64]$expected.bytes -ne $item.Length -or
+              $expected.sha256 -cnotmatch '\A[a-f0-9]{64}\z') {
+              throw "Closure member identity differs: $name"
+            }
+            $sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            $isExpectedEmptyFixtureMember = $expected.name -ceq $EMPTY_FIXTURE_MEMBER -and
+              [int64]$expected.bytes -eq 0 -and $expected.sha256 -ceq $EMPTY_FILE_SHA256 -and
+              $name -ceq $EMPTY_FIXTURE_MEMBER -and $item.Length -eq 0 -and $sha256 -ceq $EMPTY_FILE_SHA256
+            if (($item.Length -le 0 -and -not $isExpectedEmptyFixtureMember) -or
+              $sha256 -cne $expected.sha256) { throw "Closure member identity differs: $name" }
             $aggregate += $item.Length
             if ($aggregate -gt $MAXIMUM_CLOSURE_BYTES) { throw 'Closure aggregate exceeds its bound' }
           }

@@ -563,7 +563,24 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.match(generatorStep, /working-directory: candidate-source/u);
         assert.match(generatorStep, /generate-migrations\.js[\s\S]*\$LASTEXITCODE -ne 0/u);
         assert.match(generatorStep, /generate-integrations\.js[\s\S]*\$LASTEXITCODE -ne 0/u);
+        assert.equal(workflow.match(
+            /\$EMPTY_FIXTURE_MEMBER = 'fixture\/populated\/data\/storage\.db-wal'/gu)?.length, 2);
+        assert.equal(workflow.match(
+            /\$EMPTY_FILE_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'/gu)
+            ?.length, 2);
+        assert.match(workflow,
+            /filesSha256\['data\/storage\.db-wal'\][\s\S]*\$emptyFixtureMemberSha256 -ceq \$EMPTY_FILE_SHA256/u);
+        assert.match(workflow,
+            /\$relativeName -ceq \$EMPTY_FIXTURE_MEMBER[\s\S]*\$item\.Length -eq 0[\s\S]*\$sha256 -ceq \$EMPTY_FILE_SHA256/u);
+        const closureBuild = workflow.slice(workflow.indexOf("\n      - name: Build exact source-free closure"),
+            workflow.indexOf("\n      - name: Upload exact source-free closure"));
+        assert.ok(closureBuild.indexOf("$item.Attributes") < closureBuild.indexOf("$sha256 ="));
         const executeJob = workflow.slice(workflow.indexOf("\n  execute:"), workflow.indexOf("\n  verify-provenance:"));
+        assert.match(executeJob,
+            /\$expected\.name -ceq \$EMPTY_FIXTURE_MEMBER[\s\S]*\[int64\]\$expected\.bytes -eq 0[\s\S]*\$expected\.sha256 -ceq \$EMPTY_FILE_SHA256/u);
+        const closureValidation = executeJob.slice(executeJob.indexOf("Validate every sealed closure member"),
+            executeJob.indexOf("Prepare bound target, payloads, envelope, and requests"));
+        assert.ok(closureValidation.indexOf("$item.Attributes") < closureValidation.indexOf("$sha256 ="));
         assert.doesNotMatch(executeJob, /actions\/checkout@/u);
         assert.doesNotMatch(workflow, /(?:gh\s+release|releases:\s*write|contents:\s*write)/u);
     });
