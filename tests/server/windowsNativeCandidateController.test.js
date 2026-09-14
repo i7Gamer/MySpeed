@@ -204,6 +204,25 @@ describe("Windows native candidate controller", () => {
             "elapsed,assertConsoleFree,launch,writeReady,stopExists,readStop,sleep,stop,lastResult,active,force,close");
     });
 
+    powershellIt("captures cleanup limits and retries only sharing violations in native callbacks", () => {
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "function Read-MyspeedCandidateJson { throw [IO.IOException]::new('injected-io', $global:QualificationHResult) }; "
+            + "$operations=New-MyspeedCandidateNativeOperations ([pscustomobject]@{stopRequestPath='C:\\unused'}) "
+            + "([Diagnostics.Stopwatch]::StartNew()); $global:QualificationHResult=-2147024864; "
+            + "$sharingIsNull=$null -eq (& $operations.readStop); $global:QualificationHResult=-2147024894; "
+            + "$otherRaised=$false; try { & $operations.readStop } catch { "
+            + "if($_.Exception.Message -cne 'injected-io'){throw}; $otherRaised=$true }; "
+            + "[pscustomobject]@{limits=$operations.launch.Module.SessionState.PSVariable.GetValue('limits'); "
+            + "sharingIsNull=$sharingIsNull;otherRaised=$otherRaised}|ConvertTo-Json -Compress";
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        const observed = JSON.parse(result.stdout);
+        assert.deepEqual(observed, {limits: {hardDeadlineMs: 310_000, cleanupMs: 10_000,
+            win32CodeMask: 65_535, sharingViolationCode: 32}, sharingIsNull: true, otherRaised: true});
+    });
+
     powershellIt("validates exact request identity and sanitized environment", () => {
         const accepted = invoke("ValidateRequest", request());
         assert.equal(accepted.artifactLogicalName, "MySpeed-windows-x64.exe");

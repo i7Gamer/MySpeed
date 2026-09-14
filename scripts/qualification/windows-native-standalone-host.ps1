@@ -759,6 +759,10 @@ function Wait-MyspeedStandaloneTaskExit {
 
 function New-MyspeedStandaloneNativeOperations {
     param([hashtable]$State)
+    # GetNewClosure creates a dynamic module: script-scoped variables are not
+    # inherited, so capture the fixed limits as locals before making callbacks.
+    $limits=[pscustomobject]@{recoveryTimeoutMilliseconds=$script:RecoveryOperationTimeoutMilliseconds
+        maximumSourceBytes=$script:MaximumSourceBytes;maximumCoordinatorBytes=$script:MaximumCoordinatorBytes}
     $arm={
         $State.snapshot=Get-MyspeedStandaloneAdapterSnapshot $State.module
         $targets=@($State.snapshot.inventory|Where-Object {-not $_.loopback -and $_.enabled}|ForEach-Object {
@@ -792,7 +796,7 @@ function New-MyspeedStandaloneNativeOperations {
         if($actions.Count -ne 1 -or $actions[0].Execute -cne $powerShell -or $actions[0].Arguments -cne $arguments -or
             [string]$task.Principal.UserId -cne 'SYSTEM'){throw 'Standalone recovery task identity differs'}
         Start-ScheduledTask -TaskName $State.request.taskName -ErrorAction Stop
-        $State.recoveryReady=Wait-MyspeedStandaloneRecoveryReady $State.request $State.recoverySha256 $script:RecoveryOperationTimeoutMilliseconds
+        $State.recoveryReady=Wait-MyspeedStandaloneRecoveryReady $State.request $State.recoverySha256 $limits.recoveryTimeoutMilliseconds
         $readyLoaded=Read-MyspeedStandaloneJsonFile $State.request.recoveryReadyPath
         $State.recoveryReadySha256=$readyLoaded.sha256;$State.recoveryReadyBase64=$readyLoaded.bytesBase64
     }.GetNewClosure()
@@ -800,9 +804,9 @@ function New-MyspeedStandaloneNativeOperations {
         foreach($entry in @(@($State.request.hostPath,$State.request.hostSha256),@($State.request.canaryPath,$State.request.canarySha256),
             @($State.request.coordinatorArguments[0],$State.request.coordinatorModuleSha256),
             @($State.request.coordinatorArguments[2],$State.request.proofRequestSha256))){
-            [void](Read-MyspeedStandaloneBytes $entry[0] $script:MaximumSourceBytes $entry[1])}
+            [void](Read-MyspeedStandaloneBytes $entry[0] $limits.maximumSourceBytes $entry[1])}
         [void](Get-MyspeedStandaloneFileIdentity $State.request.coordinatorExecutablePath `
-            $script:MaximumCoordinatorBytes $State.request.coordinatorExecutableSha256)
+            $limits.maximumCoordinatorBytes $State.request.coordinatorExecutableSha256)
         [void](Wait-MyspeedStandaloneRecoveryReady $State.request $State.recoverySha256 1)
         $task=Get-ScheduledTask -TaskName $State.request.taskName -ErrorAction Stop;$actions=@($task.Actions)
         if($task.State -cne 'Running' -or $actions.Count -ne 1 -or $actions[0].Execute -cne $State.recoveryPowerShell -or
@@ -866,7 +870,7 @@ function New-MyspeedStandaloneNativeOperations {
     $disarm={
         if($null -eq (Read-MyspeedStandaloneRecoveryCancel $State.request $State.recoverySha256)){
             throw 'Standalone recovery cancel was not committed under the restore lock'}
-        Wait-MyspeedStandaloneTaskExit $State.request $State.recoveryReady $script:RecoveryOperationTimeoutMilliseconds
+        Wait-MyspeedStandaloneTaskExit $State.request $State.recoveryReady $limits.recoveryTimeoutMilliseconds
         $State.recoveryProcessExitProven=$true
         Unregister-ScheduledTask -TaskName $State.request.taskName -Confirm:$false -ErrorAction Stop
         if(@(Get-ScheduledTask -ErrorAction Stop|Where-Object {$_.TaskName -ceq $State.request.taskName}).Count -ne 0){
@@ -896,7 +900,7 @@ function New-MyspeedStandaloneNativeOperations {
                         [void](Write-MyspeedStandaloneCreateNewJson $req.cancelPath $cancel)
                     }.GetNewClosure()}
                 [void](Invoke-MyspeedStandaloneRecoveryCancellationCore $State $cancelOperations)
-                if($null -ne $State.recoveryReady){Wait-MyspeedStandaloneTaskExit $State.request $State.recoveryReady $script:RecoveryOperationTimeoutMilliseconds
+                if($null -ne $State.recoveryReady){Wait-MyspeedStandaloneTaskExit $State.request $State.recoveryReady $limits.recoveryTimeoutMilliseconds
                     Unregister-ScheduledTask -TaskName $State.request.taskName -Confirm:$false -ErrorAction Stop;$State.taskRegistered=$false}
             }}catch{if($null -eq $cleanupFailure){$cleanupFailure=$_}}
         }finally{if($null -ne $State.job){$State.job.Dispose();$State.job=$null;$State.jobHandlesClosed=$true}}

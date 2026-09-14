@@ -66,6 +66,40 @@ const hostedRequest = () => ({
 });
 
 describe("Windows native standalone host", () => {
+    it("captures native operation limits without invoking native operations", {skip: !POWERSHELL}, () => {
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "$operations=New-MyspeedStandaloneNativeOperations @{}; "
+            + "$values=@($operations.PSObject.Properties | ForEach-Object { "
+            + "$_.Value.Module.SessionState.PSVariable.GetValue('limits') }); "
+            + "ConvertTo-Json -InputObject $values -Compress";
+        const values = JSON.parse(execFileSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true}));
+        assert.equal(values.length, request().phases.length);
+        for (const value of values) assert.deepEqual(value, {recoveryTimeoutMilliseconds: 10_000,
+            maximumSourceBytes: 2_097_152, maximumCoordinatorBytes: 134_217_728});
+    });
+
+    it("uses captured input bounds before any adapter operation", {skip: !POWERSHELL}, () => {
+        const input = Buffer.from(JSON.stringify(hostedRequest())).toString("base64");
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "$global:ObservedQualificationLimits=[Collections.Generic.List[long]]::new(); "
+            + "function Read-MyspeedStandaloneBytes { param($Path,[long]$Maximum,$Hash) "
+            + "[void]$global:ObservedQualificationLimits.Add($Maximum) }; "
+            + "function Get-MyspeedStandaloneFileIdentity { param($Path,[long]$Maximum,$Hash) "
+            + "[void]$global:ObservedQualificationLimits.Add($Maximum) }; "
+            + "function Wait-MyspeedStandaloneRecoveryReady { throw 'injected-boundary-stop' }; "
+            + `$value=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${input}'))|ConvertFrom-Json; `
+            + "$operations=New-MyspeedStandaloneNativeOperations @{request=$value;recoverySha256=('a'*64)}; "
+            + "try { & $operations.'disable-adapters'; throw 'injected stop was not reached' } "
+            + "catch { if($_.Exception.Message -cne 'injected-boundary-stop'){throw} }; "
+            + "ConvertTo-Json -InputObject ([long[]]$global:ObservedQualificationLimits) -Compress";
+        const values = JSON.parse(execFileSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true}));
+        assert.deepEqual(values, [2_097_152, 2_097_152, 2_097_152, 2_097_152, 134_217_728]);
+    });
+
     it("compiles its native declarations without invoking native methods", {skip: !POWERSHELL}, () => {
         const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
             + "Add-Type -TypeDefinition (Get-MyspeedStandaloneNativeSource) -Language CSharp -ErrorAction Stop; "

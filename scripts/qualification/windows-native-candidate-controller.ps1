@@ -385,6 +385,8 @@ function New-MyspeedCandidateNativeOperations {
     param([object]$Request,[Diagnostics.Stopwatch]$Watch)
     $req=$Request
     $watch=$Watch
+    $limits=[pscustomobject]@{hardDeadlineMs=$script:HardDeadlineMs;cleanupMs=$script:CleanupMs
+        win32CodeMask=$script:Win32CodeMask;sharingViolationCode=$script:SharingViolationCode}
     $nativeState=[pscustomobject]@{session=$null}
     return [pscustomobject]@{
         elapsed={return [int64]$watch.ElapsedMilliseconds}.GetNewClosure()
@@ -401,14 +403,14 @@ function New-MyspeedCandidateNativeOperations {
                     initialJobMembership=$session.InitialJobMembership;candidateIdentityCaptured=$session.CandidateIdentityCaptured
                     candidateResumed=$session.CandidateResumed;threadHandleClosedBeforeReady=$session.ThreadHandleClosedBeforeReady}}
             catch{
-                try{if($session.ActiveProcesses -ne 0){$remaining=$script:HardDeadlineMs-[int64]$watch.ElapsedMilliseconds
-                        if($remaining -gt 0){$session.Force([uint32][Math]::Min($script:CleanupMs,$remaining))}}}finally{[void]$session.CloseAndProve();$nativeState.session=$null}
+                try{if($session.ActiveProcesses -ne 0){$remaining=$limits.hardDeadlineMs-[int64]$watch.ElapsedMilliseconds
+                        if($remaining -gt 0){$session.Force([uint32][Math]::Min($limits.cleanupMs,$remaining))}}}finally{[void]$session.CloseAndProve();$nativeState.session=$null}
                 throw
             }}.GetNewClosure()
         writeReady={param($ready)Write-MyspeedCandidateJson $req.readyPath $ready}.GetNewClosure()
         stopExists={return Test-Path -LiteralPath $req.stopRequestPath -PathType Leaf}.GetNewClosure()
         readStop={try{return (Read-MyspeedCandidateJson $req.stopRequestPath '').value}catch [IO.IOException]{
-                if(($_.Exception.HResult -band $script:Win32CodeMask) -eq $script:SharingViolationCode){return $null};throw}}.GetNewClosure()
+                if(($_.Exception.HResult -band $limits.win32CodeMask) -eq $limits.sharingViolationCode){return $null};throw}}.GetNewClosure()
         sleep={param($milliseconds)Start-Sleep -Milliseconds $milliseconds}
         stop={param($session,$grace,$cleanup)if($null -eq $nativeState.session){throw 'Native candidate session is absent'};return $nativeState.session.Stop([uint32]$PID,[uint32]$grace,[uint32]$cleanup)}.GetNewClosure()
         lastResult={param($session)if($null -eq $nativeState.session){return $null};$result=$nativeState.session.LastResult;if($null -ne $result -and $req.scenario -ceq 'fresh-no-config-reset'){
