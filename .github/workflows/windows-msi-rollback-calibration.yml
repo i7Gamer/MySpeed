@@ -1,0 +1,495 @@
+name: Windows sacrificial MSI rollback transport
+
+# QA-only, candidate-neutral rollback calibration. It builds two tiny data-only
+# fixtures and executes them only on a fresh, bounded hosted Windows runner.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [development]
+    paths:
+      - '.github/workflows/windows-msi-rollback-calibration.yml'
+      - 'scripts/qualification/windows-msi-rollback-calibration.ps1'
+      - 'scripts/qualification/windows-msi-rollback-native.ps1'
+      - 'scripts/qualification/windows-msi-rollback-state.ps1'
+      - 'scripts/qualification/media-job-launcher.ps1'
+      - 'tests/server/windowsMsiRollbackCalibration.test.js'
+      - 'tests/server/windowsMsiRollbackNative.test.js'
+      - 'tests/server/windowsMsiRollbackState.test.js'
+      - 'tests/server/windowsMsiRollbackCalibrationWorkflow.test.js'
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Build and seal sacrificial MSI fixtures
+    if: github.repository == 'i7Gamer/MySpeed' && (github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.build_fixtures.outputs.nonce }}
+    steps:
+      - name: Checkout exact calibration source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun for locked test dependencies
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked QA test dependencies
+        shell: pwsh
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          if ($LASTEXITCODE -ne 0) { throw 'QA dependency installation failed' }
+
+      - name: Test calibration contracts
+        id: test_contracts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          node --test tests/server/windowsMsiRollbackCalibration.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Calibration contract tests failed' }
+          node --test tests/server/windowsMsiRollbackState.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Rollback state tests failed' }
+          node --test tests/server/windowsMsiRollbackCalibrationWorkflow.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Calibration workflow tests failed' }
+          node --test tests/server/windowsMsiRollbackNative.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Native adapter contract tests failed' }
+
+      - name: Acquire authenticated portable WiX
+        id: acquire_wix
+        shell: pwsh
+        env:
+          WIX_URL: https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+          WIX_SHA256: 6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_WIX_ARCHIVE_BYTES = 134217728
+          $archive = Join-Path $env:RUNNER_TEMP 'wix314-binaries.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'wix314-binaries'
+          if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $directory)) {
+            throw 'WiX staging collision'
+          }
+          Invoke-WebRequest -Uri $env:WIX_URL -OutFile $archive -UseBasicParsing
+          $archiveInfo = Get-Item -LiteralPath $archive -Force -ErrorAction Stop
+          if ($archiveInfo.PSIsContainer -or ($archiveInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $archiveInfo.Length -le 0 -or $archiveInfo.Length -gt $MAX_WIX_ARCHIVE_BYTES) {
+            throw 'WiX archive is not an ordinary bounded file'
+          }
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:WIX_SHA256) { throw 'WiX archive digest differs' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory -ErrorAction Stop
+          foreach ($name in @('candle.exe','light.exe')) {
+            $tool = Join-Path $directory $name
+            if (-not (Test-Path -LiteralPath $tool -PathType Leaf)) { throw "WiX archive is missing $name" }
+          }
+
+      - name: Render and build fixed data-only fixtures
+        id: build_fixtures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_FIXTURE_JSON_BYTES = 262144
+          $MAX_WIX_SOURCE_BYTES = 65536
+          $MAX_PAYLOAD_BYTES = 1024
+          $MAX_MSI_BYTES = 8388608
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'msi-rollback-calibration-closure'
+          $buildRoot = Join-Path $env:RUNNER_TEMP 'msi-rollback-calibration-build'
+          if ((Test-Path -LiteralPath $closureRoot) -or (Test-Path -LiteralPath $buildRoot)) {
+            throw 'Fixture staging collision'
+          }
+          New-Item -ItemType Directory -Path $closureRoot,$buildRoot -ErrorAction Stop | Out-Null
+          $nonce = [guid]::NewGuid().ToString('N')
+          $scriptPath = [IO.Path]::GetFullPath('scripts/qualification/windows-msi-rollback-calibration.ps1')
+          $inboxPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $fixtureInputJson = @{nonce=$nonce} | ConvertTo-Json -Compress
+          $fixtureOutput = @(& $inboxPowerShell -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $scriptPath -Mode GetFixtures -InputJson $fixtureInputJson)
+          $fixtureExitCode = $LASTEXITCODE
+          if ($fixtureExitCode -ne 0) { throw "Fixture rendering failed with exit $fixtureExitCode" }
+          if ($fixtureOutput.Count -ne 1 -or $fixtureOutput[0] -isnot [string]) {
+            throw 'Fixture rendering stdout shape differs'
+          }
+          $fixtureJson = [string]$fixtureOutput[0]
+          $fixtureBytes = [Text.UTF8Encoding]::new($false).GetBytes($fixtureJson)
+          if ($fixtureBytes.Length -le 0 -or $fixtureBytes.Length -gt $MAX_FIXTURE_JSON_BYTES) {
+            throw 'Fixture definition JSON exceeds its bound'
+          }
+          $fixtureDefinitions = $fixtureJson | ConvertFrom-Json
+          if (@($fixtureDefinitions.fixtures).Count -ne 2) { throw 'Fixture definition count differs' }
+          [IO.File]::WriteAllBytes((Join-Path $closureRoot 'fixture-definitions.json'), $fixtureBytes)
+          Copy-Item -LiteralPath $scriptPath -Destination (Join-Path $closureRoot 'windows-msi-rollback-calibration.ps1')
+          foreach ($sourceName in @('windows-msi-rollback-native.ps1','windows-msi-rollback-state.ps1','media-job-launcher.ps1')) {
+            $sourcePath = [IO.Path]::GetFullPath((Join-Path 'scripts/qualification' $sourceName))
+            Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $closureRoot $sourceName)
+          }
+          $wixDirectory = Join-Path $env:RUNNER_TEMP 'wix314-binaries'
+          foreach ($role in @('predecessor','candidate')) {
+            $fixture = @($fixtureDefinitions.fixtures | Where-Object { $_.role -ceq $role })
+            if ($fixture.Count -ne 1) { throw "Fixture role $role differs" }
+            $stage = Join-Path $buildRoot $role
+            New-Item -ItemType Directory -Path $stage -ErrorAction Stop | Out-Null
+            $sourceBytes = [Text.UTF8Encoding]::new($false).GetBytes($fixture[0].wixSource)
+            $payloadBytes = [Text.UTF8Encoding]::new($false).GetBytes($fixture[0].payload.text)
+            if ($sourceBytes.Length -le 0 -or $sourceBytes.Length -gt $MAX_WIX_SOURCE_BYTES -or
+              $payloadBytes.Length -le 0 -or $payloadBytes.Length -gt $MAX_PAYLOAD_BYTES) {
+              throw "Fixture role $role source or payload exceeds its bound"
+            }
+            $stageWxs = Join-Path $stage "$role.wxs"
+            $stagePayload = Join-Path $stage $fixture[0].payload.fileName
+            [IO.File]::WriteAllBytes($stageWxs, $sourceBytes)
+            [IO.File]::WriteAllBytes($stagePayload, $payloadBytes)
+            if ((Get-FileHash -LiteralPath $stageWxs -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+              $fixture[0].wixSourceSha256 -or
+              (Get-FileHash -LiteralPath $stagePayload -Algorithm SHA256).Hash.ToLowerInvariant() -cne
+              $fixture[0].payload.sha256) { throw "Fixture role $role rendered bytes differ" }
+            $wixObject = Join-Path $stage "$role.wixobj"
+            $msiPath = Join-Path $closureRoot "$role.msi"
+            $candleArguments = @('-nologo','-arch','x64','-out',$wixObject,$stageWxs)
+            & (Join-Path $wixDirectory 'candle.exe') @candleArguments
+            if ($LASTEXITCODE -ne 0) { throw "WiX compiler failed for $role" }
+            $lightArguments = @('-nologo','-spdb','-v','-b',$stage,'-out',$msiPath,$wixObject)
+            & (Join-Path $wixDirectory 'light.exe') @lightArguments
+            if ($LASTEXITCODE -ne 0) { throw "WiX linker or ICE validation failed for $role" }
+            $msiInfo = Get-Item -LiteralPath $msiPath -Force -ErrorAction Stop
+            if ($msiInfo.Length -le 0 -or $msiInfo.Length -gt $MAX_MSI_BYTES) {
+              throw "Fixture role $role MSI exceeds its bound"
+            }
+            [IO.File]::WriteAllBytes((Join-Path $closureRoot "$role.wxs"), $sourceBytes)
+            [IO.File]::WriteAllBytes((Join-Path $closureRoot "$role-payload.txt"), $payloadBytes)
+          }
+          $provenance = [ordered]@{
+            schemaVersion=1;kind='myspeed-msi-sacrificial-build-provenance';qualifying=$false
+            nativeExecutionAuthorized=$false;runId=$env:EXPECTED_RUN_ID;runAttempt=$env:EXPECTED_RUN_ATTEMPT
+            sourceSha=$env:EXPECTED_SOURCE_SHA;eventSha=$env:EXPECTED_EVENT_SHA;nonce=$nonce
+            wix=[ordered]@{archiveUrl='https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip'
+              archiveSha256='6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31'
+              candleSha256=(Get-FileHash -LiteralPath (Join-Path $wixDirectory 'candle.exe') -Algorithm SHA256).Hash.ToLowerInvariant()
+              lightSha256=(Get-FileHash -LiteralPath (Join-Path $wixDirectory 'light.exe') -Algorithm SHA256).Hash.ToLowerInvariant()}
+            releaseGatesCleared=@()
+          }
+          $provenanceBytes = [Text.UTF8Encoding]::new($false).GetBytes(($provenance | ConvertTo-Json -Compress -Depth 8))
+          [IO.File]::WriteAllBytes((Join-Path $closureRoot 'build-provenance.json'), $provenanceBytes)
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT, "nonce=$nonce`n", [Text.UTF8Encoding]::new($false))
+
+      - name: Seal exact same-run fixture closure
+        id: seal_closure
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_CLOSURE_FILE_BYTES = 8388608
+          $MAX_MANIFEST_BYTES = 65536
+          $nonce = '${{ steps.build_fixtures.outputs.nonce }}'
+          if ($nonce -cnotmatch '\A[a-f0-9]{32}\z') { throw 'Fixture nonce differs' }
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'msi-rollback-calibration-closure'
+          $closureNames = @('windows-msi-rollback-calibration.ps1','windows-msi-rollback-native.ps1',
+            'windows-msi-rollback-state.ps1','media-job-launcher.ps1','fixture-definitions.json',
+            'predecessor.wxs','predecessor-payload.txt','predecessor.msi',
+            'candidate.wxs','candidate-payload.txt','candidate.msi','build-provenance.json')
+          $records = foreach ($name in $closureNames) {
+            $path = Join-Path $closureRoot $name
+            $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $item.LinkType -or
+              $item.Length -le 0 -or $item.Length -gt $MAX_CLOSURE_FILE_BYTES) { throw "Closure member $name is invalid" }
+            [ordered]@{name=$name;bytes=[long]$item.Length;
+              sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest = [ordered]@{schemaVersion=1;kind='myspeed-msi-sacrificial-calibration-transport-closure'
+            expectedRunId=$env:EXPECTED_RUN_ID;expectedRunAttempt=$env:EXPECTED_RUN_ATTEMPT
+            expectedSourceSha=$env:EXPECTED_SOURCE_SHA;expectedEventSha=$env:EXPECTED_EVENT_SHA
+            nonce=$nonce;files=@($records)}
+          $manifestBytes = [Text.UTF8Encoding]::new($false).GetBytes(($manifest | ConvertTo-Json -Compress -Depth 6))
+          if ($manifestBytes.Length -le 0 -or $manifestBytes.Length -gt $MAX_MANIFEST_BYTES) {
+            throw 'Closure manifest exceeds its bound'
+          }
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $stream = [IO.FileStream]::new($manifestPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try { $stream.Write($manifestBytes,0,$manifestBytes.Length);$stream.Flush($true) } finally { $stream.Dispose() }
+
+      - name: Upload immutable fixture closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-msi-sacrificial-calibration-closure
+          path: ${{ runner.temp }}/msi-rollback-calibration-closure/
+          if-no-files-found: error
+          retention-days: 7
+  execute:
+    name: Validate fresh sacrificial MSI executor boundary
+    needs: prepare
+    runs-on: windows-2025
+    timeout-minutes: 10
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+    steps:
+      - name: Download exact same-run closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/msi-rollback-calibration-closure
+
+      - name: Assert exact hosted executor and create owned root
+        id: guard_executor
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $expectedShell = [IO.Path]::GetFullPath((Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'))
+          $actualShell = [IO.Path]::GetFullPath((Get-Process -Id $PID -ErrorAction Stop).Path)
+          if ($env:GITHUB_ACTIONS -cne 'true' -or $env:CI -cne 'true' -or
+            $env:GITHUB_REPOSITORY -cne 'i7Gamer/MySpeed' -or $env:RUNNER_OS -cne 'Windows' -or
+            $env:RUNNER_ARCH -cne 'X64' -or $env:RUNNER_ENVIRONMENT -cne 'github-hosted' -or
+            $env:ImageOS -cne 'win25-vs2026' -or $PSVersionTable.PSEdition -cne 'Desktop' -or
+            $PSVersionTable.PSVersion.Major -ne 5 -or
+            -not [string]::Equals($actualShell,$expectedShell,[StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Hosted executor context differs'
+          }
+          if ($env:EXPECTED_NONCE -cnotmatch '\A[a-f0-9]{32}\z') { throw 'Executor nonce differs' }
+          $ownedRoot = Join-Path $env:RUNNER_TEMP ('msi-rollback-calibration-' + $env:EXPECTED_NONCE)
+          if (Test-Path -LiteralPath $ownedRoot) { throw 'Owned executor root already exists' }
+          New-Item -ItemType Directory -Path $ownedRoot -ErrorAction Stop | Out-Null
+          $marker = [Text.UTF8Encoding]::new($false).GetBytes($env:EXPECTED_NONCE)
+          $markerPath = Join-Path $ownedRoot 'owner.marker'
+          $stream = [IO.FileStream]::new($markerPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try { $stream.Write($marker,0,$marker.Length);$stream.Flush($true) } finally { $stream.Dispose() }
+
+      - name: Validate exact immutable closure
+        id: validate_closure
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_CLOSURE_FILE_BYTES = 8388608
+          $MAX_MANIFEST_BYTES = 65536
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'msi-rollback-calibration-closure'
+          $expectedNames = @('windows-msi-rollback-calibration.ps1','windows-msi-rollback-native.ps1',
+            'windows-msi-rollback-state.ps1','media-job-launcher.ps1','fixture-definitions.json',
+            'predecessor.wxs','predecessor-payload.txt','predecessor.msi',
+            'candidate.wxs','candidate-payload.txt','candidate.msi','build-provenance.json','closure.json')
+          $root = Get-Item -LiteralPath $closureRoot -Force -ErrorAction Stop
+          $ancestor = $root
+          while ($null -ne $ancestor) {
+            if ($ancestor -isnot [IO.DirectoryInfo] -or ($ancestor.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+              throw 'Closure ancestor is unsafe'
+            }
+            $ancestor = $ancestor.Parent
+          }
+          $entries = @(Get-ChildItem -LiteralPath $closureRoot -Force -ErrorAction Stop)
+          if ($entries.Count -ne $expectedNames.Count -or
+            (Compare-Object ($entries.Name | Sort-Object) ($expectedNames | Sort-Object) -CaseSensitive)) {
+            throw 'Closure membership differs'
+          }
+          foreach ($entry in $entries) {
+            if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+              throw 'Closure member is not an ordinary file'
+            }
+            $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*' -ErrorAction Stop)
+            if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Closure member has alternate streams' }
+            $maximum = if ($entry.Name -ceq 'closure.json') { $MAX_MANIFEST_BYTES } else { $MAX_CLOSURE_FILE_BYTES }
+            if ($entry.Length -le 0 -or $entry.Length -gt $maximum) { throw 'Closure member exceeds its bound' }
+          }
+          function Assert-ExactKeys($value,[string[]]$keys,[string]$label) {
+            if ($null -eq $value -or $value -is [array] -or $value -is [string] -or $value -is [ValueType] -or
+              (Compare-Object @($value.PSObject.Properties.Name | Sort-Object) @($keys | Sort-Object) -CaseSensitive)) {
+              throw "$label schema differs"
+            }
+          }
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json
+          Assert-ExactKeys $manifest @('schemaVersion','kind','expectedRunId','expectedRunAttempt','expectedSourceSha',
+            'expectedEventSha','nonce','files') 'Closure manifest'
+          if (($manifest.schemaVersion -isnot [int] -and $manifest.schemaVersion -isnot [long]) -or
+            $manifest.schemaVersion -ne 1 -or $manifest.kind -isnot [string] -or
+            $manifest.kind -cne 'myspeed-msi-sacrificial-calibration-transport-closure' -or
+            $manifest.expectedRunId -isnot [string] -or $manifest.expectedRunId -cne $env:EXPECTED_RUN_ID -or
+            $manifest.expectedRunAttempt -isnot [string] -or $manifest.expectedRunAttempt -cne $env:EXPECTED_RUN_ATTEMPT -or
+            $manifest.expectedSourceSha -isnot [string] -or $manifest.expectedSourceSha -cne $env:EXPECTED_SOURCE_SHA -or
+            $manifest.expectedEventSha -isnot [string] -or $manifest.expectedEventSha -cne $env:EXPECTED_EVENT_SHA -or
+            $manifest.nonce -isnot [string] -or $manifest.nonce -cne $env:EXPECTED_NONCE -or
+            $manifest.files -isnot [array] -or $manifest.files.Count -ne ($expectedNames.Count - 1)) {
+            throw 'Closure identity differs'
+          }
+          $fileNames = @($expectedNames | Where-Object { $_ -cne 'closure.json' })
+          for ($index=0;$index -lt $fileNames.Count;$index++) {
+            $record = $manifest.files[$index]
+            Assert-ExactKeys $record @('name','bytes','sha256') 'Closure file record'
+            $path = Join-Path $closureRoot $fileNames[$index]
+            if ($record.name -isnot [string] -or $record.name -cne $fileNames[$index] -or
+              ($record.bytes -isnot [int] -and $record.bytes -isnot [long]) -or
+              $record.bytes -ne (Get-Item -LiteralPath $path -Force).Length -or
+              $record.sha256 -isnot [string] -or $record.sha256 -cnotmatch '\A[a-f0-9]{64}\z' -or
+              $record.sha256 -cne (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()) {
+              throw 'Closure file identity differs'
+            }
+          }
+          foreach ($jsonName in @('fixture-definitions.json','build-provenance.json')) {
+            $json = Get-Content -LiteralPath (Join-Path $closureRoot $jsonName) -Raw -ErrorAction Stop | ConvertFrom-Json
+            if ($json.qualifying -isnot [bool] -or $json.qualifying -or
+              $json.nativeExecutionAuthorized -isnot [bool] -or $json.nativeExecutionAuthorized -or
+              $json.releaseGatesCleared -isnot [array] -or $json.releaseGatesCleared.Count -ne 0) {
+              throw "$jsonName makes an unsupported claim"
+            }
+          }
+
+      - name: Reject existing fixture registration collisions
+        id: collision_guard
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          function ConvertTo-MsiPackedGuid([string]$value) {
+            $hex = ([guid]::ParseExact($value,'B')).ToString('N').ToUpperInvariant()
+            $first = -join @($hex.Substring(0,8).ToCharArray() | Select-Object -Last 8)[7..0]
+            $second = -join @($hex.Substring(8,4).ToCharArray())[3..0]
+            $third = -join @($hex.Substring(12,4).ToCharArray())[3..0]
+            $tail = $hex.Substring(16,16)
+            $packedTail = for ($index=0;$index -lt $tail.Length;$index+=2) { $tail[$index+1];$tail[$index] }
+            return $first + $second + $third + (-join $packedTail)
+          }
+          $productCodes = @('{1716C600-7C5B-45CB-89F1-584214207169}','{FF93E978-E119-4D48-B37B-248457E950A2}')
+          $upgradeCode = '{A86F174D-43A7-4DAA-926E-097E0D0A5141}'
+          foreach ($productCode in $productCodes) {
+            $packed = ConvertTo-MsiPackedGuid $productCode
+            foreach ($path in @(
+              "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\Installer\Products\$packed",
+              "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Installer\UserData\S-1-5-18\Products\$packed",
+              "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$productCode")) {
+              if (Test-Path -LiteralPath $path) { throw 'Sacrificial MSI product registration collision' }
+            }
+          }
+          $packedUpgrade = ConvertTo-MsiPackedGuid $upgradeCode
+          if (Test-Path -LiteralPath "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\Installer\UpgradeCodes\$packedUpgrade") {
+            throw 'Sacrificial MSI upgrade registration collision'
+          }
+
+      - name: Invoke sacrificial rollback calibration in an owned Job
+        id: native_calibration
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAXIMUM_DURATION_MILLISECONDS = 300000
+          $ownedRoot = Join-Path $env:RUNNER_TEMP ('msi-rollback-calibration-' + $env:EXPECTED_NONCE)
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'msi-rollback-calibration-closure'
+          $resultPath = Join-Path $ownedRoot 'result.json'
+          $launcherPath = Join-Path $closureRoot 'media-job-launcher.ps1'
+          $nativePath = Join-Path $closureRoot 'windows-msi-rollback-native.ps1'
+          . $launcherPath
+          $shellPath = [IO.Path]::Combine($env:SystemRoot,'System32','WindowsPowerShell','v1.0','powershell.exe')
+          $input = [ordered]@{runId=$env:EXPECTED_RUN_ID;runAttempt=$env:EXPECTED_RUN_ATTEMPT
+            eventSha=$env:EXPECTED_EVENT_SHA;sourceSha=$env:EXPECTED_SOURCE_SHA;nonce=$env:EXPECTED_NONCE
+            imageVersion=$env:ImageVersion;closureRoot=$closureRoot;manifestPath=(Join-Path $closureRoot 'closure.json')
+            predecessorMsiPath=(Join-Path $closureRoot 'predecessor.msi')
+            candidateMsiPath=(Join-Path $closureRoot 'candidate.msi');evidencePath=$resultPath}
+          $inputJson = $input | ConvertTo-Json -Compress
+          $arguments = @('-NoLogo','-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',$nativePath,
+            '-Mode','InvokeHostedCalibration','-InputJson',$inputJson)
+          $observer = { param($context) [pscustomobject]@{
+            schemaVersion=1;status='observed';action='observe';observation='child-running'} }
+          $observerSha = Get-MediaJobScriptBlockSha256 $observer
+          $deadline = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() + $MAXIMUM_DURATION_MILLISECONDS
+          $launch = Invoke-ObservedOwnedJobProcess -Executable $shellPath `
+            -ExpectedExecutableSha256 (Get-MediaJobFileSha256 $shellPath) -ArgumentList $arguments `
+            -WorkingDirectory $ownedRoot -WallDeadlineUnixMilliseconds $deadline `
+            -MaximumDurationMilliseconds $MAXIMUM_DURATION_MILLISECONDS -Observer $observer `
+            -ExpectedObserverSha256 $observerSha
+          $launcherBytes = [Text.UTF8Encoding]::new($false).GetBytes(($launch | ConvertTo-Json -Compress -Depth 12))
+          $launcherPath = Join-Path $ownedRoot 'launcher.json'
+          $stream = [IO.FileStream]::new($launcherPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try { $stream.Write($launcherBytes,0,$launcherBytes.Length);$stream.Flush($true) } finally { $stream.Dispose() }
+          if ($launch.status -cne 'completed' -or $launch.exitCode -ne 0 -or $launch.timedOut -or $launch.forced -or
+            -not $launch.processTreeExitProven -or -not $launch.process.assignedBeforeResume -or
+            -not $launch.process.resumed -or -not $launch.process.retainedHandleThroughExit) {
+            throw 'Owned native calibration process did not complete cleanly'
+          }
+
+      - name: Confirm nonqualifying rollback calibration evidence
+        id: confirm_calibration
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $ownedRoot = Join-Path $env:RUNNER_TEMP ('msi-rollback-calibration-' + $env:EXPECTED_NONCE)
+          $result = Get-Content -LiteralPath (Join-Path $ownedRoot 'result.json') -Raw -ErrorAction Stop | ConvertFrom-Json
+          if ($result.schemaVersion -ne 1 -or $result.kind -cne 'myspeed-msi-sacrificial-native-calibration' -or
+            $result.status -cne 'observed' -or $result.qualifying -ne $false -or
+            $result.nativeExecutionAttempted -ne $true -or $null -ne $result.failureCategory -or
+            $result.sourceSha -cne $env:EXPECTED_SOURCE_SHA -or $result.eventSha -cne $env:EXPECTED_EVENT_SHA -or
+            $result.runId -cne $env:EXPECTED_RUN_ID -or $result.runAttempt -cne $env:EXPECTED_RUN_ATTEMPT -or
+            $result.nonce -cne $env:EXPECTED_NONCE -or $result.releaseGatesCleared -isnot [array] -or
+            $result.releaseGatesCleared.Count -ne 0 -or $result.result.accepted -ne $true -or
+            $result.result.securityRestored -ne $true -or $result.result.cleanupFailures -isnot [array] -or
+            $result.result.cleanupFailures.Count -ne 0 -or $result.result.PredecessorAfterCleanup -ne -1 -or
+            $result.result.CandidateAfterCleanup -ne -1) { throw 'Native calibration evidence is incomplete' }
+          Write-Output 'Sacrificial rollback calibration observed; no release gate is cleared.'
+
+      - name: Bound nonqualifying executor evidence
+        id: bound_evidence
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $MAX_EVIDENCE_BYTES = 2097152
+          $MAX_EVIDENCE_FILES = 4
+          $MAX_JSON_BYTES = 262144
+          $ownedRoot = Join-Path $env:RUNNER_TEMP ('msi-rollback-calibration-' + $env:EXPECTED_NONCE)
+          $uploadRoot = Join-Path $env:RUNNER_TEMP ('msi-rollback-calibration-upload-' + $env:EXPECTED_NONCE)
+          if (Test-Path -LiteralPath $uploadRoot) { throw 'Evidence upload root already exists' }
+          New-Item -ItemType Directory -Path $uploadRoot -ErrorAction Stop | Out-Null
+          if (Test-Path -LiteralPath $ownedRoot) {
+            $entries = @(Get-ChildItem -LiteralPath $ownedRoot -Force -ErrorAction Stop)
+            if ($entries.Count -gt $MAX_EVIDENCE_FILES) { throw 'Evidence membership exceeds its bound' }
+            $total = [long]0
+            foreach ($entry in $entries) {
+              if ($entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $entry.LinkType) {
+                throw 'Evidence member is unsafe'
+              }
+              $streams = @(Get-Item -LiteralPath $entry.FullName -Stream '*' -ErrorAction Stop)
+              if ($streams.Count -ne 1 -or $streams[0].Stream -cne ':$DATA') { throw 'Evidence member has alternate streams' }
+              $total += $entry.Length
+              if ($total -gt $MAX_EVIDENCE_BYTES -or ($entry.Extension -ieq '.json' -and $entry.Length -gt $MAX_JSON_BYTES)) {
+                throw 'Evidence exceeds its byte bound'
+              }
+              if ($entry.Name -in @('result.json','launcher.json')) {
+                Copy-Item -LiteralPath $entry.FullName -Destination $uploadRoot
+              }
+            }
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $uploadRoot 'result.json'))) {
+            $diagnostic = [Text.UTF8Encoding]::new($false).GetBytes('{"schemaVersion":1,"kind":"myspeed-msi-sacrificial-workflow-diagnostic","qualifying":false,"nativeExecutionAuthorized":false}')
+            $path = Join-Path $uploadRoot 'workflow-diagnostic.json'
+            $stream = [IO.FileStream]::new($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+            try { $stream.Write($diagnostic,0,$diagnostic.Length);$stream.Flush($true) } finally { $stream.Dispose() }
+          }
+          [IO.File]::AppendAllText($env:GITHUB_OUTPUT,"safe=true`n",[Text.UTF8Encoding]::new($false))
+
+      - name: Retain bounded nonqualifying executor evidence
+        if: always() && steps.bound_evidence.outputs.safe == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-msi-sacrificial-executor-boundary
+          path: ${{ runner.temp }}/msi-rollback-calibration-upload-${{ needs.prepare.outputs.nonce }}/
+          if-no-files-found: error
+          retention-days: 7

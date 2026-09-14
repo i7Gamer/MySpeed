@@ -304,8 +304,8 @@ export const clientScriptTargets = (html, origin) => {
     }))];
 };
 
-const sessionHeaders = async (origin) => {
-    const signIn = await requestLocal(origin, "/api/session", {
+const sessionHeaders = async (origin, request) => {
+    const signIn = await request(origin, "/api/session", {
         method: "POST",
         headers: {"content-type": "application/json"},
         body: JSON.stringify({password: SYNTHETIC_PASSWORD})
@@ -314,20 +314,20 @@ const sessionHeaders = async (origin) => {
     const cookie = signIn.headers.get("set-cookie")?.split(";", 1)[0];
     if (!cookie) throw new Error("Authenticated session did not set a cookie");
 
-    const session = await requestLocal(origin, "/api/session", {headers: {cookie}});
+    const session = await request(origin, "/api/session", {headers: {cookie}});
     checkJsonResponse(session, {active: true});
     return {cookie};
 };
 
-const checkClient = async (origin) => {
-    const client = await requestLocal(origin, "/");
+const checkClient = async (origin, request) => {
+    const client = await request(origin, "/");
     if (client.status !== 200 || client.bytes.length < MIN_CLIENT_BYTES
         || !contentType(client).includes("text/html"))
         throw new Error("Bundled client HTML was not served");
 
     const html = client.bytes.toString("utf8");
     for (const script of clientScriptTargets(html, origin)) {
-        const javascript = await requestLocal(origin, script);
+        const javascript = await request(origin, script);
         if (javascript.status !== 200 || javascript.bytes.length < MIN_JAVASCRIPT_BYTES
             || !contentType(javascript).includes("javascript"))
             throw new Error(`Referenced bundled JavaScript asset was not served: ${script}`);
@@ -352,28 +352,30 @@ export const checkOpenGraphImage = async (origin, headers, {
     return {elapsedMs: Math.round(elapsed)};
 };
 
-const checkPopulatedInstance = async (origin) => {
-    const health = await requestLocal(origin, "/api/health");
+// Shared assertions only: the caller must first prove the offline boundary and
+// ownership of this loopback listener. Process/service lifecycle stays outside.
+export const checkPopulatedInstance = async (origin, {request = requestLocal} = {}) => {
+    const health = await request(origin, "/api/health");
     checkJsonResponse(health, {status: "ok", database: "up"});
-    const headers = await sessionHeaders(origin);
+    const headers = await sessionHeaders(origin, request);
 
-    const config = await requestLocal(origin, "/api/config", {headers});
+    const config = await request(origin, "/api/config", {headers});
     checkJsonResponse(config, {ping: CONFIG_SENTINEL, passwordSet: true});
 
-    const history = await requestLocal(origin, "/api/speedtests?limit=10", {headers});
+    const history = await request(origin, "/api/speedtests?limit=10", {headers});
     if (history.status !== 200) throw new Error(`Speed-test API returned HTTP ${history.status}`);
     const rows = JSON.parse(history.bytes.toString("utf8"));
     if (!Array.isArray(rows) || !rows.some((row) => row.resultId === TEST_RESULT_SENTINEL))
         throw new Error("Speed-test API did not return the synthetic row");
 
-    const storage = await requestLocal(origin, "/api/storage", {headers});
+    const storage = await request(origin, "/api/storage", {headers});
     const stored = checkJsonResponse(storage, {});
     if (!Number.isInteger(stored.testCount) || stored.testCount < 1)
         throw new Error("Storage API did not report the synthetic database row");
 
-    await checkClient(origin);
+    await checkClient(origin, request);
 
-    return checkOpenGraphImage(origin, headers);
+    return checkOpenGraphImage(origin, headers, {request});
 };
 
 const ensureListenerGone = (child, host, port) => {

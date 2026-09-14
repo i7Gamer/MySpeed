@@ -1,0 +1,309 @@
+name: Windows clean-stop native proof (nonqualifying)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [development]
+    paths:
+      - '.github/workflows/windows-clean-stop-native-proof.yml'
+      - 'scripts/qualification/windows-clean-stop-controller.ps1'
+      - 'scripts/qualification/windows-clean-stop-native-proof.ps1'
+      - 'scripts/qualification/media-job-launcher.ps1'
+      - 'scripts/qualification/windows-cpu-tool-child.ps1'
+      - 'scripts/qualification/windows-cpu-file-identity.ps1'
+      - 'tests/server/windowsCleanStopController.test.js'
+      - 'tests/server/windowsCleanStopNativeProof.test.js'
+      - 'tests/server/windowsCleanStopNativeProofWorkflow.test.js'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-clean-stop-native-proof-${{ github.run_id }}-${{ github.run_attempt }}
+  cancel-in-progress: false
+
+jobs:
+  producer:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: windows-2025
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.seal.outputs.nonce }}
+      closure_sha256: ${{ steps.seal.outputs.closure_sha256 }}
+      source_sha: ${{ steps.seal.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+
+      - name: Seal candidate-neutral source closure
+        id: seal
+        shell: powershell
+        env:
+          SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-clean-stop-native-proof-closure'
+          if (Test-Path -LiteralPath $closureRoot) { throw 'Closure root already exists' }
+          [void][IO.Directory]::CreateDirectory($closureRoot)
+          $sources = [ordered]@{
+            'windows-clean-stop-native-proof.yml' = '.github\workflows\windows-clean-stop-native-proof.yml'
+            'windows-clean-stop-controller.ps1' = 'scripts\qualification\windows-clean-stop-controller.ps1'
+            'windows-clean-stop-native-proof.ps1' = 'scripts\qualification\windows-clean-stop-native-proof.ps1'
+            'media-job-launcher.ps1' = 'scripts\qualification\media-job-launcher.ps1'
+            'windows-cpu-tool-child.ps1' = 'scripts\qualification\windows-cpu-tool-child.ps1'
+            'windows-cpu-file-identity.ps1' = 'scripts\qualification\windows-cpu-file-identity.ps1'
+          }
+          foreach ($entry in $sources.GetEnumerator()) {
+            [IO.File]::Copy((Resolve-Path -LiteralPath $entry.Value), (Join-Path $closureRoot $entry.Key), $false)
+          }
+          $controller = Join-Path $closureRoot 'windows-clean-stop-controller.ps1'
+          $fixture = (& $controller -Mode GetFixtureSource | ConvertFrom-Json).source
+          $fixturePath = Join-Path $closureRoot 'windows-clean-stop-fixture.cs'
+          [IO.File]::WriteAllText($fixturePath, $fixture, [Text.UTF8Encoding]::new($false))
+          $nonce = [guid]::NewGuid().ToString('N')
+          $names = @('windows-clean-stop-native-proof.yml','windows-clean-stop-controller.ps1',
+            'windows-clean-stop-native-proof.ps1','media-job-launcher.ps1','windows-cpu-tool-child.ps1',
+            'windows-cpu-file-identity.ps1','windows-clean-stop-fixture.cs')
+          $files = foreach ($name in $names) {
+            $path = Join-Path $closureRoot $name
+            $item = Get-Item -LiteralPath $path -Force
+            [pscustomobject][ordered]@{name=$name;bytes=[int64]$item.Length
+              sha256=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          $manifest = [pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-clean-stop-transport-closure'
+            qualifying=$false;repository='i7Gamer/MySpeed';runId="${{ github.run_id }}"
+            runAttempt="${{ github.run_attempt }}";eventSha="${{ github.sha }}";sourceSha=$env:SOURCE_SHA
+            imageOS=$env:ImageOS;imageVersion=$env:ImageVersion;architecture=$env:RUNNER_ARCH;nonce=$nonce;files=@($files)}
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $bytes = [Text.UTF8Encoding]::new($false).GetBytes(($manifest | ConvertTo-Json -Depth 8 -Compress))
+          $stream = [IO.File]::Open($manifestPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+          try { $stream.Write($bytes,0,$bytes.Length);$stream.Flush($true) } finally { $stream.Dispose() }
+          $closureSha = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "nonce=$nonce" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "closure_sha256=$closureSha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "source_sha=$env:SOURCE_SHA" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-clean-stop-native-proof-closure
+          path: ${{ runner.temp }}\windows-clean-stop-native-proof-closure
+          if-no-files-found: error
+          retention-days: 7
+
+  execute:
+    needs: producer
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.producer.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}\windows-clean-stop-native-proof-closure
+
+      - name: Validate downloaded transport before script execution
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $closureRoot = [IO.Path]::GetFullPath((Join-Path $env:RUNNER_TEMP 'windows-clean-stop-native-proof-closure'))
+          $manifestPath = Join-Path $closureRoot 'closure.json'
+          $expectedNames = @('windows-clean-stop-native-proof.yml','windows-clean-stop-controller.ps1',
+            'windows-clean-stop-native-proof.ps1','media-job-launcher.ps1','windows-cpu-tool-child.ps1',
+            'windows-cpu-file-identity.ps1','windows-clean-stop-fixture.cs')
+          $actualNames = @([IO.Directory]::GetFiles($closureRoot) | ForEach-Object { [IO.Path]::GetFileName($_) } | Sort-Object -CaseSensitive)
+          $allNames = @($expectedNames + 'closure.json' | Sort-Object -CaseSensitive)
+          $closureItem = Get-Item -LiteralPath $closureRoot -Force
+          if (-not $closureItem.PSIsContainer -or ($closureItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw 'Downloaded transport root is unsafe'
+          }
+          if ([IO.Directory]::GetDirectories($closureRoot).Count -ne 0 -or ($actualNames -join "`n") -cne ($allNames -join "`n")) {
+            throw 'Downloaded transport members differ'
+          }
+          foreach ($path in [IO.Directory]::GetFiles($closureRoot)) {
+            $item = Get-Item -LiteralPath $path -Force
+            if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or $null -ne $item.LinkType) {
+              throw 'Downloaded transport leaf is linked or reparse-backed'
+            }
+          }
+          $manifestItem = Get-Item -LiteralPath $manifestPath -Force
+          if ($manifestItem.Length -le 0 -or $manifestItem.Length -gt 65536 -or
+            (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne '${{ needs.producer.outputs.closure_sha256 }}') {
+            throw 'Downloaded transport manifest bytes differ'
+          }
+          $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding utf8 | ConvertFrom-Json
+          $expectedKeys = @('architecture','eventSha','files','imageOS','imageVersion','kind','nonce','qualifying',
+            'repository','runAttempt','runId','schemaVersion','sourceSha')
+          $actualKeys = @($manifest.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+          if (($actualKeys -join "`n") -cne (($expectedKeys | Sort-Object -CaseSensitive) -join "`n") -or
+            $manifest.schemaVersion -isnot [int] -or $manifest.schemaVersion -ne 1 -or
+            $manifest.kind -cne 'myspeed-windows-clean-stop-transport-closure' -or
+            $manifest.qualifying -isnot [bool] -or $manifest.qualifying -or
+            $manifest.repository -cne 'i7Gamer/MySpeed' -or $manifest.runId -cne '${{ github.run_id }}' -or
+            $manifest.runAttempt -cne '${{ github.run_attempt }}' -or $manifest.eventSha -cne '${{ github.sha }}' -or
+            $manifest.sourceSha -cne '${{ needs.producer.outputs.source_sha }}' -or $manifest.imageOS -cne $env:ImageOS -or
+            $manifest.imageVersion -cne $env:ImageVersion -or $manifest.architecture -cne $env:RUNNER_ARCH -or
+            $manifest.nonce -cne '${{ needs.producer.outputs.nonce }}' -or $manifest.files -isnot [array] -or
+            $manifest.files.Count -ne $expectedNames.Count) { throw 'Downloaded transport identity differs' }
+          for ($index = 0; $index -lt $expectedNames.Count; $index++) {
+            $file = $manifest.files[$index]
+            $fileKeys = @($file.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+            if (($fileKeys -join "`n") -cne "bytes`nname`nsha256" -or $file.name -cne $expectedNames[$index] -or
+              ($file.bytes -isnot [int] -and $file.bytes -isnot [long]) -or $file.bytes -le 0 -or $file.bytes -gt 33554432 -or
+              $file.sha256 -isnot [string] -or $file.sha256 -cnotmatch '\A[0-9a-f]{64}\z') { throw 'Downloaded transport file schema differs' }
+            $path = Join-Path $closureRoot $file.name
+            $item = Get-Item -LiteralPath $path -Force
+            if ($item.Length -ne $file.bytes -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256) {
+              throw 'Downloaded transport file bytes differ'
+            }
+          }
+          if ($manifest.files[4].sha256 -cne '51febe43711a3bcf9f2527493496eafc268abc187393f2512bb48c3fab6a6711' -or
+            $manifest.files[5].sha256 -cne '4e1f39d98f08606ac53f314d105e918e0b1080c5363ce23e16ae50ab3ac5265f') {
+            throw 'Downloaded reviewed helper hash differs'
+          }
+
+      - name: Execute inert four-case observation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nonce = '${{ needs.producer.outputs.nonce }}'
+          $closureRoot = Join-Path $env:RUNNER_TEMP 'windows-clean-stop-native-proof-closure'
+          $evidencePath = Join-Path (Join-Path $env:RUNNER_TEMP ("myspeed-clean-stop-native-proof-" + $nonce)) 'result.json'
+          $controller = Join-Path $closureRoot 'windows-clean-stop-native-proof.ps1'
+          $inbox = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          & $inbox -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $controller `
+            -Mode InvokeHostedProof -ClosureRoot $closureRoot `
+            -ExpectedClosureSha256 '${{ needs.producer.outputs.closure_sha256 }}' -EvidencePath $evidencePath `
+            -ExpectedRunId '${{ github.run_id }}' -ExpectedRunAttempt '${{ github.run_attempt }}' `
+            -ExpectedEventSha '${{ github.sha }}' -ExpectedSourceSha '${{ needs.producer.outputs.source_sha }}' `
+            -ExpectedImageVersion $env:ImageVersion -Nonce $nonce
+          if ($LASTEXITCODE -ne 0) { throw "Native proof controller failed with exit $LASTEXITCODE" }
+
+      - name: Confirm nonqualifying observation
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nonce = '${{ needs.producer.outputs.nonce }}'
+          $evidenceRoot = Join-Path $env:RUNNER_TEMP ("myspeed-clean-stop-native-proof-" + $nonce)
+          $evidencePath = Join-Path $evidenceRoot 'result.json'
+          $result = Get-Content -LiteralPath $evidencePath -Raw -Encoding utf8 | ConvertFrom-Json
+          $expectedResultKeys = @('failures','inventorySha256','kind','manifestSha256','matrix','qualifying',
+            'releaseGatesCleared','schemaVersion','status','summarySha256','transportSha256')
+          $actualResultKeys = @($result.PSObject.Properties.Name | Sort-Object -CaseSensitive)
+          if (($actualResultKeys -join "`n") -cne (($expectedResultKeys | Sort-Object -CaseSensitive) -join "`n") -or
+            $result.schemaVersion -isnot [int] -or $result.schemaVersion -ne 1 -or
+            $result.kind -cne 'myspeed-windows-clean-stop-hosted-proof' -or $result.status -cne 'completed' -or
+            $result.qualifying -isnot [bool] -or $result.qualifying -or $result.failures -isnot [array] -or
+            $result.failures.Count -ne 0 -or $result.releaseGatesCleared -isnot [array] -or
+            $result.releaseGatesCleared.Count -ne 0 -or
+            $result.transportSha256 -cne '${{ needs.producer.outputs.closure_sha256 }}' -or
+            $result.inventorySha256 -cnotmatch '\A[0-9a-f]{64}\z') {
+            throw 'Native proof result is not a completed nonqualifying observation'
+          }
+          $inventoryPath = Join-Path $evidenceRoot 'inventory.json'
+          if ((Get-FileHash -LiteralPath $inventoryPath -Algorithm SHA256).Hash.ToLowerInvariant() -cne $result.inventorySha256) {
+            throw 'Native proof inventory hash differs'
+          }
+          $coordinator = Join-Path $env:RUNNER_TEMP 'windows-clean-stop-native-proof-closure\windows-clean-stop-native-proof.ps1'
+          $inbox = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          $matrixJson = $result.matrix | ConvertTo-Json -Depth 50 -Compress
+          $assessmentJson = $matrixJson | & $inbox -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File $coordinator -Mode AssessMatrix
+          if ($LASTEXITCODE -ne 0) { throw "Native proof semantic replay failed with exit $LASTEXITCODE" }
+          $assessment = $assessmentJson | ConvertFrom-Json
+          if (-not $assessment.allCasesObserved -or $assessment.qualifying -or $assessment.releaseGatesCleared.Count -ne 0) {
+            throw 'Native proof semantic replay failed'
+          }
+
+      - name: Stage exact bounded diagnostic evidence
+        id: stage
+        if: always()
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nonce = '${{ needs.producer.outputs.nonce }}'
+          $runnerTemp = [IO.Path]::GetFullPath($env:RUNNER_TEMP).TrimEnd('\')
+          $evidenceRoot = Join-Path $runnerTemp ("myspeed-clean-stop-native-proof-" + $nonce)
+          $inventoryPath = Join-Path $evidenceRoot 'inventory.json'
+          $resultPath = Join-Path $evidenceRoot 'result.json'
+          $stageRoot = Join-Path $runnerTemp ("myspeed-clean-stop-upload-" + $nonce)
+          $maximumFileBytes = 33554432
+          $maximumJsonBytes = 2097152
+          $maximumStageBytes = 37748736
+          if (Test-Path -LiteralPath $stageRoot) { throw 'Upload staging root already exists' }
+          [void][IO.Directory]::CreateDirectory($stageRoot)
+          function Assert-SafeLeaf([string]$path,[int64]$maximumBytes) {
+            $canonical = [IO.Path]::GetFullPath($path)
+            if (-not $canonical.StartsWith($runnerTemp + '\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Upload path escapes runner temp' }
+            $ancestor = [IO.Path]::GetDirectoryName($canonical)
+            while (-not [string]::Equals($ancestor,$runnerTemp,[StringComparison]::OrdinalIgnoreCase)) {
+              $directory = Get-Item -LiteralPath $ancestor -Force -ErrorAction Stop
+              if (-not $directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Upload ancestor is unsafe' }
+              $next = [IO.Path]::GetDirectoryName($ancestor)
+              if ([string]::IsNullOrEmpty($next) -or [string]::Equals($next,$ancestor,[StringComparison]::OrdinalIgnoreCase)) { throw 'Upload ancestor escapes runner temp' }
+              $ancestor = $next
+            }
+            $item = Get-Item -LiteralPath $path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0 -or
+              $null -ne $item.LinkType -or $item.Length -gt $maximumBytes) { throw 'Upload leaf is unsafe' }
+            return $item
+          }
+          if (-not (Test-Path -LiteralPath $inventoryPath -PathType Leaf)) {
+            if (Test-Path -LiteralPath $resultPath -PathType Leaf) {
+              [void](Assert-SafeLeaf $resultPath $maximumJsonBytes)
+              [IO.File]::Copy($resultPath,(Join-Path $stageRoot 'failed-result.json'),$false)
+            }
+          } else {
+            [void](Assert-SafeLeaf $inventoryPath $maximumJsonBytes)
+            [void](Assert-SafeLeaf $resultPath $maximumJsonBytes)
+            $inventoryJson = Get-Content -LiteralPath $inventoryPath -Raw -Encoding utf8
+            $coordinator = Join-Path $runnerTemp 'windows-clean-stop-native-proof-closure\windows-clean-stop-native-proof.ps1'
+            $inbox = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+            $validatedJson = $inventoryJson | & $inbox -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+              -File $coordinator -Mode ValidateInventory
+            if ($LASTEXITCODE -ne 0) { throw "Evidence inventory validation failed with exit $LASTEXITCODE" }
+            $validated = $validatedJson | ConvertFrom-Json
+            if (-not $validated.accepted -or $validated.aggregateBytes -gt $maximumFileBytes) { throw 'Evidence inventory was not accepted' }
+            $inventory = $inventoryJson | ConvertFrom-Json
+            $roots = @{
+              closure = Join-Path $runnerTemp 'windows-clean-stop-native-proof-closure'
+              compiler = Join-Path $runnerTemp ("myspeed-cpu-readiness-" + $nonce)
+              evidence = $evidenceRoot
+            }
+            foreach ($caseId in @('handler','ignore','extra-participant','missing-stop')) {
+              $algorithm = [Security.Cryptography.SHA256]::Create()
+              try { $caseHash = ([BitConverter]::ToString($algorithm.ComputeHash([Text.Encoding]::UTF8.GetBytes("${nonce}:$caseId")))).Replace('-','').ToLowerInvariant() }
+              finally { $algorithm.Dispose() }
+              $roots[$caseId] = Join-Path $runnerTemp ("myspeed-clean-stop-" + $caseHash.Substring(0,32))
+            }
+            foreach ($file in $inventory.files) {
+              $parts = $file.name -split '/',2
+              $expected = [IO.Path]::Combine($roots[$parts[0]],$parts[1])
+              if (-not [string]::Equals([IO.Path]::GetFullPath($file.path),[IO.Path]::GetFullPath($expected),[StringComparison]::Ordinal)) { throw 'Inventory path binding differs' }
+              $item = Assert-SafeLeaf $file.path $maximumFileBytes
+              if ($item.Length -ne $file.bytes -or (Get-FileHash -LiteralPath $file.path -Algorithm SHA256).Hash.ToLowerInvariant() -cne $file.sha256) { throw 'Inventory file bytes differ' }
+              $destination = Join-Path $stageRoot ($file.name -replace '/','\')
+              [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination))
+              [IO.File]::Copy($file.path,$destination,$false)
+            }
+            [IO.File]::Copy($inventoryPath,(Join-Path $stageRoot 'inventory.json'),$false)
+            [IO.File]::Copy($resultPath,(Join-Path $stageRoot 'result.json'),$false)
+          }
+          $stageBytes = [int64]0
+          foreach ($file in [IO.Directory]::GetFiles($stageRoot,'*',[IO.SearchOption]::AllDirectories)) {
+            $stageBytes += (Get-Item -LiteralPath $file -Force).Length
+            if ($stageBytes -gt $maximumStageBytes) { throw 'Upload staging aggregate exceeds its bound' }
+          }
+          "safe=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Upload bounded diagnostic evidence
+        if: ${{ always() && steps.stage.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-clean-stop-native-proof-evidence
+          path: ${{ runner.temp }}\myspeed-clean-stop-upload-${{ needs.producer.outputs.nonce }}
+          if-no-files-found: warn
+          retention-days: 7

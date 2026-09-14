@@ -264,7 +264,7 @@ const makeCompletedEvidence = root => {
 describe("candidate-neutral Windows CPU readiness workflow", () => {
     it("limits triggers, identity and authority to nonpublishing same-repository work", () => {
         const workflow = config();
-        assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push", "workflow_dispatch"]);
+        assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push", "workflow_call", "workflow_dispatch"]);
         assert.deepEqual(workflow.on.push.branches, ["development"]);
         assert.deepEqual(workflow.permissions, {actions: "read", contents: "read"});
         assert.deepEqual(Object.keys(workflow.jobs), ["prepare", "readiness"]);

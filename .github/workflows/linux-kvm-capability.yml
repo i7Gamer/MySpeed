@@ -1,0 +1,121 @@
+name: Hosted Linux KVM capability observation
+
+# Manual-only candidate-neutral, nonqualifying ordinary-user diagnostic
+# only. It downloads no media or QEMU, creates no VM disk, and cannot clear a
+# release gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Seal KVM capability closure
+    if: github.repository == 'i7Gamer/MySpeed' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.ref == 'development'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.closure.outputs.nonce }}
+    steps:
+      - name: Checkout exact capability source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Set up minimum supported Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Run pure and injected capability tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test --test-name-pattern='hosted Linux KVM capability contract' \
+            tests/server/linuxKvmCapability.test.js
+
+      - name: Seal one-file runtime closure
+        id: closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/linux-kvm-capability-closure"
+          test ! -e "$closure_root"
+          install -d -m 700 "$closure_root"
+          install -m 600 scripts/qualification/linux-kvm-capability.mjs "$closure_root/linux-kvm-capability.mjs"
+          nonce="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')"
+          node "$closure_root/linux-kvm-capability.mjs" emit-manifest \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" \
+            --nonce "$nonce" --output "$closure_root/closure.json"
+          printf 'nonce=%s\n' "$nonce" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable capability closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-kvm-capability-closure
+          path: |
+            ${{ runner.temp }}/linux-kvm-capability-closure/linux-kvm-capability.mjs
+            ${{ runner.temp }}/linux-kvm-capability-closure/closure.json
+          if-no-files-found: error
+          retention-days: 7
+
+  observe:
+    name: Observe disposable runner KVM capability
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+    steps:
+      # No checkout: only the exact same-run immutable closure is accepted.
+      - name: Download exact capability closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/linux-kvm-capability-closure
+
+      - name: Set up exact runtime without source checkout
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Validate closure and run bounded HLT observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/linux-kvm-capability-closure"
+          test -d "$closure_root" -a ! -L "$closure_root"
+          mapfile -d '' -t closure_files < <(find "$closure_root" -mindepth 1 -maxdepth 1 -printf '%f\0' | LC_ALL=C sort -z)
+          expected_files=(closure.json linux-kvm-capability.mjs)
+          test "${#closure_files[@]}" -eq "${#expected_files[@]}"
+          test "${closure_files[*]}" = "${expected_files[*]}"
+          test -f "$closure_root/closure.json" -a ! -L "$closure_root/closure.json"
+          test -f "$closure_root/linux-kvm-capability.mjs" -a ! -L "$closure_root/linux-kvm-capability.mjs"
+          result="$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE/result.json"
+          node "$closure_root/linux-kvm-capability.mjs" probe \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" \
+            --nonce "$EXPECTED_NONCE" --closure-root "$closure_root" \
+            --manifest "$closure_root/closure.json" --result "$result"
+
+      - name: Upload bounded nonqualifying evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-kvm-capability-evidence
+          path: ${{ runner.temp }}/myspeed-kvm-capability-${{ needs.prepare.outputs.nonce }}/result.json
+          if-no-files-found: error
+          retention-days: 7

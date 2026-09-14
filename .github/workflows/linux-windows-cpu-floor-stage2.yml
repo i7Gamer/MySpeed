@@ -1,0 +1,416 @@
+name: Hosted Windows CPU-floor Stage 2 calibration
+
+# Manual, candidate-neutral calibration only. It does not publish media, a guest,
+# a product candidate, or any release-gate result.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN-CANDIDATE-NEUTRAL-STAGE2
+        required: true
+        type: string
+      probe_artifact_id:
+        required: true
+        type: string
+      probe_run_id:
+        required: true
+        type: string
+      probe_run_attempt:
+        required: true
+        type: string
+      probe_source_sha:
+        required: true
+        type: string
+      probe_archive_bytes:
+        required: true
+        type: string
+      probe_archive_sha256:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+
+jobs:
+  prepare:
+    name: Test and seal Stage 2 closure
+    if: github.repository == 'i7Gamer/MySpeed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.seal.outputs.nonce }}
+    steps:
+      - name: Checkout exact workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up exact runtimes
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up locked test dependencies
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked dependencies without lifecycle scripts
+        shell: bash
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Run pure and injected closure tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/server/linuxKvmCapability.test.js \
+            tests/server/linuxKvmPrivilegedCapability.test.js \
+            tests/server/linuxWindowsCpuFloorAdmission.test.js \
+            tests/server/linuxWindowsCpuFloorStage2.test.js \
+            tests/server/linuxWindowsCpuFloorStage2Hosted.test.js \
+            tests/server/linuxWindowsCpuFloorStage2Controller.test.js \
+            tests/server/linuxWindowsCpuFloorStage2Workflow.test.js
+
+      - name: Seal exact six-module closure
+        id: seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')"
+          artifact_root="$RUNNER_TEMP/myspeed-stage2-artifact-$nonce"
+          closure_root="$artifact_root/myspeed-stage2-closure-$nonce"
+          kvm_root="$artifact_root/linux-kvm-capability-closure"
+          test ! -e "$artifact_root"
+          install -d -m 700 "$artifact_root" "$kvm_root"
+          install -d -m 700 "$closure_root/scripts/qualification"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-admission.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-kvm-capability.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-kvm-capability.mjs "$kvm_root/"
+          install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$kvm_root/"
+          node "$kvm_root/linux-kvm-capability.mjs" emit-manifest \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$nonce" \
+            --output "$kvm_root/closure.json"
+          node "$kvm_root/linux-kvm-privileged-capability.mjs" emit-manifest \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$nonce" \
+            --core "$kvm_root/linux-kvm-capability.mjs" \
+            --core-manifest "$kvm_root/closure.json" --output "$kvm_root/privileged-closure.json"
+          node - "$closure_root" <<'NODE'
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const root = process.argv[2];
+          const names = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+            "scripts/qualification/linux-kvm-capability.mjs",
+            "scripts/qualification/linux-kvm-privileged-capability.mjs"];
+          const files = names.map(name => { const bytes = fs.readFileSync(path.join(root, name)); return {name,
+            bytes: bytes.length, sha256: crypto.createHash("sha256").update(bytes).digest("hex")}; });
+          fs.writeFileSync(path.join(root, "stage2-closure.json"), `${JSON.stringify({schemaVersion: 1, files})}\n`,
+            {flag: "wx", mode: 0o600});
+          NODE
+          printf 'nonce=%s\n' "$nonce" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable Stage 2 closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cpu-floor-stage2-closure
+          path: ${{ runner.temp }}/myspeed-stage2-artifact-${{ steps.seal.outputs.nonce }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  execute:
+    name: Run candidate-neutral offline Windows calibration
+    needs: prepare
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-CANDIDATE-NEUTRAL-STAGE2'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    env:
+      EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+      MYSPEED_SOURCE_SHA: ${{ github.sha }}
+      PROBE_ARTIFACT_ID: ${{ inputs.probe_artifact_id }}
+      PROBE_RUN_ID: ${{ inputs.probe_run_id }}
+      PROBE_RUN_ATTEMPT: ${{ inputs.probe_run_attempt }}
+      PROBE_SOURCE_SHA: ${{ inputs.probe_source_sha }}
+      PROBE_ARCHIVE_BYTES: ${{ inputs.probe_archive_bytes }}
+      PROBE_ARCHIVE_SHA256: ${{ inputs.probe_archive_sha256 }}
+    steps:
+      - name: Download exact same-run Stage 2 closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}
+
+      - name: Set up exact runtime without source checkout
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Repeat ordinary and reviewed privileged KVM observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-stage2-closure-$EXPECTED_NONCE"
+          kvm_root="$RUNNER_TEMP/linux-kvm-capability-closure"
+          work_root="$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE"
+          node - "$closure_root" "$kvm_root" <<'NODE'
+          const fs = require("node:fs"); const path = require("node:path");
+          const [stage2, kvm] = process.argv.slice(2);
+          const exactDirectory = (root, names) => { const facts = fs.lstatSync(root);
+            if (!facts.isDirectory() || facts.isSymbolicLink() || JSON.stringify(fs.readdirSync(root).sort()) !==
+              JSON.stringify([...names].sort())) throw new Error("closure artifact inventory differs"); };
+          exactDirectory(stage2, ["scripts", "stage2-closure.json"]);
+          exactDirectory(path.join(stage2, "scripts"), ["qualification"]);
+          exactDirectory(path.join(stage2, "scripts", "qualification"), ["linux-kvm-capability.mjs",
+            "linux-kvm-privileged-capability.mjs", "linux-windows-cpu-floor-admission.mjs",
+            "linux-windows-cpu-floor-stage2-controller.mjs", "linux-windows-cpu-floor-stage2-hosted.mjs",
+            "linux-windows-cpu-floor-stage2.mjs"]);
+          exactDirectory(kvm, ["closure.json", "linux-kvm-capability.mjs",
+            "linux-kvm-privileged-capability.mjs", "privileged-closure.json"]);
+          NODE
+          set +e
+          node "$kvm_root/linux-kvm-capability.mjs" probe \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$EXPECTED_NONCE" \
+            --closure-root "$kvm_root" --manifest "$kvm_root/closure.json" \
+            --result "$work_root/result.json"
+          ordinary_exit=$?
+          set -e
+          test "$ordinary_exit" -eq 0 -o "$ordinary_exit" -eq 1
+          node "$kvm_root/linux-kvm-privileged-capability.mjs" retry \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$EXPECTED_NONCE" \
+            --closure-root "$kvm_root" --core-manifest "$kvm_root/closure.json" \
+            --manifest "$kvm_root/privileged-closure.json" --ordinary-result "$work_root/result.json" \
+            --result "$work_root/privileged-result.json"
+
+      - name: Acquire exact prior Windows probe artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_root="$RUNNER_TEMP/myspeed-stage2-input-$EXPECTED_NONCE"
+          test ! -e "$input_root"
+          install -d -m 700 "$input_root"
+          install -m 600 "$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE/result.json" "$input_root/ordinary.json"
+          install -m 600 "$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE/privileged-result.json" "$input_root/combined.json"
+          node --input-type=module - "$input_root/artifact.zip" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          const target = process.argv[2];
+          const exact = (value, pattern, name) => { if (typeof value !== "string" || !pattern.test(value) ||
+            value.match(pattern)[0] !== value) throw new Error(`${name} is invalid`); };
+          exact(process.env.PROBE_ARTIFACT_ID, /^[1-9][0-9]{0,19}$/u, "artifact id");
+          exact(process.env.PROBE_RUN_ID, /^[1-9][0-9]{0,19}$/u, "run id");
+          exact(process.env.PROBE_RUN_ATTEMPT, /^[1-9][0-9]{0,9}$/u, "run attempt");
+          exact(process.env.PROBE_SOURCE_SHA, /^[a-f0-9]{40}$/u, "probe source SHA");
+          exact(process.env.PROBE_ARCHIVE_BYTES, /^[1-9][0-9]{0,8}$/u, "archive bytes");
+          if (Number(process.env.PROBE_ARCHIVE_BYTES) > 268435456) throw new Error("archive size bound is invalid");
+          exact(process.env.PROBE_ARCHIVE_SHA256, /^[a-f0-9]{64}$/u, "archive SHA");
+          const headers = {Accept: "application/vnd.github+json", Authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "X-GitHub-Api-Version": "2022-11-28"};
+          const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 600_000);
+          try {
+          const metadata = await fetch(`https://api.github.com/repos/i7Gamer/MySpeed/actions/artifacts/${process.env.PROBE_ARTIFACT_ID}`,
+            {headers, signal: abort.signal});
+          if (!metadata.ok) throw new Error("artifact metadata request failed");
+          const artifact = await metadata.json();
+          if (String(artifact.id) !== process.env.PROBE_ARTIFACT_ID || artifact.name !== "windows-cpu-readiness-evidence" ||
+              artifact.expired !== false || String(artifact.size_in_bytes) !== process.env.PROBE_ARCHIVE_BYTES ||
+              String(artifact.workflow_run?.id) !== process.env.PROBE_RUN_ID ||
+              artifact.workflow_run?.head_sha !== process.env.PROBE_SOURCE_SHA)
+            throw new Error("artifact metadata identity differs");
+          const run = await fetch(`https://api.github.com/repos/i7Gamer/MySpeed/actions/runs/${process.env.PROBE_RUN_ID}/attempts/${process.env.PROBE_RUN_ATTEMPT}`,
+            {headers, signal: abort.signal});
+          if (!run.ok) throw new Error("workflow attempt metadata request failed");
+          const runValue = await run.json();
+          if (String(runValue.id) !== process.env.PROBE_RUN_ID || String(runValue.run_attempt) !==
+              process.env.PROBE_RUN_ATTEMPT || runValue.head_sha !== process.env.PROBE_SOURCE_SHA ||
+              runValue.repository?.full_name !== "i7Gamer/MySpeed" || runValue.conclusion !== "success")
+            throw new Error("workflow attempt identity differs");
+          const response = await fetch(artifact.archive_download_url, {headers, signal: abort.signal});
+          if (!response.ok || !response.body) throw new Error("artifact archive request failed");
+          const handle = fs.openSync(target, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
+          const digest = crypto.createHash("sha256"); let total = 0;
+          try { for await (const part of response.body) { const bytes = Buffer.from(part); total += bytes.length;
+            if (String(total).length > 10 || total > Number(process.env.PROBE_ARCHIVE_BYTES))
+              throw new Error("artifact archive exceeded its bound");
+            digest.update(bytes); let offset = 0; while (offset < bytes.length) {
+              const count = fs.writeSync(handle, bytes, offset, bytes.length - offset); if (count < 1)
+                throw new Error("artifact archive write was truncated"); offset += count; } } fs.fsyncSync(handle); }
+          finally { fs.closeSync(handle); }
+          if (String(total) !== process.env.PROBE_ARCHIVE_BYTES || digest.digest("hex") !==
+            process.env.PROBE_ARCHIVE_SHA256) throw new Error("artifact archive digest differs");
+          } finally { clearTimeout(timeout); }
+          NODE
+          /usr/bin/unzip -Z1 "$input_root/artifact.zip" >"$input_root/archive-members.txt"
+          test "$(stat -c %s -- "$input_root/archive-members.txt")" -le 1048576
+          node - "$input_root/archive-members.txt" "$input_root/archive-selection.tsv" <<'NODE'
+          const fs = require("node:fs");
+          const bytes = fs.readFileSync(process.argv[2]);
+          const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+          const names = text.endsWith("\n") ? text.slice(0, -1).split("\n") : [];
+          const required = new Set(["result.json", "avx.exe", "avx2.exe", "cpuid.exe", "illegal.exe",
+            "known_bad.exe", "known_good.exe", "popcnt.exe", "sse42.exe"]); const selected = new Map();
+          if (names.length < 1 || names.length > 4096) throw new Error("artifact archive member count is invalid");
+          for (const raw of names) { const directory = raw.endsWith("/"); const name = directory ? raw.slice(0, -1) : raw;
+            const parts = name.split("/");
+            if (name.length < 1 || name.length > 1024 || name.startsWith("/") || name.includes("\\") ||
+                /[\x00-\x1f\x7f]/u.test(name) || parts.some(part => !/^[A-Za-z0-9_.-]{1,255}$/u.test(part) || part === ".."))
+              throw new Error("artifact archive member path is invalid");
+            if (!directory && required.has(parts.at(-1))) { const target = parts.at(-1);
+              if (selected.has(target)) throw new Error("artifact member is duplicated"); selected.set(target, raw); } }
+          if (selected.size !== required.size) throw new Error("artifact member set is incomplete");
+          const lines = [...required].map(name => `${name}\t${selected.get(name)}`).join("\n") + "\n";
+          fs.writeFileSync(process.argv[3], lines, {flag: "wx", mode: 0o600});
+          NODE
+          while IFS=$'\t' read -r target member; do
+            test ! -e "$input_root/$target"
+            (umask 077; ulimit -f 32768; /usr/bin/timeout --signal=KILL 60s \
+              /usr/bin/unzip -p "$input_root/artifact.zip" "$member" >"$input_root/$target")
+            test -f "$input_root/$target" -a ! -L "$input_root/$target"
+            member_bytes="$(stat -c %s -- "$input_root/$target")"
+            test "$member_bytes" -gt 0 -a "$member_bytes" -le 16777216
+          done <"$input_root/archive-selection.tsv"
+
+      - name: Build exact request and execute Stage 2
+        id: execute_stage2
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-stage2-closure-$EXPECTED_NONCE"
+          input_root="$RUNNER_TEMP/myspeed-stage2-input-$EXPECTED_NONCE"
+          transport_root="$RUNNER_TEMP/myspeed-stage2-transport-$EXPECTED_NONCE"
+          install -d -m 700 "$transport_root"
+          install -m 600 /dev/null "$transport_root/controller.stdout"
+          install -m 600 /dev/null "$transport_root/controller.stderr"
+          node - "$closure_root" "$input_root" "$transport_root/request.json" <<'NODE'
+          const crypto = require("node:crypto"); const fs = require("node:fs"); const path = require("node:path");
+          const [closureRoot, inputRoot, output] = process.argv.slice(2); const hash = bytes =>
+            crypto.createHash("sha256").update(bytes).digest("hex"); const identity = target => { const bytes = fs.readFileSync(target);
+            return {path: target, bytes: bytes.length, sha256: hash(bytes)}; };
+          const closureManifest = JSON.parse(fs.readFileSync(path.join(closureRoot, "stage2-closure.json")));
+          const files = closureManifest.files.map(value => identity(path.join(closureRoot, value.name)));
+          if (files.some((value, index) => value.bytes !== closureManifest.files[index].bytes ||
+              value.sha256 !== closureManifest.files[index].sha256)) throw new Error("closure identity differs");
+          const evidencePath = path.join(inputRoot, "result.json"); const evidence = JSON.parse(fs.readFileSync(evidencePath));
+          if (evidence.status !== "completed" || evidence.calibrationPassed !== true || evidence.sourceSha !==
+              process.env.PROBE_SOURCE_SHA || String(evidence.runId) !== process.env.PROBE_RUN_ID ||
+              String(evidence.runAttempt) !== process.env.PROBE_RUN_ATTEMPT) throw new Error("probe evidence differs");
+          const roles = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
+          const probeFiles = roles.map(role => { const name = `${role.replaceAll("-", "_")}.exe`;
+            const built = evidence.observations.build.filter(value => value.mode === role);
+            if (built.length !== 1) throw new Error("probe build role is invalid"); const observed = identity(path.join(inputRoot, name));
+            if (String(observed.bytes) !== built[0].executable.bytes || observed.sha256 !== built[0].executable.sha256)
+              throw new Error("probe executable identity differs"); return {role, name, bytes: String(observed.bytes),
+              sha256: observed.sha256}; });
+          const context = {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
+            sourceSha: process.env.EXPECTED_SOURCE_SHA, eventSha: process.env.EXPECTED_EVENT_SHA,
+            runId: process.env.EXPECTED_RUN_ID, runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
+            nonce: process.env.EXPECTED_NONCE, environment: {GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+              CI: process.env.CI, RUNNER_OS: process.env.RUNNER_OS, RUNNER_ARCH: process.env.RUNNER_ARCH,
+              RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT, ImageOS: process.env.ImageOS,
+              ImageVersion: process.env.ImageVersion}};
+          const root = `${process.env.RUNNER_TEMP}/myspeed-windows-cpu-floor-${context.nonce}`;
+          const paths = {root, packageRoot: `${root}/packages`,
+            portableRoot: `/tmp/myspeed-windows-cpu-floor-tools-${context.nonce}`, probeRoot: `${root}/probes`,
+            windowsIso: `${root}/windows.iso`, installWim: `${root}/install.wim`, seedIso: `${root}/seed.iso`,
+            outputDisk: `${root}/output.img`, systemDisk: `${root}/system.qcow2`, ovmfVars: `${root}/OVMF_VARS.fd`,
+            serialLog: `${root}/serial.log`, qemuPid: `${root}/qemu.pid`};
+          const request = {schemaVersion: 1, context, closure: {root: closureRoot, files}, authorization: {
+            confirmation: "RUN-CANDIDATE-NEUTRAL-STAGE2", media: true, qemu: true,
+            scope: "candidate-neutral-cpu-calibration"}, paths,
+            kvm: {ordinary: identity(path.join(inputRoot, "ordinary.json")),
+              combined: identity(path.join(inputRoot, "combined.json"))},
+            probeArtifact: {schemaVersion: 1, repository: context.repository, sourceSha: process.env.PROBE_SOURCE_SHA,
+              runId: process.env.PROBE_RUN_ID, runAttempt: process.env.PROBE_RUN_ATTEMPT,
+              artifactId: process.env.PROBE_ARTIFACT_ID, artifactName: "windows-cpu-readiness-evidence",
+              archive: {bytes: process.env.PROBE_ARCHIVE_BYTES, sha256: process.env.PROBE_ARCHIVE_SHA256},
+              innerManifest: {name: "result.json", bytes: String(identity(evidencePath).bytes),
+                sha256: identity(evidencePath).sha256}, files: probeFiles},
+            probeStage: {archive: identity(path.join(inputRoot, "artifact.zip")), result: identity(evidencePath),
+              files: probeFiles.map(file => identity(path.join(inputRoot, file.name)))}};
+          fs.writeFileSync(output, `${JSON.stringify(request)}\n`, {flag: "wx", mode: 0o600});
+          NODE
+          set +e
+          node "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs" run \
+            --request "$transport_root/request.json" --result "$transport_root/stage2-result.json" \
+            >"$transport_root/controller.stdout" 2>"$transport_root/controller.stderr"
+          controller_exit=$?
+          set -e
+          printf 'controller_exit=%s\n' "$controller_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Bound retained text evidence
+        id: bound
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          transport_root="$RUNNER_TEMP/myspeed-stage2-transport-$EXPECTED_NONCE"
+          test -d "$transport_root" -a ! -L "$transport_root"
+          for stream in controller.stdout controller.stderr; do
+            test -f "$transport_root/$stream" -a ! -L "$transport_root/$stream"
+            test "$(stat -c %s -- "$transport_root/$stream")" -le 1048576
+          done
+          node - "$transport_root" "${{ steps.execute_stage2.outputs.controller_exit }}" <<'NODE'
+          const crypto = require("node:crypto"); const fs = require("node:fs"); const path = require("node:path");
+          const [root, exitText] = process.argv.slice(2); const digest = bytes =>
+            crypto.createHash("sha256").update(bytes).digest("hex");
+          const streams = ["controller.stdout", "controller.stderr"].map(name => { const bytes = fs.readFileSync(path.join(root, name));
+            return {name, bytes: bytes.length, sha256: digest(bytes)}; });
+          const exit = /^(0|1)$/u.test(exitText) ? Number(exitText) : null;
+          const resultPath = path.join(root, "stage2-result.json"); let result = null, resultIdentity = null;
+          if (fs.existsSync(resultPath)) { const facts = fs.lstatSync(resultPath);
+            if (!facts.isFile() || facts.isSymbolicLink() || facts.size < 3 || facts.size > 4194304)
+              throw new Error("result size is invalid"); const bytes = fs.readFileSync(resultPath);
+            resultIdentity = {bytes: bytes.length, sha256: digest(bytes)};
+            try { const value = JSON.parse(bytes.toString("utf8"));
+              if (bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`))) result = value; } catch {} }
+          const accepted = exit === 0 && result?.schemaVersion === 1 && result.qualifying === false &&
+            result.releaseGateCleared === false && result.status === "observed" &&
+            result.cpuCalibrationAccepted === true && result.cleanupProven === true;
+          const summary = {schemaVersion: 1, status: "observed", qualifying: false, releaseGateCleared: false,
+            controllerExit: exit, resultPresent: resultIdentity !== null, result: resultIdentity, streams, accepted};
+          fs.writeFileSync(path.join(root, "transport-summary.json"), `${JSON.stringify(summary)}\n`,
+            {flag: "wx", mode: 0o600}); process.stdout.write(accepted ? "true" : "false");
+          NODE
+          accepted="$(node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1]));process.stdout.write(String(v.accepted))' "$transport_root/transport-summary.json")"
+          printf 'accepted=%s\nretain=true\n' "$accepted" >> "$GITHUB_OUTPUT"
+
+      - name: Upload bounded nonqualifying Stage 2 evidence
+        if: always() && steps.bound.outputs.retain == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cpu-floor-stage2-evidence
+          path: |
+            ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.prepare.outputs.nonce }}/stage2-result.json
+            ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.prepare.outputs.nonce }}/controller.stdout
+            ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.prepare.outputs.nonce }}/controller.stderr
+            ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.prepare.outputs.nonce }}/transport-summary.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require accepted nonqualifying calibration
+        if: always()
+        shell: bash
+        run: test "${{ steps.bound.outputs.accepted }}" = 'true'
