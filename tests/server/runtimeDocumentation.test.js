@@ -53,7 +53,10 @@ describe("Bun runtime guidance", () => {
         assert.ok(body.includes("Bun 1.4.2 or newer"));
         assert.ok(body.includes("Nehalem/SSE4.2"));
         assert.ok(body.includes("compatibility alias"));
-        assert.ok(!/no AVX2/i.test(body));
+        assert.match(body, /\[EXE \(no AVX2\)\]/);
+        assert.match(body, /\[MSI \(no AVX2\)\]/);
+        assert.match(body, /\[No AVX2\]/);
+        assert.match(body, /baseline filenames are retained compatibility aliases/);
         assert.match(body, /## Qualification scope and limitations/);
         assert.match(body, /owner-approved-reduced-v1\.6\.1/);
         assert.match(body, /Windows native HTTP\/service runtime.*not verified/i);

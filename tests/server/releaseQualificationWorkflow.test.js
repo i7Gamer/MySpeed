@@ -330,6 +330,67 @@ describe('trusted artifact-only promotion', () => {
         assert.doesNotMatch(dockerSteps.slice(loginIndex).map(({run = ''}) => run).join('\n'), /apt-get/);
     });
 
+    it('publishes the compact platform download matrix and keeps generated notes intact', async () => {
+        const step = workflow('finalize-release').jobs.finalize.steps.find(({name}) =>
+            name === 'Generate notes and publish the existing draft');
+        const generatedNotes = '## What\'s Changed\n\n* Synthetic generated entry';
+        const repository = 'i7Gamer/MySpeed';
+        const tag = `v${RELEASE_VERSION}`;
+        const base = `https://github.com/${repository}/releases/download/${tag}/`;
+        const expectedDownloads = [
+            ['EXE', 'MySpeed-windows-x64.exe'],
+            ['MSI', 'MySpeed-installer.msi'],
+            ['EXE (no AVX2)', 'MySpeed-windows-x64-baseline.exe'],
+            ['MSI (no AVX2)', 'MySpeed-installer-baseline.msi'],
+            ['Binary', 'MySpeed-linux-x64'],
+            ['No AVX2', 'MySpeed-linux-x64-baseline'],
+            ['Binary', 'MySpeed-linux-arm64'],
+            ['Binary', 'MySpeed-macos-x64'],
+            ['Binary', 'MySpeed-macos-arm64'],
+            ['ZIP Archive', 'MySpeed.zip'],
+            ['Linux installer', 'install.sh'],
+            ['Docker installer', 'docker-install.sh'],
+            ['Installer chooser', 'chooser.sh'],
+            ['SHA-256 checksums', 'SHA256SUMS'],
+            ['Qualification manifest', 'qualification-manifest.json'],
+            ['Manifest SHA-256', 'qualification-manifest.json.sha256']
+        ];
+        let published;
+        await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
+            process: {env: {RELEASE_ID: '456', SOURCE_SHA: SHA, VERSION: RELEASE_VERSION}},
+            context: {repo: {owner: 'i7Gamer', repo: 'MySpeed'}},
+            github: {rest: {
+                repos: {
+                    getRelease: async () => ({data: {draft: true, tag_name: tag,
+                        target_commitish: 'development'}}),
+                    generateReleaseNotes: async () => ({data: {body: generatedNotes}}),
+                    updateRelease: async (request) => { published = request; }
+                },
+                git: {getRef: async () => ({data: {object: {type: 'commit', sha: SHA}}})}
+            }}
+        });
+
+        const matrix = [
+            '| Platform | x86-64 | ARM64 |',
+            '| :-- | :-- | :-- |',
+            `| **Windows** | [EXE](${base}MySpeed-windows-x64.exe) · [MSI](${base}MySpeed-installer.msi) · [EXE (no AVX2)](${base}MySpeed-windows-x64-baseline.exe) · [MSI (no AVX2)](${base}MySpeed-installer-baseline.msi) | — |`,
+            `| **Linux** | [Binary](${base}MySpeed-linux-x64) · [No AVX2](${base}MySpeed-linux-x64-baseline) | [Binary](${base}MySpeed-linux-arm64) |`,
+            `| **macOS** | [Binary](${base}MySpeed-macos-x64) | [Binary](${base}MySpeed-macos-arm64) |`
+        ].join('\n');
+        assert.match(published.body, new RegExp(matrix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+        for (const heading of ['### Source Distribution', '### Docker Images',
+            '### Installation Scripts', '### Checksums and Qualification'])
+            assert.equal(published.body.split(heading).length - 1, 1, heading);
+        for (const [label, file] of expectedDownloads) {
+            const link = `[${label}](${base}${file})`;
+            assert.equal(published.body.split(link).length - 1, 1, link);
+        }
+        assert.match(published.body, /Windows native HTTP\/service runtime with enforced outbound denial is not verified/);
+        assert.match(published.body, /AVX-disabled Windows CPU-floor execution is not verified/);
+        assert.match(published.body, /complete Windows MSI install\/upgrade\/rollback\/uninstall lifecycle is not verified/);
+        assert.ok(published.body.endsWith(generatedNotes));
+    });
+
     it('rejects failed, skipped, fork, stale, expired and non-default qualification runs', async () => {
         await assert.doesNotReject(executeRunGate());
         const old = new Date(Date.now() - EXPIRED_DAYS * HOURS_PER_DAY * MINUTES_PER_HOUR

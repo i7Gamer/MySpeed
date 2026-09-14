@@ -4,6 +4,7 @@ name: Windows WinSW offline canary
 # never packages, installs, or executes MySpeed and never clears a release gate.
 on:
   pull_request:
+    branches: [development]
     paths:
       - .github/workflows/windows-winsw-offline-canary.yml
       - scripts/qualification/windows-winsw-offline-canary.ps1

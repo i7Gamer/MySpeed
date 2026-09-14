@@ -4,6 +4,7 @@ import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import {invokePowerShellScriptBatch} from "../helpers/powershellScriptBatch.js";
 
 const SCRIPT = path.resolve("scripts/qualification/windows-msi-rollback-calibration.ps1");
 const SCRIPT_BYTES = fs.readFileSync(SCRIPT);
@@ -60,6 +61,21 @@ const run = (mode, input) => {
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
     return JSON.parse(result.stdout);
 };
+
+const invokeBatch = requests => {
+    const batch = invokePowerShellScriptBatch({powershell: POWERSHELL, script: SCRIPT,
+        requests: requests.map(({mode, input}) => ({mode, inputJson: JSON.stringify(input)})),
+        timeout: PROCESS_TIMEOUT_MS});
+    assert.equal(batch.result.error, undefined, batch.result.error?.message);
+    assert.equal(batch.result.status, 0, `${batch.result.stdout}\n${batch.result.stderr}`);
+    assert.equal(batch.cases.length, requests.length);
+    return batch.cases;
+};
+
+const runBatch = requests => invokeBatch(requests).map(result => {
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    return JSON.parse(result.stdout);
+});
 
 const simulation = () => ({
     request: {msiPath: "C:\\owned\\candidate.msi", logPath: "C:\\owned\\rollback.log",
@@ -124,8 +140,9 @@ describe("sacrificial MSI rollback calibration harness", () => {
     });
 
     boundedTest("rejects noncanonical fixture nonces without writing files", () => {
-        for (const nonce of ["ABC", `${NONCE}0`, [NONCE], "../owned", ""])
-            assert.notEqual(invoke("GetFixtures", {nonce}).status, 0);
+        const results = invokeBatch(["ABC", `${NONCE}0`, [NONCE], "../owned", ""]
+            .map(nonce => ({mode: "GetFixtures", input: {nonce}})));
+        for (const result of results) assert.notEqual(result.status, 0);
     });
 
     boundedTest("recreates quiet, restart-suppressed, flushed verbose logging and restores process UI", () => {
@@ -219,26 +236,29 @@ describe("sacrificial MSI rollback calibration harness", () => {
     });
 
     boundedTest("latches callback snapshot and observer failures without crossing the callback boundary", () => {
-        const success = run("SimulateCallbackBridge", {failureAt: "none"});
+        const [success, snapshot, observer] = runBatch(["none", "snapshot", "observer"]
+            .map(failureAt => ({mode: "SimulateCallbackBridge", input: {failureAt}})));
         assert.deepEqual(success, {response: 2, callbackFailure: null, calls: ["snapshot", "observer"]});
-        const snapshot = run("SimulateCallbackBridge", {failureAt: "snapshot"});
         assert.deepEqual(snapshot, {response: -1, callbackFailure: "callback-record-or-observer-failure",
             calls: ["snapshot"]});
-        const observer = run("SimulateCallbackBridge", {failureAt: "observer"});
         assert.deepEqual(observer, {response: -1, callbackFailure: "callback-record-or-observer-failure",
             calls: ["snapshot", "observer"]});
     });
 
     boundedTest("does not accept scalar callback claims that omit record ownership or synchronous restoration", () => {
-        for (const [name, value] of [
+        const mutations = [
             ["delegateRetainedThroughInstallCall", false],
             ["msiOwnedRecordCloseAttempted", true],
             ["securityRestoredBeforeCancel", false],
             ["errorSignatureAssumed", true]
-        ]) {
+        ];
+        const results = runBatch(mutations.map(([name, value]) => {
             const input = simulation();
             input.facts.callbackEvidence[name] = value;
-            const result = run("SimulateController", input);
+            return {mode: "SimulateController", input};
+        }));
+        for (const [index, [name]] of mutations.entries()) {
+            const result = results[index];
             assert.equal(result.accepted, false, name);
             assert.match(result.primaryFailure, /callback lifetime|record ownership|synchronous restoration/i);
         }
@@ -268,41 +288,42 @@ describe("sacrificial MSI rollback calibration harness", () => {
         const value = run("NormalizeTimeline", {records: typed});
         assert.deepEqual(value.records.map(({messageClass, messageTypeCode}) => [messageClass, messageTypeCode]),
             [["INSTALLSTART", INSTALLSTART], ["INSTALLEND", INSTALLEND]]);
-        for (const messageTypeCode of [OBSOLETE_INSTALLSTART, OBSOLETE_INSTALLEND]) {
-            assert.notEqual(invoke("NormalizeTimeline", {records: [
+        const rejected = invokeBatch([OBSOLETE_INSTALLSTART, OBSOLETE_INSTALLEND].map(messageTypeCode => ({
+            mode: "NormalizeTimeline", input: {records: [
                 {messageTypeCode, fieldCount: 1, fields: ["candidate.msi"], field1Integer: null}
-            ]}).status, 0);
-        }
+            ]}
+        })));
+        for (const result of rejected) assert.notEqual(result.status, 0);
     });
 
     boundedTest("rejects malformed or oversized callback timelines", () => {
         const valid = {messageTypeCode: ACTIONSTART, fieldCount: 3,
             fields: ["InstallFiles", "Copying", "Template"], field1Integer: null};
-        for (const records of [
+        const rejected = invokeBatch([
             [],
             [Object.assign({}, valid, {fieldCount: 2})],
             [Object.assign({}, valid, {messageTypeCode: 0x02000000})],
             [Object.assign({}, valid, {fields: ["x".repeat(4097)], fieldCount: 1})],
             Array.from({length: 257}, () => valid)
-        ]) assert.notEqual(invoke("NormalizeTimeline", {records}).status, 0);
+        ].map(records => ({mode: "NormalizeTimeline", input: {records}})));
+        for (const result of rejected) assert.notEqual(result.status, 0);
     });
 
     boundedTest("fails closed at each setup stage and restores only acquired process-wide state", () => {
         const uiFailure = simulation();
         uiFailure.facts.setInternalUiNone.noneApplied = false;
-        const uiResult = run("SimulateController", uiFailure);
+        const handlerFailure = simulation();
+        handlerFailure.facts.setExternalHandler.errorCode = 5;
+        const logFailure = simulation();
+        logFailure.facts.enableLog.errorCode = 87;
+        const [uiResult, handlerResult, logResult] = runBatch([uiFailure, handlerFailure, logFailure]
+            .map(input => ({mode: "SimulateController", input})));
         assert.deepEqual(uiResult.operationCalls, ["set-internal-ui-none", "restore-internal-ui"]);
         assert.equal(uiResult.installInvoked, false);
 
-        const handlerFailure = simulation();
-        handlerFailure.facts.setExternalHandler.errorCode = 5;
-        const handlerResult = run("SimulateController", handlerFailure);
         assert.deepEqual(handlerResult.operationCalls,
             ["set-internal-ui-none", "set-external-record-handler", "restore-internal-ui"]);
 
-        const logFailure = simulation();
-        logFailure.facts.enableLog.errorCode = 87;
-        const logResult = run("SimulateController", logFailure);
         assert.deepEqual(logResult.operationCalls, ["set-internal-ui-none", "set-external-record-handler",
             "enable-log", "restore-external-record-handler", "restore-internal-ui"]);
     });

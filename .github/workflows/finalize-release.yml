@@ -108,26 +108,48 @@ jobs:
             const {data: generated} = await github.rest.repos.generateReleaseNotes({owner: context.repo.owner,
               repo: context.repo.repo, tag_name: tag, target_commitish: release.target_commitish});
             const base = 'https://github.com/' + context.repo.owner + '/' + context.repo.repo + '/releases/download/' + tag + '/';
+            const link = (label, file) => '[' + label + '](' + base + file + ')';
             const downloads = [
-              ['Windows x64', 'MySpeed-windows-x64.exe'],
-              ['Windows x64 baseline', 'MySpeed-windows-x64-baseline.exe'],
-              ['Windows installer', 'MySpeed-installer.msi'],
-              ['Windows baseline installer', 'MySpeed-installer-baseline.msi'],
-              ['Linux x64', 'MySpeed-linux-x64'],
-              ['Linux x64 baseline', 'MySpeed-linux-x64-baseline'],
-              ['Linux arm64', 'MySpeed-linux-arm64'],
-              ['macOS x64', 'MySpeed-macos-x64'],
-              ['macOS arm64', 'MySpeed-macos-arm64'],
-              ['Source bundle', 'MySpeed.zip'],
-              ['Linux installer', 'install.sh'],
-              ['Docker installer', 'docker-install.sh'],
-              ['Installer chooser', 'chooser.sh'],
-              ['SHA-256 checksums', 'SHA256SUMS'],
-              ['Qualification manifest', 'qualification-manifest.json'],
-              ['Qualification manifest digest', 'qualification-manifest.json.sha256']
-            ].map(([label, file]) => '| ' + label + ' | [' + file + '](' + base + file + ') |').join('\n');
+              '## Downloads',
+              '',
+              '| Platform | x86-64 | ARM64 |',
+              '| :-- | :-- | :-- |',
+              '| **Windows** | ' + link('EXE', 'MySpeed-windows-x64.exe') + ' · '
+                + link('MSI', 'MySpeed-installer.msi') + ' · '
+                + link('EXE (no AVX2)', 'MySpeed-windows-x64-baseline.exe') + ' · '
+                + link('MSI (no AVX2)', 'MySpeed-installer-baseline.msi') + ' | — |',
+              '| **Linux** | ' + link('Binary', 'MySpeed-linux-x64') + ' · '
+                + link('No AVX2', 'MySpeed-linux-x64-baseline') + ' | '
+                + link('Binary', 'MySpeed-linux-arm64') + ' |',
+              '| **macOS** | ' + link('Binary', 'MySpeed-macos-x64') + ' | '
+                + link('Binary', 'MySpeed-macos-arm64') + ' |',
+              '',
+              'The baseline filenames are retained compatibility aliases; they do not identify a separate CPU target. AVX-disabled Windows execution remains unverified.',
+              '',
+              '### Source Distribution',
+              '',
+              '- ' + link('ZIP Archive', 'MySpeed.zip') + ' (requires Bun 1.4.2 or newer)',
+              '',
+              '### Docker Images',
+              '',
+              '- `i7gamer/myspeed:latest`',
+              '- `i7gamer/myspeed:' + process.env.VERSION + '`',
+              '',
+              '### Installation Scripts',
+              '',
+              '- ' + link('Linux installer', 'install.sh') + ' · '
+                + link('Docker installer', 'docker-install.sh') + ' · '
+                + link('Installer chooser', 'chooser.sh'),
+              '',
+              '### Checksums and Qualification',
+              '',
+              '- ' + link('SHA-256 checksums', 'SHA256SUMS') + ' · '
+                + link('Qualification manifest', 'qualification-manifest.json') + ' · '
+                + link('Manifest SHA-256', 'qualification-manifest.json.sha256')
+            ].join('\n');
             const compatibility = '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 compiler target is Nehalem/SSE4.2 with runtime AVX dispatch; the baseline filenames are compatibility aliases. The Windows CPU floor has not been verified on AVX-disabled hardware.';
             const qualification = '## Qualification scope and limitations\n\nv1.6.1 uses the owner-approved-reduced-v1.6.1 qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. Windows native HTTP/service runtime with enforced outbound denial is not verified. AVX-disabled Windows CPU-floor execution is not verified. The complete Windows MSI install/upgrade/rollback/uninstall lifecycle is not verified. These checks are deferred, not passed; see the qualification manifest for the exact evidence and artifact digests.';
-            const body = generated.body + '\n\n' + compatibility + '\n\n' + qualification + '\n\n## Downloads\n\n| Platform | Asset |\n| :-- | :-- |\n' + downloads;
+            const body = compatibility + '\n\n' + qualification + '\n\n---\n\n' + downloads
+              + '\n\n---\n\n' + generated.body;
             await github.rest.repos.updateRelease({owner: context.repo.owner, repo: context.repo.repo,
               release_id: releaseId, name: tag, body, draft: false, prerelease: false});

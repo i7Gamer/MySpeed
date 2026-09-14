@@ -65,6 +65,7 @@ describe("candidate-neutral WinSW offline canary workflow", () => {
     it("is non-publishing, repository-bound, and identity-bound", () => {
         const workflow = config();
         assert.deepEqual(Object.keys(workflow.on).sort(), ["pull_request", "push", "workflow_dispatch"]);
+        assert.deepEqual(workflow.on.pull_request.branches, ["development"]);
         assert.deepEqual(workflow.on.push.branches, ["development"]);
         for (const event of ["pull_request", "push"])
             assert.deepEqual(workflow.on[event].paths, [WORKFLOW, SCRIPT, HELPER_TEST, TEST]);

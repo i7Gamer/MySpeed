@@ -1573,6 +1573,7 @@ public static class MySpeedCanaryJob {
             $readyPresent=Test-Path -LiteralPath $State.request.readyPath -PathType Leaf
             $cleanupReady=$null
             if($readyPresent){
+                # Cleanup gets a fresh read budget even when arming used its full deadline.
                 $cleanupReadTimer=[Diagnostics.Stopwatch]::StartNew()
                 $capturedCleanupReadTimer=$cleanupReadTimer
                 $cleanupReadOperations=[pscustomobject]@{
@@ -1709,6 +1710,7 @@ public static class MySpeedCanaryJob {
                 (& $hashFile $State.request.serviceXmlPath $maximumConfiguration) -cne $State.configurationSha){
                 throw 'Owned input changed before adapter disable'
             }
+            # Arming and the pre-disable re-read deliberately share one readiness deadline.
             $capturedDisableReadinessTimer=$State.readinessTimer
             $disableReadinessOperations=[pscustomobject]@{
                 elapsed={return [int64]$capturedDisableReadinessTimer.ElapsedMilliseconds}.GetNewClosure()

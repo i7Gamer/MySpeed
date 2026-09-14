@@ -5,6 +5,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {invokePowerShellScriptBatch} from "../helpers/powershellScriptBatch.js";
 
 const SCRIPT = path.resolve("scripts/qualification/windows-winsw-offline-canary.ps1");
 const POWERSHELL = process.platform === "win32"
@@ -76,6 +77,28 @@ const reject = (mode, input, pattern) => {
     assert.equal(result.error, undefined, result.error?.message);
     assert.notEqual(result.status, 0, "expected rejection");
     assert.match(`${result.stdout}\n${result.stderr}`, pattern);
+};
+
+const invokeBatch = requests => {
+    const batch = invokePowerShellScriptBatch({powershell: POWERSHELL, script: SCRIPT,
+        requests: requests.map(({mode, input}) => ({mode, inputJson: JSON.stringify(input)})),
+        timeout: PROCESS_TIMEOUT_MS});
+    assert.equal(batch.result.error, undefined, batch.result.error?.message);
+    assert.equal(batch.result.status, 0, `${batch.result.stdout}\n${batch.result.stderr}`);
+    assert.equal(batch.cases.length, requests.length);
+    return batch.cases;
+};
+
+const runBatch = requests => invokeBatch(requests).map(result => {
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    return result.stdout.trim() === "" ? null : JSON.parse(result.stdout);
+});
+
+const rejectBatch = (requests, pattern) => {
+    for (const result of invokeBatch(requests)) {
+        assert.notEqual(result.status, 0, "expected rejection");
+        assert.match(`${result.stdout}\n${result.stderr}`, pattern);
+    }
 };
 
 const runFactoryFixture = (removeClosure = false, inspectAdapters = false, separateScript = false, inspectTaskCleanup = false) => {
@@ -495,7 +518,7 @@ Set-StrictMode -Version Latest
 
     powershellIt("validates the exact two-file, run-bound closure", () => {
         assert.equal(run("ValidateManifest", manifest()).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.extra = true; },
             value => { value.expectedRunId = 12345; },
             value => { value.expectedRunAttempt = "0"; },
@@ -504,15 +527,16 @@ Set-StrictMode -Version Latest
             value => { value.files.reverse(); },
             value => { value.files[1].sha256 = "e".repeat(64); },
             value => { value.files[1].bytes = WIN_SW_BYTES - 1; }
-        ]) {
+        ].map(mutate => {
             const value = manifest(); mutate(value);
-            reject("ValidateManifest", value, /manifest|closure|file|bytes|sha/i);
-        }
+            return {mode: "ValidateManifest", input: value};
+        });
+        rejectBatch(invalid, /manifest|closure|file|bytes|sha/i);
     });
 
     powershellIt("cross-binds exact hosted run identity, image, nonce, and closure", () => {
         assert.equal(run("AssertContext", hostedContext()).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.environment.CI = "false"; },
             value => { value.environment.GITHUB_RUN_ATTEMPT = "3"; },
             value => { value.environment.GITHUB_SHA = SOURCE_SHA; },
@@ -520,10 +544,11 @@ Set-StrictMode -Version Latest
             value => { value.expectedImageVersion = "stale"; },
             value => { value.nonce = "f".repeat(32); },
             value => { value.manifest.expectedRunId = "999"; }
-        ]) {
+        ].map(mutate => {
             const value = hostedContext(); mutate(value);
-            reject("AssertContext", value, /hosted context|manifest|nonce|image|differ/i);
-        }
+            return {mode: "AssertContext", input: value};
+        });
+        rejectBatch(invalid, /hosted context|manifest|nonce|image|differ/i);
         const result = invoke("InvokeHostedCanary", hostedContext());
         assert.notEqual(result.status, 0);
         assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /not implemented/i);
@@ -535,7 +560,7 @@ Set-StrictMode -Version Latest
         distinctLuid.adapters.push({interfaceGuid: "{22222222-2222-2222-2222-222222222222}",
             netLuid: "000600000a000000"});
         assert.equal(run("ValidateRecoveryRequest", distinctLuid).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.extra = true; },
             value => { value.adapters[0].interfaceGuid = "bad"; },
             value => { value.adapters[0].netLuid = null; },
@@ -556,24 +581,26 @@ Set-StrictMode -Version Latest
             value => { value.offlineStart100ns = "0"; value.watchdogDeadline100ns = "600000000"; },
             value => { value.watchdogDeadline100ns = "700000001"; },
             value => { value.environment.SERVER_PORT = "80"; }
-        ]) {
+        ].map(mutate => {
             const value = recoveryRequest(); mutate(value);
-            reject("ValidateRecoveryRequest", value, /recovery|adapter|owned|service|deadline|environment|schema/i);
-        }
+            return {mode: "ValidateRecoveryRequest", input: value};
+        });
+        rejectBatch(invalid, /recovery|adapter|owned|service|deadline|environment|schema/i);
     });
 
     powershellIt("binds machine cleanup to a create-new exact ownership record", () => {
         const ownership = {schemaVersion: 1, names: Object.keys(EXPECTED_ENVIRONMENT)};
         assert.equal(run("ValidateEnvironmentOwnership", ownership).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.extra = true; },
             value => { value.schemaVersion = true; },
             value => { value.names.reverse(); },
             value => { value.names[0] = "PATH"; }
-        ]) {
+        ].map(mutate => {
             const value = structuredClone(ownership); mutate(value);
-            reject("ValidateEnvironmentOwnership", value, /environment|ownership|schema|order/i);
-        }
+            return {mode: "ValidateEnvironmentOwnership", input: value};
+        });
+        rejectBatch(invalid, /environment|ownership|schema|order/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         const prepare = source.slice(source.indexOf("prepare={"), source.indexOf("}.GetNewClosure()", source.indexOf("prepare={")));
         assert.ok(prepare.indexOf("Machine environment collision") < prepare.indexOf("environmentOwnershipPath"));
@@ -591,17 +618,18 @@ Set-StrictMode -Version Latest
             creationFileTime: "0000000000000001", requestSha256: "e".repeat(64),
             scriptSha256: request.scriptSha256, taskName: request.taskName};
         assert.equal(run("ValidateRecoveryReadiness", {ready, request, requestSha256: ready.requestSha256}).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.ready.sid = "S-1-5-20"; },
             value => { value.ready.pid = "321"; },
             value => { value.ready.creationFileTime = "0000000000000000"; },
             value => { value.ready.requestSha256 = "f".repeat(64); },
             value => { value.ready.taskName = "Other"; }
-        ]) {
+        ].map(mutate => {
             const value = {ready: structuredClone(ready), request: structuredClone(request), requestSha256: ready.requestSha256};
             mutate(value);
-            reject("ValidateRecoveryReadiness", value, /readiness|PID|creation|identity/i);
-        }
+            return {mode: "ValidateRecoveryReadiness", input: value};
+        });
+        rejectBatch(invalid, /readiness|PID|creation|identity/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.match(source, /Owned recovery process remained after task stop/u);
         assert.match(source, /StartTime\.ToUniversalTime\(\)\.ToFileTimeUtc/u);
@@ -733,7 +761,7 @@ Set-StrictMode -Version Latest
         assert.equal(accepted[1].loopback, true);
         assert.equal(accepted[2].enabled, false);
 
-        for (const mutate of [
+        const invalid = [
             value => { value.adapters[0].Hidden = "false"; },
             value => { value.adapters[0].Hidden = null; },
             value => { value.adapters[0].InterfaceType = "6"; },
@@ -747,10 +775,11 @@ Set-StrictMode -Version Latest
             value => { value.adapters[1].InterfaceGuid = value.adapters[0].InterfaceGuid; },
             value => { value.adapters[1].NetLuid = value.adapters[0].NetLuid; },
             value => { value.adapters[1].ifIndex = value.adapters[0].ifIndex; }
-        ]) {
+        ].map(mutate => {
             const value = adapters(); mutate(value);
-            reject("NormalizeAdapters", value, /adapter|Boolean|integer|status|identity|index/i);
-        }
+            return {mode: "NormalizeAdapters", input: value};
+        });
+        rejectBatch(invalid, /adapter|Boolean|integer|status|identity|index/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.doesNotMatch(source, /pnpDeviceId|hidden=\[bool\]\$_\.Hidden/u);
         assert.ok(source.match(/ConvertFrom-MyspeedCanaryNetAdapterProviderInventory/gu)?.length >= 3);
@@ -766,20 +795,28 @@ Set-StrictMode -Version Latest
             InterfaceGuid: "{11111111-1111-1111-1111-111111111111}", NetLuid: NATIVE_NET_LUID,
             Hidden: true, InterfaceType: 6, InterfaceAdminStatus: admin, Status: status, ifIndex: 4
         });
-        for (const status of ["Not Present", "Lower Layer Down", "Unknown", "Dormant", "Disabled"]) {
-            const output = run("NormalizeAdapters", {adapters: [adapter(ADAPTER_ADMIN_DOWN, status)]});
+        const statuses = ["Not Present", "Lower Layer Down", "Unknown", "Dormant", "Disabled"];
+        const outputs = runBatch(statuses.map(status => ({mode: "NormalizeAdapters",
+            input: {adapters: [adapter(ADAPTER_ADMIN_DOWN, status)]}})));
+        for (const [index, status] of statuses.entries()) {
+            const output = outputs[index];
             const result = Array.isArray(output) ? output : [output];
             assert.equal(result.length, 1);
             assert.equal(result[0].enabled, false);
             assert.equal(result[0].status, status);
             assert.equal(result[0].hidden, true, "inactive hidden adapters must remain in the inventory");
         }
-        for (const [admin, status] of [[ADAPTER_ADMIN_UP, "Disabled"], [ADAPTER_ADMIN_DOWN, "Up"],
-            [ADAPTER_ADMIN_DOWN, "Disconnected"]]) {
+        const inconsistent = [[ADAPTER_ADMIN_UP, "Disabled"], [ADAPTER_ADMIN_DOWN, "Up"],
+            [ADAPTER_ADMIN_DOWN, "Disconnected"]];
+        const rejected = invokeBatch(inconsistent.map(([admin, status]) => ({mode: "NormalizeAdapters",
+            input: {adapters: [adapter(admin, status)]}})));
+        for (const [index, [admin, status]] of inconsistent.entries()) {
             const pattern = new RegExp(`administrative status is inconsistent.*admin=${admin};status=${status}`, "isu");
             assert.match(`Native adapter administrative status is inconsistent\u001b[0m\n` +
                 `\u001b[31;1m     | (admin=${admin};status=${status})\u001b[0m`, pattern);
-            reject("NormalizeAdapters", {adapters: [adapter(admin, status)]}, pattern);
+            const result = rejected[index];
+            assert.notEqual(result.status, 0, "expected rejection");
+            assert.match(`${result.stdout}\n${result.stderr}`, pattern);
         }
     });
 
@@ -789,11 +826,15 @@ Set-StrictMode -Version Latest
             InterfaceAdminStatus: ADAPTER_ADMIN_UP, Status: "Up", ifIndex: 4};
         const second = {...first, InterfaceGuid: "{22222222-2222-2222-2222-222222222222}",
             NetLuid: 0x0006000002000000, Hidden: true, ifIndex: 5};
-        for (const fields of [["InterfaceGuid"], ["NetLuid"], ["ifIndex"],
-            ["InterfaceGuid", "NetLuid", "ifIndex"]]) {
+        const duplicatedFields = [["InterfaceGuid"], ["NetLuid"], ["ifIndex"],
+            ["InterfaceGuid", "NetLuid", "ifIndex"]];
+        const outputs = invokeBatch(duplicatedFields.map(fields => {
             const duplicate = {...second};
             for (const field of fields) duplicate[field] = first[field];
-            const output = invoke("NormalizeAdapters", {adapters: [first, duplicate]});
+            return {mode: "NormalizeAdapters", input: {adapters: [first, duplicate]}};
+        }));
+        for (const [index, fields] of duplicatedFields.entries()) {
+            const output = outputs[index];
             assert.equal(output.error, undefined, output.error?.message);
             assert.notEqual(output.status, 0, "ambiguous inventory must still fail closed");
             const expectedFields = fields.map(field => ({InterfaceGuid: "guid", NetLuid: "luid", ifIndex: "index"})[field]);
@@ -826,11 +867,12 @@ Set-StrictMode -Version Latest
         assert.equal(accepted.hidden, true);
         assert.equal(accepted.enabled, true);
         assert.equal(Object.hasOwn(accepted, "interfaceDescription"), false);
-        for (const value of [null, 0, -1, 1.5, false, CANONICAL_NET_LUID, [NATIVE_NET_LUID]]) {
-            reject("NormalizeAdapters", {adapters: [{...adapter(), NetLuid: value}]}, /NetLuid|LUID|integer|schema/i);
-        }
         const duplicate = {...adapter(), InterfaceGuid: "{22222222-2222-2222-2222-222222222222}", ifIndex: 5};
-        reject("NormalizeAdapters", {adapters: [adapter(), duplicate]}, /duplicated|identity/i);
+        const invalid = [null, 0, -1, 1.5, false, CANONICAL_NET_LUID, [NATIVE_NET_LUID]].map(value => ({
+            mode: "NormalizeAdapters", input: {adapters: [{...adapter(), NetLuid: value}]}
+        }));
+        rejectBatch(invalid, /NetLuid|LUID|integer|schema/i);
+        rejectBatch([{mode: "NormalizeAdapters", input: {adapters: [adapter(), duplicate]}}], /duplicated|identity/i);
     });
 
     powershellIt("preserves every primitive integer NetLuid without floating-point conversion", () => {
@@ -869,17 +911,20 @@ foreach($value in $invalid){
         const maximum = boundary();
         maximum.adapters[0].netLuid = "f".repeat(NET_LUID_HEX_LENGTH);
         assert.equal(run("ClassifyBoundary", maximum).accepted, true);
-        for (const value of [null, 1, "", "0".repeat(NET_LUID_HEX_LENGTH), "000600000A000000",
+        const invalidValues = [null, 1, "", "0".repeat(NET_LUID_HEX_LENGTH), "000600000A000000",
             "1", "1".repeat(NET_LUID_HEX_LENGTH + 1), `${CANONICAL_NET_LUID}\n`,
-            ` ${CANONICAL_NET_LUID}`, [CANONICAL_NET_LUID]]) {
+            ` ${CANONICAL_NET_LUID}`, [CANONICAL_NET_LUID]];
+        const invalid = invalidValues.map(value => {
             const invalid = boundary(); invalid.adapters[0].netLuid = value;
-            reject("ClassifyBoundary", invalid, /NetLuid|LUID|canonical/i);
-        }
-        for (const legacyField of ["pnpDeviceId", "interfaceDescription"]) {
+            return {mode: "ClassifyBoundary", input: invalid};
+        });
+        rejectBatch(invalid, /NetLuid|LUID|canonical/i);
+        const legacy = ["pnpDeviceId", "interfaceDescription"].map(legacyField => {
             const invalid = boundary();
             invalid.adapters[0][legacyField] = CANONICAL_NET_LUID;
-            reject("ClassifyBoundary", invalid, /schema/i);
-        }
+            return {mode: "ClassifyBoundary", input: invalid};
+        });
+        rejectBatch(legacy, /schema/i);
     });
 
     powershellIt("rejects a one-record nested adapter normalization result", () => {
@@ -1023,15 +1068,16 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
         const dualStack = structuredClone(nativeAddresses);
         dualStack.interfaces.push({...dualStack.interfaces[0]});
         assert.equal(run("ProjectIpState", dualStack).length, accepted.length + 1);
-        for (const mutate of [
+        const ambiguous = [
             item => { item.interfaces.push({...item.interfaces[0], CompartmentId: 2}); },
             item => { item.interfaces = []; },
             item => { item.addresses[0].CompartmentId = 2; },
             item => { item.addresses[0].CompartmentId = "1"; }
-        ]) {
+        ].map(mutate => {
             const changed = structuredClone(nativeAddresses); mutate(changed);
-            reject("ProjectIpState", changed, /compartment|integer/i);
-        }
+            return {mode: "ProjectIpState", input: changed};
+        });
+        rejectBatch(ambiguous, /compartment|integer/i);
 
         const multiple = value();
         multiple.adapters.push({InterfaceGuid: "{33333333-3333-3333-3333-333333333333}",
@@ -1044,7 +1090,7 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
         assert.equal(projectedMultiple.length, 9);
         assert.equal(projectedMultiple.filter(entry => entry.routable).length, 3);
 
-        for (const mutate of [
+        const invalid = [
             item => { item.interfaces[0].ConnectionState = 2; },
             item => { item.interfaces[0].ConnectionState = "1"; },
             item => { item.interfaces[0].ConnectionState = null; },
@@ -1056,10 +1102,11 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
             item => { item.addresses[0].InterfaceIndex = 99; },
             item => { item.routes[0].InterfaceIndex = 99; },
             item => { item.interfaces[0].CompartmentId = "1"; }
-        ]) {
+        ].map(mutate => {
             const item = value(); mutate(item);
-            reject("ProjectIpState", item, /IP|route|interface|integer|unknown|mapped/i);
-        }
+            return {mode: "ProjectIpState", input: item};
+        });
+        rejectBatch(invalid, /IP|route|interface|integer|unknown|mapped/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.ok(source.match(/New-MyspeedCanaryProviderProjectionOperations/gu)?.length >= 3);
         assert.match(source, /\$State\.preDisable=/u);
@@ -1093,14 +1140,15 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
 
     powershellIt("rejects any TCP or UDP listener collision on every fixed canary port", () => {
         assert.equal(run("TestPortPreflight", {tcpEndpoints: [], udpEndpoints: []}).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.tcpEndpoints.push({LocalPort: ENDPOINTS[0].port}); },
             value => { value.udpEndpoints.push({LocalPort: ENDPOINTS[3].port}); },
             value => { value.tcpEndpoints.push({LocalPort: String(ENDPOINTS[1].port)}); }
-        ]) {
+        ].map(mutate => {
             const value = {tcpEndpoints: [], udpEndpoints: []}; mutate(value);
-            reject("TestPortPreflight", value, /port|endpoint|collision|integer/i);
-        }
+            return {mode: "TestPortPreflight", input: value};
+        });
+        rejectBatch(invalid, /port|endpoint|collision|integer/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.match(source, /Get-NetTCPConnection -ErrorAction Stop/u);
         assert.match(source, /Get-NetUDPEndpoint -ErrorAction Stop/u);
@@ -1110,7 +1158,7 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
 
     powershellIt("accepts only exhaustive offline state and four owned loopback controls", () => {
         assert.equal(run("ClassifyBoundary", boundary()).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.providers.routes = false; },
             value => { value.offlineTiming.elapsedMilliseconds = 60_001; value.offlineTiming.end100ns = "700010000"; },
             value => { value.offlineTiming.watchdogDeadline100ns = "700000001"; },
@@ -1131,10 +1179,11 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
             value => { value.testNet[0].address = "8.8.8.8"; },
             value => { value.testNet.pop(); },
             value => { value.testNet[0].extra = true; }
-        ]) {
+        ].map(mutate => {
             const value = boundary(); mutate(value);
-            reject("ClassifyBoundary", value, /boundary|provider|adapter|route|loopback|TEST-NET|schema/i);
-        }
+            return {mode: "ClassifyBoundary", input: value};
+        });
+        rejectBatch(invalid, /boundary|provider|adapter|route|loopback|TEST-NET|schema/i);
         const udpAccepted = boundary();
         udpAccepted.testNet.filter(value => value.transport === "udp")
             .forEach(value => { value.outcome = "sendAccepted"; });
@@ -1153,7 +1202,7 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
     powershellIt("binds the LocalSystem WinSW child, environment, parent, and endpoint owners", () => {
         assert.equal(run("ValidateProbe", probe()).accepted, true);
         assert.match(fs.readFileSync(SCRIPT, "utf8"), /endpoints=\$probeEndpoints/u);
-        for (const mutate of [
+        const invalid = [
             value => { value.sid = "S-1-5-20"; },
             value => { value.parentPid = 999; },
             value => { value.nonce = "f".repeat(32); },
@@ -1187,10 +1236,11 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
             value => { value.endpoints[3].ownerPid = 100; },
             value => { value.endpoints[0].address = "0.0.0.0"; },
             value => { value.winswSha256 = "f".repeat(64); }
-        ]) {
+        ].map(mutate => {
             const value = probe(); mutate(value);
-            reject("ValidateProbe", value, /probe|LocalSystem|parent|environment|forbidden|endpoint|WinSW/i);
-        }
+            return {mode: "ValidateProbe", input: value};
+        });
+        rejectBatch(invalid, /probe|LocalSystem|parent|environment|forbidden|endpoint|WinSW/i);
     });
 
     powershellIt("reports only bounded forbidden environment names without values", () => {
@@ -1248,16 +1298,17 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
             current100ns: "699999999", deadline100ns: "700000000",
             emergencyResultPresent: false, adapterRestored: true, resultWritten: true
         }).accepted, true);
-        for (const mutate of [
+        const invalid = [
             value => { value.current100ns = value.deadline100ns; },
             value => { value.emergencyResultPresent = true; },
             value => { value.resultWritten = false; }
-        ]) {
+        ].map(mutate => {
             const value = {current100ns: "699999999", deadline100ns: "700000000",
                 emergencyResultPresent: false, adapterRestored: true, resultWritten: true};
             mutate(value);
-            reject("TestRecoveryRace", value, /deadline|emergency|record|restoration/i);
-        }
+            return {mode: "TestRecoveryRace", input: value};
+        });
+        rejectBatch(invalid, /deadline|emergency|record|restoration/i);
         const source = fs.readFileSync(SCRIPT, "utf8");
         const restore = source.slice(source.indexOf("$restore={"), source.indexOf("}.GetNewClosure()", source.indexOf("$restore={")));
         assert.ok(restore.lastIndexOf("& $getClock") > restore.indexOf("Enable-NetAdapter"));
@@ -1274,11 +1325,12 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
     });
 
     powershellIt("injected failures after disable use emergency restore and never pass", () => {
-        for (const failAt of [
+        const failurePoints = [
             "disableAdapters", "verifyOffline", "startService", "probe", "teardownService", "restoreAdapters"
-        ]) {
-            const result = run("TestLifecycle",
-                {failAt, emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: true});
+        ];
+        const results = runBatch(failurePoints.map(failAt => ({mode: "TestLifecycle",
+            input: {failAt, emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: true}})));
+        for (const result of results) {
             assert.equal(result.status, "failed");
             assert.equal(result.canaryPassed, false);
             assert.equal(result.recovery.classification, "inconclusive");
@@ -1289,56 +1341,61 @@ $results.ToArray()|ConvertTo-Json -Depth 6 -Compress
     });
 
     powershellIt("injected failures at every phase always run exact-owned post-reconnect cleanup", () => {
-        const beforeDisable = run("TestLifecycle",
-            {failAt: "prepare", emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: true});
+        const common = {emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: true};
+        const [beforeDisable, ...remaining] = runBatch([
+            {mode: "TestLifecycle", input: {...common, failAt: "prepare"}},
+            ...["snapshot", "armRecovery", "disarmRecovery", "restoreEnvironment"]
+                .map(failAt => ({mode: "TestLifecycle", input: {...common, failAt}})),
+            {mode: "TestLifecycle", input: {...common, failAt: "probe", emergencyCleanupSucceeded: false}},
+            {mode: "TestLifecycle", input: {...common, failAt: "probe", emergencyRestoreSucceeded: false}}
+        ]);
         assert.equal(beforeDisable.status, "failed");
         assert.equal(beforeDisable.recovery.classification, "inconclusive");
         assert.equal(beforeDisable.events.includes("emergencyRestore"), false);
         assert.equal(beforeDisable.events.at(-1), "postReconnectCleanup");
 
-        for (const failAt of ["snapshot", "armRecovery", "disarmRecovery", "restoreEnvironment"]) {
-            const result = run("TestLifecycle",
-                {failAt, emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: true});
+        for (const result of remaining.slice(0, 4)) {
             assert.equal(result.status, "failed");
             assert.equal(result.events.at(-1), "postReconnectCleanup");
             assert.equal(result.canaryPassed, false);
         }
 
-        const cleanupFailure = run("TestLifecycle",
-            {failAt: "probe", emergencyRestoreSucceeded: true, emergencyCleanupSucceeded: false});
+        const cleanupFailure = remaining[4];
         assert.equal(cleanupFailure.canaryPassed, false);
         assert.equal(cleanupFailure.recovery.cleanupAfterReconnectProven, false);
         assert.equal(cleanupFailure.recovery.recoveryTaskGoneProven, false);
         assert.ok(cleanupFailure.failures.some(value => value.includes("post-reconnect cleanup")));
 
-        const restoreFailure = run("TestLifecycle",
-            {failAt: "probe", emergencyRestoreSucceeded: false, emergencyCleanupSucceeded: true});
+        const restoreFailure = remaining[5];
         assert.equal(restoreFailure.recovery.adapterRestoreProven, false);
         assert.equal(restoreFailure.recovery.classification, "inconclusive");
         assert.ok(restoreFailure.failures.some(value => value.includes("emergency restoration")));
     });
 
     powershellIt("exercises the actual controller phase contract through injected operations", () => {
-        const result = run("TestNativeController", {failAt: null, cleanupFails: false});
+        const [result, failed, cleanupFailed, ...earlyResults] = runBatch([
+            {mode: "TestNativeController", input: {failAt: null, cleanupFails: false}},
+            {mode: "TestNativeController", input: {failAt: "disableAdapters", cleanupFails: false}},
+            {mode: "TestNativeController", input: {failAt: "probe", cleanupFails: true}},
+            ...["prepare", "armRecovery", "startService"].map(failAt =>
+                ({mode: "TestNativeController", input: {failAt, cleanupFails: false}}))
+        ]);
         assert.equal(result.status, "completed");
         assert.equal(result.qualifying, false);
         assert.deepEqual(result.events, [
             "prepare", "armRecovery", "disableAdapters", "verifyOffline", "startService", "probe",
             "teardownService", "restoreAdapters", "disarmRecovery", "restoreEnvironment"
         ]);
-        const failed = run("TestNativeController", {failAt: "disableAdapters", cleanupFails: false});
         assert.equal(failed.status, "failed");
         assert.equal(failed.qualifying, false);
         assert.deepEqual(failed.events.slice(-2), ["emergencyRestore", "postReconnectCleanup"]);
         assert.equal(failed.recovery.emergencyRestore, true);
 
-        const cleanupFailed = run("TestNativeController", {failAt: "probe", cleanupFails: true});
         assert.equal(cleanupFailed.status, "failed");
         assert.equal(cleanupFailed.recovery.cleanupAfterReconnectProven, false);
         assert.ok(cleanupFailed.failures.some(value => value.includes("postReconnectCleanup")));
 
-        for (const failAt of ["prepare", "armRecovery", "startService"]) {
-            const early = run("TestNativeController", {failAt, cleanupFails: false});
+        for (const early of earlyResults) {
             assert.equal(early.status, "failed");
             assert.equal(early.boundary, null);
             assert.equal(early.probe, null);
