@@ -340,6 +340,7 @@ jobs:
     name: Publish release
     needs: [create-draft, publish-assets, publish-docker]
     permissions:
+      actions: read
       contents: write
     uses: ./.github/workflows/finalize-release.yml
     with:

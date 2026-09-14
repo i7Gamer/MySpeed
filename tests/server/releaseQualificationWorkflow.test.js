@@ -276,6 +276,18 @@ describe('trusted artifact-only promotion', () => {
         }
     });
 
+    it('grants manifest read permission through both reusable publication calls', () => {
+        const callers = workflow('create_release').jobs;
+        for (const [name, contents] of [['publish-docker', 'read'], ['finalize-release', 'write']]) {
+            const required = {actions: 'read', contents};
+            assert.deepEqual(callers[name].permissions, required, `${name} caller permission ceiling`);
+            const callee = workflow(name);
+            assert.deepEqual(callee.permissions, required, `${name} workflow permissions`);
+            for (const job of Object.values(callee.jobs))
+                assert.deepEqual(job.permissions ?? callee.permissions, required, `${name} nested job permissions`);
+        }
+    });
+
     it('pins trusted validation code to the already-proven workflow commit', () => {
         const validate = workflow('create_release').jobs.validate;
         const checkout = uses(validate, 'actions/checkout@')[0];
