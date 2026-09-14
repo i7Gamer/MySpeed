@@ -250,25 +250,28 @@ export function resolveSelectedDependencies(records, dependencyExpressions, prov
     return records;
 }
 
-function parseInReleaseIndexes(bytes, suite) {
+export function parseInReleaseIndexes(bytes, suite) {
     const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
     const start = text.indexOf("\nSHA256:\n");
     if (start < 0) throw new Error("InRelease SHA256 section is absent");
     const lines = text.slice(start + 9).split("\n");
-    const records = [];
+    const records = new Map();
     for (const line of lines) {
-        const match = /^ ([a-f0-9]{64})\s+([1-9][0-9]*)\s+(.+)$/u.exec(line);
-        if (!match) {
-            if (records.length > 0) break;
-            continue;
-        }
+        if (!line.startsWith(" ")) break;
+        const match = /^ ([a-f0-9]{64})\s+(0|[1-9][0-9]*)\s+(.+)$/u.exec(line);
+        if (!match) throw new Error("signed package index checksum row is malformed");
         const relative = match[3];
-        const selected = /^(?:main|universe)\/binary-amd64\/Packages\.xz$/u.exec(relative);
-        if (selected) records.push({suite, component: relative.split("/")[0], architecture: "amd64",
-            path: `dists/${suite}/${relative}`, bytes: match[2], sha256: match[1], listedSha256: match[1]});
+        const component = relative.split("/")[0];
+        if (!STAGE2_PROVENANCE.ubuntuSnapshot.components.includes(component) ||
+            relative !== `${component}/binary-amd64/Packages.xz`) continue;
+        if (match[2] === "0") throw new Error("signed package index size is invalid");
+        if (records.has(component)) throw new Error("signed package index is duplicated");
+        records.set(component, {suite, component, architecture: "amd64", path: `dists/${suite}/${relative}`,
+            bytes: match[2], sha256: match[1], listedSha256: match[1]});
     }
-    if (records.length !== 2) throw new Error("signed package index set is incomplete");
-    return records;
+    if (records.size !== STAGE2_PROVENANCE.ubuntuSnapshot.components.length)
+        throw new Error("signed package index set is incomplete");
+    return STAGE2_PROVENANCE.ubuntuSnapshot.components.map(component => records.get(component));
 }
 
 async function collectAptClosure(io, {context, paths: pathsValue, vectors}) {

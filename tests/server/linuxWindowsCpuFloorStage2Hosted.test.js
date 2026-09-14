@@ -9,6 +9,7 @@ import {
     collectHostedAdmissionObservations,
     createHostedQemuProcessLauncher,
     createHostedStage2Operations,
+    parseInReleaseIndexes,
     parseGuestFailure,
     parseGuestOutcome,
     parseGuestOutput,
@@ -219,6 +220,48 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(vectors.common.includes("APT::Update::Post-Invoke-Success::="), true);
         assert.deepEqual(vectors.resolve.argv.slice(-TOP_LEVEL_PACKAGE_PINS.length),
             TOP_LEVEL_PACKAGE_PINS.map(value => `${value.name}:${value.architecture}=${value.version}`));
+    });
+
+    it("selects the complete signed package index set across valid zero-byte checksum rows", () => {
+        const emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+        const observed = [{suite: "noble", main: {bytes: "1401160",
+            sha256: "2a6a199e1031a5c279cb346646d594993f35b1c03dd4a82aaa0323980dd92451"},
+        universe: {bytes: "15037908",
+            sha256: "ba9057fa1b91438cc8a1d26808d00c85389fe101d0c1496254df97236405599a"}},
+        {suite: "noble-updates", main: {bytes: "1262968",
+            sha256: "4963d0592fb3c977ec0b7593ec8e202b4906b048f625760742c063965da7b175"},
+        universe: {bytes: "1690332",
+            sha256: "cf06d0b20daa7eea4d4a4f4abc0fd8b29aed8389367681c6f6653c5068155265"}}];
+        const releaseFor = value => Buffer.from("-----BEGIN PGP SIGNED MESSAGE-----\nHash: SHA512\n\n" +
+            "Origin: Ubuntu\nSHA256:\n" +
+            ` ${value.main.sha256} ${value.main.bytes} main/binary-amd64/Packages.xz\n` +
+            ` ${emptyHash} 0 main/debian-installer/binary-amd64/Packages\n` +
+            ` ${value.universe.sha256} ${value.universe.bytes} universe/binary-amd64/Packages.xz\n` +
+            "Acquire-By-Hash: yes\n-----BEGIN PGP SIGNATURE-----\n");
+
+        for (const value of observed) assert.deepEqual(parseInReleaseIndexes(releaseFor(value), value.suite),
+            [{suite: value.suite, component: "main", architecture: "amd64",
+                path: `dists/${value.suite}/main/binary-amd64/Packages.xz`, bytes: value.main.bytes,
+                sha256: value.main.sha256, listedSha256: value.main.sha256},
+            {suite: value.suite, component: "universe", architecture: "amd64",
+                path: `dists/${value.suite}/universe/binary-amd64/Packages.xz`, bytes: value.universe.bytes,
+                sha256: value.universe.sha256, listedSha256: value.universe.sha256}]);
+
+        const release = releaseFor(observed[0]);
+        const mainHash = observed[0].main.sha256;
+
+        const duplicate = Buffer.from(release.toString("utf8").replace("Acquire-By-Hash: yes",
+            ` ${mainHash} ${observed[0].main.bytes} main/binary-amd64/Packages.xz\nAcquire-By-Hash: yes`));
+        assert.throws(() => parseInReleaseIndexes(duplicate, "noble"), /duplicated/u);
+        const zeroSelected = Buffer.from(release.toString("utf8").replace(
+            `${mainHash} ${observed[0].main.bytes} main/binary-amd64/Packages.xz`,
+            `${emptyHash} 0 main/binary-amd64/Packages.xz`));
+        assert.throws(() => parseInReleaseIndexes(zeroSelected, "noble"), /size/u);
+        const missing = Buffer.from(release.toString("utf8").replace(
+            "universe/binary-amd64/Packages.xz", "restricted/binary-amd64/Packages.xz"));
+        assert.throws(() => parseInReleaseIndexes(missing, "noble"), /incomplete/u);
+        const malformed = Buffer.from(release.toString("utf8").replace(emptyHash, "not-a-sha256"));
+        assert.throws(() => parseInReleaseIndexes(malformed, "noble"), /malformed/u);
     });
 
     it("resolves a selected virtual provider and rejects ambiguous providers", () => {
