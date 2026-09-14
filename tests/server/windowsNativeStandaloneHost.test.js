@@ -66,6 +66,16 @@ const hostedRequest = () => ({
 });
 
 describe("Windows native standalone host", () => {
+    it("compiles its native declarations without invoking native methods", {skip: !POWERSHELL}, () => {
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "Add-Type -TypeDefinition (Get-MyspeedStandaloneNativeSource) -Language CSharp -ErrorAction Stop; "
+            + "'compiled'";
+        const result = execFileSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.trim(), "compiled");
+    });
+
     it("is import-inert and keeps every native entry behind the real hosted guard", () => {
         const source = readFileSync(SCRIPT, "utf8");
         assert.match(source, /if\(\$Mode -ceq 'Library'\)\{return\}/u);
