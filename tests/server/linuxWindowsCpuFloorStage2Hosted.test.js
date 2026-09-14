@@ -331,11 +331,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
 
     it("parses bounded WIM metadata and removes the duplicate WIM before guest disk creation", async () => {
         const text = "WIM Information:\n----------------\nPath: /owned/install.wim\nGUID: 00000000\n\n" +
-            "Available Images:\n-----------------\n\n" +
+            "Available Images:\n-----------------\n" +
             "Index: 1\nName: Windows Server 2025 Standard Evaluation\nArchitecture: x86_64\n" +
             "Edition ID: ServerStandardEval\nInstallation Type: Server Core\nTotal Bytes: 15000000000\n\n" +
-            "Index: 2\nName: Windows Server 2025 Standard Evaluation (Desktop Experience)\nArchitecture: x86_64\n" +
-            "Edition ID: ServerStandardEval\nInstallation Type: Server\nTotal Bytes: 25000000000\n";
+            "Index: 2\nName: Windows Server 2025 SERVERSTANDARD\nArchitecture: x86_64\n" +
+            "Edition ID: ServerStandardEval\nInstallation Type: Server\nTotal Bytes: 24699866265\n";
+        assert.equal(parseWimInfo(Buffer.from(text)).length, 2);
         assert.deepEqual(parseWimInfo(Buffer.from(text))[0], {index: 1,
             name: "Windows Server 2025 Standard Evaluation", architecture: "x64", editionId: "ServerStandardEval",
             installationType: "Server Core", totalBytes: "15000000000"});

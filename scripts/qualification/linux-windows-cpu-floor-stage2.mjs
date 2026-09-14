@@ -27,8 +27,8 @@ const MACHINE_MODEL = "q35";
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
 const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
-const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 Standard Evaluation", architecture: "x64",
-    editionId: "ServerStandardEval", installationType: "Server Core"});
+const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 SERVERSTANDARD", architecture: "x64",
+    editionId: "ServerStandardEval", installationType: "Server"});
 const WIM_SELECTION_DIAGNOSTIC_KIND = "windows-server-2025-wim-selection-diagnostic";
 
 export const TOP_LEVEL_PACKAGE_PINS = deepFreeze([

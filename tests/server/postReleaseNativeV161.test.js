@@ -508,7 +508,7 @@ describe("v1.6.1 post-release Windows qualification target", () => {
             GITHUB_RUN_ID: HOSTED_RUN_ID, GITHUB_RUN_ATTEMPT: HOSTED_RUN_ATTEMPT,
             GITHUB_SHA: HARNESS_SHA, RUNNER_TEMP: "C:\\runner-temp"};
         const result = await prepareV161PostReleaseHostedCoordinator({environment, operations: {
-            now: () => new Date("2026-09-14T12:30:00Z"),
+            now: () => new Date("2026-09-14T12:30:00.789Z"),
             fetchFixedJson: async (endpoint, url) => { calls.push(["api", endpoint, url]);
                 return api.get(endpoint); },
             acquirePublicAsset: async request => { calls.push(["download", request.name, request.url]);
@@ -525,6 +525,8 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.equal(result.nativeExecutionStarted, false);
         assert.equal(result.candidateSourceSha, CANDIDATE_SHA);
         assert.equal(result.harnessSourceSha, HARNESS_SHA);
+        assert.equal(result.targetHashes.postReleaseTargetSha256,
+            jsonSha256(bindV161PostReleaseTarget(source)));
         assert.deepEqual(calls.filter(call => call[0] === "download").map(call => call[1]),
             ["qualification-manifest.json", "MySpeed-windows-x64-baseline.exe", "MySpeed-windows-x64.exe"]);
         assert.deepEqual(calls.filter(call => call[0] === "api").map(call => call.slice(1)), [

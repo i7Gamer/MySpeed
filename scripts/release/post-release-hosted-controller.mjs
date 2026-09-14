@@ -85,7 +85,7 @@ function validateHostedEnvironment(environment) {
 
 function isoSeconds(now) {
     if (!(now instanceof Date) || !Number.isFinite(now.valueOf())) fail("observation clock differs");
-    return now.toISOString().replace(".000Z", "Z");
+    return now.toISOString().replace(/\.\d{3}Z$/u, "Z");
 }
 
 function releaseAsset(asset) {

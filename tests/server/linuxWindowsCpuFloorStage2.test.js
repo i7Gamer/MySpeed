@@ -71,8 +71,8 @@ function packageClosure() {
 function imageInventory() {
     return [{index: 1, name: "Windows Server 2025 Standard Evaluation", architecture: "x64",
         editionId: "ServerStandardEval", installationType: "Server Core", totalBytes: "15000000000"},
-    {index: 2, name: "Windows Server 2025 Standard Evaluation (Desktop Experience)", architecture: "x64",
-        editionId: "ServerStandardEval", installationType: "Server", totalBytes: "25000000000"}];
+    {index: 2, name: "Windows Server 2025 SERVERSTANDARD", architecture: "x64",
+        editionId: "ServerStandardEval", installationType: "Server", totalBytes: "24699866265"}];
 }
 
 function paths() {
@@ -228,9 +228,10 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         }
     });
 
-    it("selects the exact unique supported Server Core edition from observed WIM metadata", () => {
-        assert.deepEqual(selectWindowsImage(imageInventory()), imageInventory()[0]);
-        assert.throws(() => selectWindowsImage([...imageInventory(), imageInventory()[0]]), /duplicated|unique/u);
+    it("selects the exact unique observed Standard Desktop edition from WIM metadata", () => {
+        assert.deepEqual(selectWindowsImage(imageInventory()), imageInventory()[1]);
+        assert.throws(() => selectWindowsImage([...imageInventory(), imageInventory()[1]]), /duplicated|unique/u);
+        assert.throws(() => selectWindowsImage([...imageInventory(), {...imageInventory()[1], index: 3}]), /unique/u);
         assert.throws(() => selectWindowsImage(imageInventory().map(value => ({...value, architecture: "arm64"}))),
             /unique/u);
     });
@@ -238,7 +239,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
     it("retains bounded validated WIM metadata for zero and multiple selection matches", async () => {
         const cases = [
             {matchCount: 0, images: imageInventory().map(image => ({...image, architecture: "arm64"}))},
-            {matchCount: 2, images: [...imageInventory(), {...imageInventory()[0], index: 3}]}
+            {matchCount: 2, images: [...imageInventory(), {...imageInventory()[1], index: 3}]}
         ];
         for (const {matchCount, images} of cases) {
             const fixture = operations({inspectInstallWim: async input => ({images,
@@ -303,7 +304,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(result.qualifying, false);
         assert.equal(result.releaseGateCleared, false);
         assert.equal(result.guest.network.hardwareNics, 0);
-        assert.equal(result.selectedImage.index, 1);
+        assert.equal(result.selectedImage.index, 2);
         assert.equal(result.privilegeMode, "reviewed-sudo-kvm");
         assert.equal(result.qemuProcess.qemuStartTicks, "77");
         assert.equal(result.qemuProcess.launcherExecutablePath, toolchain().runtime.loader.path);

@@ -339,7 +339,8 @@ function parseBlocks(bytes, maximumBytes, label) {
 }
 
 export function parseWimInfo(bytes) {
-    const imageBlocks = parseBlocks(bytes, MAX_WIMINFO_BYTES, "WIM metadata").filter(block => /^Index:\s*/u.test(block));
+    const imageBlocks = parseBlocks(bytes, MAX_WIMINFO_BYTES, "WIM metadata")
+        .flatMap(block => block.split(/(?=^Index:\s*)/mu)).filter(block => /^Index:\s*/u.test(block));
     if (imageBlocks.length < 1 || imageBlocks.length > 64) throw new TypeError("WIM image set is invalid");
     return imageBlocks.map(block => {
         const fields = new Map();
