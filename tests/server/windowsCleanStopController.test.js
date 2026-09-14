@@ -543,6 +543,8 @@ describe("Windows clean-stop controller prototype", () => {
 
     it("pins x64 ABI, handle-list, Job, and Ctrl+C mechanics", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /launch=\{[\s\S]*?\$environment=\[Collections\.Generic\.Dictionary\[string,string\]\]::new\(\[StringComparer\]::Ordinal\)[\s\S]*?\$environment\.Add\(\$property\.Name,\[string\]\$property\.Value\)[\s\S]*?Session\]::Launch\([^\r\n]+\$environment,/u,
+            "the native Launch IDictionary parameter must receive the exact generic dictionary type");
         for (const token of [
             "STARTUPINFOEXW", "PROC_THREAD_ATTRIBUTE_HANDLE_LIST", "UpdateProcThreadAttribute",
             "CREATE_SUSPENDED", "CREATE_NEW_CONSOLE", "CREATE_UNICODE_ENVIRONMENT",
@@ -609,6 +611,19 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$request \$loaded\.sha256 \$abiSha \$operations/u);
         assert.match(source, /\$state=Invoke-MyspeedCleanLifecycleCore \$launchRequest \('d'\*64\) \('8'\*64\) \$operations/u);
         assert.match(source, /Assert-MyspeedCleanPhysicalLaunchPaths \$request[\s\S]*?entryDiagnosticPath[\s\S]*?try\{[\s\S]*?Add-Type[\s\S]*?Write-MyspeedCleanEntryFailure/u);
+    });
+
+    powershellIt("binds the exact launch environment to generic IDictionary", () => {
+        const command = "$value=[pscustomobject]@{A='';B='two'};" +
+            "$environment=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal);" +
+            "foreach($property in $value.PSObject.Properties){$environment.Add($property.Name,[string]$property.Value)};" +
+            "function Read-Environment([Collections.Generic.IDictionary[string,string]]$env){$env['A'].Length.ToString()+'|'+$env['B']};" +
+            "[Console]::Out.Write((Read-Environment $environment))";
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, "0|two");
     });
 
     powershellIt("writes a bounded create-new diagnostic for failures after physical request validation", () => {

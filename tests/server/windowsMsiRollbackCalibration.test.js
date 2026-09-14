@@ -26,6 +26,10 @@ const INSTALLEND = 0x1B000000;
 const OBSOLETE_INSTALLSTART = 0x10000000;
 const OBSOLETE_INSTALLEND = 0x11000000;
 const ERROR_RETRY_CANCEL = 0x01000005;
+const ERROR_CREATING_DESTINATION_FILE = 1310;
+const EXPECTED_SYSTEM_ERROR = "0";
+const ERROR_FIELD_COUNT = 3;
+const ERROR_CODE_FIELD_INDEX = 0;
 const REQUIRED_CALLBACK_MESSAGE_FILTER = 0x0C000303;
 const UINT32_MAX = 0xFFFFFFFF;
 const callbackRecords = () => [
@@ -40,8 +44,9 @@ const callbackRecords = () => [
     {messageTypeCode: ACTIONDATA, fieldCount: 9,
         fields: ["RollbackPayloadFile", "", "", "", "", "10", "", "", "RollbackRoot"],
         field1Integer: null},
-    {messageTypeCode: ERROR_RETRY_CANCEL, fieldCount: 2,
-        fields: ["1304", "C:\\ProgramData\\owned\\rollback-payload.txt"], field1Integer: 1304}
+    {messageTypeCode: ERROR_RETRY_CANCEL, fieldCount: ERROR_FIELD_COUNT,
+        fields: [String(ERROR_CREATING_DESTINATION_FILE), EXPECTED_SYSTEM_ERROR,
+            "C:\\ProgramData\\owned\\rollback-payload.txt"], field1Integer: ERROR_CREATING_DESTINATION_FILE}
 ];
 
 const invoke = (mode, input) => childProcess.spawnSync(POWERSHELL, [
@@ -251,7 +256,8 @@ describe("sacrificial MSI rollback calibration harness", () => {
             [3, "ACTIONSTART", 0], [4, "ACTIONDATA", 0], [5, "ERROR", 5]
         ]);
         assert.deepEqual(value.records[5].fields, records[5].fields);
-        assert.equal(value.records[5].field1Integer, 1304);
+        assert.equal(value.records[5].field1Integer, ERROR_CREATING_DESTINATION_FILE);
+        assert.equal(value.records[5].fields[ERROR_CODE_FIELD_INDEX], String(ERROR_CREATING_DESTINATION_FILE));
     });
 
     boundedTest("accepts canonical typed install start/end classes and rejects obsolete fake class values", () => {

@@ -15,6 +15,19 @@ const HAS_POWERSHELL = process.platform === "win32" ||
         {timeout: PROCESS_TIMEOUT_MS}).status === 0;
 const boundedTest = (name, fn) => it(name, {timeout: PROCESS_TIMEOUT_MS,
     skip: !HAS_POWERSHELL && "PowerShell unavailable"}, fn);
+const MESSAGE_CLASS_MASK = 0xFF00_0000;
+const ERROR_MESSAGE_CLASS = 0x0100_0000;
+const MESSAGE_STYLE_MASK = 0x0000_000F;
+const RETRY_CANCEL_STYLE = 5;
+const ABORT_RETRY_IGNORE_STYLE = 2;
+const OBSERVED_ERROR_MESSAGE = ERROR_MESSAGE_CLASS | RETRY_CANCEL_STYLE;
+const OBSERVED_ERROR_CODE = 1310;
+const OBSERVED_SYSTEM_ERROR = "0";
+const OBSERVED_ERROR_FIELD_COUNT = 3;
+const OBSERVED_ERROR_CODE_FIELD_INDEX = 0;
+const OBSERVED_SYSTEM_ERROR_FIELD_INDEX = 1;
+const OBSERVED_TARGET_FIELD_INDEX = 2;
+const DIFFERENT_ERROR_CODE = 1304;
 const run = (mode, input = {}) => {
     const result = childProcess.spawnSync(POWERSHELL,
         ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT,
@@ -101,13 +114,21 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.match(source, /RemoveExistingProducts/);
         assert.match(source, /InstallFiles/);
         assert.match(source, /ErrorRetryCancelStyle/);
-        assert.match(source, /ErrorAbortRetryIgnoreStyle/);
         assert.match(source, /ResponseCancel/);
-        assert.match(source, /ResponseAbort/);
-        assert.match(source, /ErrorWritingToFile\s*=\s*1304/);
-        assert.match(source, /record\.Field1Integer\s*!=\s*ErrorWritingToFile/,
+        assert.match(source, /ErrorCreatingDestinationFile\s*=\s*1310/);
+        assert.match(source, /ExpectedSystemError\s*=\s*0/);
+        assert.match(source, /record\.Field1Integer\s*!=\s*ErrorCreatingDestinationFile/,
             "a different target-bound MSI error must not trigger cancellation acceptance");
-        assert.doesNotMatch(source, /ExpectedErrorCode\s*=\s*1304|messageTypeCode\s*=\s*0x01000005/);
+        assert.match(source, /ExpectedErrorFieldCount\s*=\s*3/);
+        assert.match(source, /ExpectedErrorCodeFieldIndex\s*=\s*0/);
+        assert.match(source, /ExpectedSystemErrorFieldIndex\s*=\s*1/);
+        assert.match(source, /ExpectedTargetFieldIndex\s*=\s*2/);
+        assert.match(source, /record\.Fields\.Length!=ExpectedErrorFieldCount/);
+        assert.match(source, /record\.Fields\[ExpectedErrorCodeFieldIndex\]!=ErrorCreatingDestinationFile\.ToString/);
+        assert.match(source, /record\.Fields\[ExpectedSystemErrorFieldIndex\]!=ExpectedSystemError\.ToString/);
+        assert.match(source, /!MatchesTarget\(record\.Fields\[ExpectedTargetFieldIndex\]\)/);
+        assert.match(source, /style!=ErrorRetryCancelStyle/);
+        assert.doesNotMatch(source, /ErrorAbortRetryIgnoreStyle|ResponseAbort/);
         assert.match(source, /RestoreOriginalSecurity\(\);[\s\S]*return\s+ErrorResponse/);
         assert.match(source, /if\(SecurityRestoredBeforeCancel\)return ResponseOk/);
         assert.match(source, /if\(DenyInjectionAttempted\)\{[\s\S]*lease\.ProveCreateDenied\(targetPath\)[\s\S]*return ResponseOk[\s\S]*DenyInjectionAttempted=true;[\s\S]*lease\.ApplyDeny\(\)/,
@@ -129,6 +150,30 @@ describe("hosted sacrificial MSI native adapter", () => {
         assert.match(source, /FailureNativeErrorCode/);
         assert.match(source, /CleanupFailureStage/);
         assert.match(source, /CleanupFailureNativeErrorCode/);
+    });
+
+    it("matches only the retained 1310 RetryCancel record with system error zero and exact destination", () => {
+        const target = "C:\\ProgramData\\MyspeedRollback-be623b6cfcc34c0fafd3a927bbcbde15\\rollback-payload.txt";
+        const matches = ({messageType, field1Integer, fields}) =>
+            (messageType & MESSAGE_CLASS_MASK) === ERROR_MESSAGE_CLASS
+            && (messageType & MESSAGE_STYLE_MASK) === RETRY_CANCEL_STYLE
+            && field1Integer === OBSERVED_ERROR_CODE
+            && fields.length === OBSERVED_ERROR_FIELD_COUNT
+            && fields[OBSERVED_ERROR_CODE_FIELD_INDEX] === String(OBSERVED_ERROR_CODE)
+            && fields[OBSERVED_SYSTEM_ERROR_FIELD_INDEX] === OBSERVED_SYSTEM_ERROR
+            && path.win32.resolve(fields[OBSERVED_TARGET_FIELD_INDEX]).toLowerCase()
+                === path.win32.resolve(target).toLowerCase();
+        const retained = {messageType: OBSERVED_ERROR_MESSAGE, field1Integer: OBSERVED_ERROR_CODE,
+            fields: [String(OBSERVED_ERROR_CODE), OBSERVED_SYSTEM_ERROR, target]};
+        assert.equal(matches(retained), true);
+        for (const mutate of [value => { value.field1Integer = DIFFERENT_ERROR_CODE; },
+            value => { value.fields[OBSERVED_ERROR_CODE_FIELD_INDEX] = `0${OBSERVED_ERROR_CODE}`; },
+            value => { value.fields[OBSERVED_SYSTEM_ERROR_FIELD_INDEX] = "5"; },
+            value => { value.fields[OBSERVED_TARGET_FIELD_INDEX] = "C:\\ProgramData\\Other"; },
+            value => { value.fields.push("extra"); },
+            value => { value.messageType = ERROR_MESSAGE_CLASS | ABORT_RETRY_IGNORE_STYLE; }]) {
+            const changed = structuredClone(retained); mutate(changed); assert.equal(matches(changed), false);
+        }
     });
 
     it("matches the retained hosted InstallFiles ACTIONDATA filename, size, and resolved directory", () => {

@@ -968,7 +968,10 @@ function Invoke-MyspeedHostedCleanStopController {
         record={param($phase)[void]$events.Add($phase)}.GetNewClosure()
         elapsed={return [int64]$watch.ElapsedMilliseconds}.GetNewClosure()
         assertConsoleFree={[MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree()}
-        launch={param($launchRequest,$normalRemaining,$hardRemaining)$environment=@{};foreach($property in $launchRequest.environment.PSObject.Properties){$environment[$property.Name]=[string]$property.Value};return [MySpeed.Qualification.CleanStop.Session]::Launch($launchRequest.candidatePath,$launchRequest.candidateSha256,$launchRequest.candidateVolumeSerial,$launchRequest.candidateFileId,[string[]]$launchRequest.arguments,$launchRequest.workingDirectory,$environment,$launchRequest.stdoutPath,$launchRequest.stderrPath,[uint32]$normalRemaining,[uint32]$hardRemaining)}
+        launch={param($launchRequest,$normalRemaining,$hardRemaining)
+            $environment=[Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
+            foreach($property in $launchRequest.environment.PSObject.Properties){$environment.Add($property.Name,[string]$property.Value)}
+            return [MySpeed.Qualification.CleanStop.Session]::Launch($launchRequest.candidatePath,$launchRequest.candidateSha256,$launchRequest.candidateVolumeSerial,$launchRequest.candidateFileId,[string[]]$launchRequest.arguments,$launchRequest.workingDirectory,$environment,$launchRequest.stdoutPath,$launchRequest.stderrPath,[uint32]$normalRemaining,[uint32]$hardRemaining)}
         launchForced={return [MySpeed.Qualification.CleanStop.Session]::LastLaunchForced}
         writeReady={param($ready)return & $writeJson $request.readyPath $ready}.GetNewClosure()
         stdoutReadinessExists={return Test-Path -LiteralPath $request.stdoutReadinessPath -PathType Leaf}.GetNewClosure()

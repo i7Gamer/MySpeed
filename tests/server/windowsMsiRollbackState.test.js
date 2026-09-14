@@ -34,7 +34,9 @@ const ACTIONDATA_MESSAGE = 0x0900_0000;
 const ERROR_RETRY_CANCEL_MESSAGE = 0x0100_0005;
 const ERROR_OK_MESSAGE = 0x0100_0000;
 const PREDECESSOR_PRODUCT_CODE = "{11111111-2222-3333-4444-555555555555}";
-const REPRESENTATIVE_STANDARD_INSTALLFILES_ERROR = 1304;
+const OBSERVED_CREATE_DESTINATION_ERROR = 1310;
+const OBSERVED_SYSTEM_ERROR = "0";
+const ERROR_SYSTEM_PARAMETER_INDEX = 0;
 const PAYLOAD_BYTES = 4096;
 
 const clone = value => structuredClone(value);
@@ -48,8 +50,8 @@ const removalActionDataRecord = () => ({messageTypeCode: ACTIONDATA_MESSAGE,
 const actionDataRecord = () => ({messageTypeCode: ACTIONDATA_MESSAGE, fileToken: "RollbackPayloadFile",
     directoryToken: "RollbackTargetDir", sizeBytes: PAYLOAD_BYTES});
 const errorRecord = () => ({messageTypeCode: ERROR_RETRY_CANCEL_MESSAGE,
-    errorCode: REPRESENTATIVE_STANDARD_INSTALLFILES_ERROR,
-    parameters: [TARGET_FILE_PATH]});
+    errorCode: OBSERVED_CREATE_DESTINATION_ERROR,
+    parameters: [OBSERVED_SYSTEM_ERROR, TARGET_FILE_PATH]});
 
 const validSimulation = () => ({
     request: {
@@ -174,7 +176,7 @@ describe("sacrificial MSI rollback callback state", () => {
             input => { input.events[3].directoryToken = "OtherDirectory"; },
             input => { input.events[3].sizeBytes += 1; },
             input => { input.events[4].errorCode += 1; },
-            input => { input.events[4].parameters[0] = "OtherFile"; }
+            input => { input.events[4].parameters[ERROR_SYSTEM_PARAMETER_INDEX] = "OtherFile"; }
         ];
         for (const mutate of mutations) {
             const input = validSimulation();
@@ -282,6 +284,8 @@ describe("sacrificial MSI rollback callback state", () => {
             input => { input.request.originalSecurity = "ABC"; },
             input => { input.request.targetFilePath = OTHER_PATH; },
             input => { input.request.expectedErrorRecord.errorCode = 25_001; },
+            input => { input.request.expectedErrorRecord.parameters[ERROR_SYSTEM_PARAMETER_INDEX] = "5"; },
+            input => { input.request.expectedErrorRecord.parameters.pop(); },
             input => { input.events[0].messageTypeCode = "134217728"; },
             input => { input.events[4].messageTypeCode = ERROR_OK_MESSAGE; },
             input => { input.events[4].parameters = "RollbackPayloadFile"; },

@@ -16,9 +16,7 @@ $script:ActionDataMessageCode = 0x09000000
 $script:ErrorMessageCode = 0x01000000
 $script:MessageClassMask = 0xFF000000
 $script:MessageStyleMask = 0x0000000F
-$script:AbortRetryIgnoreStyle = 0x00000002
 $script:ResponseOk = 'IDOK'
-$script:ResponseAbort = 'IDABORT'
 $script:ResponseCancel = 'IDCANCEL'
 $script:ResponseUnauthorized = 'UNAUTHORIZED'
 $script:MaximumPathCharacters = 1024
@@ -26,7 +24,11 @@ $script:MaximumRecordFields = 16
 $script:MaximumRecordFieldCharacters = 4096
 $script:MinimumStandardInstallerError = 1000
 $script:MaximumStandardInstallerError = 1999
-$script:ErrorWritingToFile = 1304
+$script:ErrorCreatingDestinationFile = 1310
+$script:ExpectedSystemError = 0
+$script:ExpectedErrorParameterCount = 2
+$script:ExpectedSystemErrorParameterIndex = 0
+$script:ExpectedTargetParameterIndex = 1
 $script:RetryCancelStyle = 0x00000005
 $script:InstallUserExit = 1602
 
@@ -180,7 +182,7 @@ function Assert-MyspeedErrorRecord {
     Assert-MyspeedMessageCode $Record.messageTypeCode "$Label messageTypeCode"
     $messageStyle = [long]$Record.messageTypeCode -band $script:MessageStyleMask
     if (([long]$Record.messageTypeCode -band $script:MessageClassMask) -ne $script:ErrorMessageCode -or
-        $messageStyle -notin @($script:AbortRetryIgnoreStyle, $script:RetryCancelStyle)) {
+        $messageStyle -ne $script:RetryCancelStyle) {
         throw "$Label must be an ERROR record whose raw message style supports a reviewed cancel response"
     }
     if (-not (Test-MyspeedExactInteger $Record.errorCode) -or
@@ -263,10 +265,14 @@ function Assert-MyspeedRollbackRequest {
     Assert-MyspeedActionStartRecord $Request.expectedActionRecord 'Expected action record' $script:InstallFilesAction
     Assert-MyspeedActionDataRecord $Request.expectedActionDataRecord 'Expected action-data record'
     Assert-MyspeedErrorRecord $Request.expectedErrorRecord 'Expected error record'
-    if ([long]$Request.expectedErrorRecord.errorCode -ne $script:ErrorWritingToFile -or
-        $Request.expectedErrorRecord.parameters.Count -ne 1 -or
-        -not (Test-MyspeedOrdinalEqual $Request.expectedErrorRecord.parameters[0] $Request.targetFilePath)) {
-        throw 'Expected error record must be exact error 1304 for the canonical sacrificial target file'
+    $expectedSystemError = [string]$script:ExpectedSystemError
+    if ([long]$Request.expectedErrorRecord.messageTypeCode -ne
+        ([long]$script:ErrorMessageCode -bor [long]$script:RetryCancelStyle) -or
+        [long]$Request.expectedErrorRecord.errorCode -ne $script:ErrorCreatingDestinationFile -or
+        $Request.expectedErrorRecord.parameters.Count -ne $script:ExpectedErrorParameterCount -or
+        -not (Test-MyspeedOrdinalEqual $Request.expectedErrorRecord.parameters[$script:ExpectedSystemErrorParameterIndex] $expectedSystemError) -or
+        -not (Test-MyspeedOrdinalEqual $Request.expectedErrorRecord.parameters[$script:ExpectedTargetParameterIndex] $Request.targetFilePath)) {
+        throw 'Expected error record must be exact observed error 1310, system error 0, and canonical target file'
     }
 }
 
@@ -511,9 +517,7 @@ function Invoke-MyspeedErrorCallback {
         return Reject-MyspeedCallback $State 'Unrecognized ERROR code or parameters' $true
     }
     $messageStyle = [long]$Event.messageTypeCode -band $script:MessageStyleMask
-    $cancelResponse = if ($messageStyle -eq $script:AbortRetryIgnoreStyle) {
-        $script:ResponseAbort
-    } elseif ($messageStyle -eq $script:RetryCancelStyle) {
+    $cancelResponse = if ($messageStyle -eq $script:RetryCancelStyle) {
         $script:ResponseCancel
     } else {
         $null
@@ -626,8 +630,8 @@ function Get-MyspeedRollbackStateContract {
         qualifying = $false
         nativeMsiApiInvoked = $false
         filesystemMutationAuthorized = $false
-        acceptedResponses = @($script:ResponseOk, $script:ResponseAbort, $script:ResponseCancel)
-        errorSignatureCalibrationRequired = $true
+        acceptedResponses = @($script:ResponseOk, $script:ResponseCancel)
+        errorSignatureCalibrationRequired = $false
         directNativeCallbackSafe = $false
         requiredNativeAdapterProofs = @('bounded-record-c-fill', 'typed-record-field-extraction',
             'rooted-delegate-through-install-return', 'none-ui-and-handler-restoration',
