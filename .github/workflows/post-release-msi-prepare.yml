@@ -1,0 +1,94 @@
+name: Prepare post-release v1.6.1 MSI evidence
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'i7Gamer/MySpeed'
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up pinned Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Capture immutable published target metadata
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          CAPTURE_PATH: ${{ runner.temp }}\post-release-msi-captured.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const owner = 'i7Gamer'; const repo = 'MySpeed';
+            const [{data: tag}, {data: run}, {data: artifact}, {data: release}] = await Promise.all([
+              github.rest.git.getRef({owner, repo, ref: 'tags/v1.6.1'}),
+              github.rest.actions.getWorkflowRun({owner, repo, run_id: 34829932391}),
+              github.rest.actions.getArtifact({owner, repo, artifact_id: 10342345489}),
+              github.rest.repos.getReleaseByTag({owner, repo, tag: 'v1.6.1'})
+            ]);
+            const captured = {
+              tag: {repository: `${owner}/${repo}`, name: 'v1.6.1', commitSha: tag.object.sha},
+              qualificationRun: {repository: `${owner}/${repo}`, id: run.id, attempt: run.run_attempt,
+                headSha: run.head_sha, event: run.event, status: run.status, conclusion: run.conclusion,
+                workflowName: run.name, createdAt: run.created_at, updatedAt: run.updated_at},
+              qualificationArchive: {repository: `${owner}/${repo}`, id: artifact.id, name: artifact.name,
+                size: artifact.size_in_bytes, digest: artifact.digest, expired: artifact.expired,
+                createdAt: artifact.created_at, updatedAt: artifact.updated_at, expiresAt: artifact.expires_at,
+                runId: artifact.workflow_run?.id, runAttempt: run.run_attempt,
+                headSha: artifact.workflow_run?.head_sha},
+              release: {repository: `${owner}/${repo}`, id: release.id, tagName: release.tag_name,
+                targetCommitish: release.target_commitish, createdAt: release.created_at,
+                publishedAt: release.published_at, draft: release.draft, prerelease: release.prerelease,
+                platformImmutable: release.immutable, assets: release.assets.map(asset => ({id: asset.id,
+                  name: asset.name, size: asset.size, digest: asset.digest, state: asset.state,
+                  url: asset.browser_download_url, createdAt: asset.created_at, updatedAt: asset.updated_at}))}
+            };
+            fs.writeFileSync(process.env.CAPTURE_PATH, JSON.stringify(captured), {flag: 'wx'});
+
+      - name: Acquire exact published qualification manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:RUNNER_TEMP 'qualification-manifest.json'
+          Invoke-WebRequest -Uri 'https://github.com/i7Gamer/MySpeed/releases/download/v1.6.1/qualification-manifest.json' `
+            -OutFile $path -UseBasicParsing
+          $item = Get-Item -LiteralPath $path -Force
+          $hash = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($item.Length -ne 21518 -or $hash -cne '7339a6446d048bbae93759734bcafc94208e2b847af15677e847ae9a4b2f8bca') {
+            throw 'Published qualification manifest differs'
+          }
+
+      - name: Acquire and inspect exact MSI preparation inputs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bundle = Join-Path $env:RUNNER_TEMP 'post-release-msi-preparation'
+          $files = Join-Path $bundle 'files'
+          $result = Join-Path $bundle 'result.json'
+          $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+          node scripts/release/post-release-msi-prepare-controller.mjs `
+            --captured (Join-Path $env:RUNNER_TEMP 'post-release-msi-captured.json') `
+            --manifest (Join-Path $env:RUNNER_TEMP 'qualification-manifest.json') `
+            --root $files --output $result --pwsh $pwsh
+          if ($LASTEXITCODE -ne 0) { throw 'Hosted MSI preparation failed' }
+
+      - name: Upload nonqualifying preparation artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: post-release-v1.6.1-msi-preparation
+          path: ${{ runner.temp }}\post-release-msi-preparation
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
