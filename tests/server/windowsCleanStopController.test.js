@@ -620,6 +620,8 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /Assert-MyspeedCleanPhysicalLaunchPaths \$request[\s\S]*?entryDiagnosticPath[\s\S]*?try\{[\s\S]*?Add-Type[\s\S]*?Write-MyspeedCleanEntryFailure/u);
         assert.match(source, /SharingViolationWin32Code\s*=\s*32/u);
         assert.match(source, /Read-MyspeedCleanBoundedJsonUntilStable[\s\S]*Test-MyspeedCleanSharingViolation/u);
+        assert.match(source, /if\(\$Mode -ceq 'InvokeHostedController'\)\{\[void\]\$output\}else\{\$output\|ConvertTo-Json/u,
+            "the console-free hosted process must not publish its successful result to an absent stdout handle");
         assert.match(source, /readStdoutReadiness=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
         assert.match(source, /readStop=\{param\(\$deadline\)[\s\S]*?\$readStable/u);
         assert.match(source, /public static CandidateFileIdentity InspectCandidate/u);
@@ -641,6 +643,32 @@ describe("Windows clean-stop controller prototype", () => {
             {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
         assert.equal(result.status, 0, result.stderr);
         assert.equal(result.stdout, "0|two");
+    });
+
+    powershellIt("does not write the successful hosted result to an absent outer stdout handle", () => {
+        const command = String.raw`
+$ErrorActionPreference='Stop'
+$PSModuleAutoloadingPreference='None'
+. $env:MYSPEED_CONTROLLER_SCRIPT -Mode Library
+function Invoke-MyspeedHostedCleanStopController {
+  param($RequestPath,$RequestSha,$RunId,$RunAttempt,$EventSha,$SourceSha,$ImageVersion,$ExpectedNonce)
+  [pscustomobject]@{status='completed';controllerLifecyclePassed=$true}
+}
+$tokens=$null;$parseErrors=$null
+$ast=[Management.Automation.Language.Parser]::ParseFile($env:MYSPEED_CONTROLLER_SCRIPT,[ref]$tokens,[ref]$parseErrors)
+if($parseErrors.Count -ne 0){throw 'Controller parse failed'}
+$dispatcher=@($ast.EndBlock.Statements|Where-Object {$_ -is [Management.Automation.Language.TryStatementAst]})[-1]
+if($null -eq $dispatcher){throw 'Controller dispatcher was not found'}
+$Mode='InvokeHostedController';$LaunchRequestPath='x';$ExpectedLaunchRequestSha256='a';$ExpectedRunId='1'
+$ExpectedRunAttempt='1';$ExpectedEventSha='b';$ExpectedSourceSha='c';$ExpectedImageVersion='d';$Nonce='e'
+$captured=@(& ([scriptblock]::Create($dispatcher.Extent.Text)))
+if($captured.Count -ne 0){throw 'Hosted dispatcher wrote pipeline output'}
+[Console]::Out.Write('PASS')`;
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, env: {...process.env, MYSPEED_CONTROLLER_SCRIPT: SCRIPT}});
+        assert.equal(result.status, 0, result.stderr || result.stdout);
+        assert.equal(result.stdout, "PASS");
     });
 
     powershellIt("writes a bounded create-new diagnostic for failures after physical request validation", () => {

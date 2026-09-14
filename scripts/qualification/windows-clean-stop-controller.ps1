@@ -1146,5 +1146,5 @@ try{
                 (Assert-MyspeedCleanString $value.message 'Entry failure message')}
         'InvokeHostedController' {Invoke-MyspeedHostedCleanStopController -RequestPath $LaunchRequestPath -RequestSha $ExpectedLaunchRequestSha256 -RunId $ExpectedRunId -RunAttempt $ExpectedRunAttempt -EventSha $ExpectedEventSha -SourceSha $ExpectedSourceSha -ImageVersion $ExpectedImageVersion -ExpectedNonce $Nonce}
     }
-    $output|ConvertTo-Json -Depth 30 -Compress
+    if($Mode -ceq 'InvokeHostedController'){[void]$output}else{$output|ConvertTo-Json -Depth 30 -Compress}
 }catch{[Console]::Error.WriteLine($_.Exception.Message);exit 1}
