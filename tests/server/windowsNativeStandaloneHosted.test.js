@@ -174,6 +174,17 @@ describe("Windows native standalone hosted request factory", () => {
             readBytes: async file => files.get(file)
         });
         assert.equal(invocations.length, 1);
+        const hostJsonLimit = 262_144;
+        const windowsLineEndingBytes = 2;
+        assert.ok(invocations[0].maximumOutputBytes >= hostJsonLimit + windowsLineEndingBytes,
+            "stdout must fit the host's full bounded JSON result and line ending");
+        assert.ok(invocations[0].maximumOutputBytes >= evidence.hostResultBytes.length + windowsLineEndingBytes);
+        const forcedCleanupTimeoutMs = 10_000;
+        const postDeadlineCleanupOperations = 8;
+        const coldStartupAllowanceMs = 60_000;
+        assert.ok(invocations[0].timeoutMilliseconds >= hostRequest.hardDeadlineMs
+            + postDeadlineCleanupOperations * forcedCleanupTimeoutMs + coldStartupAllowanceMs,
+        "outer termination must leave room for cold startup and bounded cleanup after the inner deadline");
         assert.equal(invocations[0].executable, proofRequest.powershellPath);
         assert.deepEqual(invocations[0].arguments.slice(0, 4), ["-NoLogo", "-NoProfile", "-NonInteractive",
             "-ExecutionPolicy"]);

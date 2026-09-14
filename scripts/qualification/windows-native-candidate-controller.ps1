@@ -25,6 +25,7 @@ $script:ImageOS='win25-vs2026'
 $script:MaximumJsonBytes=262144
 $script:MaximumControllerBytes=2097152
 $script:MaximumCandidateBytes=536870912
+$script:MaximumFailureCharacters=512
 $script:NormalDeadlineMs=300000
 $script:HardDeadlineMs=310000
 $script:StopTimeoutMs=240000
@@ -69,6 +70,16 @@ function Assert-MyspeedCandidateInteger {
 function Assert-MyspeedCandidateBoolean {
     param([object]$Value,[string]$Label)
     if($Value -isnot [bool]){throw "$Label must be Boolean"};return [bool]$Value
+}
+
+function Get-MyspeedCandidateFailureMessage {
+    param([object]$Failure)
+    $message=if($Failure -is [Management.Automation.ErrorRecord]){[string]$Failure.Exception.Message}
+        elseif($Failure -is [Exception]){[string]$Failure.Message}else{[string]$Failure}
+    $message=[regex]::Replace($message,'[\x00-\x1f\x7f]+',' ')
+    if($message.Length -gt $script:MaximumFailureCharacters){$message=$message.Substring(0,$script:MaximumFailureCharacters)}
+    if(-not $message){$message='unspecified failure'}
+    return $message
 }
 
 function Assert-MyspeedCandidatePath {
@@ -238,7 +249,7 @@ function Invoke-MyspeedCandidateLifecycleCore {
     [void](Assert-MyspeedCandidateRequest $Request)
     $required=@('elapsed','assertConsoleFree','launch','writeReady','stopExists','readStop','sleep','stop','lastResult','active','force','close')
     Assert-MyspeedCandidateKeys $Operations $required 'Candidate lifecycle operations'
-    $failures=[Collections.Generic.List[string]]::new();$session=$null;$native=$null;$nativeEvidence=$null;$handlesClosed=$false;$handleCleanupAttempted=$false;$active=$null;$ready=$null
+    $failures=[Collections.Generic.List[string]]::new();$failureDetails=[Collections.Generic.List[object]]::new();$session=$null;$native=$null;$nativeEvidence=$null;$handlesClosed=$false;$handleCleanupAttempted=$false;$active=$null;$ready=$null
     $launchAttempted=$false;$started=0L
     try{
         $entryElapsed=Assert-MyspeedCandidateInteger (& $Operations.elapsed) 'Candidate entry monotonic time' 0 9223372036854775807
@@ -280,7 +291,8 @@ function Invoke-MyspeedCandidateLifecycleCore {
             $observedNative=& $Operations.stop $session $grace $cleanupBudget
             $nativeEvidence=Assert-MyspeedCandidateNativeShape $observedNative;$native=Assert-MyspeedCandidateNativeResult $nativeEvidence $Request
         }
-    }catch{[void]$failures.Add('candidate-lifecycle-failed')}
+    }catch{[void]$failures.Add('candidate-lifecycle-failed')
+        [void]$failureDetails.Add([pscustomobject]@{phase='lifecycle';failure=(Get-MyspeedCandidateFailureMessage $_)})}
     finally{
         if($launchAttempted){
             try{
@@ -293,21 +305,26 @@ function Invoke-MyspeedCandidateLifecycleCore {
                     if($null -ne $observedCleanup){$nativeEvidence=Assert-MyspeedCandidateNativeShape $observedCleanup}
                     $active=Assert-MyspeedCandidateInteger (& $Operations.active $session) 'Candidate final active process count' 0 4294967295
                 }
-            }catch{[void]$failures.Add('candidate-cleanup-failed')}
+            }catch{[void]$failures.Add('candidate-cleanup-failed')
+                [void]$failureDetails.Add([pscustomobject]@{phase='cleanup';failure=(Get-MyspeedCandidateFailureMessage $_)})}
             try{$handleCleanupAttempted=$true;$handlesClosed=Assert-MyspeedCandidateBoolean (& $Operations.close $session) 'Candidate handles closed'}
-            catch{[void]$failures.Add('candidate-handle-cleanup-failed')}
+            catch{[void]$failures.Add('candidate-handle-cleanup-failed')
+                [void]$failureDetails.Add([pscustomobject]@{phase='handle-cleanup';failure=(Get-MyspeedCandidateFailureMessage $_)})}
         }
     }
     $elapsed=Assert-MyspeedCandidateInteger (& $Operations.elapsed) 'Candidate final monotonic time' $started 9223372036854775807
     $passed=$failures.Count -eq 0 -and $elapsed-$started -le $script:NormalDeadlineMs -and $handlesClosed -and $active -eq 0
-    if($passed){try{[void](Assert-MyspeedCandidateNativeResult $native $Request)}catch{$passed=$false;[void]$failures.Add('candidate-proof-failed')}}
-    return [pscustomobject][ordered]@{schemaVersion=1;kind=$script:ResultKind;status=if($passed){'completed'}else{'failed'}
+    if($passed){try{[void](Assert-MyspeedCandidateNativeResult $native $Request)}catch{$passed=$false;[void]$failures.Add('candidate-proof-failed')
+            [void]$failureDetails.Add([pscustomobject]@{phase='proof';failure=(Get-MyspeedCandidateFailureMessage $_)})}}
+    $result=[pscustomobject][ordered]@{schemaVersion=1;kind=$script:ResultKind;status=if($passed){'completed'}else{'failed'}
         qualifying=$false;releaseGatesCleared=@();alias=$Request.alias;artifactLogicalName=$Request.artifactLogicalName;scenario=$Request.scenario
         stopKind=if($Request.scenario -ceq 'fresh-no-config-reset'){'observed-exit'}else{'ctrl-c'}
         candidatePid=if($null -eq $session){$null}else{$session.candidatePid};candidateCreationTime=if($null -eq $session){$null}else{$session.candidateCreationTime}
         candidateExited=($null -ne $nativeEvidence -and [bool]$nativeEvidence.candidateExited);exitCode=if($null -eq $nativeEvidence){$null}else{[int64]$nativeEvidence.exitCode}
         forced=($null -ne $nativeEvidence -and [bool]$nativeEvidence.forced);jobActiveProcesses=$active;handleCleanupAttempted=$handleCleanupAttempted;handlesClosed=$handlesClosed
         processTreeExitProven=($active -eq 0);listenerGone=$false;elapsedMs=($elapsed-$started);failures=@($failures)}
+    if(-not $passed){Add-Member -InputObject $result -NotePropertyName failureDetails -NotePropertyValue ([object[]]$failureDetails)}
+    return $result
 }
 
 function Invoke-MyspeedCandidateInjectedLifecycle {

@@ -12,6 +12,9 @@ const POWERSHELL = (process.env.SystemRoot || "C:\\Windows")
     + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const TEST_TIMEOUT_MS = 30_000;
 const MAXIMUM_CANDIDATE_BYTES = 536_870_912;
+const MAXIMUM_FAILURE_CHARACTERS = 512;
+const FIRST_PRINTABLE_CHARACTER_CODE = 32;
+const DELETE_CHARACTER_CODE = 127;
 const HASH = "a".repeat(64);
 const NONCE = "b".repeat(32);
 const TASK_ROOT = `C:\\a\\_temp\\myspeed-native-candidate-${NONCE}`;
@@ -259,6 +262,7 @@ describe("Windows native candidate controller", () => {
             assert.equal(result.scenario, scenario);
             assert.equal(result.stopKind, scenario === "fresh-no-config-reset" ? "observed-exit" : "ctrl-c");
             assert.equal(result.exitCode, scenario === "fresh-no-config-reset" ? 113 : 0);
+            assert.equal(Object.hasOwn(result, "failureDetails"), false);
         }
     });
 
@@ -286,6 +290,33 @@ describe("Windows native candidate controller", () => {
                 assert.equal(result.processTreeExitProven, true);
             }
         }
+    });
+
+    powershellIt("retains bounded lifecycle and cleanup failure details without changing passing results", () => {
+        const lifecycleFailure = lifecycle();
+        lifecycleFailure.launch.threadHandleClosedBeforeReady = false;
+        const failedLifecycle = invoke("TestLifecycle", lifecycleFailure);
+        assert.deepEqual(failedLifecycle.failureDetails, [{phase: "lifecycle",
+            failure: "Candidate launch proof failed"}]);
+
+        const cleanupFailure = lifecycle("populated-first-boot", {activeProcesses: 1});
+        cleanupFailure.clock = [0, 10, 20, 30, 40, 50, 60, 310_001, 310_001];
+        const failedCleanup = invoke("TestLifecycle", cleanupFailure);
+        assert.equal(failedCleanup.failureDetails.some(detail => detail.phase === "cleanup"
+            && detail.failure === "Candidate cleanup deadline expired"), true);
+
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "$raw='line'+[char]0+\"one`r`n\"+('x'*700); "
+            + "$value=Get-MyspeedCandidateFailureMessage $raw; "
+            + "$value|ConvertTo-Json -Compress";
+        const bounded = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+        assert.equal(bounded.status, 0, bounded.stderr);
+        const message = JSON.parse(bounded.stdout);
+        assert.equal(message.length, MAXIMUM_FAILURE_CHARACTERS);
+        assert.equal([...message].some(character => character.charCodeAt(0) < FIRST_PRINTABLE_CHARACTER_CODE
+            || character.charCodeAt(0) === DELETE_CHARACTER_CODE), false);
     });
 
     powershellIt("rejects stop identity drift and stop files in natural-exit mode", () => {

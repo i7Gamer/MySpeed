@@ -24,8 +24,23 @@ const FORCED_CLEANUP_TIMEOUT_MS = 10_000;
 const MIN_PORT = 65_000;
 const MAXIMUM_CANDIDATE_BYTES = 268_435_456;
 const MAXIMUM_CLI_INPUT_BYTES = 2_097_152;
-const HOST_EXECUTION_TIMEOUT_MS = 620_000;
-const MAXIMUM_PROCESS_OUTPUT_BYTES = 65_536;
+// The watchdog deadline is not an outer process-kill deadline. Leave headroom
+// for cold Add-Type startup and every bounded teardown/retry after that deadline.
+// Native adapter/Task Scheduler calls can still stall: the outer kill remains
+// a last resort, not evidence that restoration completed.
+const HOST_COLD_STARTUP_ALLOWANCE_MS = 60_000;
+const HOST_POST_DEADLINE_OPERATIONS = Object.freeze({
+    coordinatorDrain: 1, restorationLocks: 3, cleanupDrain: 1,
+    cancellationLock: 1, recoveryTaskExits: 2, jobDisposal: 1
+});
+const HOST_CLEANUP_ALLOWANCE_MS = Object.values(HOST_POST_DEADLINE_OPERATIONS)
+    .reduce((total, count) => total + count * FORCED_CLEANUP_TIMEOUT_MS, 0);
+const HOST_EXECUTION_TIMEOUT_MS = HARD_DEADLINE_MS + HOST_CLEANUP_ALLOWANCE_MS
+    + HOST_COLD_STARTUP_ALLOWANCE_MS;
+// InvokeHostedProof emits the same bounded JSON retained in host.result.json.
+const MAXIMUM_HOST_RESULT_BYTES = 262_144;
+const WINDOWS_LINE_ENDING_BYTES = 2;
+const MAXIMUM_PROCESS_OUTPUT_BYTES = MAXIMUM_HOST_RESULT_BYTES + WINDOWS_LINE_ENDING_BYTES;
 const MAXIMUM_FAILURE_CHARACTERS = 1_024;
 const MAXIMUM_PRESEAL_BYTES = 10_485_760;
 const SHA256 = /^[0-9a-f]{64}$/u;
