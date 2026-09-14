@@ -665,11 +665,15 @@ function Assert-MyspeedProofCase {
         $result.candidateExited -and $result.exitCode -eq $script:ForcedCleanupExitCode -and $events -ccontains 'closeResources'
     $exactConsolePair=$null -ne $result.observedConsoleProcessIds -and $result.observedConsoleProcessIds.Count -eq 2 -and
         $result.observedConsoleProcessIds -ccontains $result.controllerPid -and $result.observedConsoleProcessIds -ccontains $result.candidatePid
+    $ignoreDiagnostic='status={0},pass={1},forced={2},grace={3},ctrl={4},pair={5},job={6},consoleFree={7},handles={8},exited={9},exit={10},close={11}' -f `
+        $result.status,[int][bool]$result.controllerLifecyclePassed,[int][bool]$result.forced,[int][bool]$result.graceExpired,
+        [int][bool]$result.ctrlEventGenerated,[int][bool]$exactConsolePair,$result.jobActiveProcesses,[int][bool]$result.consoleFreeAfter,
+        [int][bool]$result.handlesClosed,[int][bool]$result.candidateExited,$result.exitCode,[int][bool]($events -ccontains 'closeResources')
     $classification=switch($caseId){
         'handler' {if($result.status -cne 'completed' -or -not $result.controllerLifecyclePassed -or $result.forced -or
                 $result.graceExpired -or $result.exitCode -ne 0 -or -not $exactConsolePair){throw 'Handler case result differs'};'handler-natural-exit-observed'}
         'ignore' {if($result.status -cne 'failed' -or $result.controllerLifecyclePassed -or -not $result.forced -or
-                -not $result.graceExpired -or -not $result.ctrlEventGenerated -or -not $exactConsolePair -or -not $negativeCleanup){throw 'Ignore case result differs'};'ignore-forced-cleanup-observed'}
+                -not $result.graceExpired -or -not $result.ctrlEventGenerated -or -not $exactConsolePair -or -not $negativeCleanup){throw "Ignore case result differs: $ignoreDiagnostic"};'ignore-forced-cleanup-observed'}
         'extra-participant' {if($result.status -cne 'failed' -or $result.controllerLifecyclePassed -or -not $result.forced -or
                 $result.consoleProcessIdsExact -or $null -eq $result.observedConsoleProcessIds -or $result.observedConsoleProcessIds.Count -le 2 -or
                 $result.observedConsoleProcessIds -cnotcontains $result.controllerPid -or $result.observedConsoleProcessIds -cnotcontains $result.candidatePid -or

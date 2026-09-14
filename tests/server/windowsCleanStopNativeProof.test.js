@@ -791,6 +791,12 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
             assert.throws(() => invoke("AssessMatrix", invalid), /case|result|cleanup|timeout|differ/i);
         }
 
+        const diagnosedIgnore = structuredClone(value);
+        diagnosedIgnore.cases[1].resultDocument = mutateDocument(
+            diagnosedIgnore.cases[1].resultDocument, record => { record.candidateExited = false; });
+        assert.throws(() => invoke("AssessMatrix", diagnosedIgnore),
+            /Ignore case result differs: status=failed,pass=0,forced=1,grace=1,ctrl=1,pair=1,job=0,consoleFree=1,handles=1,exited=0,exit=197,close=1/u);
+
         const rawDrift = {manifestDocument: structuredClone(value.manifestDocument),
             case: structuredClone(value.cases[0])};
         rawDrift.case.readyDocument.bytesBase64 = rawDrift.case.readyDocument.bytesBase64.slice(0, -4) + "AAAA";

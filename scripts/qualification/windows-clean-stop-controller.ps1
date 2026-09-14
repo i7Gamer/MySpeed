@@ -711,6 +711,7 @@ namespace MySpeed.Qualification.CleanStop {
     static uint RemainingBudget(uint budget,Stopwatch watch){long available=(long)budget-watch.ElapsedMilliseconds;return (uint)Math.Max(0,available);}
     static uint RemainingCleanup(uint hardRemaining,Stopwatch watch){return Math.Min(NATIVE_CLEANUP_TIMEOUT_MS,RemainingBudget(hardRemaining,watch));}
     bool WaitForJobZero(uint budget,Stopwatch watch){while(true){uint active=Active(job);long elapsed=watch.ElapsedMilliseconds;if(elapsed>=budget)return false;if(active==0)return true;long remaining=(long)budget-elapsed;System.Threading.Thread.Sleep((int)Math.Min((long)NATIVE_CLEANUP_POLL_MS,remaining));}}
+    bool WaitForForcedExitAndJobZero(uint budget){Stopwatch watch=Stopwatch.StartNew();while(true){uint active=Active(job);bool exited=WaitForSingleObject(process,0)==WAIT_OBJECT_0;long elapsed=watch.ElapsedMilliseconds;if(elapsed>=budget)return false;if(active==0&&exited)return true;long remaining=(long)budget-elapsed;System.Threading.Thread.Sleep((int)Math.Min((long)NATIVE_CLEANUP_POLL_MS,remaining));}}
     public NativeResult Stop(uint expectedControllerPid,uint grace,uint hardRemaining){
       NativeResult r=NewResult();
       LastResult=r;StopCleanupAttempted=false;Stopwatch stopWatch=Stopwatch.StartNew();
@@ -732,7 +733,7 @@ namespace MySpeed.Qualification.CleanStop {
         return r;
       }catch{r.forced=true;if(!StopCleanupAttempted&&Active(job)!=0){StopCleanupAttempted=true;Force(RemainingCleanup(hardRemaining,stopWatch));}throw;}
     }
-    public void Force(uint timeout){if(job==IntPtr.Zero)return;if(!TerminateJobObject(job,STOP_FAILURE_EXIT_CODE))throw Error("TerminateJobObject");Stopwatch watch=Stopwatch.StartNew();while(Active(job)!=0&&watch.ElapsedMilliseconds<timeout)System.Threading.Thread.Sleep((int)NATIVE_CLEANUP_POLL_MS);if(Active(job)!=0)throw new InvalidOperationException("Owned Job did not empty");NativeResult observed=ObserveExitedResult(true);if(!observed.jobZero)throw new InvalidOperationException("Owned Job cleanup proof differs");}
+    public void Force(uint timeout){if(job==IntPtr.Zero)return;if(!TerminateJobObject(job,STOP_FAILURE_EXIT_CODE))throw Error("TerminateJobObject");if(!WaitForForcedExitAndJobZero(timeout))throw new InvalidOperationException("Owned Job and retained process did not exit");NativeResult observed=ObserveExitedResult(true);if(!observed.jobZero)throw new InvalidOperationException("Owned Job cleanup proof differs");}
     public uint ActiveProcesses {get{return job==IntPtr.Zero?0:Active(job);}}
     public bool CloseAndProve(){bool ok=true;if(process!=IntPtr.Zero){ok=CloseHandle(process)&&ok;process=IntPtr.Zero;}if(job!=IntPtr.Zero){ok=CloseHandle(job)&&ok;job=IntPtr.Zero;}if(image!=null){SafeFileHandle held=image.SafeFileHandle;image.Dispose();ok=held.IsClosed&&ok;image=null;}return ok;}
     public void Dispose(){if(!CloseAndProve())throw new InvalidOperationException("Session handle cleanup failed");}

@@ -992,6 +992,71 @@ function assertPortableAncestry(io, portableRoot, fileTargets, directoryTargets 
     }
 }
 
+async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
+    if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
+        throw new TypeError("QEMU privilege mode is invalid");
+    assertPortableAncestry(io, input.paths.portableRoot,
+        [input.toolchain.runtime.loader.path, input.toolchain.qemu.path], input.toolchain.runtime.libraryPath);
+    assertCriticalFileUnchanged(io, input.toolchain.runtime.loader, "portable runtime loader");
+    assertCriticalFileUnchanged(io, input.toolchain.qemu, "QEMU executable");
+    const qemuInvocation = portableInvocation(input.toolchain, input.toolchain.qemu, input.argv);
+    const launcher = input.privilegeMode === "reviewed-sudo-kvm" ? {
+        command: SUDO, argv: ["-n", "--", TIMEOUT, "--foreground", "--signal=KILL",
+            `${QEMU_TIMEOUT_SECONDS}s`, qemuInvocation.command, ...qemuInvocation.argv]
+    } : {command: TIMEOUT, argv: ["--foreground", "--signal=KILL", `${QEMU_TIMEOUT_SECONDS}s`,
+        qemuInvocation.command, ...qemuInvocation.argv]};
+    const sudoIdentity = input.privilegeMode === "reviewed-sudo-kvm" ? io.inspectOwned(SUDO) : null;
+    const timeoutIdentity = io.inspectOwned(TIMEOUT);
+    const killIdentity = io.inspectOwned(KILL);
+    const readlinkIdentity = io.inspectOwned(READLINK);
+    for (const [name, identity] of [["sudo", sudoIdentity], ["timeout", timeoutIdentity], ["kill", killIdentity],
+        ["readlink", readlinkIdentity]]) {
+        if (identity && (identity.ownership.uid !== "0" || identity.ownership.ordinaryUserWritable !== false))
+            throw new Error(`${name} launcher identity is unsafe`);
+    }
+    const launchTime = io.monotonicMilliseconds();
+    const executionDeadline = Math.min(launchTime + QEMU_TIMEOUT_SECONDS * 1_000,
+        stageStartedMilliseconds + QEMU_TIMEOUT_SECONDS * 1_000);
+    if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
+    const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
+        timeoutMs: QEMU_OUTER_TIMEOUT_MILLISECONDS, pidPath: input.paths.qemuPid,
+        expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
+        executionDeadline, resources: {taskPath: path.posix.dirname(input.paths.root),
+            roots: [input.paths.root, input.paths.portableRoot]}});
+    const observation = monitored.observation;
+    const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
+        monitored.absentAfter === true && monitored.processGroupGone === true;
+    const processRecord = {...observation.process, cleanupProven, treeGone: cleanupProven,
+        qemuPid: monitored.identity?.pid ?? null, qemuStartTicks: monitored.identity?.startTicks ?? null,
+        launcherExecutablePath: monitored.identity?.executablePath ?? null,
+        processGroupId: monitored.identity?.processGroupId ?? null,
+        qemuPidAbsentAfter: monitored.absentAfter, terminationReason: monitored.terminationReason ?? null};
+    const result = {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
+        timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
+        treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
+        qemuStartTicks: processRecord.qemuStartTicks,
+        launcherExecutablePath: processRecord.launcherExecutablePath,
+        processGroupId: processRecord.processGroupId,
+        qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
+        terminationReason: processRecord.terminationReason}, argv: input.argv};
+    const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
+        && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
+        && !processRecord.stdoutOverflow && !processRecord.stderrOverflow;
+    return {result, guestParsingAllowed, processFlags: {errorObserved: processRecord.errorObserved,
+        stdoutOverflow: processRecord.stdoutOverflow, stderrOverflow: processRecord.stderrOverflow}};
+}
+
+export function createHostedQemuProcessLauncher({context, dependencies = {}}) {
+    validateHostedContext(context);
+    const io = normalizeDependencies(dependencies);
+    const stageStartedMilliseconds = io.monotonicMilliseconds();
+    return Object.freeze(async input => {
+        const monitored = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+        return {...monitored.result, executionSucceeded: monitored.guestParsingAllowed,
+            processFlags: monitored.processFlags};
+    });
+}
+
 export function createHostedStage2Operations({context, paths: pathsValue, dependencies = {}}) {
     validateHostedContext(context);
     const io = normalizeDependencies(dependencies);
@@ -1232,61 +1297,9 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             ovmfVars: {path: variables.path, sha256: variables.sha256}};
         },
         async launchOwnedQemu(input) {
-            assertPortableAncestry(io, input.paths.portableRoot,
-                [input.toolchain.runtime.loader.path, input.toolchain.qemu.path], input.toolchain.runtime.libraryPath);
-            assertCriticalFileUnchanged(io, input.toolchain.runtime.loader, "portable runtime loader");
-            assertCriticalFileUnchanged(io, input.toolchain.qemu, "QEMU executable");
-            const qemuInvocation = portableInvocation(input.toolchain, input.toolchain.qemu, input.argv);
-            const launcher = input.privilegeMode === "reviewed-sudo-kvm" ? {
-                command: SUDO, argv: ["-n", "--", TIMEOUT, "--foreground", "--signal=KILL",
-                    `${QEMU_TIMEOUT_SECONDS}s`, qemuInvocation.command, ...qemuInvocation.argv]
-            } : {command: TIMEOUT, argv: ["--foreground", "--signal=KILL", `${QEMU_TIMEOUT_SECONDS}s`,
-                qemuInvocation.command, ...qemuInvocation.argv]};
-            const sudoIdentity = input.privilegeMode === "reviewed-sudo-kvm" ? io.inspectOwned(SUDO) : null;
-            const timeoutIdentity = io.inspectOwned(TIMEOUT);
-            const killIdentity = io.inspectOwned(KILL);
-            const readlinkIdentity = io.inspectOwned(READLINK);
-            for (const [name, identity] of [["sudo", sudoIdentity], ["timeout", timeoutIdentity], ["kill", killIdentity],
-                ["readlink", readlinkIdentity]]) {
-                if (identity && (identity.ownership.uid !== "0" || identity.ownership.ordinaryUserWritable !== false))
-                    throw new Error(`${name} launcher identity is unsafe`);
-            }
-            const launchTime = io.monotonicMilliseconds();
-            const executionDeadline = Math.min(launchTime + QEMU_TIMEOUT_SECONDS * 1_000,
-                stageStartedMilliseconds + QEMU_TIMEOUT_SECONDS * 1_000);
-            if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
-            const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
-                timeoutMs: QEMU_OUTER_TIMEOUT_MILLISECONDS, pidPath: input.paths.qemuPid,
-                expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
-                executionDeadline, resources: {taskPath: path.posix.dirname(input.paths.root),
-                    roots: [input.paths.root, input.paths.portableRoot]}});
-            const observation = monitored.observation;
-            const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
-                monitored.absentAfter === true && monitored.processGroupGone === true;
-            const processRecord = {...observation.process, cleanupProven, treeGone: cleanupProven,
-                qemuPid: monitored.identity?.pid ?? null, qemuStartTicks: monitored.identity?.startTicks ?? null,
-                launcherExecutablePath: monitored.identity?.executablePath ?? null,
-                processGroupId: monitored.identity?.processGroupId ?? null,
-                qemuPidAbsentAfter: monitored.absentAfter, terminationReason: monitored.terminationReason ?? null};
-            if (processRecord.exitCode !== 0 || processRecord.signal !== null || processRecord.timedOut ||
-                !processRecord.cleanupProven || processRecord.errorObserved || processRecord.stdoutOverflow ||
-                processRecord.stderrOverflow) return {process: {exitCode: processRecord.exitCode,
-                    signal: processRecord.signal, timedOut: processRecord.timedOut,
-                    cleanupProven: processRecord.cleanupProven, treeGone: processRecord.treeGone,
-                    qemuPid: processRecord.qemuPid, qemuStartTicks: processRecord.qemuStartTicks,
-                    launcherExecutablePath: processRecord.launcherExecutablePath,
-                    processGroupId: processRecord.processGroupId,
-                    qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-                    terminationReason: processRecord.terminationReason},
-                argv: input.argv, guest: null};
-            const processResult = {exitCode: processRecord.exitCode, signal: processRecord.signal,
-                timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
-                treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
-                qemuStartTicks: processRecord.qemuStartTicks,
-                launcherExecutablePath: processRecord.launcherExecutablePath,
-                processGroupId: processRecord.processGroupId,
-                qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-                terminationReason: processRecord.terminationReason};
+            const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+            const launched = monitoredLaunch.result;
+            if (!monitoredLaunch.guestParsingAllowed) return {...launched, guest: null};
             const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
                 "guest-result.json");
             try {
@@ -1296,14 +1309,14 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest result extraction");
                 const guestRead = io.readOwnedVerified(guestResult, MAX_GUEST_BYTES);
                 const parsed = parseGuestOutcome(guestRead.bytes, context.nonce);
-                if (parsed.status === "failed") return {process: processResult, argv: input.argv, guest: parsed};
+                if (parsed.status === "failed") return {...launched, guest: parsed};
                 const output = io.inspectOwned(input.paths.outputDisk);
-                return {process: processResult, argv: input.argv,
+                return {...launched,
                     guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
                     instructions: parsed.instructions, network: parsed.network,
                     output: {path: output.path, bytes: output.bytes, sha256: output.sha256}}};
             } catch {
-                return {process: processResult, argv: input.argv, guest: null};
+                return {...launched, guest: null};
             }
         }
     });

@@ -607,6 +607,12 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(source, /WaitForSingleObject\(process,RemainingBudget\(grace,stopWatch\)\)/u);
         assert.match(source, /r\.jobZero=r\.candidateExited&&WaitForJobZero\(grace,stopWatch\)/u);
         assert.match(source,
+            /WaitForForcedExitAndJobZero\(uint budget\)\{Stopwatch watch=Stopwatch\.StartNew\(\);while\(true\)\{uint active=Active\(job\);bool exited=WaitForSingleObject\(process,0\)==WAIT_OBJECT_0;long elapsed=watch\.ElapsedMilliseconds;if\(elapsed>=budget\)return false;if\(active==0&&exited\)return true;/u,
+            "forced cleanup must prove both retained-process exit and Job zero inside one cleanup budget");
+        assert.match(source,
+            /TerminateJobObject\(job,STOP_FAILURE_EXIT_CODE\)[\s\S]*if\(!WaitForForcedExitAndJobZero\(timeout\)\)throw new InvalidOperationException\("Owned Job and retained process did not exit"\)[\s\S]*ObserveExitedResult\(true\)/u,
+            "forced cleanup must not perform a zero-time process observation after waiting only for Job accounting");
+        assert.match(source,
             /WaitForJobZero\(uint budget,Stopwatch watch\)\{while\(true\)\{uint active=Active\(job\);long elapsed=watch\.ElapsedMilliseconds;if\(elapsed>=budget\)return false;if\(active==0\)return true;long remaining=\(long\)budget-elapsed;[\s\S]*NATIVE_CLEANUP_POLL_MS/u,
             "Job-zero proof must sample the shared grace clock after every accounting observation");
         assert.match(source, /ReleaseLaunchLocals\(ref pi\.hThread[\s\S]*ThreadHandleClosedBeforeReady=true/u);

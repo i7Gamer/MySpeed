@@ -7,6 +7,7 @@ import {PassThrough} from "node:stream";
 import {
     buildIsolatedAptVectors,
     collectHostedAdmissionObservations,
+    createHostedQemuProcessLauncher,
     createHostedStage2Operations,
     parseGuestFailure,
     parseGuestOutcome,
@@ -456,6 +457,71 @@ describe("hosted Stage 2 native adapter preparation", () => {
             executablePath: launch.process.launcherExecutablePath, absent: launch.process.qemuPidAbsentAfter},
         {pid: 2345, startTicks: "77",
             executablePath: `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`, absent: true});
+    });
+
+    it("exposes the normalized monitored QEMU process proof without parsing guest output", async () => {
+        const calls = [];
+        const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
+        const toolchain = {runtime: {loader: rootFileIdentity(loader),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`)};
+        const launcher = createHostedQemuProcessLauncher({context: context(), paths: paths(), dependencies: {
+            inspectOwned: rootFileIdentity,
+            inspectDirectory: directoryIdentity,
+            runMonitoredQemu: async request => { calls.push(request); return {
+                observation: {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                identity: {pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: loader},
+                absentAfter: true, processGroupGone: true, terminationReason: null}; }
+        }});
+        const result = await launcher({paths: paths(), toolchain,
+            privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
+        assert.deepEqual(Object.keys(result).sort(), ["argv", "executionSucceeded", "process", "processFlags"]);
+        assert.equal(result.executionSucceeded, true);
+        assert.deepEqual(result.processFlags, {errorObserved: false, stdoutOverflow: false, stderrOverflow: false});
+        assert.equal(result.process.cleanupProven, true);
+        assert.equal(result.process.treeGone, true);
+        assert.equal(result.process.qemuPidAbsentAfter, true);
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].command, "/usr/bin/sudo");
+        assert.equal(calls.some(call => call.argv?.some(value => value === "::result.json")), false);
+    });
+
+    it("keeps stream, process, cleanup, and privilege failures out of both parser and generic success", async () => {
+        const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
+        const toolchain = {runtime: {loader: rootFileIdentity(loader),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+        mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+        for (const changedProcess of [
+            {...okProcess, errorObserved: true},
+            {...okProcess, stdoutOverflow: true},
+            {...okProcess, stderrOverflow: true},
+            {...okProcess, cleanupProven: false}
+        ]) {
+            let extractionAttempted = false;
+            const dependencies = {inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                runOwned: async () => { extractionAttempted = true; return {process: okProcess,
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
+                runMonitoredQemu: async () => ({observation: {process: changedProcess,
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                identity: {pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: loader},
+                absentAfter: true, processGroupGone: true, terminationReason: null})};
+            const launcher = createHostedQemuProcessLauncher({context: context(), paths: paths(), dependencies});
+            const processOnly = await launcher({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
+            assert.equal(processOnly.executionSucceeded, false);
+            assert.deepEqual(processOnly.processFlags, {errorObserved: changedProcess.errorObserved,
+                stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow});
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies});
+            const stage2 = await adapter.launchOwnedQemu({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
+            assert.equal(stage2.guest, null);
+            assert.equal(extractionAttempted, false);
+        }
+        const launcher = createHostedQemuProcessLauncher({context: context(), paths: paths(), dependencies: {
+            inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity}});
+        await assert.rejects(() => launcher({paths: paths(), toolchain,
+            privilegeMode: "unreviewed", argv: ["-nic", "none"]}), /privilege mode/i);
     });
 
     it("extracts bounded guest failure evidence only after clean QEMU teardown", async () => {
