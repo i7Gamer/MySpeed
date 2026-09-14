@@ -11,7 +11,7 @@ jobs:
   prepare:
     if: github.repository == 'i7Gamer/MySpeed'
     runs-on: windows-2025
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - name: Checkout exact harness source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -70,24 +70,61 @@ jobs:
             throw 'Published qualification manifest differs'
           }
 
+      - name: Acquire authenticated portable WiX
+        shell: pwsh
+        env:
+          WIX_URL: https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip
+          WIX_SHA256: 6ac824e1642d6f7277d0ed7ea09411a508f6116ba6fae0aa5f2c7daa2ff43d31
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $maximumArchiveBytes = 134217728
+          $archive = Join-Path $env:RUNNER_TEMP 'wix314-binaries.zip'
+          $directory = Join-Path $env:RUNNER_TEMP 'wix314-binaries'
+          if ((Test-Path -LiteralPath $archive) -or (Test-Path -LiteralPath $directory)) {
+            throw 'WiX staging collision'
+          }
+          Invoke-WebRequest -Uri $env:WIX_URL -OutFile $archive -UseBasicParsing
+          $archiveInfo = Get-Item -LiteralPath $archive -Force -ErrorAction Stop
+          if ($archiveInfo.PSIsContainer -or ($archiveInfo.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $archiveInfo.Length -le 0 -or $archiveInfo.Length -gt $maximumArchiveBytes) {
+            throw 'WiX archive is not an ordinary bounded file'
+          }
+          $actual = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -cne $env:WIX_SHA256) { throw 'WiX archive digest differs' }
+          Expand-Archive -LiteralPath $archive -DestinationPath $directory -ErrorAction Stop
+          foreach ($name in @('dark.exe','candle.exe','light.exe')) {
+            $tool = Join-Path $directory $name
+            $item = Get-Item -LiteralPath $tool -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+              $item.Length -le 0) { throw "WiX tool $name differs" }
+          }
+
       - name: Acquire and inspect exact MSI preparation inputs
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $bundle = Join-Path $env:RUNNER_TEMP 'post-release-msi-preparation'
           $files = Join-Path $bundle 'files'
+          $fixtures = Join-Path $files 'fixtures'
+          $fixtureWork = Join-Path $env:RUNNER_TEMP 'post-release-msi-fixture-work'
+          $wix = Join-Path $env:RUNNER_TEMP 'wix314-binaries'
           $result = Join-Path $bundle 'result.json'
+          $fixtureProof = Join-Path $bundle 'fixture-proof.json'
           $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
           node scripts/release/post-release-msi-prepare-controller.mjs `
             --captured (Join-Path $env:RUNNER_TEMP 'post-release-msi-captured.json') `
             --manifest (Join-Path $env:RUNNER_TEMP 'qualification-manifest.json') `
-            --root $files --output $result --pwsh $pwsh
+            --root $files --fixture-root $fixtures --fixture-work $fixtureWork `
+            --wix-dark (Join-Path $wix 'dark.exe') --wix-candle (Join-Path $wix 'candle.exe') `
+            --wix-light (Join-Path $wix 'light.exe') --fixture-proof $fixtureProof `
+            --output $result --pwsh $pwsh
           if ($LASTEXITCODE -ne 0) { throw 'Hosted MSI preparation failed' }
 
       - name: Upload nonqualifying preparation artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: post-release-v1.6.1-msi-preparation
+          name: post-release-v1.6.1-msi-appassets
           path: ${{ runner.temp }}\post-release-msi-preparation
           include-hidden-files: true
           if-no-files-found: error

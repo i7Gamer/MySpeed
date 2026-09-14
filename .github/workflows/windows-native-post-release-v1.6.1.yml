@@ -69,9 +69,10 @@ jobs:
             tests/server/windowsNativeStandaloneProof.test.js `
             tests/server/windowsNativeStandaloneHosted.test.js
           if ($LASTEXITCODE -ne 0) { throw 'Post-release standalone unit suites failed' }
-          node --test --test-name-pattern="compiles its native declarations" `
-            tests/server/windowsNativeStandaloneHost.test.js
-          if ($LASTEXITCODE -ne 0) { throw 'Standalone native declaration compilation failed' }
+          node --test --test-name-pattern="compiles its native declarations|captures native operation limits|uses captured input bounds|captures cleanup limits" `
+            tests/server/windowsNativeStandaloneHost.test.js `
+            tests/server/windowsNativeCandidateController.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Standalone native compilation or closure tests failed' }
 
       - name: Build exact source-free closure
         id: seal
