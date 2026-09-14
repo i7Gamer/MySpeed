@@ -205,6 +205,7 @@ describe("Windows native standalone host", () => {
     it("runs one common injected lifecycle and restores only after the exact Job is empty", {skip: !POWERSHELL}, () => {
         const result = invoke("TestLifecycle", request());
         assert.equal(result.status, "completed");
+        assert.equal("failureDetails" in result, false);
         assert.equal(result.qualifying, false);
         assert.deepEqual(result.releaseGatesCleared, []);
         assert.deepEqual(result.events, request().phases);
@@ -231,13 +232,16 @@ describe("Windows native standalone host", () => {
     });
 
     it("fails closed and still cleans every injected phase failure", {skip: !POWERSHELL}, () => {
-        for (const phase of request().phases.slice(0, -1)) {
+        for (const phase of request().phases) {
             const value = request();
             value.failAt = phase;
             const result = invoke("TestLifecycle", value);
             assert.equal(result.status, "failed", phase);
             assert.equal(result.qualifying, false, phase);
             assert.ok(result.events.includes("cleanup"), phase);
+            assert.equal(result.failureDetails[0].phase, phase);
+            assert.match(result.failureDetails[0].failure, /Injected failure/u);
+            assert.ok(result.failureDetails[0].failure.length <= 512);
             if (phase === "restore-adapters")
                 assert.equal(result.adaptersRestored, false, phase);
         }
@@ -249,6 +253,8 @@ describe("Windows native standalone host", () => {
         const result = invoke("TestLifecycle", value);
         assert.equal(result.status, "failed");
         assert.equal(result.jobZeroBeforeRestore, false);
+        assert.equal(result.failureDetails[0].phase, "prove-job-zero");
+        assert.match(result.failureDetails[0].failure, /Job/u);
         assert.equal(result.adaptersRestored, false);
         assert.ok(result.events.includes("cleanup"));
     });

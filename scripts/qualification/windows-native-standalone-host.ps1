@@ -212,6 +212,7 @@ function Invoke-MyspeedStandaloneLifecycleCore {
     Assert-MyspeedStandaloneKeys $Operations $script:ExpectedPhases 'Host lifecycle operations'
     foreach($phase in $script:ExpectedPhases){if($Operations.$phase -isnot [scriptblock]){throw "Host lifecycle operation is absent: $phase"}}
     $events=[Collections.Generic.List[string]]::new();$failures=[Collections.Generic.List[string]]::new()
+    $failureDetails=[Collections.Generic.List[object]]::new()
     $jobZero=$false;$restored=$false;$armed=$false;$disabled=$false
     try{
         foreach($phase in $script:ExpectedPhases[0..4]){
@@ -223,15 +224,20 @@ function Invoke-MyspeedStandaloneLifecycleCore {
         if([int64]$Request.coordinatorExitCode -ne 0){throw 'Standalone coordinator failed'}
         [void]$events.Add('restore-adapters');& $Operations.'restore-adapters';$restored=$true;$disabled=$false
         [void]$events.Add('disarm-recovery');& $Operations.'disarm-recovery';$armed=$false
-    }catch{[void]$failures.Add('host-lifecycle-failed')}
+    }catch{[void]$failures.Add('host-lifecycle-failed')
+        [void]$failureDetails.Add([pscustomobject]@{phase=$events[$events.Count-1];failure=(Get-MyspeedStandaloneFailureMessage $_)})}
     finally{
-        if($disabled -and $jobZero){try{if(-not $restored){[void]$events.Add('restore-adapters');& $Operations.'restore-adapters';$restored=$true;$disabled=$false}}catch{[void]$failures.Add('adapter-restoration-failed')}}
-        try{[void]$events.Add('cleanup');& $Operations.cleanup}catch{[void]$failures.Add('host-cleanup-failed')}
+        if($disabled -and $jobZero){try{if(-not $restored){[void]$events.Add('restore-adapters');& $Operations.'restore-adapters';$restored=$true;$disabled=$false}}catch{[void]$failures.Add('adapter-restoration-failed')
+            [void]$failureDetails.Add([pscustomobject]@{phase='restore-adapters';failure=(Get-MyspeedStandaloneFailureMessage $_)})}}
+        try{[void]$events.Add('cleanup');& $Operations.cleanup}catch{[void]$failures.Add('host-cleanup-failed')
+            [void]$failureDetails.Add([pscustomobject]@{phase='cleanup';failure=(Get-MyspeedStandaloneFailureMessage $_)})}
     }
     $passed=$failures.Count -eq 0 -and $jobZero -and $restored -and -not $armed
-    return [pscustomobject][ordered]@{schemaVersion=1;kind=$script:ResultKind;status=if($passed){'completed'}else{'failed'}
+    $result=[pscustomobject][ordered]@{schemaVersion=1;kind=$script:ResultKind;status=if($passed){'completed'}else{'failed'}
         qualifying=$false;releaseGatesCleared=@();jobZeroBeforeRestore=$jobZero;adaptersRestored=$restored
         events=@($events);failures=@($failures)}
+    if(-not $passed){Add-Member -InputObject $result -NotePropertyName failureDetails -NotePropertyValue ([object[]]$failureDetails)}
+    return $result
 }
 
 function Invoke-MyspeedStandaloneInjectedLifecycle {
@@ -601,15 +607,21 @@ function Assert-MyspeedStandaloneProofResult {
     return $Value
 }
 
-function Write-MyspeedStandaloneEntryDiagnostic {
-    param([string]$Path,[string]$Stage,[object]$Failure)
-    $checkedPath=Assert-MyspeedStandalonePath $Path 'Standalone entry diagnostic path'
-    $checkedStage=Assert-MyspeedStandaloneString $Stage 'Standalone entry diagnostic stage' '\A[a-z][a-z-]{0,31}\z'
+function Get-MyspeedStandaloneFailureMessage {
+    param([object]$Failure)
     $message=if($Failure -is [Management.Automation.ErrorRecord]){[string]$Failure.Exception.Message}
         elseif($Failure -is [Exception]){[string]$Failure.Message}else{[string]$Failure}
     $message=[regex]::Replace($message,'[\x00-\x1f\x7f]+',' ')
     if($message.Length -gt $script:MaximumFailureCharacters){$message=$message.Substring(0,$script:MaximumFailureCharacters)}
     if(-not $message){$message='unspecified failure'}
+    return $message
+}
+
+function Write-MyspeedStandaloneEntryDiagnostic {
+    param([string]$Path,[string]$Stage,[object]$Failure)
+    $checkedPath=Assert-MyspeedStandalonePath $Path 'Standalone entry diagnostic path'
+    $checkedStage=Assert-MyspeedStandaloneString $Stage 'Standalone entry diagnostic stage' '\A[a-z][a-z-]{0,31}\z'
+    $message=Get-MyspeedStandaloneFailureMessage $Failure
     $record=[pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-native-standalone-entry-failure'
         status='failed';stage=$checkedStage;failure=$message}
     [void](Write-MyspeedStandaloneCreateNewJson $checkedPath $record)
@@ -960,7 +972,10 @@ function Invoke-MyspeedStandaloneHostedProof {
             jobHandlesClosed=$false;recoveryProcessExitProven=$false;taskUnregistered=$false}
         $stage='native-lifecycle'
         $lifecycleResult=Invoke-MyspeedStandaloneLifecycleCore $lifecycle (New-MyspeedStandaloneNativeOperations $state)
-        if($lifecycleResult.status -cne 'completed'){throw 'Hosted standalone proof failed'}
+        if($lifecycleResult.status -cne 'completed'){
+            $detail=$lifecycleResult.failureDetails | Select-Object -First 1
+            if($null -ne $detail){throw "Hosted standalone proof failed at $($detail.phase): $($detail.failure)"}
+            throw 'Hosted standalone proof failed'}
         $combined=New-MyspeedStandaloneCombinedResult $state $lifecycleResult
         [void](Write-MyspeedStandaloneCreateNewJson $request.resultPath $combined)
         return $combined

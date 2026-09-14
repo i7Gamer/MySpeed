@@ -568,6 +568,8 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.match(workflow, /node \$controller --prepare-v1\.6\.1/u);
         assert.match(workflow, /node \$hosted --execute/u);
         assert.match(workflow, /post-release-envelope\.json/u);
+        assert.match(workflow, /\$sources\['host\.entry-failure\.json'\]/u);
+        assert.match(workflow, /\$requiredSources=@\(\$sources\.Keys\)/u);
         assert.match(workflow, /--test-name-pattern="compiles its native declarations"[\s\S]*tests\/server\/windowsNativeStandaloneHost\.test\.js/u);
         assert.match(workflow, /actions\/upload-artifact@[0-9a-f]{40}/u);
         assert.match(workflow, /artifact\.workflow_run\?\.id !== context\.runId/u);

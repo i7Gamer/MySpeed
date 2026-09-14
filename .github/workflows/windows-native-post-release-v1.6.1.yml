@@ -332,6 +332,8 @@ jobs:
             'host.result.json'=(Join-Path $taskRoot 'host.result.json');
             'inspection.json'=(Join-Path $taskRoot 'inspection.json')
           }
+          $requiredSources=@($sources.Keys)
+          $sources['host.entry-failure.json']=(Join-Path $taskRoot 'host.entry-failure.json')
           $records = [Collections.Generic.List[object]]::new();[int64]$aggregate = 0
           foreach ($entry in $sources.GetEnumerator()) {
             if (-not (Test-Path -LiteralPath $entry.Value -PathType Leaf)) { continue }
@@ -345,7 +347,8 @@ jobs:
             [void]$records.Add([pscustomobject][ordered]@{name=$entry.Key;bytes=[int64]$item.Length;
               sha256=(Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant()})
           }
-          $status = if ($records.Count -eq $sources.Count) { 'completed' } else { 'partial' }
+          $requiredPresent=@($records | Where-Object { $requiredSources -ccontains $_.name }).Count
+          $status = if ($requiredPresent -eq $requiredSources.Count) { 'completed' } else { 'partial' }
           $manifest = [pscustomobject][ordered]@{
             schemaVersion=1;kind='myspeed-v1.6.1-post-release-native-evidence';status=$status;qualifying=$false;
             releaseGatesCleared=@();repository=$env:GITHUB_REPOSITORY;runId=$env:GITHUB_RUN_ID;
