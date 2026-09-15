@@ -16,6 +16,17 @@ const powershellIt = (name, fn) => it(name,
     {timeout: PROCESS_TIMEOUT_MS, skip: !HAS_POWERSHELL && "PowerShell unavailable"}, fn);
 const HASH = "a".repeat(64);
 
+/*
+ * Every accepted path is a literal Windows path this pipeline actually produces, or a drive root;
+ * every rejected one is a form Windows silently rewrites - a doubled or trailing separator, a
+ * relative segment, a segment Windows trims, or a foreign separator. Those verdicts are facts about
+ * the string, so the validator has to reach the same ones on every host that runs it.
+ */
+const CANONICAL_PATHS = Object.freeze([`C:\\Windows\\Temp\\myspeed-msi-input-${"4".repeat(32)}`,
+    "D:\\seed", "E:\\output\\result.json", "D:\\"]);
+const NONCANONICAL_PATHS = Object.freeze(["D:\\a\\..\\b", "D:\\.\\a", "D:\\\\a",
+    "D:\\a\\", "D:\\a.", "D:\\a ", "D:\\a/b", "D:\\a\\."]);
+
 const request = () => ({
     schemaVersion: 1,
     kind: "myspeed-windows-msi-guest-launch-request",
@@ -122,6 +133,13 @@ describe("Windows MSI guest owned-Job runner", () => {
         assert.deepEqual(result.releaseGatesCleared, []);
     });
 
+    powershellIt("judges Windows path canonicality without consulting the host platform", () => {
+        const verdicts = canonicalVerdicts([...CANONICAL_PATHS, ...NONCANONICAL_PATHS]);
+
+        assert.equal(verdicts,
+            "1".repeat(CANONICAL_PATHS.length) + "0".repeat(NONCANONICAL_PATHS.length));
+    });
+
     it("puts every native-capable operation behind the guest guard", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
         const guard = source.indexOf("Assert-MyspeedMsiGuestContext");
@@ -147,6 +165,19 @@ function invoke(mode, value) {
         {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS});
     if (result.status !== 0) throw new Error(result.stderr || result.stdout);
     return JSON.parse(result.stdout.trim().split(/\r?\n/u).at(-1));
+}
+
+function canonicalVerdicts(candidates) {
+    const encoded = Buffer.from(JSON.stringify(candidates), "utf8").toString("base64");
+    const program = `. '${quote(SCRIPT)}' -Mode Library; `
+        + `$candidates=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'))|ConvertFrom-Json; `
+        + "-join @(foreach($candidate in $candidates){"
+        + "try{[void](Assert-MyspeedGuestPath $candidate 'Probe');'1'}catch{'0'}})";
+    const result = spawnSync(POWERSHELL,
+        ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", program],
+        {encoding: "utf8", timeout: PROCESS_TIMEOUT_MS});
+    if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+    return result.stdout.trim().split(/\r?\n/u).at(-1);
 }
 
 function quote(value) {

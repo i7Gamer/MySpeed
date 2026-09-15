@@ -22,6 +22,10 @@ $script:SuccessExitCode=0
 $script:Sha256Pattern='\A[0-9a-f]{64}\z'
 $script:Sha1Pattern='\A[0-9a-f]{40}\z'
 $script:NoncePattern='\A[0-9a-f]{32}\z'
+$script:WindowsPathRootCharacters=3
+$script:PathSeparator=[char]'\'
+$script:ForeignPathSeparator='/'
+$script:SegmentTrimmedFinalCharacters=[char[]]@(' ','.')
 $script:ObserverSource={
     param($Context)
     [pscustomobject][ordered]@{schemaVersion=1;status='observed';action='observe';observation='guest-runner'}
@@ -68,11 +72,28 @@ function Assert-MyspeedGuestNumber {
     return [double]$Value
 }
 
+function Test-MyspeedGuestCanonicalPath {
+    param([string]$Candidate)
+    # Windows rewrites some paths on the way to their real target, and two spellings that reach one
+    # target break the identity comparisons the request is built on. Deciding that here, from the
+    # string alone, keeps the verdict the same on every host: [IO.Path]::GetFullPath answers for the
+    # platform it runs on, so on Linux it rejects every drive-letter path and resolves no traversal.
+    $tail=$Candidate.Substring($script:WindowsPathRootCharacters)
+    if($tail.Length -eq 0){return $true}
+    if($tail.Contains($script:ForeignPathSeparator)){return $false}
+    foreach($segment in $tail.Split($script:PathSeparator)){
+        # An empty segment is a doubled or trailing separator; a final space or dot is what Windows
+        # trims, which is also what makes '.' and '..' unusable here.
+        if($segment.Length -eq 0 -or
+            $script:SegmentTrimmedFinalCharacters -ccontains $segment[$segment.Length-1]){return $false}
+    }
+    return $true
+}
+
 function Assert-MyspeedGuestPath {
     param($Value,[string]$Label,[string]$Root=$null,[bool]$AllowRoot=$false)
     $candidate=Assert-MyspeedGuestString $Value $Label '\A[A-Za-z]:\\[^\x00-\x1f\x7f:*?"<>|]*\z'
-    $canonical=[IO.Path]::GetFullPath($candidate)
-    if(-not [string]::Equals($canonical,$candidate,[StringComparison]::OrdinalIgnoreCase)){throw "$Label is not canonical"}
+    if(-not (Test-MyspeedGuestCanonicalPath $candidate)){throw "$Label is not canonical"}
     if(-not [string]::IsNullOrEmpty($Root)){
         $prefix=$Root.TrimEnd('\')+'\'
         $same=[string]::Equals($candidate,$Root,[StringComparison]::OrdinalIgnoreCase)
