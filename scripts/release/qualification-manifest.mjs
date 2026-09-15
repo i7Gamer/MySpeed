@@ -33,15 +33,14 @@ const PROMOTION_BLOCKERS = [
     'Windows native CPU-floor verification',
     'Disposable Windows MSI lifecycle acceptance'
 ];
-const REDUCED_RELEASE_VERSION = '1.6.1';
+const REDUCED_RELEASE_VERSIONS = Object.freeze(['1.6.1', '1.7.0']);
 const REDUCED_RELEASE_REPOSITORY = 'i7Gamer/MySpeed';
-const REDUCED_RELEASE_SCOPE = 'owner-approved-reduced-v1.6.1';
 
 // This records the owner's release-specific acceptance scope, not evidence that
 // the deferred checks passed. All mandatory artifact checks still run below.
 export const getQualificationScope = ({version, repository}) =>
-    version === REDUCED_RELEASE_VERSION && repository === REDUCED_RELEASE_REPOSITORY
-        ? {id: REDUCED_RELEASE_SCOPE,
+    REDUCED_RELEASE_VERSIONS.includes(version) && repository === REDUCED_RELEASE_REPOSITORY
+        ? {id: `owner-approved-reduced-v${version}`,
             deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)}
         : {id: 'full-native', deferredChecks: []};
 

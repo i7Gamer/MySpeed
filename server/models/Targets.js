@@ -37,6 +37,11 @@ export default db.define("targets", {
         allowNull: true,
         defaultValue: null
     },
+    ostSkipCertificateVerification: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
     enabled: {
         type: Sequelize.BOOLEAN,
         allowNull: false,

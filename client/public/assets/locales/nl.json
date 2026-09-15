@@ -62,6 +62,8 @@
       "cloudflare_desc": "Snel CDN-gebaseerd testen",
       "iperf3_desc": "Je eigen iperf3-server, in je netwerk",
       "openspeedtest_desc": "Je eigen OpenSpeedTest-server, in je netwerk",
+      "ost_skip_tls_verification": "TLS-certificaatcontrole overslaan",
+      "ost_skip_tls_warning": "Gebruik dit alleen voor een vertrouwde server met een ongeldig of zelfondertekend certificaat. Certificaatcontrole is uitgeschakeld voor dit doel en de omleidingen ervan; een man-in-the-middle kan de bestemming of resultaten wijzigen. Gebruik bij voorkeur een geldig certificaat.",
       "iperf_advanced": "Testinstellingen",
       "iperf_duration": "Seconden per richting",
       "iperf_streams": "Parallelle streams",

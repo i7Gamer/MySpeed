@@ -9,7 +9,7 @@
  * that goes wrong.
  */
 
-import {takesEndpoint, takesServerId, takesTuning} from "./providerFields.js";
+import {ostSupportsCertificateBypass, takesEndpoint, takesServerId, takesTuning} from "./providerFields.js";
 
 // The select and the free-text id share a stored value, and "none" is what
 // both use for "let the provider choose" - it is not a server id.
@@ -93,7 +93,7 @@ export const baselineOrNull = (enabled, value) => {
 export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptimals,
                                optimalPing, optimalDownload, optimalUpload,
                                iperfDuration, iperfStreams, iperfUdp, iperfBitrate,
-                               baselineAlerts, baselinePercent}) => {
+                               baselineAlerts, baselinePercent, ostSkipCertificateVerification}) => {
     // Datagrams, for the one provider that offers them. Stated either way
     // rather than left out: the column is NOT NULL and false is what every
     // target is, so there is no "unset" for this one to mean.
@@ -117,6 +117,8 @@ export const targetBody = ({name, provider, serverId, endpoint, alerts, ownOptim
         // provider that takes none is exactly what it refuses.
         endpoint: takesEndpoint(provider) && typedEndpoint && typedEndpoint !== AUTOMATIC
             ? typedEndpoint : null,
+        ostSkipCertificateVerification: ostSkipCertificateVerification === true
+            && ostSupportsCertificateBypass(provider, typedEndpoint),
         alerts,
         optimalPing: optimalOrNull(ownOptimals, optimalPing),
         optimalDownload: optimalOrNull(ownOptimals, optimalDownload),

@@ -1152,7 +1152,7 @@ describe("when the binary is fetched", () => {
     it("is fetched by the run that needs it", () => {
         const runner = readSource("server/util/speedtest.js");
 
-        assert.match(runner, /await ensureBinary\(mode, binaryPath\)/);
+        assert.match(runner, /await ensureProviderBinary\(mode, binaryPath\)/);
     });
 });
 

@@ -32,7 +32,7 @@ export const providerById = (id) => providers.find((provider) => provider.id ===
  * here so a caller that wants both has one import.
  */
 export {
-    takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted, ostEndpointAccepted,
+    takesServerId, takesEndpoint, requiresEndpoint, iperfHostAccepted, ostEndpointAccepted, ostSupportsCertificateBypass,
     takesTuning, durationAccepted, streamsAccepted, bitrateAccepted, tuningAccepted,
     TUNING_BOUNDS, IPERF_DEFAULTS, baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT
 } from "./providerFields.js";

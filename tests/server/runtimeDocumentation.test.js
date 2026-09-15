@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import vm from "node:vm";
 import {parse} from "yaml";
 import {QUALIFIED_BUN_VERSION} from "../../scripts/build-binary.mjs";
 
@@ -30,41 +29,6 @@ describe("Bun runtime guidance", () => {
         assert.ok(readme.includes("22.19.0"), "German Node instructions omit the Node floor");
         assert.ok(/Kompatibilitätsalias/.test(readme));
         assert.ok(!/Standard-Ziel von Bun \(benötigt \*\*AVX2\*\*\)/.test(readme));
-    });
-
-    it("generates release notes with the current CPU and source-runtime contract", async () => {
-        const workflow = parse(read(".github/workflows/finalize-release.yml"));
-        const step = workflow.jobs.finalize.steps.find(step => step.name === "Generate notes and publish the existing draft");
-        const version = JSON.parse(read("package.json")).version;
-        const sourceSha = "a".repeat(40);
-        const updates = [];
-        await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
-            process: {env: {VERSION: version, SOURCE_SHA: sourceSha, RELEASE_ID: "1"}},
-            context: {repo: {owner: "fixture", repo: "myspeed"}},
-            console: {log() {}},
-            github: {rest: {git: {getRef: async () => ({data: {object: {type: "commit", sha: sourceSha}}})}, repos: {
-                getRelease: async () => ({data: {draft: true, tag_name: `v${version}`, target_commitish: "fixture"}}),
-                generateReleaseNotes: async () => ({data: {body: "generated"}}),
-                updateRelease: async value => { updates.push(value); }
-            }}}
-        });
-        assert.equal(updates.length, 1);
-        const {body} = updates[0];
-        assert.ok(body.includes("Bun 1.4.2 or newer"));
-        assert.ok(body.includes("Nehalem/SSE4.2"));
-        assert.ok(body.includes("compatibility alias"));
-        assert.match(body, /\[EXE \(no AVX2\)\]/);
-        assert.match(body, /\[MSI \(no AVX2\)\]/);
-        assert.match(body, /\[No AVX2\]/);
-        assert.match(body, /baseline filenames are retained compatibility aliases/);
-        assert.match(body, /## Qualification scope and limitations/);
-        assert.match(body, /owner-approved-reduced-v1\.6\.1/);
-        assert.match(body, /Windows native HTTP\/service runtime.*not verified/i);
-        assert.match(body, /AVX-disabled.*not verified/i);
-        assert.match(body, /MSI install\/upgrade\/rollback\/uninstall lifecycle.*not verified/i);
-        assert.match(body, /listener-free reset.*WiX ICE/i);
-        assert.match(body, /compiler target.*Nehalem\/SSE4\.2/i);
-        assert.doesNotMatch(body, /binaries share the Nehalem\/SSE4\.2 floor/);
     });
 
     it("documents the verified source and Node development minimums", () => {

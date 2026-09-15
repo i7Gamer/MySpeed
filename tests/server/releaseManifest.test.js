@@ -30,6 +30,7 @@ const SUCCESS_EVIDENCE = {tests: "success", binaries: "success", msi: "success",
 const FULL_MODE = "full";
 const RESET_MODE = "listener-free-reset";
 const REDUCED_SCOPE = "owner-approved-reduced-v1.6.1";
+const REDUCED_RELEASE_VERSIONS = ["1.6.1", "1.7.0"];
 const DEFERRED_WINDOWS_CHECKS = [
     "Windows native full verification with enforced outbound denial",
     "Windows native CPU-floor verification",
@@ -192,19 +193,28 @@ const writeMacosEvidence = ({directory, architecture, artifactSha256, summary}) 
 };
 
 describe("release qualification scope", () => {
-    it("limits the owner's reduced scope to this repository and v1.6.1", () => {
-        const approved = {repository: REPOSITORY, version: VERSION};
-        assert.deepEqual(getQualificationScope(approved), {
-            id: REDUCED_SCOPE, deferredChecks: DEFERRED_WINDOWS_CHECKS
-        });
+    it("limits the owner's reduced scope to the exact approved repository and versions", () => {
+        for (const version of REDUCED_RELEASE_VERSIONS) {
+            const approved = {repository: REPOSITORY, version};
+            assert.deepEqual(getQualificationScope(approved), {
+                id: `owner-approved-reduced-v${version}`, deferredChecks: DEFERRED_WINDOWS_CHECKS
+            });
+        }
+        const approved = {repository: REPOSITORY, version: "1.7.0"};
         for (const input of [
-            {...approved, version: "1.6.2"}, {...approved, version: "1.6.0"},
-            {...approved, version: "1.6.1-beta.1"}, {...approved, version: "1.6.1\n"},
+            {...approved, version: "1.6.2"}, {...approved, version: "1.6.1-beta.1"},
+            {...approved, version: "1.6.0"}, {...approved, version: "1.7.1"},
+            {...approved, version: "1.7"}, {...approved, version: "1.7.0.0"},
+            {...approved, version: "01.7.0"}, {...approved, version: "v1.7.0"},
+            {...approved, version: "1.7.0-beta.1"}, {...approved, version: "1.7.0\n"},
+            {...approved, version: "1.7.0 "},
             {...approved, repository: "fork/MySpeed"}, {...approved, repository: "i7gamer/MySpeed"},
             {}, {repository: null, version: null}
         ]) assert.deepEqual(getQualificationScope(input), {id: "full-native", deferredChecks: []});
-        getQualificationScope(approved).deferredChecks.length = 0;
-        assert.deepEqual(getQualificationScope(approved).deferredChecks, DEFERRED_WINDOWS_CHECKS);
+        const first = getQualificationScope({repository: REPOSITORY, version: "1.7.0"});
+        first.deferredChecks.length = 0;
+        assert.deepEqual(getQualificationScope({repository: REPOSITORY, version: "1.7.0"}).deferredChecks,
+            DEFERRED_WINDOWS_CHECKS);
     });
 });
 

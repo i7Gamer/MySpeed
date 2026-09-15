@@ -14,6 +14,10 @@ describe("OpenSpeedTest endpoint parity", () => {
             ["speed.lan:3000", false], ["ftp://speed.lan", false],
             ["http://speed.lan/a b", false], ["http://speed.lan/\tpath", false],
             ["http://speed.lan/\u0001path", false], ["http://speed.lan/\u007fpath", false],
+            ["http://spe\u200bed.lan", false], ["http://speed.lan/a\u200bb", false],
+            ["http://speed.lan/a\u200cb", false], ["http://speed.lan/a\u202eb", false],
+            // Percent escapes are visible URL spelling, not hidden input characters.
+            ["http://speed.lan/a%E2%80%8Bb", true], ["https://münchen.example/base", true],
             ["http://user@speed.lan", false], ["http://@speed.lan", false],
             ["http://:@speed.lan", false], ["http://speed.lan/path@file", true],
             ["http://speed.lan?q=1", false],

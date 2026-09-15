@@ -62,6 +62,8 @@
       "cloudflare_desc": "Pengujian cepat berbasis CDN",
       "iperf3_desc": "Server iperf3 milik Anda sendiri, di jaringan Anda",
       "openspeedtest_desc": "Server OpenSpeedTest milik Anda sendiri, di jaringan Anda",
+      "ost_skip_tls_verification": "Lewati verifikasi sertifikat TLS",
+      "ost_skip_tls_warning": "Gunakan hanya untuk server tepercaya dengan sertifikat tidak valid atau ditandatangani sendiri. Verifikasi sertifikat dinonaktifkan untuk target ini dan pengalihannya; penyusup di tengah dapat mengubah tujuan atau hasil. Utamakan sertifikat yang valid.",
       "iperf_advanced": "Pengaturan pengujian",
       "iperf_duration": "Detik per arah",
       "iperf_streams": "Aliran paralel",

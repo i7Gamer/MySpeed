@@ -20,7 +20,7 @@ import {
 } from "@/common/utils/InvariantText";
 import {
     baselineAccepted, BASELINE_BOUNDS, BASELINE_PERCENT_DEFAULT, bitrateAccepted,
-    durationAccepted, iperfHostAccepted, IPERF_DEFAULTS, ostEndpointAccepted, providerById, providers,
+    durationAccepted, iperfHostAccepted, IPERF_DEFAULTS, ostEndpointAccepted, ostSupportsCertificateBypass, providerById, providers,
     requiresEndpoint, streamsAccepted, takesEndpoint, takesServerId, takesTuning,
     tuningAccepted, TUNING_BOUNDS
 } from "./providers";
@@ -90,6 +90,7 @@ export const TargetEditor = ({open, onClose, target}) => {
     // host equalled it - "none.local" erased itself four characters in.
     // targetBody maps "" to null on the way out.
     const [endpoint, setEndpoint] = useState("");
+    const [ostSkipCertificateVerification, setOstSkipCertificateVerification] = useState(false);
     const [alerts, setAlerts] = useState(true);
     // How the run itself is shaped, for the one provider that lets a target
     // say. Blank is not a value: the column is nullable and null is what the
@@ -130,6 +131,8 @@ export const TargetEditor = ({open, onClose, target}) => {
         setProvider(target?.provider ?? "ookla");
         setServerId(target?.serverId ?? "none");
         setEndpoint(target?.endpoint ?? "");
+        setOstSkipCertificateVerification(target?.ostSkipCertificateVerification === true
+            || target?.ostSkipCertificateVerification === 1);
         // sqlite hands the flag back as 0/1 under the global raw:true.
         setAlerts(target ? Boolean(target.alerts) : true);
         setIperfDuration(target?.iperfDuration != null ? String(target.iperfDuration) : "");
@@ -181,6 +184,7 @@ export const TargetEditor = ({open, onClose, target}) => {
     }, [serverId]);
 
     const handleEndpointChange = (value) => {
+        if (value.trim() !== endpoint.trim()) setOstSkipCertificateVerification(false);
         setEndpoint(value);
         if (value) setServerId("none");
     };
@@ -199,7 +203,7 @@ export const TargetEditor = ({open, onClose, target}) => {
         // Built by targetBody, which owns the three sentinels the fields carry.
         const body = targetBody({name, provider, serverId, endpoint, alerts, ownOptimals,
             optimalPing, optimalDownload, optimalUpload, iperfDuration, iperfStreams,
-            iperfUdp, iperfBitrate, baselineAlerts, baselinePercent});
+            iperfUdp, iperfBitrate, baselineAlerts, baselinePercent, ostSkipCertificateVerification});
 
         try {
             if (target) await assertOk(await patchRequest(`/targets/${target.id}`, body), "target");
@@ -339,7 +343,10 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                       title={current.name}
                                                       description={t(`dialog.provider.${current.id}_desc`)}
                                                       active={current.id === provider}
-                                                      onClick={() => setProvider(current.id)}/>
+                                                      onClick={() => {
+                                                          if (current.id !== provider) setOstSkipCertificateVerification(false);
+                                                          setProvider(current.id);
+                                                      }}/>
                                 ))}
                             </SelectableList>
 
@@ -429,6 +436,18 @@ export const TargetEditor = ({open, onClose, target}) => {
                                                        : CUSTOM_BACKEND_PLACEHOLDER)}
                                                value={endpoint}
                                                onChange={(e) => handleEndpointChange(e.target.value)}/>
+                                    </div>
+                                )}
+
+                                {ostSupportsCertificateBypass(provider, endpoint) && (
+                                    <div className="provider-setting target-tuning-setting">
+                                        <div className="target-tuning-switch">
+                                            <h3>{t("dialog.provider.ost_skip_tls_verification")}</h3>
+                                            <ToggleSwitch checked={ostSkipCertificateVerification}
+                                                          onChange={setOstSkipCertificateVerification}
+                                                          label={t("dialog.provider.ost_skip_tls_verification")}/>
+                                        </div>
+                                        <p className="target-baseline-note">{t("dialog.provider.ost_skip_tls_warning")}</p>
                                     </div>
                                 )}
 

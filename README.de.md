@@ -250,7 +250,11 @@ API-Tokens werden nur mit exportiert, wenn der Konfigurationsexport die Zugangsd
 
 #### OpenSpeedTest-Ziele
 
-Lege ein OpenSpeedTest-Ziel mit der HTTP- oder HTTPS-Basis-URL deines Servers an. MySpeed lädt den MIT-lizenzierten [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) beim ersten Test herunter und prüft die festgelegte Archiv-Prüfsumme. Unterstützt werden Windows und Linux auf x64/ARM64 sowie macOS auf x64/ARM64. Jede Übertragungsphase dauert 15 Sekunden. Nicht vertrauenswürdige HTTPS-Zertifikate werden abgelehnt; die Zertifikatsprüfung wird nicht automatisch umgangen.
+Lege ein OpenSpeedTest-Ziel mit der HTTP- oder HTTPS-Basis-URL deines Servers an. Vertrauenswürdiges HTTPS funktioniert ohne zusätzliche Konfiguration. MySpeed lädt den MIT-lizenzierten [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) beim ersten Test herunter und prüft die festgelegte Archiv-Prüfsumme. Unterstützt werden Windows und Linux auf x64/ARM64 sowie macOS auf x64/ARM64. Jede Übertragungsphase dauert 15 Sekunden.
+
+Der erweiterte Ziel-Editor bietet eine ausdrückliche Ausnahme von der Zertifikatsprüfung für einen vertrauenswürdigen Server mit ungültigem oder selbstsigniertem Zertifikat. Sie ist standardmäßig deaktiviert und übergibt die ost-cli-Option `--insecure`; damit wird die Prüfung deaktiviert, statt ein Zertifikat fest zu binden, und die Ausnahme gilt auch für Weiterleitungen. Wird der Endpunkt oder Anbieter geändert, wird die Ausnahme gelöscht, sofern ein Betreiber sie nicht ausdrücklich erneut bestätigt. Der Einrichtungsassistent erstellt immer die strikte Voreinstellung; falls die Ausnahme wirklich erforderlich ist, bearbeite das Ziel nach der Einrichtung.
+
+ost-cli liefert nur ein abschließendes JSON-Ergebnis und keinen laufenden Fortschritt. Während der Ausführung zeigt MySpeed deshalb einen animierten unbestimmten Zustand und die vergangene Zeit, aber keinen vorgetäuschten Prozentwert.
 
 OpenSpeedTest folgt der Routingtabelle des Betriebssystems: Die CLI kann sich nicht an die in MySpeed ausgewählte Netzwerkschnittstelle binden. Die Messung kann daher eine andere Verbindung betreffen. Konfiguriere nur Server, denen der Administrator vertraut. MySpeed lehnt direkt angegebene Metadaten- und Link-Local-Adressen ab, begrenzt damit aber nicht die DNS-Auflösung, Proxy-Nutzung oder Weiterleitungen der externen CLI. Ein Hostname oder eine Weiterleitung kann solche Ziele weiterhin erreichen.
 

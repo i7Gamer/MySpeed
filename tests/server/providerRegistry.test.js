@@ -61,6 +61,19 @@ describe("OpenSpeedTest arguments", () => {
         assert.throws(() => REGISTRY.openspeedtest.buildArgs({}, IFACE), /server URL/i);
     });
 
+    it("adds the explicit certificate-verification bypass only for HTTPS", () => {
+        assert.deepEqual(REGISTRY.openspeedtest.buildArgs({
+            endpoint: "  https://speed.lan:3001  ", ostSkipCertificateVerification: 1
+        }, IFACE).args, ["--server", "https://speed.lan:3001", "--duration",
+            String(OST_DURATION_SECONDS), "--json", "--insecure"]);
+
+        for (const target of [
+            {endpoint: "http://speed.lan:3000", ostSkipCertificateVerification: true},
+            {endpoint: "https://speed.lan:3001", ostSkipCertificateVerification: "true"},
+            {endpoint: "https://speed.lan:3001", ostSkipCertificateVerification: null}
+        ]) assert.throws(() => REGISTRY.openspeedtest.buildArgs(target, IFACE), /certificate|TLS/i);
+    });
+
     it("is downloaded only when a target uses it", () => {
         assert.equal(REGISTRY.openspeedtest.downloadedOnDemand, true);
         assert.equal(REGISTRY.openspeedtest.wholeOutput, true);

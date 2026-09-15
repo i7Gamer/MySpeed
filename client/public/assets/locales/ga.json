@@ -62,6 +62,8 @@
       "cloudflare_desc": "Tástáil thapa bunaithe ar CDN",
       "iperf3_desc": "Do fhreastalaí iperf3 féin, ar do líonra",
       "openspeedtest_desc": "Do fhreastalaí OpenSpeedTest féin, ar do líonra",
+      "ost_skip_tls_verification": "Ná fíoraigh an teastas TLS",
+      "ost_skip_tls_warning": "Ná húsáid ach le freastalaí iontaofa a bhfuil teastas neamhbhailí nó féinsínithe aige. Tá fíorú teastais díchumasaithe don sprioc seo agus dá hatreoruithe; d’fhéadfadh ionsaitheoir sa lár an ceann scríbe nó na torthaí a athrú. Is fearr teastas bailí.",
       "iperf_advanced": "Socruithe an rite",
       "iperf_duration": "Soicindí sa treo",
       "iperf_streams": "Sruthanna comhthreomhara",

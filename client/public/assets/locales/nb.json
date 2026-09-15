@@ -62,6 +62,8 @@
       "cloudflare_desc": "Rask CDN-basert testing",
       "iperf3_desc": "Din egen iperf3-server, på ditt nettverk",
       "openspeedtest_desc": "Din egen OpenSpeedTest-server, på ditt nettverk",
+      "ost_skip_tls_verification": "Hopp over kontroll av TLS-sertifikat",
+      "ost_skip_tls_warning": "Bruk bare dette for en klarert server med et ugyldig eller selvsignert sertifikat. Sertifikatkontroll er deaktivert for dette målet og omdirigeringene; en mellommann kan endre målet eller resultatene. Foretrekk et gyldig sertifikat.",
       "iperf_advanced": "Kjøreinnstillinger",
       "iperf_duration": "Sekunder per retning",
       "iperf_streams": "Parallelle strømmer",
