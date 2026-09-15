@@ -24,6 +24,10 @@ $script:RequestKind='myspeed-windows-native-standalone-host-request'
 $script:ResultKind='myspeed-windows-native-standalone-host-result'
 $script:MaximumJsonBytes=262144
 $script:MaximumFailureCharacters=512
+$script:MaximumListenerDiagnosticOwners=4
+$script:MaximumListenerDiagnosticBytes=2048
+$script:ListenerProcessStatePattern='\A(?:present|exited|unavailable)\z'
+$script:ListenerJobMembershipPattern='\A(?:in-job|not-in-job|unavailable)\z'
 $script:MaximumSourceBytes=2097152
 $script:MaximumCoordinatorBytes=134217728
 $script:MaximumCandidateBytes=268435456
@@ -418,8 +422,61 @@ function Get-MyspeedStandaloneOfflineObservation {
     }finally{Remove-Module $module -Force}
 }
 
+function Assert-MyspeedStandaloneListenerProcessObservation {
+    param([object]$Value)
+    Assert-MyspeedStandaloneKeys $Value @('processState','creationFileTime','jobMembership') `
+        'Listener process observation'
+    $state=Assert-MyspeedStandaloneString $Value.processState 'Listener process state' `
+        $script:ListenerProcessStatePattern
+    $membership=Assert-MyspeedStandaloneString $Value.jobMembership 'Listener Job membership' `
+        $script:ListenerJobMembershipPattern
+    if($state -ceq 'present'){[void](Assert-MyspeedStandaloneString $Value.creationFileTime `
+            'Listener process creation time' '\A[0-9a-f]{16}\z')}
+    elseif($null -ne $Value.creationFileTime){throw 'Listener absent process observation differs'}
+    return [pscustomobject][ordered]@{processState=$state
+        creationFileTime=$(if($state -ceq 'present'){[string]$Value.creationFileTime}else{$null})
+        jobMembership=$membership}
+}
+
+# Failure-only evidence. Owners are probed once so the retained records and the ownership verdict describe the
+# same observation; the expected owner is always retained first so truncation can never discard it.
+function New-MyspeedStandaloneListenerDiagnostic {
+    param([object[]]$OwnerIds,[int64]$ExpectedPid,[string]$ExpectedCreation,[scriptblock]$ReadProcessObservation)
+    [int64[]]$owners=@($OwnerIds|ForEach-Object {[int64]$_})
+    [int64[]]$distinct=@($owners|Sort-Object -Unique)
+    [int64[]]$ordered=@(@($distinct|Where-Object {$_ -eq $ExpectedPid})+@($distinct|Where-Object {$_ -ne $ExpectedPid}))
+    $expectedListeners=@($owners|Where-Object {$_ -eq $ExpectedPid}).Count
+    $records=[Collections.Generic.List[object]]::new()
+    foreach($owner in $ordered){
+        if($records.Count -ge $script:MaximumListenerDiagnosticOwners){break}
+        $observation=Assert-MyspeedStandaloneListenerProcessObservation (& $ReadProcessObservation $owner)
+        $creationMatches=$(if($observation.processState -ceq 'present'){
+                [bool]($observation.creationFileTime -ceq $ExpectedCreation)}else{$null})
+        [void]$records.Add([pscustomobject][ordered]@{owningProcessId=$owner
+            expectedOwner=($owner -eq $ExpectedPid)
+            listenerCount=@($owners|Where-Object {$_ -eq $owner}).Count
+            processState=$observation.processState
+            creationFileTime=$observation.creationFileTime
+            creationTimeMatches=$creationMatches
+            jobMembership=$observation.jobMembership})
+    }
+    while($true){
+        $diagnostic=[pscustomobject][ordered]@{schemaVersion=1
+            matchingListenerCount=$owners.Count
+            distinctOwnerCount=$distinct.Count
+            expectedOwnerListenerCount=$expectedListeners
+            retainedOwnerCount=$records.Count
+            ownersTruncated=($records.Count -lt $distinct.Count)
+            owners=[object[]]$records.ToArray()}
+        $encoded=$diagnostic|ConvertTo-Json -Depth 6 -Compress
+        if([Text.UTF8Encoding]::new($false).GetByteCount($encoded) -le $script:MaximumListenerDiagnosticBytes -or
+            $records.Count -eq 0){return $diagnostic}
+        $records.RemoveAt($records.Count-1)
+    }
+}
+
 function Invoke-MyspeedStandaloneListenerObservationCore {
-    param([object]$Request,[object[]]$Connections,[scriptblock]$ReadProcessIdentity)
+    param([object]$Request,[object[]]$Connections,[scriptblock]$ReadProcessObservation)
     Assert-MyspeedStandaloneKeys $Request @('schemaVersion','mode','address','port','candidatePid','candidateCreationTime') 'Listener observer request'
     [void](Assert-MyspeedStandaloneInteger $Request.schemaVersion 'Listener observer schema' 1 1)
     $mode=Assert-MyspeedStandaloneString $Request.mode 'Listener observer mode' '\A(?:owned|absent)\z'
@@ -437,15 +494,13 @@ function Invoke-MyspeedStandaloneListenerObservationCore {
             [void]$listeners.Add([pscustomobject]@{OwningProcess=$owner})}
     }
     if($mode -ceq 'absent'){return [pscustomobject][ordered]@{listenerGone=($listeners.Count -eq 0)}}
-    if($listeners.Count -ne 1 -or [int64]$listeners[0].OwningProcess -ne $pidValue){return [pscustomobject][ordered]@{listenerOwned=$false}}
-    $processIdentity=& $ReadProcessIdentity $pidValue
-    Assert-MyspeedStandaloneKeys $processIdentity @('exists','creationFileTime') 'Listener process identity'
-    if($processIdentity.exists -isnot [bool]){throw 'Listener process existence proof differs'}
-    if($processIdentity.exists){[void](Assert-MyspeedStandaloneString $processIdentity.creationFileTime `
-            'Listener process creation time' '\A[0-9a-f]{16}\z')}
-    elseif($null -ne $processIdentity.creationFileTime){throw 'Listener absent process identity differs'}
-    $owned=$processIdentity.exists -eq $true -and $processIdentity.creationFileTime -ceq $creation
-    return [pscustomobject][ordered]@{listenerOwned=$owned}
+    $diagnostic=New-MyspeedStandaloneListenerDiagnostic ([object[]]@($listeners|ForEach-Object {$_.OwningProcess})) `
+        $pidValue $creation $ReadProcessObservation
+    $expected=@($diagnostic.owners|Where-Object {$_.expectedOwner})|Select-Object -First 1
+    $owned=$listeners.Count -eq 1 -and $null -ne $expected -and $expected.listenerCount -eq 1 -and
+        $expected.processState -ceq 'present' -and $expected.creationTimeMatches -eq $true
+    if($owned){return [pscustomobject][ordered]@{listenerOwned=$true}}
+    return [pscustomobject][ordered]@{listenerOwned=$false;diagnostic=$diagnostic}
 }
 
 function Get-MyspeedStandaloneListenerObservation {
@@ -453,12 +508,27 @@ function Get-MyspeedStandaloneListenerObservation {
     Assert-MyspeedStandaloneHostedContext $ExpectedRunId $ExpectedRunAttempt $ExpectedEventSha $ExpectedSourceSha $ExpectedImageVersion $Nonce
     Import-Module NetTCPIP -ErrorAction Stop
     $connections=@(Get-NetTCPConnection -ErrorAction Stop)
-    $readProcessIdentity={param([int64]$ProcessId)
+    # Job membership needs a handle to the candidate Job, which this observer process does not hold, so it is
+    # reported as explicitly unavailable rather than inferred. An owner that exits or refuses its start time
+    # between the connection snapshot and this read is reported as exited or unavailable; ownership is never
+    # inferred from a missing observation.
+    $readProcessObservation={param([int64]$ProcessId)
+        # Owner PIDs now come from the connection table, where they are valid uint32 values that do not all
+        # fit the Int32 Get-Process takes. An out-of-range owner is reported unavailable rather than aborting
+        # the whole observation with a cast error and no diagnostic at all.
+        if($ProcessId -lt 0 -or $ProcessId -gt [int]::MaxValue){
+            return [pscustomobject][ordered]@{processState='unavailable';creationFileTime=$null
+                jobMembership='unavailable'}}
         $process=Get-Process -Id ([int]$ProcessId) -ErrorAction SilentlyContinue
-        return [pscustomobject][ordered]@{exists=($null -ne $process);creationFileTime=if($null -eq $process){$null}else{
-            $process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString('x16')}}
+        if($null -eq $process){return [pscustomobject][ordered]@{processState='exited';creationFileTime=$null
+            jobMembership='unavailable'}}
+        try{$creationFileTime=$process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString('x16')}
+        catch{return [pscustomobject][ordered]@{processState='unavailable';creationFileTime=$null
+            jobMembership='unavailable'}}
+        return [pscustomobject][ordered]@{processState='present';creationFileTime=$creationFileTime
+            jobMembership='unavailable'}
     }
-    return Invoke-MyspeedStandaloneListenerObservationCore $Request $connections $readProcessIdentity
+    return Invoke-MyspeedStandaloneListenerObservationCore $Request $connections $readProcessObservation
 }
 
 function Get-MyspeedStandaloneCandidateIdentityObservation {
@@ -1190,10 +1260,15 @@ try{
             Get-MyspeedStandaloneFileIdentity $inputValue.path $script:MaximumCoordinatorBytes `
                 (Assert-MyspeedStandaloneString $inputValue.sha256 'Standalone binary expected SHA' '\A[0-9a-f]{64}\z')}
         'TestObservationCore' {$inputValue=ConvertFrom-MyspeedStandaloneJson $InputJson 'Standalone observer projection validation'
-            Assert-MyspeedStandaloneKeys $inputValue @('offlineRequest','snapshot','ipState','listenerRequest','connections','processIdentity') `
+            Assert-MyspeedStandaloneKeys $inputValue @('offlineRequest','snapshot','ipState','listenerRequest','connections','processObservations') `
                 'Standalone observer projection validation'
-            $processIdentity=$inputValue.processIdentity
-            $readProcess={param([int64]$ProcessId) return $processIdentity}.GetNewClosure()
+            $processObservations=$inputValue.processObservations
+            $readProcess={param([int64]$ProcessId)
+                if($null -eq $processObservations -or $processObservations -isnot [psobject]){
+                    throw 'Injected listener process observations differ'}
+                $property=$processObservations.PSObject.Properties[[string]$ProcessId]
+                if($null -eq $property){throw 'Injected listener process observation is absent'}
+                return $property.Value}.GetNewClosure()
             [pscustomobject][ordered]@{offline=Invoke-MyspeedStandaloneOfflineObservationCore $inputValue.offlineRequest `
                     $inputValue.snapshot ([object[]]$inputValue.ipState)
                 listener=Invoke-MyspeedStandaloneListenerObservationCore $inputValue.listenerRequest `

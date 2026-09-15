@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
 import {createHash} from "node:crypto";
 import {EventEmitter} from "node:events";
 import fs from "node:fs";
@@ -28,6 +29,53 @@ const retainJson = value => { const bytes = Buffer.from(JSON.stringify(value), "
 const candidateNonce = (alias, scenario) => createHash("sha256").update(`${alias}\0${scenario}`)
     .digest("hex").slice(0, 32);
 const windowsIt = process.platform === "win32" ? it : it.skip;
+const READY_PID = 9001;
+const READY_CREATION = "1".repeat(16);
+const HOST_SCRIPT = path.resolve(import.meta.dirname, "../../scripts/qualification/windows-native-standalone-host.ps1");
+const HOST_POWERSHELL = process.platform === "win32"
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : null;
+
+const listenerDiagnostic = () => ({schemaVersion: 1, matchingListenerCount: 2, distinctOwnerCount: 2,
+    expectedOwnerListenerCount: 1, retainedOwnerCount: 2, ownersTruncated: false,
+    owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1, processState: "present",
+        creationFileTime: READY_CREATION, creationTimeMatches: true, jobMembership: "in-job"},
+    {owningProcessId: 4711, expectedOwner: false, listenerCount: 1, processState: "exited",
+        creationFileTime: null, creationTimeMatches: null, jobMembership: "unavailable"}]});
+
+// Drives the real observer host over its inert projection seam so the shapes it can actually emit are the
+// ones the proof validator is tested against.
+const observeThroughHost = async owners => JSON.parse(execFileSync(HOST_POWERSHELL,
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", HOST_SCRIPT,
+        "-Mode", "TestObservationCore", "-InputJson", JSON.stringify({
+            offlineRequest: {schemaVersion: 1, alias: "default", scenario: null, phase: "before-launch",
+                canaryPath: "C:\\runner\\closure\\windows-winsw-offline-canary.ps1",
+                canarySha256: "2".repeat(64)},
+            snapshot: {inventory: [{loopback: false, enabled: false}]},
+            ipState: [{kind: "interface", loopback: false, routable: false},
+                {kind: "address", loopback: false, routable: false},
+                {kind: "route", loopback: false, routable: false}],
+            listenerRequest: {schemaVersion: 1, mode: "owned", address: "127.0.0.1", port: 45_000,
+                candidatePid: READY_PID, candidateCreationTime: READY_CREATION},
+            connections: owners.map(([owningProcess]) => ({State: "Listen", LocalAddress: "127.0.0.1",
+                LocalPort: 45_000, OwningProcess: owningProcess})),
+            processObservations: Object.fromEntries(owners)})],
+    {encoding: "utf8", timeout: 20_000}).trim()).listener;
+
+const runOwnedListenerAssertion = async observation => {
+    const proof = proofRequest();
+    const harness = makeActualRuntimeDependencies(proof);
+    harness.dependencies.observeListener = async value => value.mode === "owned" ? observation : {listenerGone: true};
+    const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+    const candidate = proof.candidates[0];
+    const ownership = {sessionId: "listener-diagnostic", alias: candidate.alias, scenario: "populated-first-boot"};
+    const fixtureState = {populated: {root: proof.fixtures[0].populatedWork, nonce: NONCE},
+        reset: {root: proof.fixtures[0].resetWork, nonce: NONCE}, expected: {}};
+    const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+        artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState});
+    await runtime.launchSession(opened);
+    return runtime.runAssertions({state: opened.state, stage: "running"});
+};
 const OFFLINE_TARGETS = [
     {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", netLuid: "0000000000000001"},
     {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", netLuid: "0000000000000002"}
@@ -612,6 +660,126 @@ describe("Windows native standalone proof operation factory", () => {
             await runtime.launchSession(opened);
             assert.equal((await runtime.closeSession({state: opened.state, ownership})).candidateExited, true);
         } finally { fs.rmSync(parent, {recursive: true, force: true}); }
+    });
+
+    it("retains the bounded listener owner diagnostic when owned-listener proof fails", async () => {
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false, diagnostic: listenerDiagnostic()}),
+            error => {
+                assert.match(error.message, /^Owned candidate listener was not proven/u);
+                assert.match(error.message,
+                    /listeners=2 owners=2 expectedOwnerListeners=1 retained=2 truncated=false/u);
+                assert.match(error.message,
+                    /pid=9001 expected=true listeners=1 state=present creation=match job=in-job/u);
+                assert.match(error.message,
+                    /pid=4711 expected=false listeners=1 state=exited creation=none job=unavailable/u);
+                assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS,
+                    `message must stay within the retained failure budget: ${error.message.length}`);
+                return true;
+            });
+    });
+
+    it("keeps the fullest retainable listener summary inside the retained failure budget", async () => {
+        // Every rendered field at its widest: 10-digit PIDs, 5-digit counts, "false" over "true", and
+        // "unavailable", the longest value of both the process-state and the Job-membership vocabulary.
+        // This is the true worst case the observer can produce; it measures 505 of the 512 budgeted
+        // characters, so widening any rendered field fails here instead of silently losing evidence.
+        const owners = Array.from({length: 4}, (unused, index) => ({owningProcessId: 4_294_967_295 - index,
+            expectedOwner: false, listenerCount: 16_383, processState: "unavailable", creationFileTime: null,
+            creationTimeMatches: null, jobMembership: "unavailable"}));
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 65_535, distinctOwnerCount: 65_535,
+                expectedOwnerListenerCount: 65_535, retainedOwnerCount: owners.length, ownersTruncated: true,
+                owners}}),
+        error => {
+            assert.equal(error.message.split("pid=").length - 1, owners.length);
+            assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS,
+                `message must stay within the retained failure budget: ${error.message.length}`);
+            return true;
+        });
+    });
+
+    it("renders the system owner PID the connection provider can really report", async () => {
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 1, distinctOwnerCount: 1,
+                expectedOwnerListenerCount: 0, retainedOwnerCount: 1, ownersTruncated: false,
+                owners: [{owningProcessId: 0, expectedOwner: false, listenerCount: 1,
+                    processState: "unavailable", creationFileTime: null, creationTimeMatches: null,
+                    jobMembership: "unavailable"}]}}),
+        /pid=0 expected=false listeners=1 state=unavailable creation=none job=unavailable/u);
+    });
+
+    it("summarizes a truncated empty-owner listener diagnostic without inventing an owner", async () => {
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 0, distinctOwnerCount: 0,
+                expectedOwnerListenerCount: 0, retainedOwnerCount: 0, ownersTruncated: false, owners: []}}),
+        /listeners=0 owners=0 expectedOwnerListeners=0 retained=0 truncated=false/u);
+    });
+
+    it("rejects malformed, inconsistent or oversized listener diagnostics", async () => {
+        for (const mutate of [
+            value => { delete value.diagnostic; },
+            value => { value.diagnostic.schemaVersion = 2; },
+            value => { value.diagnostic.owners[0].processState = "running"; },
+            value => { value.diagnostic.owners[0].jobMembership = "maybe"; },
+            value => { value.diagnostic.owners[0].creationTimeMatches = "true"; },
+            value => { value.diagnostic.owners[0].creationFileTime = "z".repeat(16); },
+            value => { value.diagnostic.owners[1].creationFileTime = READY_CREATION; },
+            value => { value.diagnostic.owners[0].extra = true; },
+            value => { delete value.diagnostic.ownersTruncated; },
+            value => { value.diagnostic.retainedOwnerCount = 1; },
+            value => { value.diagnostic.distinctOwnerCount = 1; },
+            value => { value.diagnostic.owners[0].listenerCount = 0; },
+            value => { value.diagnostic.owners = Array.from({length: 5},
+                (unused, index) => ({...value.diagnostic.owners[0], owningProcessId: 5000 + index,
+                    expectedOwner: false, creationTimeMatches: false}));
+            Object.assign(value.diagnostic, {matchingListenerCount: 5, distinctOwnerCount: 5,
+                expectedOwnerListenerCount: 0, retainedOwnerCount: 5}); },
+            value => { value.diagnostic.extra = true; },
+            value => { value.extra = true; }
+        ]) {
+            const observation = {listenerOwned: false, diagnostic: listenerDiagnostic()};
+            mutate(observation);
+            await assert.rejects(runOwnedListenerAssertion(observation),
+                /Owned listener observation|Owned candidate listener diagnostic/u);
+        }
+    });
+
+    windowsIt("accepts the listener diagnostics the observer host actually produces", async () => {
+        const recycled = await observeThroughHost([
+            [READY_PID, {processState: "present", creationFileTime: "e".repeat(16), jobMembership: "in-job"}],
+            [4711, {processState: "exited", creationFileTime: null, jobMembership: "unavailable"}]]);
+        assert.equal(recycled.listenerOwned, false);
+        await assert.rejects(runOwnedListenerAssertion(recycled), error => {
+            assert.match(error.message,
+                /listeners=2 owners=2 expectedOwnerListeners=1 retained=2 truncated=false/u);
+            // The recycled-PID shape: the expected PID still owns the listener but is a different process.
+            assert.match(error.message,
+                /pid=9001 expected=true listeners=1 state=present creation=differs job=in-job/u);
+            assert.match(error.message,
+                /pid=4711 expected=false listeners=1 state=exited creation=none job=unavailable/u);
+            return true;
+        });
+
+        const truncated = await observeThroughHost([
+            [READY_PID, {processState: "present", creationFileTime: READY_CREATION, jobMembership: "in-job"}],
+            ...Array.from({length: 6}, (unused, index) => [5000 + index,
+                {processState: "unavailable", creationFileTime: null, jobMembership: "unavailable"}])]);
+        assert.equal(truncated.diagnostic.ownersTruncated, true);
+        await assert.rejects(runOwnedListenerAssertion(truncated), error => {
+            assert.match(error.message,
+                /listeners=7 owners=7 expectedOwnerListeners=1 retained=4 truncated=true/u);
+            assert.match(error.message,
+                /pid=9001 expected=true listeners=1 state=present creation=match job=in-job/u);
+            assert.equal(error.message.split("pid=").length - 1, 4);
+            assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            return true;
+        });
+    });
+
+    it("keeps the proven owned-listener observation free of any diagnostic", async () => {
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: true, diagnostic: listenerDiagnostic()}),
+            /Owned listener observation keys differ/u);
+        assert.equal(typeof (await runOwnedListenerAssertion({listenerOwned: true})).summarySha256, "string");
     });
 
     it("blocks fixture deletion and later work when a launched controller never publishes ready", async () => {

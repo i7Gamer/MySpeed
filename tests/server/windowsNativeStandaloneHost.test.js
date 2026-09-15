@@ -13,6 +13,32 @@ const POWERSHELL = process.platform === "win32"
     : null;
 const TEST_TIMEOUT_MS = 20_000;
 const LARGE_TEST_FILE_BYTES = 2_097_153;
+const OBSERVER_PORT = 45_000;
+const OBSERVER_EXPECTED_PID = 8552;
+const OBSERVER_EXPECTED_CREATION = "01dd44e929976cfd";
+const OBSERVER_OTHER_CREATION = "2".repeat(16);
+const MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS = 4;
+const MAXIMUM_LISTENER_DIAGNOSTIC_BYTES = 2048;
+
+const listening = (port, owningProcess) => ({State: "Listen", LocalAddress: "127.0.0.1", LocalPort: port,
+    OwningProcess: owningProcess});
+
+const observerInput = (overrides = {}) => ({
+    offlineRequest: {schemaVersion: 1, alias: "default", scenario: null, phase: "before-launch",
+        canaryPath: "C:\\runner\\closure\\windows-winsw-offline-canary.ps1", canarySha256: "2".repeat(64)},
+    snapshot: {inventory: [{loopback: false, enabled: false}]},
+    ipState: [{kind: "interface", loopback: false, routable: false},
+        {kind: "address", loopback: false, routable: false},
+        {kind: "route", loopback: false, routable: false}],
+    listenerRequest: {schemaVersion: 1, mode: "owned", address: "127.0.0.1", port: OBSERVER_PORT,
+        candidatePid: OBSERVER_EXPECTED_PID, candidateCreationTime: OBSERVER_EXPECTED_CREATION},
+    connections: [listening(OBSERVER_PORT, OBSERVER_EXPECTED_PID)],
+    processObservations: {[OBSERVER_EXPECTED_PID]: {processState: "present",
+        creationFileTime: OBSERVER_EXPECTED_CREATION, jobMembership: "in-job"}},
+    ...overrides
+});
+
+const observeListenerCore = overrides => invoke("TestObservationCore", observerInput(overrides)).listener;
 
 const invoke = (mode, input) => JSON.parse(execFileSync(POWERSHELL,
     ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", SCRIPT,
@@ -211,7 +237,8 @@ describe("Windows native standalone host", () => {
             listenerRequest: {schemaVersion: 1, mode: "owned", address: "127.0.0.1", port: 65000,
                 candidatePid: 4321, candidateCreationTime: "1".repeat(16)},
             connections: [{State: "Listen", LocalAddress: "127.0.0.1", LocalPort: 65000, OwningProcess: 4321}],
-            processIdentity: {exists: true, creationFileTime: "1".repeat(16)}
+            processObservations: {4321: {processState: "present", creationFileTime: "1".repeat(16),
+                jobMembership: "unavailable"}}
         };
         const result = invoke("TestObservationCore", input);
         assert.equal(result.offline.offlineBoundaryPassed, true);
@@ -219,13 +246,13 @@ describe("Windows native standalone host", () => {
         for (const mutate of [
             value => { value.connections[0].LocalPort = null; },
             value => { value.connections[0].State = "Established"; },
-            value => { value.processIdentity.creationFileTime = "2".repeat(16); },
+            value => { value.processObservations[4321].creationFileTime = "2".repeat(16); },
             value => { value.ipState = value.ipState.slice(0, 2); }
         ]) {
             const changed = structuredClone(input); mutate(changed);
             if (changed.connections[0]?.State === "Established") {
                 assert.equal(invoke("TestObservationCore", changed).listener.listenerOwned, false);
-            } else if (changed.processIdentity.creationFileTime === "2".repeat(16)) {
+            } else if (changed.processObservations[4321].creationFileTime === "2".repeat(16)) {
                 assert.equal(invoke("TestObservationCore", changed).listener.listenerOwned, false);
             } else {
                 assert.throws(() => invoke("TestObservationCore", changed));
@@ -235,6 +262,151 @@ describe("Windows native standalone host", () => {
         absent.listenerRequest.mode = "absent";
         absent.connections = [];
         assert.equal(invoke("TestObservationCore", absent).listener.listenerGone, true);
+    });
+
+    it("retains a bounded failure-only listener diagnostic for every unproven owner", {skip: !POWERSHELL}, () => {
+        const owned = observeListenerCore();
+        assert.deepEqual(Object.keys(owned), ["listenerOwned"]);
+        assert.equal(owned.listenerOwned, true);
+
+        const none = observeListenerCore({connections: [], processObservations: {}});
+        assert.equal(none.listenerOwned, false);
+        assert.equal(none.diagnostic.schemaVersion, 1);
+        assert.equal(none.diagnostic.matchingListenerCount, 0);
+        assert.equal(none.diagnostic.distinctOwnerCount, 0);
+        assert.equal(none.diagnostic.expectedOwnerListenerCount, 0);
+        assert.equal(none.diagnostic.retainedOwnerCount, 0);
+        assert.equal(none.diagnostic.ownersTruncated, false);
+        assert.deepEqual(none.diagnostic.owners, []);
+
+        const wrong = observeListenerCore({connections: [listening(OBSERVER_PORT, 4711)],
+            processObservations: {4711: {processState: "present", creationFileTime: OBSERVER_OTHER_CREATION,
+                jobMembership: "not-in-job"}}});
+        assert.equal(wrong.listenerOwned, false);
+        assert.equal(wrong.diagnostic.matchingListenerCount, 1);
+        assert.equal(wrong.diagnostic.expectedOwnerListenerCount, 0);
+        assert.deepEqual(wrong.diagnostic.owners.map(owner => owner.owningProcessId), [4711]);
+        assert.equal(wrong.diagnostic.owners[0].expectedOwner, false);
+        assert.equal(wrong.diagnostic.owners[0].creationTimeMatches, false);
+        assert.equal(wrong.diagnostic.owners[0].jobMembership, "not-in-job");
+
+        const many = observeListenerCore({
+            connections: [listening(OBSERVER_PORT, 4711), listening(OBSERVER_PORT, OBSERVER_EXPECTED_PID),
+                listening(OBSERVER_PORT, 4711), listening(OBSERVER_PORT + 1, 5000)],
+            processObservations: {[OBSERVER_EXPECTED_PID]: {processState: "present",
+                creationFileTime: OBSERVER_EXPECTED_CREATION, jobMembership: "in-job"},
+            4711: {processState: "present", creationFileTime: OBSERVER_OTHER_CREATION,
+                jobMembership: "not-in-job"}}});
+        assert.equal(many.listenerOwned, false);
+        assert.equal(many.diagnostic.matchingListenerCount, 3);
+        assert.equal(many.diagnostic.distinctOwnerCount, 2);
+        assert.equal(many.diagnostic.expectedOwnerListenerCount, 1);
+        assert.deepEqual(many.diagnostic.owners.map(owner => owner.owningProcessId),
+            [OBSERVER_EXPECTED_PID, 4711]);
+        assert.deepEqual(many.diagnostic.owners.map(owner => owner.listenerCount), [1, 2]);
+
+        const exited = observeListenerCore({processObservations: {[OBSERVER_EXPECTED_PID]:
+            {processState: "exited", creationFileTime: null, jobMembership: "unavailable"}}});
+        assert.equal(exited.listenerOwned, false);
+        assert.equal(exited.diagnostic.owners[0].processState, "exited");
+        assert.equal(exited.diagnostic.owners[0].creationFileTime, null);
+        assert.equal(exited.diagnostic.owners[0].creationTimeMatches, null);
+
+        const raced = observeListenerCore({processObservations: {[OBSERVER_EXPECTED_PID]:
+            {processState: "unavailable", creationFileTime: null, jobMembership: "unavailable"}}});
+        assert.equal(raced.listenerOwned, false);
+        assert.equal(raced.diagnostic.owners[0].processState, "unavailable");
+        assert.equal(raced.diagnostic.owners[0].creationTimeMatches, null);
+
+        const recycled = observeListenerCore({processObservations: {[OBSERVER_EXPECTED_PID]:
+            {processState: "present", creationFileTime: OBSERVER_OTHER_CREATION, jobMembership: "in-job"}}});
+        assert.equal(recycled.listenerOwned, false);
+        assert.equal(recycled.diagnostic.owners[0].expectedOwner, true);
+        assert.equal(recycled.diagnostic.owners[0].creationTimeMatches, false);
+        assert.equal(recycled.diagnostic.expectedOwnerListenerCount, 1);
+    });
+
+    it("caps retained owner records and never truncates away the expected owner",
+        {skip: !POWERSHELL}, () => {
+            const competingOwners = 12;
+            const connections = [listening(OBSERVER_PORT, OBSERVER_EXPECTED_PID)];
+            const processObservations = {[OBSERVER_EXPECTED_PID]: {processState: "present",
+                creationFileTime: OBSERVER_EXPECTED_CREATION, jobMembership: "in-job"}};
+            for (let index = 0; index < competingOwners; index += 1) {
+                const owner = 20_000 + index;
+                connections.push(listening(OBSERVER_PORT, owner));
+                processObservations[owner] = {processState: "present", creationFileTime: "3".repeat(16),
+                    jobMembership: "not-in-job"};
+            }
+            const listener = observeListenerCore({connections, processObservations});
+            assert.equal(listener.listenerOwned, false);
+            assert.equal(listener.diagnostic.matchingListenerCount, competingOwners + 1);
+            assert.equal(listener.diagnostic.distinctOwnerCount, competingOwners + 1);
+            assert.equal(listener.diagnostic.expectedOwnerListenerCount, 1);
+            assert.equal(listener.diagnostic.ownersTruncated, true);
+            assert.equal(listener.diagnostic.retainedOwnerCount, listener.diagnostic.owners.length);
+            assert.equal(listener.diagnostic.owners.length, MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS);
+            // The expected owner is ordered first, so the cap can never discard the one record that
+            // explains whether the candidate itself ever held the port.
+            assert.deepEqual(listener.diagnostic.owners.map(owner => owner.owningProcessId),
+                [OBSERVER_EXPECTED_PID, 20_000, 20_001, 20_002]);
+            assert.equal(listener.diagnostic.owners[0].expectedOwner, true);
+        });
+
+    it("keeps the widest retainable diagnostic inside the serialized byte bound",
+        {skip: !POWERSHELL}, () => {
+            // Widest producible record set: the record cap is the binding constraint and the byte bound is
+            // the backstop, so this pins the relationship. Widening the schema fails here rather than
+            // silently dropping owner records through the byte-truncation loop in a hosted run.
+            const connections = [];
+            const processObservations = {};
+            for (let index = 0; index < MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS; index += 1) {
+                const owner = 4_294_967_295 - index;
+                connections.push(listening(OBSERVER_PORT, owner));
+                processObservations[owner] = {processState: "unavailable", creationFileTime: null,
+                    jobMembership: "unavailable"};
+            }
+            const listener = observeListenerCore({connections, processObservations});
+            assert.equal(listener.diagnostic.retainedOwnerCount, MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS);
+            assert.equal(listener.diagnostic.ownersTruncated, false);
+            assert.ok(Buffer.byteLength(JSON.stringify(listener.diagnostic), "utf8")
+                <= MAXIMUM_LISTENER_DIAGNOSTIC_BYTES,
+            `widest retainable diagnostic must fit the byte bound: ${
+                Buffer.byteLength(JSON.stringify(listener.diagnostic), "utf8")}`);
+        });
+
+    it("refuses malformed listener process observations instead of guessing ownership",
+        {skip: !POWERSHELL}, () => {
+            for (const observation of [
+                {processState: "running", creationFileTime: null, jobMembership: "unavailable"},
+                {processState: "present", creationFileTime: null, jobMembership: "unavailable"},
+                {processState: "exited", creationFileTime: OBSERVER_EXPECTED_CREATION,
+                    jobMembership: "unavailable"},
+                {processState: "unavailable", creationFileTime: OBSERVER_EXPECTED_CREATION,
+                    jobMembership: "unavailable"},
+                {processState: "present", creationFileTime: OBSERVER_EXPECTED_CREATION, jobMembership: "maybe"},
+                {processState: "present", creationFileTime: OBSERVER_EXPECTED_CREATION},
+                {processState: "present", creationFileTime: "z".repeat(16), jobMembership: "in-job"},
+                {processState: "present", creationFileTime: OBSERVER_EXPECTED_CREATION, jobMembership: "in-job",
+                    extra: true}
+            ])
+                assert.throws(() => observeListenerCore({processObservations:
+                    {[OBSERVER_EXPECTED_PID]: observation}}),
+                /Listener process observation|Listener process state|Listener Job membership|Listener process creation time|Listener absent process observation/u);
+            assert.throws(() => observeListenerCore({processObservations: {}}),
+                /Injected listener process observation is absent/u);
+        });
+
+    it("keeps the absent listener contract free of diagnostics", {skip: !POWERSHELL}, () => {
+        const absentRequest = {schemaVersion: 1, mode: "absent", address: "127.0.0.1", port: OBSERVER_PORT,
+            candidatePid: OBSERVER_EXPECTED_PID, candidateCreationTime: OBSERVER_EXPECTED_CREATION};
+        const gone = observeListenerCore({listenerRequest: absentRequest, connections: [],
+            processObservations: {}});
+        assert.deepEqual(Object.keys(gone), ["listenerGone"]);
+        assert.equal(gone.listenerGone, true);
+        const present = observeListenerCore({listenerRequest: absentRequest});
+        assert.deepEqual(Object.keys(present), ["listenerGone"]);
+        assert.equal(present.listenerGone, false);
     });
 
     it("runs one common injected lifecycle and restores only after the exact Job is empty", {skip: !POWERSHELL}, () => {
