@@ -568,8 +568,15 @@ describe("v1.6.1 post-release Windows qualification target", () => {
         assert.match(workflow, /node \$controller --prepare-v1\.6\.1/u);
         assert.match(workflow, /node \$hosted --execute/u);
         assert.match(workflow, /post-release-envelope\.json/u);
-        assert.match(workflow, /\$sources\['host\.entry-failure\.json'\]/u);
-        assert.match(workflow, /\$requiredSources=@\(\$sources\.Keys\)/u);
+        assert.match(workflow, /'host\.entry-failure\.json'=\(Join-Path \$taskRoot 'host\.entry-failure\.json'\)/u);
+        assert.match(workflow, /windows-native-post-release-evidence\.mjs'[\s\S]*--inventory/u);
+        assert.match(workflow, /Hash-bound scenario evidence inventory/u);
+        assert.match(workflow, /\$scenarioSources\.Count -ne 25/u);
+        assert.match(workflow, /\$requiredNames \+= @\(\$scenarioSources \| ForEach-Object \{ \$_\.name \}\)/u);
+        assert.match(workflow, /\[IO\.FileShare\]::Read/u);
+        assert.match(workflow, /\[IO\.FileMode\]::CreateNew/u);
+        assert.match(workflow, /\$entry\.allowEmpty/u);
+        assert.doesNotMatch(workflow, /signed scenario evidence/iu);
         assert.match(workflow, /--test-name-pattern="compiles its native declarations\|captures native operation limits\|uses captured input bounds\|captures cleanup limits"[\s\S]*tests\/server\/windowsNativeStandaloneHost\.test\.js\s*`\s*\n\s*tests\/server\/windowsNativeCandidateController\.test\.js/u);
         assert.match(workflow, /actions\/upload-artifact@[0-9a-f]{40}/u);
         assert.match(workflow, /artifact\.workflow_run\?\.id !== context\.runId/u);

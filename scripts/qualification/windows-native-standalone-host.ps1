@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet('Library','GetContract','ValidateRequest','ValidateRecoveryRequest','ValidateRecoveryCancel','ValidateProofResult','ValidateCandidateIdentity','TestLifecycle','TestRecoveryCancellation','TestBinaryIdentity','TestObservationCore','TestEntryDiagnostic','ObserveOffline','ObserveListener','ObserveCandidateIdentity','InvokeHostedProof','InvokeRestoration')]
+    [ValidateSet('Library','GetContract','ValidateRequest','ValidateRecoveryRequest','ValidateRecoveryCancel','ValidateProofResult','ValidateCandidateIdentity','TestLifecycle','TestRecoveryCancellation','TestEmergencyRestoration','TestBinaryIdentity','TestObservationCore','TestEntryDiagnostic','ObserveOffline','ObserveListener','ObserveCandidateIdentity','InvokeHostedProof','InvokeRestoration')]
     [string]$Mode='Library',
     [string]$InputJson='',
     [string]$RequestPath='',
@@ -221,7 +221,6 @@ function Invoke-MyspeedStandaloneLifecycleCore {
         }
         if(-not $jobZero){throw 'Owned Job zero proof is absent before restoration'}
         if([int64]$Request.coordinatorExitCode -ne 0){throw 'Standalone coordinator exit differs'}
-        if([int64]$Request.coordinatorExitCode -ne 0){throw 'Standalone coordinator failed'}
         [void]$events.Add('restore-adapters');& $Operations.'restore-adapters';$restored=$true;$disabled=$false
         [void]$events.Add('disarm-recovery');& $Operations.'disarm-recovery';$armed=$false
     }catch{[void]$failures.Add('host-lifecycle-failed')
@@ -486,9 +485,37 @@ function Write-MyspeedStandaloneCreateNewJson {
     return Get-MyspeedStandaloneSha256 $bytes
 }
 
+function Invoke-MyspeedStandaloneRecoveryLockCore {
+    param([int]$TimeoutMilliseconds,[int]$PollMilliseconds,[scriptblock]$OpenLock,
+        [scriptblock]$GetElapsedMilliseconds,[scriptblock]$Delay)
+    if($TimeoutMilliseconds -lt 0){throw 'Standalone recovery lock timeout must be nonnegative'}
+    if($PollMilliseconds -le 0){throw 'Standalone recovery lock poll must be positive'}
+    $win32CodeMask=65535
+    $sharingViolationWin32Code=32
+    while($true){
+        try{return & $OpenLock}
+        catch [IO.IOException]{
+            if(($_.Exception.HResult -band $win32CodeMask) -ne $sharingViolationWin32Code){throw}
+        }
+        $elapsed=[int64](& $GetElapsedMilliseconds)
+        if($elapsed -ge $TimeoutMilliseconds){throw 'Standalone recovery lock acquisition timed out'}
+        & $Delay ([Math]::Min($PollMilliseconds,$TimeoutMilliseconds-$elapsed))
+    }
+}
+
 function Enter-MyspeedStandaloneRecoveryLock {
-    param([string]$Path)
-    return [IO.File]::Open($Path,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)
+    param([string]$Path,[int]$TimeoutMilliseconds=0,[int]$PollMilliseconds=$script:RecoveryPollMilliseconds)
+    if($TimeoutMilliseconds -lt 0){throw 'Standalone recovery lock timeout must be nonnegative'}
+    if($PollMilliseconds -le 0){throw 'Standalone recovery lock poll must be positive'}
+    if($TimeoutMilliseconds -eq 0){
+        return [IO.File]::Open($Path,[IO.FileMode]::OpenOrCreate,[IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}
+    $lockPath=$Path
+    $watch=[Diagnostics.Stopwatch]::StartNew()
+    $openLock={return [IO.File]::Open($lockPath,[IO.FileMode]::OpenOrCreate,
+            [IO.FileAccess]::ReadWrite,[IO.FileShare]::None)}.GetNewClosure()
+    $getElapsed={[int64]$watch.ElapsedMilliseconds}.GetNewClosure()
+    $delay={param([int]$Milliseconds) Start-Sleep -Milliseconds $Milliseconds}
+    return Invoke-MyspeedStandaloneRecoveryLockCore $TimeoutMilliseconds $PollMilliseconds $openLock $getElapsed $delay
 }
 
 function Get-MyspeedStandaloneAdapterSnapshot {
@@ -731,17 +758,101 @@ function Wait-MyspeedStandaloneRecoveryReady {
 }
 
 function Restore-MyspeedStandaloneAdapters {
-    param([object]$Module,[object[]]$Targets,[string]$LockPath)
-    $lock=Enter-MyspeedStandaloneRecoveryLock $LockPath
+    param([object]$Module,[object[]]$Targets,[string]$LockPath,[int]$LockTimeoutMilliseconds=0,
+        [int]$LockPollMilliseconds=$script:RecoveryPollMilliseconds)
+    $lock=Enter-MyspeedStandaloneRecoveryLock $LockPath $LockTimeoutMilliseconds $LockPollMilliseconds
     try{
-        $snapshot=Get-MyspeedStandaloneAdapterSnapshot $Module
-        $matched=Get-MyspeedStandaloneMatchedRawAdapters $snapshot $Targets $false
-        @($matched)|Enable-NetAdapter -Confirm:$false -ErrorAction Stop
-        $after=Get-MyspeedStandaloneAdapterSnapshot $Module
-        foreach($target in $Targets){if(@($after.inventory|Where-Object {$_.interfaceGuid -ieq $target.interfaceGuid -and
-            [string]::Equals($_.netLuid,$target.netLuid,[StringComparison]::Ordinal) -and $_.enabled}).Count -ne 1){
-            throw 'Standalone adapter restoration proof failed'}}
+        Restore-MyspeedStandaloneAdaptersUnderLock $Module $Targets
     }finally{$lock.Dispose()}
+}
+
+function Restore-MyspeedStandaloneAdaptersUnderLock {
+    param([object]$Module,[object[]]$Targets)
+    $snapshot=Get-MyspeedStandaloneAdapterSnapshot $Module
+    $matched=Get-MyspeedStandaloneMatchedRawAdapters $snapshot $Targets $false
+    @($matched)|Enable-NetAdapter -Confirm:$false -ErrorAction Stop
+    $after=Get-MyspeedStandaloneAdapterSnapshot $Module
+    foreach($target in $Targets){if(@($after.inventory|Where-Object {$_.interfaceGuid -ieq $target.interfaceGuid -and
+        [string]::Equals($_.netLuid,$target.netLuid,[StringComparison]::Ordinal) -and $_.enabled}).Count -ne 1){
+        throw 'Standalone adapter restoration proof failed'}}
+}
+
+function Invoke-MyspeedStandaloneEmergencyRestorationCore {
+    param([object]$Operations,[object]$InitialFailure=$null)
+    $names=@('enterLock','readCancel','activeProcesses','drain','restore','writeResult')
+    Assert-MyspeedStandaloneKeys $Operations $names 'Standalone emergency restoration operations'
+    foreach($name in $names){if($Operations.$name -isnot [scriptblock]){
+        throw "Standalone emergency restoration operation is absent: $name"}}
+
+    $lock=$null;$failure=$InitialFailure;$outcome=$null;$emergency=$false;$restored=$false
+    try{
+        $lock=& $Operations.enterLock
+        if($null -eq $lock){throw 'Standalone emergency restoration lock is absent'}
+        $cancelled=$false
+        try{
+            $cancelled=& $Operations.readCancel
+            if($cancelled -isnot [bool]){throw 'Standalone recovery cancellation observation must be Boolean'}
+        }catch{if($null -eq $failure){$failure=$_};$cancelled=$false}
+        if($cancelled){
+            try{
+                $active=Assert-MyspeedStandaloneInteger (& $Operations.activeProcesses) `
+                    'Standalone recovery active process count' 0 4294967295
+                if($active -ne 0){throw 'Standalone recovery cancel observed before Job zero'}
+                if($null -eq $failure){$outcome=[pscustomobject][ordered]@{cancelled=$true;emergencyRestore=$false}}
+            }catch{if($null -eq $failure){$failure=$_}}
+        }
+        if($null -eq $outcome){
+            $emergency=$true
+            try{& $Operations.drain}catch{if($null -eq $failure){$failure=$_}}
+            try{& $Operations.restore;$restored=$true}catch{if($null -eq $failure){$failure=$_}}
+            if($null -eq $failure){$outcome=& $Operations.writeResult}
+        }
+    }catch{if($null -eq $failure){$failure=$_}}
+    finally{
+        if($emergency -and -not $restored){
+            try{& $Operations.restore;$restored=$true}catch{if($null -eq $failure){$failure=$_}}}
+        if($null -ne $lock){try{$lock.Dispose()}catch{if($null -eq $failure){$failure=$_}}}
+    }
+    if($null -ne $failure){throw $failure}
+    return $outcome
+}
+
+function Invoke-MyspeedStandaloneInjectedEmergencyRestoration {
+    param([object]$Value)
+    Assert-MyspeedStandaloneKeys $Value @('cancelObservation','initialFailure','drainFails','restoreFailures','writeFails','disposeFails','activeProcesses') `
+        'Injected emergency restoration'
+    foreach($name in @('initialFailure','drainFails','writeFails','disposeFails')){
+        if($Value.$name -isnot [bool]){throw "Injected emergency restoration $name must be Boolean"}}
+    $cancelObservation=Assert-MyspeedStandaloneString $Value.cancelObservation `
+        'Injected emergency cancellation observation' '\A(?:absent|cancelled|throw|invalid)\z'
+    $restoreFailures=Assert-MyspeedStandaloneInteger $Value.restoreFailures `
+        'Injected emergency restoration failure count' 0 2
+    $activeProcesses=Assert-MyspeedStandaloneInteger $Value.activeProcesses `
+        'Injected emergency active process count' 0 4294967295
+    $events=[Collections.Generic.List[string]]::new();$attempt=0;$inputValue=$Value
+    $lock=[pscustomobject]@{events=$events;disposeFails=$inputValue.disposeFails}
+    Add-Member -InputObject $lock -MemberType ScriptMethod -Name Dispose -Value {
+        [void]$this.events.Add('dispose');if($this.disposeFails){throw 'Injected emergency lock disposal failed'}}
+    $operations=[pscustomobject]@{
+        enterLock={[void]$events.Add('lock');return $lock}.GetNewClosure()
+        readCancel={[void]$events.Add('read-cancel');switch($cancelObservation){
+                'throw' {throw 'Injected emergency cancel read failed'}
+                'invalid' {return 'not-Boolean'}
+                'cancelled' {return $true}
+                default {return $false}}}.GetNewClosure()
+        activeProcesses={[void]$events.Add('active-processes');return $activeProcesses}.GetNewClosure()
+        drain={[void]$events.Add('drain');if($inputValue.drainFails){throw 'Injected emergency drain failed'}}.GetNewClosure()
+        restore={[void]$events.Add('restore');$attempt++;if($attempt -le $restoreFailures){
+                throw 'Injected emergency restore failed'}}.GetNewClosure()
+        writeResult={[void]$events.Add('write-result');if($inputValue.writeFails){
+                throw 'Injected emergency result write failed'}
+            return [pscustomobject][ordered]@{cancelled=$false;emergencyRestore=$true}}.GetNewClosure()}
+    $outcome=$null;$failure=$null
+    $initial=if($inputValue.initialFailure){[Management.Automation.ErrorRecord]::new(
+            [InvalidOperationException]::new('Injected armed recovery wait failed'),'InjectedArmedWait',
+            [Management.Automation.ErrorCategory]::OperationStopped,$null)}else{$null}
+    try{$outcome=Invoke-MyspeedStandaloneEmergencyRestorationCore $operations $initial}catch{$failure=$_.Exception.Message}
+    return [pscustomobject][ordered]@{outcome=$outcome;failure=$failure;events=[string[]]$events}
 }
 
 function Wait-MyspeedStandaloneTaskExit {
@@ -762,7 +873,8 @@ function New-MyspeedStandaloneNativeOperations {
     # GetNewClosure creates a dynamic module: script-scoped variables are not
     # inherited, so capture the fixed limits as locals before making callbacks.
     $limits=[pscustomobject]@{recoveryTimeoutMilliseconds=$script:RecoveryOperationTimeoutMilliseconds
-        maximumSourceBytes=$script:MaximumSourceBytes;maximumCoordinatorBytes=$script:MaximumCoordinatorBytes}
+        recoveryPollMilliseconds=$script:RecoveryPollMilliseconds;maximumSourceBytes=$script:MaximumSourceBytes
+        maximumCoordinatorBytes=$script:MaximumCoordinatorBytes}
     $arm={
         $State.snapshot=Get-MyspeedStandaloneAdapterSnapshot $State.module
         $targets=@($State.snapshot.inventory|Where-Object {-not $_.loopback -and $_.enabled}|ForEach-Object {
@@ -844,7 +956,8 @@ function New-MyspeedStandaloneNativeOperations {
         $State.jobZero=$true;$State.lifecycleRequest.jobActiveAfterCoordinator=0
     }.GetNewClosure()
     $restore={
-        $lock=Enter-MyspeedStandaloneRecoveryLock $State.request.lockPath
+        $lock=Enter-MyspeedStandaloneRecoveryLock $State.request.lockPath `
+            $limits.recoveryTimeoutMilliseconds $limits.recoveryPollMilliseconds
         try{
             if([IO.File]::Exists($State.request.recoveryResultPath)){throw 'Standalone emergency recovery already ran'}
             $State.restoreStarted100ns=[MySpeedStandaloneNamedJob]::Clock100ns()
@@ -880,14 +993,16 @@ function New-MyspeedStandaloneNativeOperations {
     $cleanup={
         $cleanupFailure=$null
         try{
-            try{if($null -ne $State.job -and $State.job.ActiveProcesses -ne 0){$State.forced=$true;$State.job.TerminateAndDrain(10000);$State.jobZero=$true}}
+            try{if($null -ne $State.job -and $State.job.ActiveProcesses -ne 0){$State.forced=$true
+                $State.job.TerminateAndDrain($limits.recoveryTimeoutMilliseconds);$State.jobZero=$true}}
             catch{$cleanupFailure=$_}
             try{if($State.restoreRequired -and $State.jobZero -and -not [IO.File]::Exists($State.request.recoveryResultPath)){& $restore}}
             catch{if($null -eq $cleanupFailure){$cleanupFailure=$_}}
             try{if($State.taskRegistered -and ($State.adapterRestoreProven -or -not $State.disableAttempted)){
                 $req=$State.request;$recoverySha=$State.recoverySha256
                 $cancelOperations=[pscustomobject]@{
-                    enterLock={return Enter-MyspeedStandaloneRecoveryLock $req.lockPath}.GetNewClosure()
+                    enterLock={return Enter-MyspeedStandaloneRecoveryLock $req.lockPath `
+                        $limits.recoveryTimeoutMilliseconds $limits.recoveryPollMilliseconds}.GetNewClosure()
                     recoveryResultExists={return [IO.File]::Exists($req.recoveryResultPath)}.GetNewClosure()
                     readCancel={
                         if(-not [IO.File]::Exists($req.cancelPath) -or -not (Test-MyspeedStandaloneStableReadable $req.cancelPath)){return $null}
@@ -1005,7 +1120,7 @@ function Invoke-MyspeedStandaloneRestoration {
     Add-Type -TypeDefinition (Get-MyspeedStandaloneNativeSource) -Language CSharp
     [void][MySpeedStandaloneNamedJob]::ObserveAbi()
     $module=Import-MyspeedStandaloneCanaryModule $request.canaryPath $request.canarySha256
-    $job=$null
+    $job=$null;$failure=$null;$result=$null
     try{
         $job=[MySpeedStandaloneNamedJob]::OpenExisting($request.jobName)
         $process=[Diagnostics.Process]::GetCurrentProcess()
@@ -1013,20 +1128,38 @@ function Invoke-MyspeedStandaloneRestoration {
             requestSha256=$loaded.sha256;jobName=$request.jobName;pid=[int64]$PID
             creationFileTime=$process.StartTime.ToUniversalTime().ToFileTimeUtc().ToString('x16');jobOpened=$true;limitsProven=$true}
         [void](Write-MyspeedStandaloneCreateNewJson $request.recoveryReadyPath $ready)
-        while([MySpeedStandaloneNamedJob]::Clock100ns() -lt [uint64]$request.watchdogDeadline100ns){
-            if($null -ne (Read-MyspeedStandaloneRecoveryCancel $request $loaded.sha256)){
-                if($job.ActiveProcesses -ne 0){throw 'Standalone recovery cancel observed before Job zero'}
-                return [pscustomobject]@{cancelled=$true;emergencyRestore=$false}}
-            Start-Sleep -Milliseconds $script:RecoveryPollMilliseconds
-        }
-        $job.TerminateAndDrain(10000)
-        Restore-MyspeedStandaloneAdapters $module ([object[]]$request.adapters) $request.lockPath
-        $result=[pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-native-standalone-recovery-result'
-            classification='inconclusive';emergencyRestore=$true;jobTreeExitProven=($job.ActiveProcesses -eq 0)
-            adapterRestoreProven=$true;requestSha256=$loaded.sha256;failure=$null}
-        [void](Write-MyspeedStandaloneCreateNewJson $request.recoveryResultPath $result)
-        return $result
-    }finally{if($null -ne $job){$job.Dispose()};Remove-Module $module -Force -ErrorAction SilentlyContinue}
+        $waitFailure=$null
+        try{
+            while([MySpeedStandaloneNamedJob]::Clock100ns() -lt [uint64]$request.watchdogDeadline100ns){
+                if($null -ne (Read-MyspeedStandaloneRecoveryCancel $request $loaded.sha256)){
+                    break}
+                Start-Sleep -Milliseconds $script:RecoveryPollMilliseconds
+            }
+        }catch{$waitFailure=$_}
+        $requestValue=$request;$requestSha=$loaded.sha256;$jobValue=$job;$moduleValue=$module
+        $recoveryTimeoutMilliseconds=$script:RecoveryOperationTimeoutMilliseconds
+        $recoveryPollMilliseconds=$script:RecoveryPollMilliseconds
+        $operations=[pscustomobject]@{
+            enterLock={return Enter-MyspeedStandaloneRecoveryLock $requestValue.lockPath `
+                    $recoveryTimeoutMilliseconds $recoveryPollMilliseconds}.GetNewClosure()
+            readCancel={return $null -ne (Read-MyspeedStandaloneRecoveryCancel $requestValue $requestSha)}.GetNewClosure()
+            activeProcesses={return [int64]$jobValue.ActiveProcesses}.GetNewClosure()
+            drain={$jobValue.TerminateAndDrain($recoveryTimeoutMilliseconds)}.GetNewClosure()
+            restore={Restore-MyspeedStandaloneAdaptersUnderLock $moduleValue ([object[]]$requestValue.adapters)}.GetNewClosure()
+            writeResult={
+                $resultValue=[pscustomobject][ordered]@{schemaVersion=1;kind='myspeed-windows-native-standalone-recovery-result'
+                    classification='inconclusive';emergencyRestore=$true;jobTreeExitProven=($jobValue.ActiveProcesses -eq 0)
+                    adapterRestoreProven=$true;requestSha256=$requestSha;failure=$null}
+                [void](Write-MyspeedStandaloneCreateNewJson $requestValue.recoveryResultPath $resultValue)
+                return $resultValue}.GetNewClosure()}
+        $result=Invoke-MyspeedStandaloneEmergencyRestorationCore $operations $waitFailure
+    }catch{$failure=$_}
+    finally{
+        if($null -ne $job){try{$job.Dispose()}catch{if($null -eq $failure){$failure=$_}}}
+        Remove-Module $module -Force -ErrorAction SilentlyContinue
+    }
+    if($null -ne $failure){throw $failure}
+    return $result
 }
 
 if($Mode -ceq 'Library'){return}
@@ -1050,6 +1183,8 @@ try{
         'TestLifecycle' {Invoke-MyspeedStandaloneInjectedLifecycle (ConvertFrom-MyspeedStandaloneJson $InputJson 'Injected lifecycle')}
         'TestRecoveryCancellation' {Invoke-MyspeedStandaloneInjectedRecoveryCancellation `
             (ConvertFrom-MyspeedStandaloneJson $InputJson 'Injected recovery cancellation')}
+        'TestEmergencyRestoration' {Invoke-MyspeedStandaloneInjectedEmergencyRestoration `
+            (ConvertFrom-MyspeedStandaloneJson $InputJson 'Injected emergency restoration')}
         'TestBinaryIdentity' {$inputValue=ConvertFrom-MyspeedStandaloneJson $InputJson 'Standalone binary identity validation'
             Assert-MyspeedStandaloneKeys $inputValue @('path','sha256') 'Standalone binary identity validation'
             Get-MyspeedStandaloneFileIdentity $inputValue.path $script:MaximumCoordinatorBytes `

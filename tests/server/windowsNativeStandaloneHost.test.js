@@ -77,6 +77,7 @@ describe("Windows native standalone host", () => {
             {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true}));
         assert.equal(values.length, request().phases.length);
         for (const value of values) assert.deepEqual(value, {recoveryTimeoutMilliseconds: 10_000,
+            recoveryPollMilliseconds: 50,
             maximumSourceBytes: 2_097_152, maximumCoordinatorBytes: 134_217_728});
     });
 
@@ -376,6 +377,123 @@ describe("Windows native standalone host", () => {
             {disableAttempted: true, adapterRestoreProven: true, recoveryResultPresent: false,
                 cancelPresent: false, writeFails: true}
         ]) assert.throws(() => invoke("TestRecoveryCancellation", unsafe));
+    });
+
+    it("retries only recovery lock sharing violations within the captured bound", {skip: !POWERSHELL}, () => {
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "$global:events=[Collections.Generic.List[string]]::new();$global:attempt=0;$global:clockValue=0; "
+            + "$open={ [void]$global:events.Add('open');$global:attempt++;if($global:attempt -lt 3){ "
+            + "throw [Runtime.InteropServices.Marshal]::GetExceptionForHR([int]-2147024864)};return 'lock' }; "
+            + "$elapsed={[int64]$global:clockValue};$delay={param([int]$Milliseconds) "
+            + "[void]$global:events.Add(('delay-'+$Milliseconds));$global:clockValue+=$Milliseconds}; "
+            + "$lock=Invoke-MyspeedStandaloneRecoveryLockCore 100 10 $open $elapsed $delay; "
+            + "$success=[pscustomobject]@{lock=$lock;events=[string[]]$global:events}; "
+            + "$global:events.Clear();$global:clockValue=100; "
+            + "$deadline=$null;try{[void](Invoke-MyspeedStandaloneRecoveryLockCore 100 10 "
+            + "{throw [Runtime.InteropServices.Marshal]::GetExceptionForHR([int]-2147024864)} $elapsed $delay)} "
+            + "catch{$deadline=$_.Exception.Message}; "
+            + "$unrelated=$null;try{[void](Invoke-MyspeedStandaloneRecoveryLockCore 100 10 "
+            + "{throw [IO.IOException]::new('unrelated I/O')} {0} {param($Milliseconds)})} "
+            + "catch{$unrelated=$_.Exception.Message}; "
+            + "$invalidBounds=@();foreach($args in @(@(-1,10),@(100,0),@(100,-1))){try{ "
+            + "[void](Invoke-MyspeedStandaloneRecoveryLockCore $args[0] $args[1] {'lock'} {0} {})} "
+            + "catch{$invalidBounds+=$_.Exception.Message}}; "
+            + "$global:events.Clear();function Enter-MyspeedStandaloneRecoveryLock { "
+            + "[void]$global:events.Add('lock');throw 'injected lock stop' }; "
+            + "function Get-MyspeedStandaloneAdapterSnapshot {[void]$global:events.Add('snapshot')}; "
+            + "$beforeLock=$null;try{Restore-MyspeedStandaloneAdapters $null @() 'C:\\fixture\\lock'} "
+            + "catch{$beforeLock=$_.Exception.Message}; "
+            + "[pscustomobject]@{success=$success;deadline=$deadline;unrelated=$unrelated;invalidBounds=$invalidBounds; "
+            + "beforeLock=$beforeLock;beforeLockEvents=[string[]]$global:events}|ConvertTo-Json -Depth 5 -Compress";
+        const result = JSON.parse(execFileSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true}));
+        assert.deepEqual(result.success, {lock: "lock", events: ["open", "delay-10", "open", "delay-10", "open"]});
+        assert.match(result.deadline, /timed out/i);
+        assert.equal(result.unrelated, "unrelated I/O");
+        assert.deepEqual(result.invalidBounds, ["Standalone recovery lock timeout must be nonnegative",
+            "Standalone recovery lock poll must be positive", "Standalone recovery lock poll must be positive"]);
+        assert.equal(result.beforeLock, "injected lock stop");
+        assert.deepEqual(result.beforeLockEvents, ["lock"]);
+    });
+
+    it("rechecks cancellation under the lock before emergency work", {skip: !POWERSHELL}, () => {
+        const result = invoke("TestEmergencyRestoration", {cancelObservation: "cancelled", initialFailure: false,
+            drainFails: false, restoreFailures: 0, writeFails: false, disposeFails: false, activeProcesses: 0});
+
+        assert.deepEqual(result.outcome, {cancelled: true, emergencyRestore: false});
+        assert.deepEqual(result.events, ["lock", "read-cancel", "active-processes", "dispose"]);
+        assert.equal(result.failure, null);
+    });
+
+    it("restores after a drain failure but publishes no success", {skip: !POWERSHELL}, () => {
+        const result = invoke("TestEmergencyRestoration", {cancelObservation: "absent", initialFailure: false,
+            drainFails: true, restoreFailures: 0, writeFails: false, disposeFails: false, activeProcesses: 1});
+
+        assert.deepEqual(result.events, ["lock", "read-cancel", "drain", "restore", "dispose"]);
+        assert.equal(result.outcome, null);
+        assert.equal(result.failure, "Injected emergency drain failed");
+    });
+
+    it("retries restoration once while retaining the original failure", {skip: !POWERSHELL}, () => {
+        const result = invoke("TestEmergencyRestoration", {cancelObservation: "absent", initialFailure: false,
+            drainFails: false, restoreFailures: 1, writeFails: false, disposeFails: false, activeProcesses: 1});
+
+        assert.deepEqual(result.events,
+            ["lock", "read-cancel", "drain", "restore", "restore", "dispose"]);
+        assert.equal(result.outcome, null);
+        assert.equal(result.failure, "Injected emergency restore failed");
+    });
+
+    it("keeps the first failure through cleanup and never works before locking", {skip: !POWERSHELL}, () => {
+        const result = invoke("TestEmergencyRestoration", {cancelObservation: "absent", initialFailure: false,
+            drainFails: true, restoreFailures: 2, writeFails: false, disposeFails: true, activeProcesses: 1});
+
+        assert.equal(result.events[0], "lock");
+        assert.ok(!result.events.includes("write-result"));
+        assert.equal(result.failure, "Injected emergency drain failed");
+    });
+
+    it("requires Job zero on the late cancelled path and surfaces result-write failure", {skip: !POWERSHELL}, () => {
+        const unsafeCancel = invoke("TestEmergencyRestoration", {cancelObservation: "cancelled", initialFailure: false,
+            drainFails: false, restoreFailures: 0, writeFails: false, disposeFails: false, activeProcesses: 1});
+        assert.equal(unsafeCancel.failure, "Standalone recovery cancel observed before Job zero");
+        assert.ok(unsafeCancel.events.includes("drain"));
+        assert.ok(unsafeCancel.events.includes("restore"));
+
+        const writeFailure = invoke("TestEmergencyRestoration", {cancelObservation: "absent", initialFailure: false,
+            drainFails: false, restoreFailures: 0, writeFails: true, disposeFails: false, activeProcesses: 1});
+        assert.deepEqual(writeFailure.events,
+            ["lock", "read-cancel", "drain", "restore", "write-result", "dispose"]);
+        assert.equal(writeFailure.failure, "Injected emergency result write failed");
+    });
+
+    it("restores safely when the final cancel read or armed wait cannot be trusted", {skip: !POWERSHELL}, () => {
+        for (const [cancelObservation, initialFailure, expected] of [
+            ["throw", false, "Injected emergency cancel read failed"],
+            ["invalid", false, "Standalone recovery cancellation observation must be Boolean"],
+            ["absent", true, "Injected armed recovery wait failed"]
+        ]) {
+            const result = invoke("TestEmergencyRestoration", {cancelObservation, initialFailure,
+                drainFails: false, restoreFailures: 0, writeFails: false, disposeFails: false,
+                activeProcesses: 1});
+            assert.equal(result.failure, expected);
+            assert.ok(result.events.includes("drain"));
+            assert.ok(result.events.includes("restore"));
+            assert.ok(!result.events.includes("write-result"));
+        }
+    });
+
+    it("passes captured lock bounds at both host-side acquisition sites", () => {
+        const source = readFileSync(SCRIPT, "utf8");
+        assert.match(source, /\$restore=\{[\s\S]*?Enter-MyspeedStandaloneRecoveryLock \$State\.request\.lockPath[\s`]+\$limits\.recoveryTimeoutMilliseconds \$limits\.recoveryPollMilliseconds/u);
+        assert.match(source, /enterLock=\{return Enter-MyspeedStandaloneRecoveryLock \$req\.lockPath[\s`]+\$limits\.recoveryTimeoutMilliseconds \$limits\.recoveryPollMilliseconds\}/u);
+        const restoration = source.slice(source.indexOf("function Invoke-MyspeedStandaloneRestoration"));
+        assert.doesNotMatch(restoration, /while\([\s\S]*?return \[pscustomobject\]@\{cancelled=\$true/u,
+            "the first cancel observation bypasses the authoritative under-lock reread");
+        assert.match(restoration, /Read-MyspeedStandaloneRecoveryCancel[^\n]+\{\s*break\}/u);
+        assert.match(restoration, /finally\{[\s\S]*?\$job\.Dispose\(\)[\s\S]*?if\(\$null -ne \$failure\)\{throw \$failure\}/u,
+            "outer Job disposal failures must reach the common failure exit");
     });
 
     it("strictly binds the completed coordinator proof result to the hosted request", {skip: !POWERSHELL}, () => {

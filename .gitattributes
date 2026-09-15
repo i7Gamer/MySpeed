@@ -17,3 +17,8 @@ Dockerfile text eol=lf
 
 # This fixture is the byte-for-byte published v1.6.1 manifest, not editable JSON.
 tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json -text
+tests/fixtures/post-release-native-v1.6.1/baseline-qualification-summary.json -text
+
+# Retained KVM receipts are also byte-hashed evidence; CRLF conversion invalidates them.
+tests/fixtures/linux-kvm-privileged-capability-evidence/result.json -text
+tests/fixtures/linux-kvm-privileged-capability-evidence/privileged-result.json -text

@@ -1,0 +1,1040 @@
+name: Post-release v1.6.1 MSI lifecycle
+
+# Manual, nonqualifying, post-release observation of the already-published v1.6.1 candidate.
+# It clears no release gate, publishes nothing, and never mutates the published release, its
+# assets, its tag or its original reduced-scope qualification manifest.
+#
+# One run, one attempt, three jobs with different roles:
+#   prepare  - the existing reusable Windows preparation workflow, called in this same run so its
+#              artifact carries this run id, attempt and head SHA. Its own dispatch path is
+#              untouched.
+#   seal     - the only job that checks out source. It tests and seals the exact controller and
+#              guest closures.
+#   execute  - one Linux job that creates and seals the installed base AND runs every overlay row.
+#              The base receipt binds same-job file identity, so the base is never exported,
+#              imported or uploaded, and the rows can never be split into a second job. This job
+#              performs no checkout: it runs the sealed closure, verified member by member first.
+#
+# Fourteen rows at the 270-minute row deadline is sixty-three hours and this job stops at 350
+# minutes, so the controller admits each row against observed elapsed time and refuses to start one
+# whose margins no longer fit. The allowance is a planning figure that nothing enforces - the only
+# per-row stop is the launcher's own deadline - and the sealed observation says so. A refused row is
+# retained as typed progress and fails the job; it is never reported as a completed matrix.
+#
+# Stage 2 keeps its own sealed closure and its own staged input root, because its validator names
+# both exactly and the MSI closure is a different tree. The KVM subtree the job invokes is a third
+# tree the KVM contract pins to its own root, so its digest is sealed as a job output and checked
+# before anything in it runs: a tree cannot authenticate itself with a manifest it carries.
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN-POST-RELEASE-MSI-LIFECYCLE
+        required: true
+        type: string
+      job_budget_minutes:
+        description: Wall minutes the Linux controller may consume, measured from its own start
+        required: true
+        type: string
+      row_allowance_minutes:
+        description: Planned minutes per matrix row; a measured figure, never the row deadline
+        required: true
+        type: string
+      probe_artifact_id:
+        required: true
+        type: string
+      probe_run_id:
+        required: true
+        type: string
+      probe_run_attempt:
+        required: true
+        type: string
+      probe_source_sha:
+        required: true
+        type: string
+      probe_archive_bytes:
+        required: true
+        type: string
+      probe_archive_sha256:
+        required: true
+        type: string
+      rollback_artifact_id:
+        description: Artifact id of an accepted sacrificial rollback calibration run
+        required: true
+        type: string
+      rollback_run_id:
+        required: true
+        type: string
+      rollback_run_attempt:
+        required: true
+        type: string
+      rollback_source_sha:
+        description: Head SHA of the calibration run, which is its source SHA
+        required: true
+        type: string
+      rollback_archive_bytes:
+        required: true
+        type: string
+      rollback_archive_sha256:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  EXPECTED_SOURCE_SHA: ${{ github.sha }}
+  EXPECTED_EVENT_SHA: ${{ github.sha }}
+  EXPECTED_RUN_ID: ${{ github.run_id }}
+  EXPECTED_RUN_ATTEMPT: ${{ github.run_attempt }}
+  PREPARATION_ARTIFACT_NAME: post-release-v1.6.1-msi-appassets
+  ROLLBACK_ARTIFACT_NAME: windows-msi-sacrificial-executor-boundary
+  ROLLBACK_WORKFLOW: windows-msi-rollback-calibration.yml
+  ROW_CLEANUP_MARGIN_MINUTES: '2'
+  FINAL_MARGIN_MINUTES: '10'
+  # Must equal the execute job's timeout-minutes; the reserve is what bounds and uploads the evidence.
+  JOB_TIMEOUT_MINUTES: '350'
+  RETENTION_RESERVE_MINUTES: '10'
+
+jobs:
+  prepare:
+    name: Prepare exact Windows MSI inputs in this run
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-POST-RELEASE-MSI-LIFECYCLE'
+    uses: ./.github/workflows/post-release-msi-prepare.yml
+    permissions:
+      actions: read
+      contents: read
+
+  seal:
+    name: Test and seal the exact execution closure
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-POST-RELEASE-MSI-LIFECYCLE'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      stage2_sha256: ${{ steps.seal.outputs.stage2_sha256 }}
+      kvm_sha256: ${{ steps.seal.outputs.kvm_sha256 }}
+      nonce: ${{ steps.seal.outputs.nonce }}
+      closure_sha256: ${{ steps.seal.outputs.closure_sha256 }}
+    steps:
+      - name: Checkout exact workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up exact runtimes
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked dependencies without lifecycle scripts
+        shell: bash
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Run the pure execution-side tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/server/windowsMsiExecutionClosure.test.js \
+            tests/server/windowsMsiLifecycleBudget.test.js \
+            tests/server/windowsMsiPrerequisiteEvidence.test.js \
+            tests/server/windowsMsiStage2Request.test.js \
+            tests/server/windowsMsiContainmentPreflight.test.js \
+            tests/server/windowsMsiMatrixContract.test.js \
+            tests/server/linuxWindowsMsiLifecycleHost.test.js \
+            tests/server/postReleaseMsiHostRequest.test.js \
+            tests/server/postReleaseMsiHostBridge.test.js \
+            tests/server/postReleaseMsiLinuxController.test.js \
+            tests/server/postReleaseMsiLifecycleWorkflow.test.js
+
+      - name: Seal the exact controller and guest closures
+        id: seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')"
+          artifact_root="$RUNNER_TEMP/myspeed-msi-artifact-$nonce"
+          closure_root="$artifact_root/myspeed-msi-closure-$nonce"
+          kvm_root="$artifact_root/linux-kvm-capability-closure"
+          test ! -e "$artifact_root"
+          install -d -m 700 "$artifact_root" "$kvm_root"
+          stage2_root="$artifact_root/myspeed-stage2-closure-$nonce"
+          install -d -m 700 "$closure_root/scripts/qualification" "$closure_root/scripts/release"
+          install -d -m 700 "$stage2_root/scripts/qualification"
+          install -m 600 scripts/qualification/linux-kvm-capability.mjs "$kvm_root/"
+          install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$kvm_root/"
+          node "$kvm_root/linux-kvm-capability.mjs" emit-manifest \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$nonce" \
+            --output "$kvm_root/closure.json"
+          node "$kvm_root/linux-kvm-privileged-capability.mjs" emit-manifest \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$nonce" \
+            --core "$kvm_root/linux-kvm-capability.mjs" \
+            --core-manifest "$kvm_root/closure.json" --output "$kvm_root/privileged-closure.json"
+          node --input-type=module - "$closure_root" "$nonce" "$stage2_root" "$kvm_root" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          const {sealWindowsMsiExecutionClosure, sealWindowsMsiKvmSubtree, WINDOWS_MSI_CONTROLLER_CLOSURE,
+            WINDOWS_MSI_GUEST_CLOSURE, WINDOWS_MSI_KVM_SUBTREE_MEMBERS} =
+            await import("./scripts/qualification/windows-msi-execution-closure.mjs");
+          const {WINDOWS_MSI_STAGE2_CLOSURE} =
+            await import("./scripts/qualification/windows-msi-stage2-request.mjs");
+          const [closureRoot, nonce, stage2Root, kvmRoot] = process.argv.slice(2);
+          const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+          const members = [...new Set([...WINDOWS_MSI_CONTROLLER_CLOSURE, ...WINDOWS_MSI_GUEST_CLOSURE])].sort();
+          const observe = name => { const bytes = fs.readFileSync(name);
+            fs.writeFileSync(path.join(closureRoot, name), bytes, {flag: "wx", mode: 0o400});
+            return {path: name, bytes: String(bytes.length), sha256: digest(bytes)}; };
+          const observed = new Map(members.map(name => [name, observe(name)]));
+          const manifest = sealWindowsMsiExecutionClosure({
+            context: {repository: process.env.GITHUB_REPOSITORY, sourceSha: process.env.EXPECTED_SOURCE_SHA,
+              eventSha: process.env.EXPECTED_EVENT_SHA, runId: process.env.EXPECTED_RUN_ID,
+              runAttempt: process.env.EXPECTED_RUN_ATTEMPT, nonce},
+            controller: WINDOWS_MSI_CONTROLLER_CLOSURE.map(name => observed.get(name)),
+            guest: WINDOWS_MSI_GUEST_CLOSURE.map(name => observed.get(name))});
+          fs.writeFileSync(path.join(closureRoot, "msi-execution-closure.json"),
+            `${JSON.stringify(manifest)}\n`, {flag: "wx", mode: 0o400});
+          /*
+           * Stage 2's validator names its own root and its own ordered eight, so it gets its own
+           * sealed tree. The MSI closure stays exactly as it is.
+           */
+          const stage2 = WINDOWS_MSI_STAGE2_CLOSURE.map(name => { const bytes = fs.readFileSync(name);
+            fs.writeFileSync(path.join(stage2Root, name), bytes, {flag: "wx", mode: 0o400});
+            return [name, String(bytes.length), digest(bytes)]; });
+          const stage2Sha256 = digest(Buffer.from(JSON.stringify(stage2), "utf8"));
+          /*
+           * The KVM subtree carries the manifests it would otherwise validate itself against, so its
+           * digest leaves through the job output rather than inside the artifact.
+           */
+          const kvmSealed = sealWindowsMsiKvmSubtree({files: Object.fromEntries(
+            WINDOWS_MSI_KVM_SUBTREE_MEMBERS.map(name => [name, fs.readFileSync(path.join(kvmRoot, name))]))});
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,
+            `nonce=${nonce}\nclosure_sha256=${manifest.sha256}\nstage2_sha256=${stage2Sha256}\n`
+            + `kvm_sha256=${kvmSealed.sha256}\n`);
+          NODE
+
+      - name: Upload the immutable execution closure
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: post-release-v1.6.1-msi-execution-closure
+          path: ${{ runner.temp }}/myspeed-msi-artifact-${{ steps.seal.outputs.nonce }}/
+          if-no-files-found: error
+          retention-days: 7
+
+  execute:
+    name: Seal the installed base and run every overlay row in one job
+    needs: [prepare, seal]
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-POST-RELEASE-MSI-LIFECYCLE'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      EXPECTED_NONCE: ${{ needs.seal.outputs.nonce }}
+      MYSPEED_SOURCE_SHA: ${{ github.sha }}
+      EXPECTED_CLOSURE_SHA256: ${{ needs.seal.outputs.closure_sha256 }}
+      EXPECTED_STAGE2_SHA256: ${{ needs.seal.outputs.stage2_sha256 }}
+      EXPECTED_KVM_SHA256: ${{ needs.seal.outputs.kvm_sha256 }}
+      JOB_BUDGET_MINUTES: ${{ inputs.job_budget_minutes }}
+      ROW_ALLOWANCE_MINUTES: ${{ inputs.row_allowance_minutes }}
+      PROBE_ARTIFACT_ID: ${{ inputs.probe_artifact_id }}
+      PROBE_RUN_ID: ${{ inputs.probe_run_id }}
+      PROBE_RUN_ATTEMPT: ${{ inputs.probe_run_attempt }}
+      PROBE_SOURCE_SHA: ${{ inputs.probe_source_sha }}
+      PROBE_ARCHIVE_BYTES: ${{ inputs.probe_archive_bytes }}
+      PROBE_ARCHIVE_SHA256: ${{ inputs.probe_archive_sha256 }}
+      ROLLBACK_ARTIFACT_ID: ${{ inputs.rollback_artifact_id }}
+      ROLLBACK_RUN_ID: ${{ inputs.rollback_run_id }}
+      ROLLBACK_RUN_ATTEMPT: ${{ inputs.rollback_run_attempt }}
+      ROLLBACK_SOURCE_SHA: ${{ inputs.rollback_source_sha }}
+      ROLLBACK_ARCHIVE_BYTES: ${{ inputs.rollback_archive_bytes }}
+      ROLLBACK_ARCHIVE_SHA256: ${{ inputs.rollback_archive_sha256 }}
+    steps:
+      - name: Record the job start for the measured budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e "$RUNNER_TEMP/msi-job-start"
+          date -u +%s > "$RUNNER_TEMP/msi-job-start"
+
+      - name: Download the same-run execution closure
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ needs.seal.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}
+
+      - name: Set up exact runtime without source checkout
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      # The sealed tree is trusted only after every declared member is re-hashed here, by a verifier
+      # that is workflow text pinned to this run's SHA rather than code from the tree it checks.
+      - name: Verify every sealed closure member before executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          node - "$closure_root" <<'NODE'
+          const crypto = require("node:crypto"); const fs = require("node:fs"); const path = require("node:path");
+          const root = process.argv[2];
+          const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+          const manifest = JSON.parse(fs.readFileSync(path.join(root, "msi-execution-closure.json")));
+          if (manifest.kind !== "myspeed-windows-msi-execution-closure" || manifest.qualifying !== false ||
+              manifest.sha256 !== process.env.EXPECTED_CLOSURE_SHA256 ||
+              manifest.repository !== process.env.GITHUB_REPOSITORY ||
+              manifest.sourceSha !== process.env.EXPECTED_SOURCE_SHA ||
+              manifest.runId !== process.env.EXPECTED_RUN_ID ||
+              manifest.runAttempt !== process.env.EXPECTED_RUN_ATTEMPT ||
+              manifest.nonce !== process.env.EXPECTED_NONCE ||
+              JSON.stringify(manifest.releaseGatesCleared) !== "[]")
+            throw new Error("sealed closure manifest identity differs");
+          const declared = new Set();
+          for (const group of [manifest.controller, manifest.guest]) {
+            if (!group.files.some(file => file.path === group.entry)) throw new Error("closure entry is absent");
+            for (const file of group.files) {
+              const facts = fs.lstatSync(path.join(root, file.path));
+              if (!facts.isFile() || facts.isSymbolicLink()) throw new Error("sealed closure member is not a file");
+              const bytes = fs.readFileSync(path.join(root, file.path));
+              if (String(bytes.length) !== file.bytes || digest(bytes) !== file.sha256)
+                throw new Error(`sealed closure member differs: ${file.path}`);
+              declared.add(file.path);
+            }
+          }
+          const walk = directory => fs.readdirSync(path.join(root, directory), {withFileTypes: true})
+            .flatMap(entry => entry.isDirectory() ? walk(path.posix.join(directory, entry.name))
+              : [path.posix.join(directory, entry.name)]);
+          const present = walk("scripts").sort();
+          if (JSON.stringify(present) !== JSON.stringify([...declared].sort()))
+            throw new Error("sealed closure carries source nobody bound a hash to");
+          NODE
+
+      # Before Stage 2, which is the expensive part of this job: a dispatched budget that reaches
+      # into the retention reserve is refused now rather than after five hours of calibration.
+      - name: Validate the dispatched budget before the expensive setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          node --input-type=module - "$closure_root" <<'NODE'
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [closureRoot] = process.argv.slice(2);
+          const {admitWindowsMsiLifecycleSetup, validateWindowsMsiLifecycleJobBudget} =
+            await import(pathToFileURL(path.join(closureRoot,
+              "scripts/qualification/windows-msi-lifecycle-budget.mjs")).href);
+          const minutes = (value, name) => { if (!/^[1-9][0-9]{0,3}$/u.test(value ?? ""))
+            throw new Error(`${name} is invalid`); return Number(value) * 60_000; };
+          const job = validateWindowsMsiLifecycleJobBudget({
+            jobBudgetMilliseconds: minutes(process.env.JOB_BUDGET_MINUTES, "job budget"),
+            jobTimeoutMilliseconds: minutes(process.env.JOB_TIMEOUT_MINUTES, "job timeout"),
+            retentionReserveMilliseconds: minutes(process.env.RETENTION_RESERVE_MINUTES,
+              "retention reserve")});
+          /* And it has to hold at least one row with its margins even before any setup is charged. */
+          admitWindowsMsiLifecycleSetup({job, elapsedMilliseconds: 0, limits: {
+            rowAllowanceMilliseconds: minutes(process.env.ROW_ALLOWANCE_MINUTES, "row allowance"),
+            rowCleanupMarginMilliseconds: minutes(process.env.ROW_CLEANUP_MARGIN_MINUTES,
+              "row cleanup margin"),
+            finalMarginMilliseconds: minutes(process.env.FINAL_MARGIN_MINUTES, "final margin")}});
+          NODE
+
+      # The KVM contract pins its closure root, so these are duplicate copies of two modules that
+      # also live in the verified MSI closure, shipped beside manifests they would otherwise validate
+      # themselves against. They are checked against the digest the seal job published as a job
+      # output - outside the tree - before a single one of them is executed.
+      - name: Verify the invoked KVM subtree against the digest sealed outside it
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          kvm_root="$RUNNER_TEMP/linux-kvm-capability-closure"
+          node --input-type=module - "$closure_root" "$kvm_root" <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [closureRoot, kvmRoot] = process.argv.slice(2);
+          const {verifyWindowsMsiKvmSubtree, WINDOWS_MSI_KVM_SUBTREE_MEMBERS} =
+            await import(pathToFileURL(path.join(closureRoot,
+              "scripts/qualification/windows-msi-execution-closure.mjs")).href);
+          const present = fs.readdirSync(kvmRoot, {withFileTypes: true});
+          if (present.some(entry => !entry.isFile()))
+            throw new Error("KVM subtree carries something that is not a file");
+          verifyWindowsMsiKvmSubtree({expectedSha256: process.env.EXPECTED_KVM_SHA256,
+            files: Object.fromEntries(present.map(entry =>
+              [entry.name, fs.readFileSync(path.join(kvmRoot, entry.name))]))});
+          /* Belt and braces: the two executed modules are byte-identical to the verified MSI copies. */
+          for (const name of WINDOWS_MSI_KVM_SUBTREE_MEMBERS.filter(value => value.endsWith(".mjs"))) {
+            const sealed = fs.readFileSync(path.join(closureRoot, "scripts/qualification", name));
+            if (!sealed.equals(fs.readFileSync(path.join(kvmRoot, name))))
+              throw new Error(`KVM subtree copy differs from the sealed member: ${name}`);
+          }
+          NODE
+
+      - name: Repeat ordinary and reviewed privileged KVM observation
+        shell: bash
+        run: |
+          set -euo pipefail
+          kvm_root="$RUNNER_TEMP/linux-kvm-capability-closure"
+          work_root="$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE"
+          set +e
+          node "$kvm_root/linux-kvm-capability.mjs" probe \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$EXPECTED_NONCE" \
+            --closure-root "$kvm_root" --manifest "$kvm_root/closure.json" \
+            --result "$work_root/result.json"
+          ordinary_exit=$?
+          set -e
+          test "$ordinary_exit" -eq 0 -o "$ordinary_exit" -eq 1
+          node "$kvm_root/linux-kvm-privileged-capability.mjs" retry \
+            --source-sha "$EXPECTED_SOURCE_SHA" --event-sha "$EXPECTED_EVENT_SHA" \
+            --run-id "$EXPECTED_RUN_ID" --run-attempt "$EXPECTED_RUN_ATTEMPT" --nonce "$EXPECTED_NONCE" \
+            --closure-root "$kvm_root" --core-manifest "$kvm_root/closure.json" \
+            --manifest "$kvm_root/privileged-closure.json" --ordinary-result "$work_root/result.json" \
+            --result "$work_root/privileged-result.json"
+
+      - name: Acquire the exact prior Windows probe artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ARTIFACT_ID: ${{ inputs.probe_artifact_id }}
+          TARGET_ARTIFACT_NAME: windows-cpu-readiness-evidence
+          TARGET_RUN_ID: ${{ inputs.probe_run_id }}
+          TARGET_RUN_ATTEMPT: ${{ inputs.probe_run_attempt }}
+          TARGET_SOURCE_SHA: ${{ inputs.probe_source_sha }}
+          TARGET_ARCHIVE_BYTES: ${{ inputs.probe_archive_bytes }}
+          TARGET_ARCHIVE_SHA256: ${{ inputs.probe_archive_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Stage 2's validator names this root; the MSI input root beside it is a different tree
+          # holding the MSI-side documents, and neither is ever handed to the other's consumer.
+          input_root="$RUNNER_TEMP/myspeed-stage2-input-$EXPECTED_NONCE"
+          test ! -e "$input_root"
+          install -d -m 700 "$input_root" "$RUNNER_TEMP/myspeed-msi-input-$EXPECTED_NONCE"
+          install -m 600 "$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE/result.json" "$input_root/ordinary.json"
+          install -m 600 "$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE/privileged-result.json" "$input_root/combined.json"
+          node --input-type=module - "$input_root/artifact.zip" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          const target = process.argv[2];
+          const exact = (value, pattern, name) => { if (typeof value !== "string" || !pattern.test(value))
+            throw new Error(`${name} is invalid`); };
+          exact(process.env.TARGET_ARTIFACT_ID, /^[1-9][0-9]{0,19}$/u, "artifact id");
+          exact(process.env.TARGET_RUN_ID, /^[1-9][0-9]{0,19}$/u, "run id");
+          exact(process.env.TARGET_RUN_ATTEMPT, /^[1-9][0-9]{0,9}$/u, "run attempt");
+          exact(process.env.TARGET_SOURCE_SHA, /^[a-f0-9]{40}$/u, "source SHA");
+          exact(process.env.TARGET_ARCHIVE_BYTES, /^[1-9][0-9]{0,8}$/u, "archive bytes");
+          exact(process.env.TARGET_ARCHIVE_SHA256, /^[a-f0-9]{64}$/u, "archive SHA-256");
+          if (Number(process.env.TARGET_ARCHIVE_BYTES) > 268435456)
+            throw new Error("archive size bound is invalid");
+          const headers = {Accept: "application/vnd.github+json", Authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "X-GitHub-Api-Version": "2022-11-28"};
+          const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 600_000);
+          try {
+            const metadata = await fetch(
+              `https://api.github.com/repos/i7Gamer/MySpeed/actions/artifacts/${process.env.TARGET_ARTIFACT_ID}`,
+              {headers, signal: abort.signal});
+            if (!metadata.ok) throw new Error("artifact metadata request failed");
+            const artifact = await metadata.json();
+            if (String(artifact.id) !== process.env.TARGET_ARTIFACT_ID ||
+                artifact.name !== process.env.TARGET_ARTIFACT_NAME || artifact.expired !== false ||
+                String(artifact.size_in_bytes) !== process.env.TARGET_ARCHIVE_BYTES ||
+                String(artifact.workflow_run?.id) !== process.env.TARGET_RUN_ID ||
+                artifact.workflow_run?.head_sha !== process.env.TARGET_SOURCE_SHA)
+              throw new Error("artifact metadata identity differs");
+            const run = await fetch(
+              `https://api.github.com/repos/i7Gamer/MySpeed/actions/runs/${process.env.TARGET_RUN_ID}/attempts/${process.env.TARGET_RUN_ATTEMPT}`,
+              {headers, signal: abort.signal});
+            if (!run.ok) throw new Error("workflow attempt metadata request failed");
+            const runValue = await run.json();
+            if (String(runValue.id) !== process.env.TARGET_RUN_ID ||
+                String(runValue.run_attempt) !== process.env.TARGET_RUN_ATTEMPT ||
+                runValue.head_sha !== process.env.TARGET_SOURCE_SHA ||
+                runValue.repository?.full_name !== "i7Gamer/MySpeed" || runValue.conclusion !== "success")
+              throw new Error("workflow attempt identity differs");
+            const response = await fetch(artifact.archive_download_url, {headers, signal: abort.signal});
+            if (!response.ok || !response.body) throw new Error("artifact archive request failed");
+            const handle = fs.openSync(target,
+              fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
+            const digest = crypto.createHash("sha256"); let total = 0;
+            try {
+              for await (const part of response.body) { const bytes = Buffer.from(part); total += bytes.length;
+                if (total > Number(process.env.TARGET_ARCHIVE_BYTES))
+                  throw new Error("artifact archive exceeded its bound");
+                digest.update(bytes); let offset = 0;
+                while (offset < bytes.length) {
+                  const count = fs.writeSync(handle, bytes, offset, bytes.length - offset);
+                  if (count < 1) throw new Error("artifact archive write was truncated"); offset += count; } }
+              fs.fsyncSync(handle);
+            } finally { fs.closeSync(handle); }
+            if (String(total) !== process.env.TARGET_ARCHIVE_BYTES ||
+                digest.digest("hex") !== process.env.TARGET_ARCHIVE_SHA256)
+              throw new Error("artifact archive digest differs");
+          } finally { clearTimeout(timeout); }
+          NODE
+          /usr/bin/unzip -Z1 "$input_root/artifact.zip" >"$input_root/archive-members.txt"
+          test "$(stat -c %s -- "$input_root/archive-members.txt")" -le 1048576
+          node - "$input_root/archive-members.txt" "$input_root/archive-selection.tsv" <<'NODE'
+          const fs = require("node:fs");
+          const bytes = fs.readFileSync(process.argv[2]);
+          const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
+          const names = text.endsWith("\n") ? text.slice(0, -1).split("\n") : [];
+          const required = new Set(["result.json", "avx.exe", "avx2.exe", "cpuid.exe", "illegal.exe",
+            "known_bad.exe", "known_good.exe", "popcnt.exe", "sse42.exe"]); const selected = new Map();
+          if (names.length < 1 || names.length > 4096) throw new Error("archive member count is invalid");
+          for (const raw of names) { const directory = raw.endsWith("/");
+            const name = directory ? raw.slice(0, -1) : raw; const parts = name.split("/");
+            if (name.length < 1 || name.length > 1024 || name.startsWith("/") || name.includes("\\") ||
+                parts.some(part => !/^[A-Za-z0-9_.-]{1,255}$/u.test(part) || part === ".."))
+              throw new Error("archive member path is invalid");
+            if (!directory && required.has(parts.at(-1))) { const key = parts.at(-1);
+              if (selected.has(key)) throw new Error("archive member is duplicated");
+              selected.set(key, raw); } }
+          if (selected.size !== required.size) throw new Error("archive member set is incomplete");
+          fs.writeFileSync(process.argv[3],
+            `${[...required].map(name => `${name}\t${selected.get(name)}`).join("\n")}\n`,
+            {flag: "wx", mode: 0o600});
+          NODE
+          while IFS=$'\t' read -r target member; do
+            test ! -e "$input_root/$target"
+            (umask 077; ulimit -f 32768; /usr/bin/timeout --signal=KILL 60s \
+              /usr/bin/unzip -p "$input_root/artifact.zip" "$member" >"$input_root/$target")
+            test -f "$input_root/$target" -a ! -L "$input_root/$target"
+            member_bytes="$(stat -c %s -- "$input_root/$target")"
+            test "$member_bytes" -gt 0 -a "$member_bytes" -le 16777216
+          done <"$input_root/archive-selection.tsv"
+
+      # Stage 2 gets its own sealed closure, verified against the seal job's digest, and the request
+      # is built by the sealed `windows-msi-stage2-request.mjs` rather than by workflow text - so the
+      # document this step produces is the one a pure test feeds to the real Stage 2 validator.
+      - name: Build the exact Stage 2 request and calibrate the base image
+        id: stage2
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          stage2_root="$RUNNER_TEMP/myspeed-stage2-closure-$EXPECTED_NONCE"
+          input_root="$RUNNER_TEMP/myspeed-stage2-input-$EXPECTED_NONCE"
+          transport_root="$RUNNER_TEMP/myspeed-msi-transport-$EXPECTED_NONCE"
+          install -d -m 700 "$transport_root"
+          node --input-type=module - "$closure_root" "$stage2_root" "$input_root" \
+            "$transport_root/stage2-request.json" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [closureRoot, stage2Root, inputRoot, output] = process.argv.slice(2);
+          const {buildWindowsMsiStage2Request, WINDOWS_MSI_STAGE2_CLOSURE, WINDOWS_MSI_STAGE2_PROBE_ROLES,
+            WINDOWS_MSI_STAGE2_ROOTS} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/qualification/windows-msi-stage2-request.mjs")).href);
+          const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+          const identity = target => { const bytes = fs.readFileSync(target);
+            return {path: target, bytes: bytes.length, sha256: hash(bytes)}; };
+          /* The Stage 2 tree is authenticated against the seal job's digest before it is executed. */
+          const sealed = WINDOWS_MSI_STAGE2_CLOSURE.map(name => { const bytes =
+            fs.readFileSync(path.join(stage2Root, name));
+            return [name, String(bytes.length), hash(bytes)]; });
+          if (hash(Buffer.from(JSON.stringify(sealed), "utf8")) !== process.env.EXPECTED_STAGE2_SHA256)
+            throw new Error("sealed Stage 2 closure differs from the digest sealed beside it");
+          const walk = directory => fs.readdirSync(path.join(stage2Root, directory),
+            {withFileTypes: true}).flatMap(entry => entry.isDirectory()
+              ? walk(path.posix.join(directory, entry.name)) : [path.posix.join(directory, entry.name)]);
+          if (JSON.stringify(walk("scripts").sort()) !== JSON.stringify([...WINDOWS_MSI_STAGE2_CLOSURE].sort()))
+            throw new Error("sealed Stage 2 closure carries source nobody bound a hash to");
+          const evidencePath = path.join(inputRoot, "result.json");
+          const evidence = JSON.parse(fs.readFileSync(evidencePath));
+          if (evidence.status !== "completed" || evidence.calibrationPassed !== true ||
+              evidence.sourceSha !== process.env.PROBE_SOURCE_SHA ||
+              String(evidence.runId) !== process.env.PROBE_RUN_ID ||
+              String(evidence.runAttempt) !== process.env.PROBE_RUN_ATTEMPT)
+            throw new Error("probe evidence differs");
+          const files = WINDOWS_MSI_STAGE2_PROBE_ROLES.map(role => {
+            const name = role.replaceAll("-", "_") + ".exe";
+            const built = evidence.observations.build.filter(value => value.mode === role);
+            if (built.length !== 1) throw new Error("probe build role is invalid");
+            const executable = built[0].executable; const observed = identity(path.join(inputRoot, name));
+            if (!executable || observed.bytes !== executable.bytes || observed.sha256 !== executable.sha256)
+              throw new Error("probe executable identity differs");
+            return {role, name, bytes: String(observed.bytes), sha256: observed.sha256}; });
+          const context = {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
+            sourceSha: process.env.EXPECTED_SOURCE_SHA, eventSha: process.env.EXPECTED_EVENT_SHA,
+            runId: process.env.EXPECTED_RUN_ID, runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
+            nonce: process.env.EXPECTED_NONCE, environment: {GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+              CI: process.env.CI, RUNNER_OS: process.env.RUNNER_OS, RUNNER_ARCH: process.env.RUNNER_ARCH,
+              RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT, ImageOS: process.env.ImageOS,
+              ImageVersion: process.env.ImageVersion}};
+          if (stage2Root !== WINDOWS_MSI_STAGE2_ROOTS.closurePrefix + context.nonce ||
+              inputRoot !== WINDOWS_MSI_STAGE2_ROOTS.inputPrefix + context.nonce)
+            throw new Error("Stage 2 roots differ from the roots its validator names");
+          const request = buildWindowsMsiStage2Request({context, identity, probe: {
+            artifactId: process.env.PROBE_ARTIFACT_ID, runId: process.env.PROBE_RUN_ID,
+            runAttempt: process.env.PROBE_RUN_ATTEMPT, sourceSha: process.env.PROBE_SOURCE_SHA,
+            archiveBytes: process.env.PROBE_ARCHIVE_BYTES,
+            archiveSha256: process.env.PROBE_ARCHIVE_SHA256, files}});
+          fs.writeFileSync(output, JSON.stringify(request) + "\n", {flag: "wx", mode: 0o600});
+          NODE
+          node "$stage2_root/scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs" run \
+            --request "$transport_root/stage2-request.json" --result "$transport_root/stage2-result.json"
+
+      - name: Bind the same-run Windows preparation artifact metadata
+        id: preparation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          CAPTURE_PATH: ${{ runner.temp }}/myspeed-msi-input-${{ needs.seal.outputs.nonce }}/preparation-artifact.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const owner = 'i7Gamer'; const repo = 'MySpeed';
+            const {data} = await github.rest.actions.listWorkflowRunArtifacts({owner, repo,
+              run_id: Number(process.env.EXPECTED_RUN_ID), per_page: 100});
+            const matches = data.artifacts.filter(artifact =>
+              artifact.name === process.env.PREPARATION_ARTIFACT_NAME && artifact.expired === false);
+            if (matches.length !== 1) throw new Error('same-run preparation artifact is not unique');
+            const artifact = matches[0];
+            if (String(artifact.workflow_run?.id) !== process.env.EXPECTED_RUN_ID ||
+                artifact.workflow_run?.head_sha !== process.env.EXPECTED_SOURCE_SHA)
+              throw new Error('preparation artifact is not from this run');
+            const metadata = {repository: `${owner}/${repo}`, id: String(artifact.id), name: artifact.name,
+              bytes: String(artifact.size_in_bytes), digest: artifact.digest,
+              runId: process.env.EXPECTED_RUN_ID, runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
+              headSha: process.env.EXPECTED_SOURCE_SHA};
+            fs.writeFileSync(process.env.CAPTURE_PATH, `${JSON.stringify(metadata)}\n`, {flag: 'wx'});
+            core.setOutput('artifact_id', String(artifact.id));
+
+      - name: Download the same-run Windows preparation artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ steps.preparation.outputs.artifact_id }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/myspeed-windows-msi-${{ needs.seal.outputs.nonce }}/appassets
+
+      # An accepted sacrificial rollback calibration is a prerequisite the matrix names for the
+      # transaction-rollback row, and it is satisfied by the producing run's own retained result
+      # document. The SHA-256 of the helper that would perform the calibration is code provenance
+      # and proves no execution, so it is not accepted in its place.
+      - name: Acquire the accepted rollback calibration evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_ARTIFACT_ID: ${{ inputs.rollback_artifact_id }}
+          TARGET_ARTIFACT_NAME: ${{ env.ROLLBACK_ARTIFACT_NAME }}
+          TARGET_WORKFLOW: ${{ env.ROLLBACK_WORKFLOW }}
+          OFFICIAL_DIGEST_PATH: ${{ runner.temp }}/myspeed-msi-input-${{ needs.seal.outputs.nonce }}/rollback-official-digest.txt
+          PRODUCER_EVENT_SHA_PATH: ${{ runner.temp }}/myspeed-msi-input-${{ needs.seal.outputs.nonce }}/rollback-producer-event-sha.txt
+          PRODUCER_RUN_EVENT_PATH: ${{ runner.temp }}/myspeed-msi-input-${{ needs.seal.outputs.nonce }}/rollback-producer-run-event.txt
+          TARGET_RUN_ID: ${{ inputs.rollback_run_id }}
+          TARGET_RUN_ATTEMPT: ${{ inputs.rollback_run_attempt }}
+          TARGET_SOURCE_SHA: ${{ inputs.rollback_source_sha }}
+          TARGET_ARCHIVE_BYTES: ${{ inputs.rollback_archive_bytes }}
+          TARGET_ARCHIVE_SHA256: ${{ inputs.rollback_archive_sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_root="$RUNNER_TEMP/myspeed-msi-input-$EXPECTED_NONCE"
+          test -d "$input_root"
+          node --input-type=module - "$input_root/rollback-artifact.zip" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          const target = process.argv[2];
+          const exact = (value, pattern, name) => { if (typeof value !== "string" || !pattern.test(value))
+            throw new Error(`${name} is invalid`); };
+          exact(process.env.TARGET_ARTIFACT_ID, /^[1-9][0-9]{0,19}$/u, "artifact id");
+          exact(process.env.TARGET_RUN_ID, /^[1-9][0-9]{0,19}$/u, "run id");
+          exact(process.env.TARGET_RUN_ATTEMPT, /^[1-9][0-9]{0,9}$/u, "run attempt");
+          exact(process.env.TARGET_SOURCE_SHA, /^[a-f0-9]{40}$/u, "source SHA");
+          exact(process.env.TARGET_ARCHIVE_BYTES, /^[1-9][0-9]{0,8}$/u, "archive bytes");
+          exact(process.env.TARGET_ARCHIVE_SHA256, /^[a-f0-9]{64}$/u, "archive SHA-256");
+          if (Number(process.env.TARGET_ARCHIVE_BYTES) > 67108864)
+            throw new Error("archive size bound is invalid");
+          const headers = {Accept: "application/vnd.github+json", Authorization: `Bearer ${process.env.GH_TOKEN}`,
+            "X-GitHub-Api-Version": "2022-11-28"};
+          const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 600_000);
+          try {
+            const metadata = await fetch(
+              `https://api.github.com/repos/i7Gamer/MySpeed/actions/artifacts/${process.env.TARGET_ARTIFACT_ID}`,
+              {headers, signal: abort.signal});
+            if (!metadata.ok) throw new Error("artifact metadata request failed");
+            const artifact = await metadata.json();
+            if (String(artifact.id) !== process.env.TARGET_ARTIFACT_ID ||
+                artifact.name !== process.env.TARGET_ARTIFACT_NAME || artifact.expired !== false ||
+                String(artifact.size_in_bytes) !== process.env.TARGET_ARCHIVE_BYTES ||
+                String(artifact.workflow_run?.id) !== process.env.TARGET_RUN_ID ||
+                artifact.workflow_run?.head_sha !== process.env.TARGET_SOURCE_SHA)
+              throw new Error("artifact metadata identity differs");
+            /*
+             * The pin a dispatch supplies cannot authenticate itself, so the platform's own digest
+             * for this artifact is compared with it before a byte is fetched - and the downloaded
+             * bytes are then hashed against the same value. Agreeing with the caller is not the same
+             * as agreeing with the platform.
+             */
+            if (typeof artifact.digest !== "string" ||
+                artifact.digest !== `sha256:${process.env.TARGET_ARCHIVE_SHA256}`)
+              throw new Error("official artifact digest differs from the dispatch pin");
+            fs.writeFileSync(process.env.OFFICIAL_DIGEST_PATH, `${artifact.digest}\n`,
+              {flag: "wx", mode: 0o600});
+            const run = await fetch(
+              `https://api.github.com/repos/i7Gamer/MySpeed/actions/runs/${process.env.TARGET_RUN_ID}/attempts/${process.env.TARGET_RUN_ATTEMPT}`,
+              {headers, signal: abort.signal});
+            if (!run.ok) throw new Error("workflow attempt metadata request failed");
+            const runValue = await run.json();
+            /*
+             * The producing workflow's identity and this attempt are bound as well as the run and the
+             * SHA: an artifact of the right id from some other workflow is not this prerequisite.
+             */
+            if (String(runValue.id) !== process.env.TARGET_RUN_ID ||
+                String(runValue.run_attempt) !== process.env.TARGET_RUN_ATTEMPT ||
+                runValue.head_sha !== process.env.TARGET_SOURCE_SHA ||
+                runValue.repository?.full_name !== "i7Gamer/MySpeed" || runValue.conclusion !== "success" ||
+                runValue.path !== `.github/workflows/${process.env.TARGET_WORKFLOW}`)
+              throw new Error("workflow attempt identity differs");
+            fs.writeFileSync(process.env.PRODUCER_RUN_EVENT_PATH, `${runValue.event}\n`,
+              {flag: "wx", mode: 0o600});
+            const response = await fetch(artifact.archive_download_url, {headers, signal: abort.signal});
+            if (!response.ok || !response.body) throw new Error("artifact archive request failed");
+            const handle = fs.openSync(target,
+              fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY, 0o600);
+            const digest = crypto.createHash("sha256"); let total = 0;
+            try {
+              for await (const part of response.body) { const bytes = Buffer.from(part); total += bytes.length;
+                if (total > Number(process.env.TARGET_ARCHIVE_BYTES))
+                  throw new Error("artifact archive exceeded its bound");
+                digest.update(bytes); let offset = 0;
+                while (offset < bytes.length) {
+                  const count = fs.writeSync(handle, bytes, offset, bytes.length - offset);
+                  if (count < 1) throw new Error("artifact archive write was truncated"); offset += count; } }
+              fs.fsyncSync(handle);
+            } finally { fs.closeSync(handle); }
+            if (String(total) !== process.env.TARGET_ARCHIVE_BYTES ||
+                digest.digest("hex") !== process.env.TARGET_ARCHIVE_SHA256)
+              throw new Error("artifact archive digest differs");
+          } finally { clearTimeout(timeout); }
+          NODE
+          # The producer retains exactly these two files, and both are consumed unreshaped.
+          for member in result.json launcher.json; do
+            test ! -e "$input_root/rollback-$member"
+            (umask 077; ulimit -f 4096; /usr/bin/timeout --signal=KILL 60s \
+              /usr/bin/unzip -p "$input_root/rollback-artifact.zip" "$member" \
+              >"$input_root/rollback-$member")
+            test -f "$input_root/rollback-$member" -a ! -L "$input_root/rollback-$member"
+            test "$(stat -c %s -- "$input_root/rollback-$member")" -gt 0
+            test "$(stat -c %s -- "$input_root/rollback-$member")" -le 262144
+          done
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          const inputRoot = path.join(process.env.RUNNER_TEMP,
+            `myspeed-msi-input-${process.env.EXPECTED_NONCE}`);
+          const read = name => {
+            const bytes = fs.readFileSync(path.join(inputRoot, name));
+            if (bytes.length < 1 || bytes.length > 262144) throw new Error(`${name} exceeds its bound`);
+            return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+          };
+          const sha1 = /^[a-f0-9]{40}$/u;
+          const result = read("rollback-result.json");
+          const launcher = read("rollback-launcher.json");
+          /*
+           * The launcher retains the exact argument vector the producer was started with, and the
+           * document that vector carried is where the producer's own execution context is written
+           * down. Exactly one input document may be named, or it is not clear which one ran.
+           */
+          if (!Array.isArray(launcher.arguments) ||
+              launcher.arguments.filter(value => value === "-InputJson").length !== 1)
+            throw new Error("producer launch arguments do not carry exactly one input document");
+          const launchedWith = launcher.arguments[launcher.arguments.indexOf("-InputJson") + 1];
+          if (typeof launchedWith !== "string" || launchedWith.length > 262144)
+            throw new Error("producer launch arguments do not carry exactly one input document");
+          const launched = JSON.parse(launchedWith);
+          for (const name of ["runId", "runAttempt", "sourceSha", "eventSha", "nonce"])
+            if (typeof result[name] !== "string" || result[name] !== launched[name])
+              throw new Error("producer documents disagree about the run they belong to");
+          /* And that agreed-on run has to be the run whose artifact was just authenticated. */
+          if (result.runId !== process.env.TARGET_RUN_ID ||
+              result.runAttempt !== process.env.TARGET_RUN_ATTEMPT ||
+              result.sourceSha !== process.env.TARGET_SOURCE_SHA)
+            throw new Error("producer document does not belong to the authenticated run");
+          const eventSha = result.eventSha;
+          if (!sha1.test(eventSha)) throw new Error("producer event SHA is invalid");
+          const producerEvent = fs.readFileSync(process.env.PRODUCER_RUN_EVENT_PATH, "utf8").trim();
+          const headers = {Accept: "application/vnd.github+json",
+            Authorization: `Bearer ${process.env.GH_TOKEN}`, "X-GitHub-Api-Version": "2022-11-28"};
+          const abort = new AbortController(); const timeout = setTimeout(() => abort.abort(), 120_000);
+          try {
+            if (producerEvent === "pull_request") {
+              /*
+               * On a pull-request run the producer's event commit is the merge the platform built for
+               * it, so it is a real commit whose parents include the head the run reported. This does
+               * not on its own single out that run's merge - what does is that the SHA was taken from
+               * the producer's own retained documents rather than from anything this dispatch chose.
+               */
+              if (eventSha === process.env.TARGET_SOURCE_SHA)
+                throw new Error("pull-request producer event SHA cannot equal its source SHA");
+              const commit = await fetch(
+                `https://api.github.com/repos/i7Gamer/MySpeed/commits/${eventSha}`,
+                {headers, signal: abort.signal});
+              if (!commit.ok) throw new Error("producer event commit request failed");
+              const commitValue = await commit.json();
+              if (commitValue.sha !== eventSha || !Array.isArray(commitValue.parents) ||
+                  !commitValue.parents.some(parent => parent.sha === process.env.TARGET_SOURCE_SHA))
+                throw new Error("producer event commit is not a merge of the producer source commit");
+            } else if (eventSha !== process.env.TARGET_SOURCE_SHA) {
+              throw new Error("producer event SHA differs from the run the platform reports");
+            }
+          } finally { clearTimeout(timeout); }
+          fs.writeFileSync(process.env.PRODUCER_EVENT_SHA_PATH, `${eventSha}\n`,
+            {flag: "wx", mode: 0o600});
+          NODE
+
+      # Only the rollback calibration is assembled here. Its producer ran in another run, at another
+      # commit, so its retained documents are the only way this job can have it. The IFEO containment
+      # prerequisite is the opposite: it means nothing unless this run's own guest produced it, so the
+      # controller runs the containment preflight on a disposable overlay of the installed base it
+      # just sealed and binds the record that produced. Demanding it here, before invoking the thing
+      # that creates it, is what used to stop every run.
+      - name: Assemble the typed prerequisite evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          input_root="$RUNNER_TEMP/myspeed-msi-input-$EXPECTED_NONCE"
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          node --input-type=module - "$input_root" "$closure_root" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [inputRoot, closureRoot] = process.argv.slice(2);
+          const {inspectWindowsMsiPrerequisiteEvidence} = await import(pathToFileURL(
+            path.join(closureRoot, "scripts/qualification/windows-msi-prerequisite-evidence.mjs")).href);
+          const retained = target => { const bytes = fs.readFileSync(target);
+            return {bytes: String(bytes.length),
+              sha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+              bytesBase64: bytes.toString("base64")}; };
+          const text = target => fs.readFileSync(target, "utf8").trim();
+          const records = {
+            rollbackCalibration: {schemaVersion: 1, kind: "myspeed-windows-msi-prerequisite-evidence",
+              prerequisiteId: "msi-api-rollback-controller", producer: "hosted-run-artifact",
+              provenance: {repository: process.env.GITHUB_REPOSITORY,
+                workflow: process.env.ROLLBACK_WORKFLOW, runId: process.env.ROLLBACK_RUN_ID,
+                runAttempt: process.env.ROLLBACK_RUN_ATTEMPT, sourceSha: process.env.ROLLBACK_SOURCE_SHA,
+                /*
+                 * The producer's event SHA is its own and differs from its source SHA; it is read
+                 * back from the platform rather than assumed equal to anything this run has.
+                 */
+                eventSha: text(path.join(inputRoot, "rollback-producer-event-sha.txt")),
+                artifactId: process.env.ROLLBACK_ARTIFACT_ID,
+                artifactName: process.env.ROLLBACK_ARTIFACT_NAME,
+                artifactBytes: process.env.ROLLBACK_ARCHIVE_BYTES,
+                artifactDigest: `sha256:${process.env.ROLLBACK_ARCHIVE_SHA256}`,
+                officialArtifactDigest: text(path.join(inputRoot, "rollback-official-digest.txt"))},
+              document: retained(path.join(inputRoot, "rollback-result.json")),
+              launch: retained(path.join(inputRoot, "rollback-launcher.json"))}};
+          /*
+           * Replayed here, on its own, rather than merely copied forward: a record that the matrix
+           * would later refuse must fail before a guest is ever started.
+           */
+          inspectWindowsMsiPrerequisiteEvidence({name: "rollbackCalibration",
+            value: records.rollbackCalibration, context: {
+              repository: process.env.GITHUB_REPOSITORY, sourceSha: process.env.EXPECTED_SOURCE_SHA,
+              eventSha: process.env.EXPECTED_EVENT_SHA, runId: process.env.EXPECTED_RUN_ID,
+              runAttempt: process.env.EXPECTED_RUN_ATTEMPT, nonce: process.env.EXPECTED_NONCE}});
+          fs.writeFileSync(path.join(inputRoot, "prerequisite-evidence.json"),
+            `${JSON.stringify(records)}\n`, {flag: "wx", mode: 0o600});
+          NODE
+
+      - name: Seal the installed base and run the exact fourteen rows
+        id: lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          closure_root="$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE"
+          input_root="$RUNNER_TEMP/myspeed-msi-input-$EXPECTED_NONCE"
+          task_root="$RUNNER_TEMP/myspeed-windows-msi-$EXPECTED_NONCE"
+          transport_root="$RUNNER_TEMP/myspeed-msi-transport-$EXPECTED_NONCE"
+          install -m 600 /dev/null "$transport_root/controller.stdout"
+          install -m 600 /dev/null "$transport_root/controller.stderr"
+          started="$(cat "$RUNNER_TEMP/msi-job-start")"
+          elapsed=$(( $(date -u +%s) - started ))
+          node --input-type=module - "$closure_root" "$input_root" "$task_root" "$elapsed" \
+            "$task_root/msi-lifecycle-request.json" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [closureRoot, inputRoot, taskRoot, elapsedText, output] = process.argv.slice(2);
+          const {admitWindowsMsiLifecycleSetup} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/qualification/windows-msi-lifecycle-budget.mjs")).href);
+          const minute = 60_000;
+          const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+          const identity = target => { const bytes = fs.readFileSync(target);
+            return {path: target, bytes: bytes.length, sha256: hash(bytes)}; };
+          const integerMinutes = (value, name) => { if (!/^[1-9][0-9]{0,3}$/u.test(value ?? ""))
+            throw new Error(`${name} is invalid`); return Number(value) * minute; };
+          const elapsed = Number(elapsedText) * 1000;
+          if (!Number.isSafeInteger(elapsed) || elapsed < 0) throw new Error("measured setup is invalid");
+          /*
+           * Setup - Stage 2 above all - was charged to this same job, so the matrix only gets what is
+           * left of the dispatched budget. A remainder that cannot hold one row with its margins is
+           * refused here by the same module the controller admits rows with.
+           */
+          const budget = admitWindowsMsiLifecycleSetup({elapsedMilliseconds: elapsed,
+            job: {jobBudgetMilliseconds: integerMinutes(process.env.JOB_BUDGET_MINUTES, "job budget"),
+              jobTimeoutMilliseconds: integerMinutes(process.env.JOB_TIMEOUT_MINUTES, "job timeout"),
+              retentionReserveMilliseconds: integerMinutes(process.env.RETENTION_RESERVE_MINUTES,
+                "retention reserve")},
+            limits: {rowAllowanceMilliseconds: integerMinutes(process.env.ROW_ALLOWANCE_MINUTES,
+              "row allowance"),
+            rowCleanupMarginMilliseconds: integerMinutes(process.env.ROW_CLEANUP_MARGIN_MINUTES,
+              "row cleanup margin"),
+            finalMarginMilliseconds: integerMinutes(process.env.FINAL_MARGIN_MINUTES, "final margin")}});
+          const stage2Result = JSON.parse(
+            fs.readFileSync(`${process.env.RUNNER_TEMP}/myspeed-msi-transport-${process.env.EXPECTED_NONCE}/stage2-result.json`));
+          const root = `${process.env.RUNNER_TEMP}/myspeed-windows-cpu-floor-${process.env.EXPECTED_NONCE}`;
+          const request = {context: {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
+            sourceSha: process.env.EXPECTED_SOURCE_SHA, eventSha: process.env.EXPECTED_EVENT_SHA,
+            runId: process.env.EXPECTED_RUN_ID, runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
+            nonce: process.env.EXPECTED_NONCE, environment: {GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
+              CI: process.env.CI, RUNNER_OS: process.env.RUNNER_OS, RUNNER_ARCH: process.env.RUNNER_ARCH,
+              RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT, ImageOS: process.env.ImageOS,
+              ImageVersion: process.env.ImageVersion}},
+          taskRoot, artifactRoot: `${taskRoot}/appassets`,
+          artifact: JSON.parse(fs.readFileSync(path.join(inputRoot, "preparation-artifact.json"))),
+          closureRoot, stage2Paths: {root, packageRoot: `${root}/packages`,
+            portableRoot: `/tmp/myspeed-windows-cpu-floor-tools-${process.env.EXPECTED_NONCE}`,
+            probeRoot: `${root}/probes`, windowsIso: `${root}/windows.iso`,
+            installWim: `${root}/install.wim`, seedIso: `${root}/seed.iso`,
+            outputDisk: `${root}/output.img`, systemDisk: `${root}/system.qcow2`,
+            ovmfVars: `${root}/OVMF_VARS.fd`, serialLog: `${root}/serial.log`, qemuPid: `${root}/qemu.pid`},
+          stage2Result, installedBaseHelperSource: (() => { const observed = identity(path.join(closureRoot,
+            "scripts/qualification/windows-msi-installed-base-seal-helper.mjs"));
+          return {path: observed.path, bytes: observed.bytes, sha256: observed.sha256}; })(),
+          prerequisiteEvidence: JSON.parse(fs.readFileSync(path.join(inputRoot, "prerequisite-evidence.json"))),
+          budget, wallDeadlineUnixMilliseconds: Date.now() + budget.jobBudgetMilliseconds};
+          fs.writeFileSync(output, `${JSON.stringify(request)}\n`, {flag: "wx", mode: 0o600});
+          NODE
+          set +e
+          node "$closure_root/scripts/release/post-release-msi-linux-controller.mjs" run \
+            --request "$task_root/msi-lifecycle-request.json" \
+            --result "$task_root/msi-lifecycle-result.json" \
+            --progress "$task_root/msi-lifecycle-progress.json" \
+            --host-request "$task_root/msi-host-request.json" \
+            >"$transport_root/controller.stdout" 2>"$transport_root/controller.stderr"
+          controller_exit=$?
+          set -e
+          printf 'controller_exit=%s\n' "$controller_exit" >> "$GITHUB_OUTPUT"
+
+      # Retained evidence is bounded text only, in the exact inventory the consumer requires:
+      # `msi-host-request.json` and `msi-lifecycle-result.json` on a completed matrix, with the typed
+      # progress, the two bounded streams, the closure manifest and the inventory itself alongside.
+      # Progress is diagnostic and never stands in for a completed result: it carries scenario ids, a
+      # budget observation and a bounded failure record, not the raw per-row proofs a replay needs.
+      # Never installation media, a raw or qcow2 disk, a secret, or an unconstrained directory tree.
+      - name: Bound the retained text evidence
+        id: bound
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          transport_root="$RUNNER_TEMP/myspeed-msi-transport-$EXPECTED_NONCE"
+          task_root="$RUNNER_TEMP/myspeed-windows-msi-$EXPECTED_NONCE"
+          install -d -m 700 "$transport_root"
+          for stream in controller.stdout controller.stderr; do
+            test -e "$transport_root/$stream" || install -m 600 /dev/null "$transport_root/$stream"
+            test -f "$transport_root/$stream" -a ! -L "$transport_root/$stream"
+            test "$(stat -c %s -- "$transport_root/$stream")" -le 1048576
+          done
+          # The closure manifest is retained evidence like any other member, so it is copied into
+          # the transport root and hashed into the inventory rather than uploaded from beside it.
+          install -m 600 "$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE/msi-execution-closure.json" \
+            "$transport_root/msi-execution-closure.json"
+          for name in msi-host-request.json msi-lifecycle-result.json msi-lifecycle-progress.json; do
+            if [ -e "$task_root/$name" ]; then
+              test -f "$task_root/$name" -a ! -L "$task_root/$name"
+              test "$(stat -c %s -- "$task_root/$name")" -le 16777216
+              install -m 600 "$task_root/$name" "$transport_root/$name"
+            fi
+          done
+          node - "$transport_root" "${{ steps.lifecycle.outputs.controller_exit }}" <<'NODE'
+          const crypto = require("node:crypto"); const fs = require("node:fs"); const path = require("node:path");
+          const [root, exitText] = process.argv.slice(2);
+          const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+          const streams = ["controller.stdout", "controller.stderr"].map(name => {
+            const bytes = fs.readFileSync(path.join(root, name));
+            return {name, bytes: bytes.length, sha256: digest(bytes)}; });
+          const exit = /^(0|1)$/u.test(exitText ?? "") ? Number(exitText) : null;
+          const read = name => { const target = path.join(root, name);
+            if (!fs.existsSync(target)) return {identity: null, value: null};
+            const bytes = fs.readFileSync(target);
+            let value = null;
+            try { const parsed = JSON.parse(bytes.toString("utf8"));
+              if (bytes.equals(Buffer.from(`${JSON.stringify(parsed)}\n`))) value = parsed; } catch { }
+            return {identity: {bytes: bytes.length, sha256: digest(bytes)}, value}; };
+          const result = read("msi-lifecycle-result.json");
+          const progress = read("msi-lifecycle-progress.json");
+          const hostRequest = read("msi-host-request.json");
+          const value = result.value;
+          /*
+           * A completed matrix is only acceptable with the final host request beside it: without that
+           * document nobody can replay the result against the request it was produced from.
+           */
+          const accepted = exit === 0 && value?.schemaVersion === 1 && value.qualifying === false &&
+            value.status === "completed" && JSON.stringify(value.releaseGatesCleared) === "[]" &&
+            Array.isArray(value.hostRows) && value.hostRows.length === 14 &&
+            value.budget?.status === "completed" && value.budget.rowsCompleted === 14 &&
+            hostRequest.identity !== null;
+          const summary = {schemaVersion: 1, kind: "myspeed-windows-msi-lifecycle-transport-summary",
+            status: "observed", qualifying: false, releaseGatesCleared: [], controllerExit: exit,
+            resultPresent: result.identity !== null, result: result.identity,
+            progressPresent: progress.identity !== null, progress: progress.identity,
+            rowsCompleted: value?.budget?.rowsCompleted ?? progress.value?.budget?.rowsCompleted ?? null,
+            refusedScenarioIndex: progress.value?.refusedScenarioIndex ?? null, streams, accepted,
+            hostRequestPresent: hostRequest.identity !== null, hostRequest: hostRequest.identity};
+          fs.writeFileSync(path.join(root, "transport-summary.json"), `${JSON.stringify(summary)}\n`,
+            {flag: "wx", mode: 0o600});
+          /*
+           * The inventory names every retained member with the length and digest of its raw bytes, so
+           * a consumer can bind what it received to what this job wrote without reparsing any of it.
+           */
+          const inventory = ["msi-host-request.json", "msi-lifecycle-result.json",
+            "msi-lifecycle-progress.json", "transport-summary.json", "msi-execution-closure.json",
+            "controller.stdout", "controller.stderr"].flatMap(name => { const target = path.join(root, name);
+            if (!fs.existsSync(target)) return [];
+            const bytes = fs.readFileSync(target);
+            return [{name, bytes: String(bytes.length), sha256: digest(bytes)}]; });
+          fs.writeFileSync(path.join(root, "evidence-manifest.json"), `${JSON.stringify(
+            {schemaVersion: 1, kind: "myspeed-windows-msi-lifecycle-evidence-manifest", status: "observed",
+              qualifying: false, repository: process.env.GITHUB_REPOSITORY,
+              sourceSha: process.env.EXPECTED_SOURCE_SHA, runId: process.env.EXPECTED_RUN_ID,
+              runAttempt: process.env.EXPECTED_RUN_ATTEMPT, nonce: process.env.EXPECTED_NONCE,
+              files: inventory, releaseGatesCleared: []})}\n`, {flag: "wx", mode: 0o600});
+          NODE
+          accepted="$(node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1]));process.stdout.write(String(v.accepted))' "$transport_root/transport-summary.json")"
+          printf 'accepted=%s\nretain=true\n' "$accepted" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the bounded nonqualifying MSI lifecycle evidence
+        if: always() && steps.bound.outputs.retain == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: post-release-v1.6.1-msi-lifecycle-evidence
+          path: |
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/msi-host-request.json
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/evidence-manifest.json
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/msi-lifecycle-result.json
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/msi-lifecycle-progress.json
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/transport-summary.json
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/controller.stdout
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/controller.stderr
+            ${{ runner.temp }}/myspeed-msi-transport-${{ needs.seal.outputs.nonce }}/msi-execution-closure.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Require an accepted nonqualifying lifecycle observation
+        if: always()
+        shell: bash
+        run: test "${{ steps.bound.outputs.accepted }}" = 'true'

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
+import {EventEmitter} from "node:events";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,7 +8,8 @@ import {describe, it} from "node:test";
 
 import {assertWindowsNativeStandaloneCombinedResult, assertWindowsNativeStandaloneProofRequest,
     assertWindowsNativeStandaloneProofResult, createWindowsNativeStandaloneOperations,
-    createWindowsNativeStandaloneRuntime, inspectWindowsNativeStandaloneEvidence,
+    createWindowsNativeStandaloneRuntime, createWindowsNativeStandaloneRuntimeDependencies,
+    inspectWindowsNativeStandaloneEvidence,
     runWindowsNativeStandaloneProof} from "../../scripts/qualification/windows-native-standalone-proof.mjs";
 import {WINDOWS_NATIVE_ALIASES, WINDOWS_NATIVE_SCENARIOS,
     runWindowsNativeStandaloneAdapter} from "../../scripts/qualification/windows-native-standalone-adapter.mjs";
@@ -39,6 +41,49 @@ const OFFLINE_EVIDENCE = {schemaVersion: 1,
 const OFFLINE_BYTES = Buffer.from(JSON.stringify(OFFLINE_EVIDENCE), "utf8");
 const OFFLINE_SHA = sha(OFFLINE_BYTES);
 const OFFLINE_BASE64 = OFFLINE_BYTES.toString("base64");
+const FAKE_CONTROLLER_TIMEOUT_MILLISECONDS = 25;
+const MAXIMUM_CONTROLLER_STDERR_BYTES = 8 * 1024;
+const MAXIMUM_FAILURE_MESSAGE_CHARACTERS = 512;
+const STDERR_OVERFLOW_EXTRA_BYTES = 32;
+const MAXIMUM_DIAGNOSTIC_SETTLE_MILLISECONDS = 500;
+const CHARACTER_OVERFLOW_LENGTH = 600;
+const NEAR_DEADLINE_DELAY_MILLISECONDS = 10;
+const NEAR_DEADLINE_TIMEOUT_MILLISECONDS = 25;
+
+const fakeControllerChild = ({exitCode = null, stderrChunks = [], emitError = null, stderr = true,
+    stderrEnds = true, stderrEndDelayMilliseconds = 0, stderrPreclosed = false,
+    killClosesStderr = true, beforeExit = () => {}} = {}) => {
+    const child = new EventEmitter();
+    child.exitCode = null;
+    child.signalCode = null;
+    child.stderr = stderr ? new EventEmitter() : null;
+    if (stderrPreclosed) child.stderr.readableEnded = true;
+    child.kill = () => {
+        if (killClosesStderr) child.stderr?.emit("close");
+        return true;
+    };
+    queueMicrotask(() => {
+        for (const chunk of stderrChunks) child.stderr?.emit("data", chunk);
+        if (emitError) child.emit("error", emitError);
+        if (exitCode !== null) {
+            beforeExit();
+            child.exitCode = exitCode;
+            child.signalCode = null;
+            child.emit("exit", exitCode, null);
+        }
+        if (stderrEnds) {
+            if (stderrEndDelayMilliseconds > 0) setTimeout(() => child.stderr?.emit("end"), stderrEndDelayMilliseconds);
+            else child.stderr?.emit("end");
+        }
+    });
+    return child;
+};
+
+const defaultLaunchDependencies = proof => {
+    const harness = makeActualRuntimeDependencies(proof);
+    delete harness.dependencies.startController;
+    return {...createWindowsNativeStandaloneRuntimeDependencies(proof), ...harness.dependencies};
+};
 
 const request = () => ({
     schemaVersion: 1,
@@ -287,7 +332,8 @@ describe("Windows native standalone proof operation factory", () => {
             createWindowsNativeStandaloneRuntime(pathDrift, pathHarness.dependencies));
         assert.equal(pathResult.status, "failed");
         assert.deepEqual(pathResult.adapter.failures[0],
-            {stage: "open-owned-session", classification: "failed"});
+            {stage: "open-owned-session", classification: "failed",
+                detail: "Candidate controller request binding differs: candidatePath"});
 
         const manifestDrift = proofRequest();
         const manifestHarness = makeActualRuntimeDependencies(manifestDrift);
@@ -298,7 +344,8 @@ describe("Windows native standalone proof operation factory", () => {
             createWindowsNativeStandaloneRuntime(manifestDrift, manifestHarness.dependencies));
         assert.equal(manifestResult.status, "failed");
         assert.deepEqual(manifestResult.adapter.failures[0],
-            {stage: "open-owned-session", classification: "failed"});
+            {stage: "open-owned-session", classification: "failed",
+                detail: "Candidate controller request binding differs: manifestSha256"});
     });
 
     it("runs the proof through the accepted adapter and never upgrades its nonqualifying result", async () => {
@@ -571,6 +618,9 @@ describe("Windows native standalone proof operation factory", () => {
         const proof = proofRequest();
         const harness = makeActualRuntimeDependencies(proof);
         let removed = false;
+        let killed = 0;
+        harness.dependencies.startController = () => ({child: {kill: () => { killed++; }},
+            completion: Promise.reject(new Error("controller failed"))});
         harness.dependencies.readReady = async () => { throw new Error("ready absent"); };
         harness.dependencies.removeOwnedWork = () => { removed = true; };
         const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
@@ -587,5 +637,280 @@ describe("Windows native standalone proof operation factory", () => {
         await assert.rejects(runtime.observeOffline({alias: candidate.alias, scenario: ownership.scenario,
             phase: "after-stop"}), /outer Job cleanup/iu);
         assert.equal(removed, false);
+        assert.equal(killed, 1);
+    });
+
+    it("does not claim cleanup for an absent retained fixture state", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let removed = 0;
+        harness.dependencies.removeOwnedWork = () => { removed++; };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+
+        const cleaned = await runtime.cleanupFixture({state: undefined,
+            ownership: {alias: "default", fixtureId: "not-retained"}});
+        assert.deepEqual(cleaned, {cleanupProven: false});
+        assert.equal(removed, 0);
+    });
+
+    it("cancels the losing readiness poll when the controller fails early", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let signal;
+        harness.dependencies.startController = () => ({child: {kill: () => {}},
+            completion: Promise.reject(new Error("early controller failure"))});
+        harness.dependencies.readReady = (_request, _deadline, _clock, abortSignal) => {
+            signal = abortSignal;
+            return new Promise((resolve, reject) => abortSignal?.addEventListener("abort",
+                () => reject(new Error("poll cancelled")), {once: true}));
+        };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "early-exit", alias: candidate.alias, scenario: "populated-first-boot"};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+        await assert.rejects(runtime.launchSession(opened), /early controller failure/u);
+        assert.equal(signal?.aborted, true);
+    });
+
+    it("reserves host headroom and clamps every owned wait to the remaining coordinator budget", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        let now = 1_000;
+        const timeouts = [];
+        harness.dependencies.clock = () => now;
+        harness.dependencies.observeOffline = async (_value, timeout) => {
+            timeouts.push(timeout);
+            return {boundarySha256: OFFLINE_SHA, boundaryBase64: OFFLINE_BASE64, offlineBoundaryPassed: true};
+        };
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+
+        await runtime.observeOffline({alias: "default", scenario: "populated-first-boot", phase: "before-start"});
+        now = 400_000;
+        await runtime.observeOffline({alias: "default", scenario: "populated-first-boot", phase: "after-stop"});
+        now = 541_000;
+        await assert.rejects(runtime.observeOffline({alias: "default", scenario: "populated-first-boot",
+            phase: "after-stop"}), /coordinator deadline expired/iu);
+        assert.deepEqual(timeouts, [310_000, 141_000]);
+        assert.equal(540_000 + 60_000, proof.normalDeadlineMs,
+            "the coordinator wait budget and reserved host headroom no longer equal the host normal window");
+    });
+
+    it("retains a bounded validated candidate failure when the controller exits nonzero", async () => {
+        const proof = proofRequest();
+        const harness = makeActualRuntimeDependencies(proof);
+        harness.dependencies.startController = () => ({completion: Promise.resolve({exitCode: 1, signal: null,
+            stderr: {text: "close detail", truncated: false, unavailable: false}})});
+        harness.dependencies.readResult = async value => ({schemaVersion: 1,
+            kind: "myspeed-windows-native-candidate-result", status: "failed", qualifying: false,
+            releaseGatesCleared: [], alias: value.alias, artifactLogicalName: value.artifactLogicalName,
+            scenario: value.scenario, stopKind: "ctrl-c", candidatePid: 9001,
+            candidateCreationTime: "1".repeat(16), candidateExited: true, exitCode: 1, forced: false,
+            jobActiveProcesses: 0, handleCleanupAttempted: true, handlesClosed: true,
+            processTreeExitProven: true, listenerGone: false, elapsedMs: 100,
+            failures: ["candidate-lifecycle-failed"],
+            failureDetails: [{phase: "lifecycle", failure: "candidate-lifecycle-failed"}]});
+        const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "failed", alias: candidate.alias, scenario: "populated-first-boot"};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+        await runtime.launchSession(opened);
+
+        await assert.rejects(runtime.closeSession({state: opened.state, ownership}),
+            /Candidate controller process failed: candidate-lifecycle-failed: controller stderr: close detail/u);
+    });
+
+    it("captures bounded controller stderr through the default launch seam", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        dependencies.spawnController = () => fakeControllerChild({exitCode: 1,
+            stderrChunks: [Buffer.from([0x62, 0xc3, 0x28, 0x0a])]});
+        dependencies.readReady = (_request, _deadline, _clock, signal) =>
+            new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("poll cancelled")), {once: true}));
+        const runtime = createWindowsNativeStandaloneRuntime(proof, dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "stderr", alias: candidate.alias, scenario: definition.scenario};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+
+        await assert.rejects(runtime.launchSession(opened), /controller stderr: b�\(/u);
+        assert.equal(value.scenario, "populated-first-boot");
+    });
+
+    it("drains overflow without retaining unbounded controller stderr", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        const child = fakeControllerChild({exitCode: 0,
+            stderrChunks: [Buffer.alloc(MAXIMUM_CONTROLLER_STDERR_BYTES + STDERR_OVERFLOW_EXTRA_BYTES, 0x78)]});
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        const completion = await launched.completion;
+
+        assert.equal(completion.exitCode, 0);
+        assert.equal(completion.stderr.truncated, true);
+        assert.ok(completion.stderr.text.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+    });
+
+    it("marks character truncation within the bounded stderr byte capture", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        const child = fakeControllerChild({exitCode: 0,
+            stderrChunks: [Buffer.from("y".repeat(CHARACTER_OVERFLOW_LENGTH))]});
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        const completion = await launched.completion;
+
+        assert.equal(completion.stderr.truncated, true);
+        assert.equal(completion.stderr.text.length, MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+    });
+
+    it("bounds drain after exit and preserves partial controller stderr", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        const child = fakeControllerChild({exitCode: 0, stderrEnds: false,
+            stderrChunks: [Buffer.from("partial diagnostic")]});
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        const completion = await Promise.race([launched.completion,
+            new Promise(resolve => setTimeout(() => resolve(null), MAXIMUM_DIAGNOSTIC_SETTLE_MILLISECONDS))]);
+
+        assert.notEqual(completion, null, "stderr drain must be bounded");
+        assert.equal(completion.stderr.text, "partial diagnostic");
+    });
+
+    it("does not restart the full controller deadline for a late stderr drain", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        let monotonicNow = 0;
+        const child = fakeControllerChild({exitCode: 0, stderrEnds: true,
+            stderrEndDelayMilliseconds: NEAR_DEADLINE_DELAY_MILLISECONDS,
+            beforeExit: () => { monotonicNow = NEAR_DEADLINE_TIMEOUT_MILLISECONDS - 1; }});
+        dependencies.monotonicClock = () => monotonicNow;
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            NEAR_DEADLINE_TIMEOUT_MILLISECONDS);
+        const completion = await launched.completion;
+
+        assert.equal(completion.stderr.unavailable, true);
+    });
+
+    it("preserves successful completion and handles absent or empty stderr", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        for (const stderr of [false, true]) {
+            const dependencies = defaultLaunchDependencies(proof);
+            const child = fakeControllerChild({exitCode: 0, stderr, stderrChunks: []});
+            dependencies.spawnController = () => child;
+            const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+                FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+            assert.deepEqual(await launched.completion, {exitCode: 0, signal: null,
+                stderr: {text: "", truncated: false, unavailable: false}});
+        }
+    });
+
+    it("surfaces spawn errors with bounded stderr and preserves the timeout deadline", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        const spawnError = new Error("spawn denied");
+        const child = fakeControllerChild({stderrChunks: [Buffer.from("denied\n")], emitError: spawnError});
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        await assert.rejects(launched.completion, /spawn denied: controller stderr: denied/u);
+
+        const noStreamCloseDependencies = defaultLaunchDependencies(proof);
+        const noStreamCloseChild = fakeControllerChild({stderrEnds: false, emitError: new Error("spawn missing")});
+        noStreamCloseDependencies.spawnController = () => noStreamCloseChild;
+        const noStreamClose = noStreamCloseDependencies.startController({path: definition.path,
+            sha256: definition.sha256, value}, FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        await assert.rejects(noStreamClose.completion, /spawn missing/u);
+
+        const timeoutDependencies = defaultLaunchDependencies(proof);
+        const timeoutChild = fakeControllerChild({stderr: true, stderrEnds: false, killClosesStderr: false,
+            stderrChunks: [Buffer.from("partial timeout")]});
+        timeoutDependencies.spawnController = () => timeoutChild;
+        const timedOut = timeoutDependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        let timeoutError;
+        await assert.rejects(timedOut.completion, error => {
+            timeoutError = error;
+            return error?.code === "ERR_MYSPEED_CONTROLLER_TIMEOUT";
+        });
+        assert.equal(timeoutError.controllerStderr.text, "partial timeout");
+        assert.equal(timeoutChild.stderr.listenerCount("data"), 0);
+        assert.equal(timeoutChild.stderr.listenerCount("end"), 0);
+        assert.equal(timeoutChild.stderr.listenerCount("close"), 0);
+        timeoutChild.stderr.emit("error", new Error("late timeout stderr"));
+        assert.equal(timeoutChild.stderr.listenerCount("error"), 0);
+        timedOut.child.kill();
+    });
+
+    it("handles late stderr errors and preclosed stderr streams safely", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const value = controllerRequest(proof, definition);
+        const dependencies = defaultLaunchDependencies(proof);
+        const child = fakeControllerChild({exitCode: 0, stderrEnds: false});
+        dependencies.spawnController = () => child;
+        const launched = dependencies.startController({path: definition.path, sha256: definition.sha256, value},
+            FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        await launched.completion;
+        child.stderr.emit("error", new Error("late stderr"));
+
+        const preclosedDependencies = defaultLaunchDependencies(proof);
+        const preclosedChild = fakeControllerChild({exitCode: 0, stderrPreclosed: true});
+        preclosedDependencies.spawnController = () => preclosedChild;
+        const preclosed = preclosedDependencies.startController({path: definition.path,
+            sha256: definition.sha256, value}, FAKE_CONTROLLER_TIMEOUT_MILLISECONDS);
+        assert.deepEqual((await preclosed.completion).stderr, {text: "", truncated: false, unavailable: false});
+    });
+
+    it("marks controller stderr truncation without exceeding the diagnostic text bound", async () => {
+        const proof = proofRequest();
+        const definition = proof.candidates[0].controllerRequests[0];
+        const dependencies = defaultLaunchDependencies(proof);
+        dependencies.spawnController = () => fakeControllerChild({exitCode: 1,
+            stderrChunks: [Buffer.alloc(MAXIMUM_CONTROLLER_STDERR_BYTES + STDERR_OVERFLOW_EXTRA_BYTES, 0x78)]});
+        dependencies.readReady = (_request, _deadline, _clock, signal) =>
+            new Promise((resolve, reject) => signal.addEventListener("abort", () => reject(new Error("poll cancelled")), {once: true}));
+        const runtime = createWindowsNativeStandaloneRuntime(proof, dependencies);
+        const candidate = proof.candidates[0];
+        const ownership = {sessionId: "stderr-truncated", alias: candidate.alias, scenario: definition.scenario};
+        const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+            artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState: {expected: {}}});
+        let failure;
+        await assert.rejects(runtime.launchSession(opened), error => { failure = error; return true; });
+
+        assert.ok(failure.message.includes("x".repeat(MAXIMUM_FAILURE_MESSAGE_CHARACTERS)));
+        assert.ok(failure.message.endsWith("[stderr truncated]"));
+    });
+
+    it("retains completed self-validation failure as a bounded failed record", async () => {
+        const proof = proofRequest();
+        proof.fixtures[0].manifestSha256 = "0".repeat(64);
+        const harness = makeRuntime();
+
+        const result = await runWindowsNativeStandaloneProof(proof, harness.runtime);
+        assert.equal(result.status, "failed");
+        assert.deepEqual(result.failureDetails.map(value => value.phase), ["self-validation"]);
+        assert.match(result.failureDetails[0].failure, /fixture manifest binding differs/iu);
+        assert.ok(result.failureDetails[0].failure.length <= 512);
     });
 });

@@ -6,10 +6,18 @@ import {describe, it} from "node:test";
 import {PassThrough} from "node:stream";
 
 import {
+    DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS,
+    DIAGNOSTIC_CLEANUP_MINUTES,
+    DIAGNOSTIC_EXECUTION_MINUTES,
+    DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS,
+    DIAGNOSTIC_TIMEOUT_SECONDS,
     buildIsolatedAptVectors,
     collectHostedAdmissionObservations,
     createHostedQemuProcessLauncher,
+    createHostedCpuFloorCleanupOperations,
     createHostedStage2Operations,
+    cpuFloorCleanupAuthorityPath,
+    defaultValidateOutputDisk,
     parseInReleaseIndexes,
     parseGuestFailure,
     parseGuestOutcome,
@@ -28,6 +36,7 @@ import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivation
     "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
 const NONCE = "0123456789abcdef0123456789abcdef";
+const PIDFILE_IDENTITY = {path: paths().qemuPid, dev: "11", ino: "22", uid: "1001", gid: "1001", mode: "600"};
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
     "../fixtures/linux-windows-cpu-floor-stage2/probe-build-34834310907.json", import.meta.url), "utf8"));
@@ -94,6 +103,21 @@ const rootFileIdentity = target => ({path: target, bytes: "4096", sha256: "f".re
 const commandIdentity = target => ({...rootFileIdentity(target), invocationPath: target});
 
 describe("hosted Stage 2 native adapter preparation", () => {
+    it("uses the bounded reviewed-sudo adapter for root-owned cleanup groups", async () => {
+        const calls = [];
+        const cleanup = createHostedCpuFloorCleanupOperations({
+            inspectOwned: target => ({path: target, ownership: {uid: "0", ordinaryUserWritable: false}}),
+            readProcessIdentity: pid => ({state: "present", pid, processGroupId: pid, startTicks: "66",
+                executablePath: "/owned/timeout"}),
+            runOwned: async (command, argv, options) => { calls.push({command, argv, options});
+                return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; }
+        });
+        assert.equal((await cleanup.readProcessIdentity(2300)).startTicks, "66");
+        await cleanup.signalProcessGroup(2300, "SIGTERM");
+        assert.equal(calls[0].command, "/usr/bin/sudo");
+        assert.deepEqual(calls[0].argv.slice(-4), ["/usr/bin/kill", "-TERM", "--", "-2300"]);
+    });
+
     it("accepts only bounded fail-closed guest bootstrap diagnostics", () => {
         const value = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
             failure: "probe execution failed"};
@@ -282,6 +306,125 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(reads, 2);
         assert.deepEqual(result.monitorFailure.identity, {pid: 2345,
             expected: {processGroupId: 2300, executablePath: "/owned/loader"}, observed});
+    });
+
+    it("fails before launch when a reviewed-sudo pidfile already exists", async () => {
+        let launched = false;
+        await assert.rejects(runMonitoredQemu({
+            createOwnedPidFile: () => { throw new Error("QEMU pidfile already exists"); },
+            runOwned: () => { launched = true; throw new Error("unexpected launch"); }
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            precreatePidFile: true, resources: {taskPath: "/owned", roots: ["/owned"]}}), /already exists/u);
+        assert.equal(launched, false);
+    });
+
+    it("derives separate Stage 2 and Stage 3 cleanup authority receipts beside their pidfiles", () => {
+        assert.equal(cpuFloorCleanupAuthorityPath("/owned/stage2/qemu.pid"),
+            "/owned/stage2/cleanup-authority.json");
+        assert.equal(cpuFloorCleanupAuthorityPath("/owned/stage3/baseline-qemu.pid"),
+            "/owned/stage3/cleanup-authority.json");
+    });
+
+    it("persists the exact observed live identity rather than trusting pidfile fields", async () => {
+        let finish; let written;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const observedIdentity = {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77",
+            executablePath: "/owned/loader"};
+        let identityReads = 0;
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300); return operation; },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async pid => pid === 2300 ? {state: "present", pid: 2300,
+                processGroupId: 2300, startTicks: "66", executablePath: "/owned/timeout"} :
+                (identityReads++ === 0 ? observedIdentity : {state: "absent"}),
+            writeCleanupAuthority: (pidPath, identity) => { written = {pidPath, identity};
+                finish({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}); },
+            observeRuntimeResources: async () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "4294967295"}),
+            monotonicMilliseconds: () => 1,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false,
+            terminateQemuGroup: async () => true
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/stage2/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.deepEqual(written, {pidPath: "/owned/stage2/qemu.pid", identity: {
+            pid: 2300, processGroupId: 2300, startTicks: "66", executablePath: "/owned/timeout"}});
+        assert.equal(result.identity.pid, 2345);
+    });
+
+    it("routes cleanup authority receipt collisions and write failures through owned teardown", async () => {
+        for (const message of ["already exists", "write failed"]) {
+            let finish; let teardown;
+            const operation = new Promise(resolve => { finish = resolve; });
+            const result = await runMonitoredQemu({
+                runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                    options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137},
+                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+                pathExists: () => true,
+                readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+                readQemuProcessIdentity: async pid => ({state: "present", pid, processGroupId: 2300,
+                    startTicks: pid === 2300 ? "66" : "77",
+                    executablePath: pid === 2300 ? "/owned/timeout" : "/owned/loader"}),
+                writeCleanupAuthority: () => { throw new Error(message); },
+                monotonicMilliseconds: () => 1,
+                wait: async () => undefined,
+                isProcessGroupAlive: () => true,
+                terminateQemuGroup: async request => { teardown = request; return true; }
+            }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+                pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+                resources: {taskPath: "/owned", roots: ["/owned"]}});
+            assert.equal(teardown.processGroupId, 2300);
+            assert.equal(result.terminationReason, "identity-observation-failed");
+            assert.equal(result.monitorFailure.phase, "identity-observation");
+        }
+    });
+
+    it("refuses to publish authority when the observed group leader has already transitioned", async () => {
+        let finish; let wrote = false; let teardown = false;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true, readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async pid => pid === 2345 ? {state: "present", pid, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"} : {state: "absent"},
+            writeCleanupAuthority: () => { wrote = true; }, monotonicMilliseconds: () => 1,
+            wait: async () => undefined, isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => { teardown = true; return true; }
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(wrote, false);
+        assert.equal(teardown, true);
+        assert.equal(result.terminationReason, "identity-observation-failed");
+    });
+
+    it("fails closed when reviewed-sudo QEMU replaces the precreated pidfile", async () => {
+        let finish;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let removed = false;
+        const result = await runMonitoredQemu({
+            createOwnedPidFile: target => { assert.equal(target, "/owned/qemu.pid"); return PIDFILE_IDENTITY; },
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137, cleanupProven: false},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true,
+            readOwnedPidFile: (_target, maximumBytes, expected) => { assert.equal(maximumBytes, 32);
+                assert.equal(expected, PIDFILE_IDENTITY); throw new Error("QEMU pidfile identity changed"); },
+            removeOwnedPidFile: () => { removed = true; },
+            monotonicMilliseconds: () => 1,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            precreatePidFile: true, resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(result.terminationReason, "identity-observation-failed");
+        assert.match(result.monitorFailure.message, /pidfile identity changed/u);
+        assert.equal(removed, false);
     });
 
     it("counts a symbolic-link inode without traversing its target", () => {
@@ -578,23 +721,35 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(launch.process.qemuPidAbsentAfter, true);
         const qemu = calls.find(call => call[0] === "monitored")[1];
         assert.equal(qemu.command, "/usr/bin/sudo");
+        assert.equal(qemu.precreatePidFile, true);
         assert.deepEqual(qemu.argv.slice(0, 9), ["-n", "--", "/usr/bin/timeout", "--foreground", "--signal=KILL",
             "16200s", toolchain.runtime.loader.path, "--argv0", toolchain.qemu.invocationPath]);
     });
 
     it("captures the live QEMU PID/start/executable identity before accepting its cleanup", async () => {
         let identityReads = 0;
+        const pidfileCalls = [];
         const qemuPath = `${paths().portableRoot}/usr/bin/qemu-system-x86_64`;
         const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
             inspectOwned: rootFileIdentity,
             inspectDirectory: directoryIdentity,
-            runOwned: async (command, argv, options) => { options?.onSpawn?.(2300); return {
+            runOwned: async (command, argv, options) => { pidfileCalls.push(["launch", command]);
+                options?.onSpawn?.(2300); return {
                 process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
             pathExists: target => target === paths().qemuPid,
+            createOwnedPidFile: target => { pidfileCalls.push(["create", target]); return PIDFILE_IDENTITY; },
+            readOwnedPidFile: (target, maximumBytes, expected) => { pidfileCalls.push(["read", target]);
+                assert.equal(maximumBytes, 32); assert.equal(expected, PIDFILE_IDENTITY);
+                return {bytes: Buffer.from("2345\n")}; },
+            removeOwnedPidFile: (target, expected) => { pidfileCalls.push(["remove", target]);
+                assert.equal(expected, PIDFILE_IDENTITY); },
+            writeCleanupAuthority: (target, identity) => pidfileCalls.push(["authority", target, identity.pid]),
             readOwnedVerified: target => target === paths().qemuPid ?
                 {bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5", sha256: "1".repeat(64)}} :
                 {bytes: Buffer.from("{}"), identity: {path: target, bytes: "2", sha256: "2".repeat(64)}},
             readProcessIdentity: pid => {
+                if (pid === 2300) return {state: "present", pid, processGroupId: 2300, startTicks: "66",
+                    executablePath: "/owned/timeout"};
                 assert.equal(pid, 2345);
                 identityReads += 1;
                 return identityReads === 1 ? {state: "present", processGroupId: 2300, startTicks: "77",
@@ -615,6 +770,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
             executablePath: launch.process.launcherExecutablePath, absent: launch.process.qemuPidAbsentAfter},
         {pid: 2345, startTicks: "77",
             executablePath: `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`, absent: true});
+        assert.deepEqual(pidfileCalls, [["create", paths().qemuPid], ["launch", "/usr/bin/sudo"],
+            ["read", paths().qemuPid], ["authority", paths().qemuPid, 2300], ["remove", paths().qemuPid]]);
     });
 
     it("exposes the normalized monitored QEMU process proof without parsing guest output", async () => {
@@ -710,14 +867,18 @@ describe("hosted Stage 2 native adapter preparation", () => {
             privilegeMode: "unreviewed", argv: ["-nic", "none"]}), /privilege mode/i);
     });
 
-    it("extracts bounded guest failure evidence only after clean QEMU teardown", async () => {
+    for (const source of ["primary", "secondary", "invalid-secondary"])
+        it(`extracts only valid bounded ${source} failure evidence after clean QEMU teardown`, async () => {
+        const secondary = source !== "primary";
         const failure = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
             failure: "synthetic provider failure"};
+        if (source === "invalid-secondary") failure.status = "observed";
         const extracted = [];
         const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
             inspectOwned: rootFileIdentity,
             inspectDirectory: directoryIdentity,
             runOwned: async (_command, argv) => { extracted.push(argv.find(value => value.startsWith("::")));
+                if (secondary && argv.includes("::result.json")) throw new Error("primary publication unavailable");
                 return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
             runMonitoredQemu: async () => ({observation: {process: okProcess, stdout: Buffer.alloc(0),
                 stderr: Buffer.alloc(0)}, identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
@@ -735,8 +896,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
         mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
         const result = await adapter.launchOwnedQemu({paths: paths(), toolchain,
             privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]});
-        assert.deepEqual(result.guest, failure);
-        assert.deepEqual(extracted, ["::result.json"]);
+        assert.deepEqual(result.guest, source === "invalid-secondary" ? null : failure);
+        assert.deepEqual(extracted, secondary ? ["::result.json", "::bootstrap-failure.json"] : ["::result.json"]);
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
     });
@@ -775,7 +936,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     finish({process: {...okProcess, exitCode: 137}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
                     return Promise.resolve({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}); }
                 options.onSpawn(2300); return new Promise(resolve => { finish = resolve; });
-            }, pathExists: () => false, monotonicMilliseconds: () => clock,
+            }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            writeCleanupAuthority: () => undefined,
+            pathExists: target => target === paths().qemuPid,
+            readOwnedPidFile: () => ({bytes: Buffer.alloc(0)}),
+            removeOwnedPidFile: () => { throw new Error("unclean launch must retain pidfile identity"); },
+            monotonicMilliseconds: () => clock,
             wait: async milliseconds => { clock += milliseconds; },
             isProcessGroupAlive: () => groupAlive
         }});
@@ -809,11 +975,18 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 options.onTerminationReady(reason => assert.equal(reason, "monitor-low-memory"));
                 options.onQmpSession(Promise.resolve(qmpObservation()));
                 return new Promise(resolve => { finish = resolve; });
-            }, pathExists: target => target === paths().qemuPid,
+            }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            writeCleanupAuthority: () => undefined,
+            pathExists: target => target === paths().qemuPid,
+            readOwnedPidFile: (_target, _maximumBytes, expected) => { assert.equal(expected, PIDFILE_IDENTITY);
+                return {bytes: Buffer.from("2345\n")}; },
+            removeOwnedPidFile: (_target, expected) => assert.equal(expected, PIDFILE_IDENTITY),
             readOwnedVerified: target => ({bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5",
                 sha256: "1".repeat(64)}}),
-            readProcessIdentity: () => ++identityReads <= 2 ? {state: "present", processGroupId: 2300,
-                startTicks: "77", executablePath: null} : {state: "absent"},
+            readProcessIdentity: pid => pid === 2300 ? {state: "present", pid, processGroupId: 2300,
+                startTicks: "66", executablePath: "/owned/timeout"} :
+                (++identityReads <= 2 ? {state: "present", pid, processGroupId: 2300,
+                    startTicks: "77", executablePath: null} : {state: "absent"}),
             observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
                 effectiveMemoryBytes: "4294967295"}),
             monotonicMilliseconds: () => clock,
@@ -948,6 +1121,510 @@ describe("hosted Stage 2 native adapter preparation", () => {
             assert.ok(calls.some(([, argv]) => argv[0] === "--argv0" &&
                 argv[1] === `${paths().portableRoot}/usr/bin/${role}` && argv.includes(toolchain[role].path)));
         }
+    });
+
+    it("validates output disk with lexical lstat and descriptor fstat O_NOFOLLOW binding pre-launch identity", () => {
+        const target = paths().outputDisk;
+        const expectedOwner = {uid: 1001n, gid: 1001n};
+        const mockFs = {
+            constants: {O_RDONLY: 0, O_NOFOLLOW: 0x20000},
+            lstatSync: () => ({
+                isSymbolicLink: () => false,
+                isFile: () => true,
+                nlink: 1n,
+                dev: 42n,
+                ino: 100n,
+                uid: 1001n,
+                gid: 1001n,
+                mode: 0o600n,
+                size: 67_108_864n
+            }),
+            openSync: () => 7,
+            closeSync: () => undefined,
+            fstatSync: () => ({
+                isFile: () => true,
+                nlink: 1n,
+                dev: 42n,
+                ino: 100n,
+                uid: 1001n,
+                gid: 1001n,
+                mode: 0o600n,
+                size: 67_108_864n
+            })
+        };
+
+        // 1. Unknown owner identity rejected when process.getuid is unavailable and no expectedOwner given
+        if (typeof process.getuid !== "function") {
+            assert.throws(() => defaultValidateOutputDisk(target, null, mockFs, null), /owner identity is unknown/u);
+        }
+
+        // 2. Unexpected owner UID rejected
+        assert.throws(() => defaultValidateOutputDisk(target, null, mockFs, {uid: 99999n, gid: 1001n}),
+            /owner UID does not match/u);
+
+        // 3. Unexpected owner GID rejected
+        assert.throws(() => defaultValidateOutputDisk(target, null, mockFs, {uid: 1001n, gid: 99999n}),
+            /owner GID does not match/u);
+
+        // 4. Unsafe modes rejected: 0620, 0602, 0666
+        for (const badMode of [0o620n, 0o602n, 0o666n]) {
+            const unsafeModeFs = {...mockFs,
+                lstatSync: () => ({...mockFs.lstatSync(), mode: badMode}),
+                fstatSync: () => ({...mockFs.fstatSync(), mode: badMode})};
+            assert.throws(() => defaultValidateOutputDisk(target, null, unsafeModeFs, expectedOwner),
+                /permissions are unsafe/u);
+        }
+
+        // 5. Non-owner-writable mode rejected: 0400
+        const roFs = {...mockFs,
+            lstatSync: () => ({...mockFs.lstatSync(), mode: 0o400n}),
+            fstatSync: () => ({...mockFs.fstatSync(), mode: 0o400n})};
+        assert.throws(() => defaultValidateOutputDisk(target, null, roFs, expectedOwner),
+            /retain owner writability/u);
+
+        // 6. Lexical vs descriptor mode mismatch rejected
+        const modeMismatchFs = {...mockFs,
+            lstatSync: () => ({...mockFs.lstatSync(), mode: 0o600n}),
+            fstatSync: () => ({...mockFs.fstatSync(), mode: 0o644n})};
+        assert.throws(() => defaultValidateOutputDisk(target, null, modeMismatchFs, expectedOwner),
+            /mode mismatch/u);
+
+        // 7. Exact expected owner and safe owner-writable modes accepted
+        const pre = defaultValidateOutputDisk(target, null, mockFs, expectedOwner);
+        assert.deepEqual(pre, {dev: 42n, ino: 100n, uid: 1001n, gid: 1001n, size: 67_108_864n, mode: "600"});
+
+        for (const safeMode of [0o644n, 0o640n]) {
+            const safeFs = {...mockFs,
+                lstatSync: () => ({...mockFs.lstatSync(), mode: safeMode}),
+                fstatSync: () => ({...mockFs.fstatSync(), mode: safeMode})};
+            const validated = defaultValidateOutputDisk(target, null, safeFs, expectedOwner);
+            assert.equal(validated.mode, (safeMode & 0o7777n).toString(8));
+        }
+
+        // 8. Matches pre-launch identity
+        const post = defaultValidateOutputDisk(target, pre, mockFs, expectedOwner);
+        assert.deepEqual(post, pre);
+
+        // 9. Post-launch mode change rejected
+        const modeChangedFs = {...mockFs,
+            lstatSync: () => ({...mockFs.lstatSync(), mode: 0o644n}),
+            fstatSync: () => ({...mockFs.fstatSync(), mode: 0o644n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, modeChangedFs, expectedOwner),
+            /mode changed post-launch/u);
+
+        // 10. Post-launch owner UID change rejected
+        const ownerChangedFs = {...mockFs,
+            lstatSync: () => ({...mockFs.lstatSync(), uid: 1002n}),
+            fstatSync: () => ({...mockFs.fstatSync(), uid: 1002n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, ownerChangedFs, {uid: 1002n, gid: 1001n}),
+            /identity does not match/u);
+
+        // 11. Symlink rejected
+        const symlinkFs = {...mockFs, lstatSync: () => ({...mockFs.lstatSync(), isSymbolicLink: () => true})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, symlinkFs, expectedOwner), /symlink|single-link/u);
+
+        // 12. Multi-link rejected
+        const multiLinkFs = {...mockFs, lstatSync: () => ({...mockFs.lstatSync(), nlink: 2n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, multiLinkFs, expectedOwner), /single-link/u);
+
+        // 13. Wrong size rejected
+        const wrongSizeFs = {...mockFs, fstatSync: () => ({...mockFs.fstatSync(), size: 1024n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, wrongSizeFs, expectedOwner), /size|stat mismatch/u);
+
+        // 14. Device or inode changed between pre-launch and post-run
+        const changedInoFs = {...mockFs,
+            lstatSync: () => ({...mockFs.lstatSync(), ino: 999n}),
+            fstatSync: () => ({...mockFs.fstatSync(), ino: 999n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, changedInoFs, expectedOwner), /identity does not match/u);
+
+        // 15. Inode mismatch between lexical lstat and descriptor fstat
+        const mismatchFs = {...mockFs, fstatSync: () => ({...mockFs.fstatSync(), ino: 999n})};
+        assert.throws(() => defaultValidateOutputDisk(target, pre, mismatchFs, expectedOwner), /stat mismatch/u);
+    });
+
+    it("enforces 25-minute diagnostic deadline when supplied and retains shared defaults when omitted", async () => {
+        assert.equal(DIAGNOSTIC_EXECUTION_MINUTES, 25);
+        assert.equal(DIAGNOSTIC_CLEANUP_MINUTES, 5);
+        assert.equal(DIAGNOSTIC_TIMEOUT_SECONDS, 1500);
+        assert.equal(DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS, 40);
+        assert.ok(DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS <= DIAGNOSTIC_CLEANUP_MINUTES * 60);
+        assert.equal(DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS, 1_540_000);
+        assert.equal(DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS,
+            (DIAGNOSTIC_TIMEOUT_SECONDS + DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS) * 1_000);
+
+        let monitoredRequest = null;
+        let commandArgv = null;
+        let currentTime = 1000;
+        const fakeIo = {
+            inspectOwned: rootFileIdentity,
+            inspectDirectory: directoryIdentity,
+            monotonicMilliseconds: () => currentTime,
+            pathExists: () => false,
+            runMonitoredQemu: async req => {
+                monitoredRequest = req;
+                commandArgv = req.argv;
+                return {
+                    observation: {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                    identity: {pid: 2345, startTicks: "77",
+                        executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
+                        processGroupId: 2300},
+                    absentAfter: true,
+                    processGroupGone: true,
+                    qmp: qmpObservation()
+                };
+            }
+        };
+
+        const toolchain = {
+            runtime: {loader: rootFileIdentity(`${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+                libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            firmware: qemuFirmware()
+        };
+        const launcher = createHostedQemuProcessLauncher({context: context(), dependencies: fakeIo});
+
+        // Advance fake clock during acquisition (simulating 599s elapsed prep time)
+        currentTime = 600_000;
+
+        // 1. Diagnostic deadlines: exactly 1500s from launchTime (launch-relative)
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5}
+        });
+        assert.equal(commandArgv.includes("1500s"), true);
+        assert.equal(monitoredRequest.timeoutMs, 1_540_000);
+        assert.equal(monitoredRequest.executionDeadline, 600_000 + 1500 * 1000);
+        // Late screenshot paths supplied for diagnostic contract
+        assert.deepEqual(monitoredRequest.qmp.lateScreenshotPaths, [
+            `${paths().root}/late-boot-1.png`,
+            `${paths().root}/late-boot-2.png`
+        ]);
+
+        // 2. Unsupported deadlines: fails closed
+        await assert.rejects(launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 10, cleanupMinutes: 5}
+        }), /unsupported QEMU deadlines/u);
+        await assert.rejects(launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 270, cleanupMinutes: 30}
+        }), /unsupported QEMU deadlines/u);
+
+        // 3. Shared callers omitting deadlines: retains shared defaults and stage-relative deadline
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm"
+        });
+        assert.equal(commandArgv.includes("16200s"), true);
+        assert.equal(monitoredRequest.timeoutMs, 16_240_000);
+        assert.equal(monitoredRequest.executionDeadline, Math.min(600_000 + 16_200 * 1000, 1000 + 16_200 * 1000));
+        // Deadline-less callers MUST NOT receive lateScreenshotPaths
+        assert.equal(monitoredRequest.qmp.lateScreenshotPaths, undefined);
+
+        /*
+         * 4. A named reservation. It is launch-relative like the diagnostic one, but it is a
+         * separate input: the containment preflight must never reach the CPU diagnostic's flag, and
+         * it must never fall through to the 270-minute default it would otherwise get.
+         */
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            reservation: {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000}
+        });
+        assert.equal(commandArgv.includes("900s"), true);
+        assert.equal(commandArgv.includes("16200s"), false);
+        assert.equal(monitoredRequest.timeoutMs, 1_020_000);
+        assert.equal(monitoredRequest.executionDeadline, 600_000 + 900_000);
+        assert.equal(monitoredRequest.qmp.lateScreenshotPaths, undefined);
+
+        // 5. A reservation may only tighten the launcher deadline, and must be complete.
+        for (const reservation of [
+            {label: "", executionMilliseconds: 900_000, cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 999,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 0},
+            {label: "containment-preflight", executionMilliseconds: 16_200_001,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900.5,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000, extra: 1}])
+            await assert.rejects(launcher({toolchain, paths: paths(), argv: ["-m", "4G"],
+                privilegeMode: "ordinary-kvm", reservation}), /QEMU reservation/u,
+            JSON.stringify(reservation));
+
+        // 6. The diagnostic flag and a reservation are never both in force.
+        await assert.rejects(launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5},
+            reservation: {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000}
+        }), /QEMU reservation/u);
+
+        // 7. The diagnostic behaviour is exactly what it was before the reservation existed.
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5}
+        });
+        assert.equal(commandArgv.includes("1500s"), true);
+        assert.equal(monitoredRequest.timeoutMs, 1_540_000);
+        assert.equal(monitoredRequest.executionDeadline, 600_000 + 1500 * 1000);
+    });
+
+    it("gates failure receipt extraction strictly on proven cleanup and owned output identity", async () => {
+        const failureReceipt = Buffer.from(JSON.stringify({
+            schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "bootstrap test failure"
+        }) + "\n");
+        const observedReceipt = Buffer.from(JSON.stringify({
+            schemaVersion: 1, status: "observed", nonce: NONCE
+        }) + "\n");
+
+        let mcopyCalled = false;
+        let diskValidationCalled = false;
+
+        const makeAdapter = ({cleanupProven, treeGone, failDiskValidation, receiptBytes, mcopyThrows}) => {
+            mcopyCalled = false;
+            diskValidationCalled = false;
+            return createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                monotonicMilliseconds: () => 1000,
+                pathExists: () => false,
+                inspectOwned: target => target === paths().outputDisk ? ({path: target, bytes: "67108864", sha256: "a".repeat(64),
+                    ownership: {uid: "1001", gid: "1001", mode: "600", ordinaryUserWritable: false}}) : rootFileIdentity(target),
+                inspectDirectory: directoryIdentity,
+                validateOutputDisk: (_target, _expected) => {
+                    diskValidationCalled = true;
+                    if (failDiskValidation) throw new Error("disk validation failed");
+                    return {dev: 1n, ino: 2n, uid: 1001n, gid: 1001n, size: 67_108_864n};
+                },
+                runMonitoredQemu: async () => ({
+                    observation: {process: {...okProcess, exitCode: 1, cleanupProven, timedOut: false},
+                        stdout: Buffer.alloc(0), stderr: Buffer.from("qemu error\n")},
+                    identity: {pid: 2345, startTicks: "77",
+                        executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
+                        processGroupId: 2300},
+                    absentAfter: cleanupProven,
+                    processGroupGone: treeGone,
+                    qmp: qmpObservation()
+                }),
+                runOwned: async (cmd, argv) => {
+                    if (argv.includes("mcopy") || argv.includes(`${paths().portableRoot}/usr/bin/mtools`)) {
+                        mcopyCalled = true;
+                        if (mcopyThrows) throw new Error("mcopy failed");
+                    }
+                    return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)};
+                },
+                readOwnedVerified: () => ({bytes: receiptBytes, identity: {path: "dummy", bytes: String(receiptBytes.length), sha256: "e".repeat(64)}})
+            }});
+        };
+
+        const toolchain = {
+            runtime: {loader: rootFileIdentity(`${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+                libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mtools`),
+            firmware: qemuFirmware()
+        };
+        // 1. Proven cleanup (cleanupProven === true && treeGone === true) -> extracts failure receipt
+        const adapter1 = makeAdapter({cleanupProven: true, treeGone: true, failDiskValidation: false, receiptBytes: failureReceipt});
+        const res1 = await adapter1.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(diskValidationCalled, true);
+        assert.equal(mcopyCalled, true);
+        assert.deepEqual(res1.guestFailure, {
+            schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "bootstrap test failure"
+        });
+        assert.equal(res1.guest, null);
+
+        // 2. Unproven cleanup (cleanupProven === false) -> NO extraction
+        const adapter2 = makeAdapter({cleanupProven: false, treeGone: false, failDiskValidation: false, receiptBytes: failureReceipt});
+        const res2 = await adapter2.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(mcopyCalled, false);
+        assert.equal("guestFailure" in res2, false);
+        assert.equal(res2.guest, null);
+
+        // 3. Disk validation failure -> NO extraction
+        const adapter3 = makeAdapter({cleanupProven: true, treeGone: true, failDiskValidation: true, receiptBytes: failureReceipt});
+        const res3 = await adapter3.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(mcopyCalled, false);
+        assert.equal("guestFailure" in res3, false);
+        assert.equal(res3.guest, null);
+
+        // 4. Mcopy failure -> caught safely, primary error preserved
+        const adapter4 = makeAdapter({cleanupProven: true, treeGone: true, failDiskValidation: false, receiptBytes: failureReceipt, mcopyThrows: true});
+        const res4 = await adapter4.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(mcopyCalled, true);
+        assert.equal("guestFailure" in res4, false);
+        assert.equal(res4.guest, null);
+
+        // 5. Observed status on failed launch -> rejected, guestFailure omitted
+        const adapter5 = makeAdapter({cleanupProven: true, treeGone: true, failDiskValidation: false, receiptBytes: observedReceipt});
+        const res5 = await adapter5.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(mcopyCalled, true);
+        assert.equal("guestFailure" in res5, false);
+        assert.equal(res5.guest, null);
+    });
+
+    it("gates late screenshot extraction strictly on proven cleanup and unlingering process group", async () => {
+        let readScreenshots = [];
+        const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+        const lateMilestones = [
+            {milestone: 1, offsetMs: 120_000, status: "running", running: true,
+             screenshotPath: `${paths().root}/late-boot-1.png`},
+            {milestone: 2, offsetMs: 300_000, status: "running", running: true,
+             screenshotPath: `${paths().root}/late-boot-2.png`}
+        ];
+
+        const makeAdapter = ({cleanupProven, treeGone, corruptScreenshot = false}) => {
+            readScreenshots = [];
+            return createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                monotonicMilliseconds: () => 1000,
+                pathExists: () => false,
+                inspectOwned: rootFileIdentity,
+                inspectDirectory: directoryIdentity,
+                runMonitoredQemu: async () => ({
+                    observation: {process: {...okProcess, exitCode: 1, cleanupProven, timedOut: false},
+                        stdout: Buffer.alloc(0), stderr: Buffer.from("qemu error\n")},
+                    identity: {pid: 2345, startTicks: "77",
+                        executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
+                        processGroupId: 2300},
+                    absentAfter: cleanupProven,
+                    processGroupGone: treeGone,
+                    qmp: qmpObservation(),
+                    lateBoot: {milestones: lateMilestones}
+                }),
+                readOwnedVerified: (target, _maxBytes) => {
+                    readScreenshots.push(target);
+                    const bytes = corruptScreenshot ? Buffer.from("not-a-png") : pngBytes;
+                    return {bytes, identity: {path: target, bytes: String(bytes.length), sha256: sha256ForTest(bytes)}};
+                }
+            }});
+        };
+
+        const toolchain = {
+            runtime: {loader: rootFileIdentity(`${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+                libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mtools`),
+            firmware: qemuFirmware()
+        };
+
+        // 1. Proven cleanup (cleanupProven === true && treeGone === true) -> reads late screenshots
+        const adapter1 = makeAdapter({cleanupProven: true, treeGone: true});
+        const res1 = await adapter1.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-1.png`), true);
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-2.png`), true);
+        assert.equal("lateBoot" in res1, true);
+        assert.equal(res1.lateBoot.milestones.length, 2);
+
+        // 2. Unproven cleanup (cleanupProven === false) -> late screenshots are NOT read
+        const adapter2 = makeAdapter({cleanupProven: false, treeGone: true});
+        const res2 = await adapter2.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-1.png`), false);
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-2.png`), false);
+        assert.equal("lateBoot" in res2, false);
+
+        // 3. Lingering process group (treeGone === false) -> late screenshots are NOT read
+        const adapter3 = makeAdapter({cleanupProven: true, treeGone: false});
+        const res3 = await adapter3.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-1.png`), false);
+        assert.equal(readScreenshots.includes(`${paths().root}/late-boot-2.png`), false);
+        assert.equal("lateBoot" in res3, false);
+
+        // 4. Corrupt screenshot -> caught safely, lateBoot omitted, primary failureDiagnostic preserved
+        const adapter4 = makeAdapter({cleanupProven: true, treeGone: true, corruptScreenshot: true});
+        const res4 = await adapter4.launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal("lateBoot" in res4, false);
+        assert.equal("failureDiagnostic" in res4, true);
+        assert.equal(res4.process.exitCode, 1);
+    });
+
+    it("cancels QMP handle on child termination and monitor abort while keeping late observation failure separate from qmp-failed", async () => {
+        // 1. In runHostedOwnedProcess: handle cancellation on close
+        let capturedOnSessionHandle = null;
+        const fakeChild = new EventEmitter();
+        fakeChild.stdout = new EventEmitter();
+        fakeChild.stderr = new EventEmitter();
+        fakeChild.stdin = {destroy: () => {}, write: (_b, cb) => cb()};
+        fakeChild.pid = 4321;
+
+        const spawnImpl = () => fakeChild;
+
+        const opPromise = runHostedOwnedProcess("qemu", [], {
+            timeoutMs: 5000,
+            qmp: {
+                screenshotPaths: [`${paths().root}/early-boot-1.png`, `${paths().root}/early-boot-2.png`],
+                lateScreenshotPaths: [`${paths().root}/late-boot-1.png`, `${paths().root}/late-boot-2.png`]
+            },
+            onQmpSessionHandle: handle => {
+                capturedOnSessionHandle = handle;
+            }
+        }, {
+            spawnImpl,
+            isGroupAlive: () => false
+        });
+
+        // Trigger child close
+        fakeChild.emit("close", 0, null);
+        const hostedRes = await opPromise;
+        assert.equal(hostedRes.process.exitCode, 0);
+        assert.equal(hostedRes.process.cleanupProven, true);
+        assert.notEqual(capturedOnSessionHandle, null);
+        assert.equal(typeof capturedOnSessionHandle.cancel, "function");
+
+        // 2. In runMonitoredQemu: handle cancellation on monitor abort (deadline)
+        let cancelCalled = false;
+        const fakeHandle = {
+            cancel: () => {
+                cancelCalled = true;
+            }
+        };
+        let nowMs = 1000;
+        const fakeQmpObs = qmpObservation();
+        const monitoredResult = await runMonitoredQemu({
+            createOwnedPidFile: () => null,
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("1234\n")}),
+            readQemuProcessIdentity: async () => ({state: "present", pid: 1234, processGroupId: 1234,
+                startTicks: "55", executablePath: "/bin/qemu"}),
+            observeRuntimeResources: async () => ({
+                taskBytes: "1000", freeBytes: "100000000000", effectiveMemoryBytes: "10000000000"
+            }),
+            monotonicMilliseconds: () => {
+                nowMs += 500_000;
+                return nowMs;
+            },
+            wait: async () => {},
+            isProcessGroupAlive: () => false,
+            runOwned: async (_cmd, _argv, opts) => {
+                opts.onSpawn(1234);
+                opts.onQmpSessionHandle?.(fakeHandle);
+                opts.onQmpSession?.(Promise.resolve(fakeQmpObs));
+                // Deliver a rejected late observation promise: must NOT cause qmp-failed
+                opts.onLateObservation?.(Promise.reject(new Error("late screenshot timeout")));
+                return {
+                    process: {...okProcess, exitCode: 0, cleanupProven: true},
+                    stdout: Buffer.alloc(0),
+                    stderr: Buffer.alloc(0)
+                };
+            }
+        }, {
+            command: "/bin/qemu",
+            argv: [],
+            timeoutMs: 1_540_000,
+            executionDeadline: 2000,
+            expectedExecutable: "/bin/qemu",
+            pidPath: "/tmp/pid",
+            resources: {},
+            qmp: {screenshotPaths: []}
+        });
+
+        // Cancel called on abort
+        assert.equal(cancelCalled, true);
+        // Late observation failure does NOT cause qmp-failed
+        assert.notEqual(monitoredResult.terminationReason, "qmp-failed");
+        assert.equal(monitoredResult.lateBoot, null);
     });
 });
 
