@@ -102,8 +102,11 @@ const windowsPath = (value, label) => {
 };
 
 // Failure-only listener evidence. It never relaxes the Boolean acceptance rule; it only renders the bounded
-// owner records the observer retained into the one channel a failed run keeps: the failure message.
-const listenerDiagnosticSummary = (value, label) => {
+// owner records the observer retained into the one channel a failed run keeps: the failure message, which the
+// adapter normalizes and truncates to MAXIMUM_FAILURE_MESSAGE_CHARACTERS. Field labels are abbreviated so the
+// actual creation file times of every retained owner fit that budget alongside the expected one; without them
+// the real owner start times would not survive into the retained result at all.
+const listenerDiagnosticSummary = (value, expectedCreationFileTime, label) => {
     exactKeys(value, ["schemaVersion", "matchingListenerCount", "distinctOwnerCount", "expectedOwnerListenerCount",
         "retainedOwnerCount", "ownersTruncated", "owners"], label);
     if (value.schemaVersion !== 1) throw new Error(`${label} schema differs`);
@@ -141,22 +144,25 @@ const listenerDiagnosticSummary = (value, label) => {
             throw new Error(`${label} owner Job membership differs`);
         let creation = "none";
         if (owner.processState === "present") {
-            string(owner.creationFileTime, `${label} owner creation time`, LISTENER_CREATION_FILE_TIME);
+            creation = string(owner.creationFileTime, `${label} owner creation time`, LISTENER_CREATION_FILE_TIME);
             strictBoolean(owner.creationTimeMatches, `${label} owner creation match`);
-            creation = owner.creationTimeMatches ? "match" : "differs";
+            // The retained match flag must agree with the retained timestamps it claims to summarize.
+            if (owner.creationTimeMatches !== (creation === expectedCreationFileTime))
+                throw new Error(`${label} owner creation match differs`);
         } else if (owner.creationFileTime !== null || owner.creationTimeMatches !== null)
             throw new Error(`${label} unavailable owner identity differs`);
-        return `pid=${owner.owningProcessId} expected=${owner.expectedOwner} listeners=${owner.listenerCount}`
-            + ` state=${owner.processState} creation=${creation} job=${owner.jobMembership}`;
+        return `pid=${owner.owningProcessId} exp=${owner.expectedOwner} rows=${owner.listenerCount}`
+            + ` state=${owner.processState} ct=${creation} job=${owner.jobMembership}`;
     });
     if (expectedOwners > 1) throw new Error(`${label} expected owner records repeat`);
     if (retainedListeners > value.matchingListenerCount) throw new Error(`${label} owner listener counts differ`);
     if (!value.ownersTruncated && (retainedListeners !== value.matchingListenerCount
         || expectedOwnerListeners !== value.expectedOwnerListenerCount))
         throw new Error(`${label} owner listener counts differ`);
-    return `listeners=${value.matchingListenerCount} owners=${value.distinctOwnerCount}`
-        + ` expectedOwnerListeners=${value.expectedOwnerListenerCount} retained=${value.retainedOwnerCount}`
-        + ` truncated=${value.ownersTruncated}${rendered.length === 0 ? "" : `; ${rendered.join("; ")}`}`;
+    return `rows=${value.matchingListenerCount} owners=${value.distinctOwnerCount}`
+        + ` expectedRows=${value.expectedOwnerListenerCount} retained=${value.retainedOwnerCount}`
+        + ` trunc=${value.ownersTruncated} expectedCt=${expectedCreationFileTime}`
+        + `${rendered.length === 0 ? "" : `; ${rendered.join("; ")}`}`;
 };
 
 const jsonBytes = value => Buffer.from(JSON.stringify(value), "utf8");
@@ -1099,7 +1105,7 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                     strictBoolean(listener.listenerOwned, "Owned listener proof");
                     throw new Error("Owned candidate listener was not proven ["
                         + `${listenerDiagnosticSummary(listener.diagnostic,
-                            "Owned candidate listener diagnostic")}]`);
+                            state.ready.candidateCreationTime, "Owned candidate listener diagnostic")}]`);
                 }
                 exactKeys(listener, ["listenerOwned"], "Owned listener observation");
                 summary = await dependencies.checkPopulated(`http://127.0.0.1:${port}`);

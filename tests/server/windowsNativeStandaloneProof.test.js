@@ -667,11 +667,11 @@ describe("Windows native standalone proof operation factory", () => {
             error => {
                 assert.match(error.message, /^Owned candidate listener was not proven/u);
                 assert.match(error.message,
-                    /listeners=2 owners=2 expectedOwnerListeners=1 retained=2 truncated=false/u);
+                    /rows=2 owners=2 expectedRows=1 retained=2 trunc=false expectedCt=1111111111111111/u);
                 assert.match(error.message,
-                    /pid=9001 expected=true listeners=1 state=present creation=match job=in-job/u);
+                    /pid=9001 exp=true rows=1 state=present ct=1111111111111111 job=in-job/u);
                 assert.match(error.message,
-                    /pid=4711 expected=false listeners=1 state=exited creation=none job=unavailable/u);
+                    /pid=4711 exp=false rows=1 state=exited ct=none job=unavailable/u);
                 assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS,
                     `message must stay within the retained failure budget: ${error.message.length}`);
                 return true;
@@ -679,13 +679,14 @@ describe("Windows native standalone proof operation factory", () => {
     });
 
     it("keeps the fullest retainable listener summary inside the retained failure budget", async () => {
-        // Every rendered field at its widest: 10-digit PIDs, 5-digit counts, "false" over "true", and
-        // "unavailable", the longest value of both the process-state and the Job-membership vocabulary.
-        // This is the true worst case the observer can produce; it measures 505 of the 512 budgeted
-        // characters, so widening any rendered field fails here instead of silently losing evidence.
+        // Every rendered field at its widest: 10-digit PIDs, 5-digit counts, "false" over "true", the
+        // longest Job membership, and a present owner carrying a full 16-hex creation file time, which is
+        // wider than "unavailable" plus "none". This is the true worst case the observer can produce; it
+        // measures 482 of the 512 budgeted characters, so widening any rendered field fails here instead of
+        // silently truncating owner evidence out of the retained result.
         const owners = Array.from({length: 4}, (unused, index) => ({owningProcessId: 4_294_967_295 - index,
-            expectedOwner: false, listenerCount: 16_383, processState: "unavailable", creationFileTime: null,
-            creationTimeMatches: null, jobMembership: "unavailable"}));
+            expectedOwner: false, listenerCount: 16_383, processState: "present",
+            creationFileTime: "f".repeat(16), creationTimeMatches: false, jobMembership: "unavailable"}));
         await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
             diagnostic: {schemaVersion: 1, matchingListenerCount: 65_535, distinctOwnerCount: 65_535,
                 expectedOwnerListenerCount: 65_535, retainedOwnerCount: owners.length, ownersTruncated: true,
@@ -698,6 +699,54 @@ describe("Windows native standalone proof operation factory", () => {
         });
     });
 
+    it("carries real owner creation times into the retained proof failure result", async () => {
+        const competingCreation = "abcdef0123456789";
+        const retain = async diagnostic => {
+            const input = proofRequest();
+            const harness = makeActualRuntimeDependencies(input);
+            harness.dependencies.observeListener = async value => value.mode === "owned"
+                ? {listenerOwned: false, diagnostic} : {listenerGone: true};
+            const result = await runWindowsNativeStandaloneProof(input,
+                createWindowsNativeStandaloneRuntime(input, harness.dependencies));
+            assert.equal(result.status, "failed");
+            assert.equal(result.qualifying, false);
+            const [recorded] = result.adapter.failures;
+            assert.equal(recorded.stage, "running-assertions");
+            assert.equal(recorded.classification, "failed");
+            assert.ok(recorded.detail.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            return recorded.detail;
+        };
+
+        const both = await retain({schemaVersion: 1, matchingListenerCount: 2, distinctOwnerCount: 2,
+            expectedOwnerListenerCount: 1, retainedOwnerCount: 2, ownersTruncated: false,
+            owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1,
+                processState: "present", creationFileTime: READY_CREATION, creationTimeMatches: true,
+                jobMembership: "in-job"},
+            {owningProcessId: 4711, expectedOwner: false, listenerCount: 1, processState: "present",
+                creationFileTime: competingCreation, creationTimeMatches: false,
+                jobMembership: "not-in-job"}]});
+        // The actual start times of both the expected owner and the competing owner survive the adapter,
+        // not merely a match/differs summary of them.
+        assert.match(both, new RegExp(`expectedCt=${READY_CREATION}`, "u"));
+        assert.match(both, new RegExp(`pid=${READY_PID} exp=true rows=1 state=present ct=${READY_CREATION}`, "u"));
+        assert.match(both, new RegExp(`pid=4711 exp=false rows=1 state=present ct=${competingCreation}`, "u"));
+
+        const truncated = await retain({schemaVersion: 1, matchingListenerCount: 9, distinctOwnerCount: 9,
+            expectedOwnerListenerCount: 1, retainedOwnerCount: 4, ownersTruncated: true,
+            owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1,
+                processState: "present", creationFileTime: READY_CREATION, creationTimeMatches: true,
+                jobMembership: "in-job"},
+            ...Array.from({length: 3}, (unused, index) => ({owningProcessId: 5000 + index,
+                expectedOwner: false, listenerCount: 1, processState: "present",
+                creationFileTime: competingCreation, creationTimeMatches: false,
+                jobMembership: "not-in-job"}))]});
+        assert.match(truncated, /rows=9 owners=9 expectedRows=1 retained=4 trunc=true/u);
+        assert.match(truncated, new RegExp(`pid=${READY_PID} exp=true rows=1 state=present ct=${READY_CREATION}`, "u"));
+        // At the maximum retained owner count every retained competing timestamp still survives.
+        assert.equal(truncated.split(`ct=${competingCreation}`).length - 1, 3);
+        assert.equal(truncated.split("pid=").length - 1, 4);
+    });
+
     it("renders the system owner PID the connection provider can really report", async () => {
         await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
             diagnostic: {schemaVersion: 1, matchingListenerCount: 1, distinctOwnerCount: 1,
@@ -705,14 +754,14 @@ describe("Windows native standalone proof operation factory", () => {
                 owners: [{owningProcessId: 0, expectedOwner: false, listenerCount: 1,
                     processState: "unavailable", creationFileTime: null, creationTimeMatches: null,
                     jobMembership: "unavailable"}]}}),
-        /pid=0 expected=false listeners=1 state=unavailable creation=none job=unavailable/u);
+        /pid=0 exp=false rows=1 state=unavailable ct=none job=unavailable/u);
     });
 
     it("summarizes a truncated empty-owner listener diagnostic without inventing an owner", async () => {
         await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
             diagnostic: {schemaVersion: 1, matchingListenerCount: 0, distinctOwnerCount: 0,
                 expectedOwnerListenerCount: 0, retainedOwnerCount: 0, ownersTruncated: false, owners: []}}),
-        /listeners=0 owners=0 expectedOwnerListeners=0 retained=0 truncated=false/u);
+        /rows=0 owners=0 expectedRows=0 retained=0 trunc=false expectedCt=1111111111111111/u);
     });
 
     it("rejects malformed, inconsistent or oversized listener diagnostics", async () => {
@@ -722,6 +771,8 @@ describe("Windows native standalone proof operation factory", () => {
             value => { value.diagnostic.owners[0].processState = "running"; },
             value => { value.diagnostic.owners[0].jobMembership = "maybe"; },
             value => { value.diagnostic.owners[0].creationTimeMatches = "true"; },
+            value => { value.diagnostic.owners[0].creationTimeMatches = false; },
+            value => { value.diagnostic.owners[0].creationFileTime = "e".repeat(16); },
             value => { value.diagnostic.owners[0].creationFileTime = "z".repeat(16); },
             value => { value.diagnostic.owners[1].creationFileTime = READY_CREATION; },
             value => { value.diagnostic.owners[0].extra = true; },
@@ -751,12 +802,12 @@ describe("Windows native standalone proof operation factory", () => {
         assert.equal(recycled.listenerOwned, false);
         await assert.rejects(runOwnedListenerAssertion(recycled), error => {
             assert.match(error.message,
-                /listeners=2 owners=2 expectedOwnerListeners=1 retained=2 truncated=false/u);
+                /rows=2 owners=2 expectedRows=1 retained=2 trunc=false expectedCt=1111111111111111/u);
             // The recycled-PID shape: the expected PID still owns the listener but is a different process.
             assert.match(error.message,
-                /pid=9001 expected=true listeners=1 state=present creation=differs job=in-job/u);
+                /pid=9001 exp=true rows=1 state=present ct=eeeeeeeeeeeeeeee job=in-job/u);
             assert.match(error.message,
-                /pid=4711 expected=false listeners=1 state=exited creation=none job=unavailable/u);
+                /pid=4711 exp=false rows=1 state=exited ct=none job=unavailable/u);
             return true;
         });
 
@@ -767,9 +818,9 @@ describe("Windows native standalone proof operation factory", () => {
         assert.equal(truncated.diagnostic.ownersTruncated, true);
         await assert.rejects(runOwnedListenerAssertion(truncated), error => {
             assert.match(error.message,
-                /listeners=7 owners=7 expectedOwnerListeners=1 retained=4 truncated=true/u);
+                /rows=7 owners=7 expectedRows=1 retained=4 trunc=true expectedCt=1111111111111111/u);
             assert.match(error.message,
-                /pid=9001 expected=true listeners=1 state=present creation=match job=in-job/u);
+                /pid=9001 exp=true rows=1 state=present ct=1111111111111111 job=in-job/u);
             assert.equal(error.message.split("pid=").length - 1, 4);
             assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
             return true;
