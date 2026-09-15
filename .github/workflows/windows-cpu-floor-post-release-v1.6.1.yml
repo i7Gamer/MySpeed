@@ -38,9 +38,11 @@ jobs:
     steps:
       - name: Verify dispatch confirmation
         shell: bash
+        env:
+          INPUT_CONFIRMATION: ${{ github.event.inputs.confirmation }}
         run: |
           set -euo pipefail
-          if [[ "${{ github.event.inputs.confirmation }}" != "${WORKFLOW_CONFIRMATION}" ]]; then
+          if [[ "${INPUT_CONFIRMATION}" != "${WORKFLOW_CONFIRMATION}" ]]; then
             echo "::error::Confirmation mismatch. Expected ${WORKFLOW_CONFIRMATION}"
             exit 1
           fi
@@ -73,6 +75,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorStage3.test.js \
             tests/server/linuxWindowsCpuFloorStage3Controller.test.js \
             tests/server/linuxWindowsCpuFloorStage3Hosted.test.js \
+            tests/server/linuxWindowsCpuFloorStage3Launcher.test.js \
             tests/server/linuxWindowsCpuFloorStage3Sequence.test.js \
             tests/server/postReleaseCpuFloor.test.js
 
@@ -82,10 +85,8 @@ jobs:
         run: |
           set -euo pipefail
           nonce="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')"
-          artifact_root="$RUNNER_TEMP/myspeed-stage3-artifact-$nonce"
-          closure_root="$artifact_root/myspeed-stage3-closure-$nonce"
-          test ! -e "$artifact_root"
-          install -d -m 700 "$artifact_root"
+          closure_root="$RUNNER_TEMP/myspeed-stage3-closure-$nonce"
+          test ! -e "$closure_root"
           install -d -m 700 "$closure_root/scripts/qualification"
           install -d -m 700 "$closure_root/scripts/release"
 
@@ -94,6 +95,7 @@ jobs:
             "scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage3.mjs"
+            "scripts/qualification/windows-baseline-guest-bootstrap.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs"
@@ -102,7 +104,6 @@ jobs:
             "scripts/qualification/linux-kvm-capability.mjs"
             "scripts/qualification/linux-kvm-privileged-capability.mjs"
             "scripts/qualification/windows-msi-post-setup-activation.mjs"
-            "scripts/qualification/windows-msi-stage2-request.mjs"
             "scripts/qualification/safety.mjs"
           )
 
@@ -130,7 +131,7 @@ jobs:
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb99baeddf # v4
         with:
           name: myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
-          path: ${{ runner.temp }}/myspeed-stage3-artifact-${{ steps.seal.outputs.nonce }}
+          path: ${{ runner.temp }}/myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
           retention-days: 1
           if-no-files-found: error
 
@@ -150,7 +151,7 @@ jobs:
         uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4
         with:
           name: myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
-          path: ${{ runner.temp }}/myspeed-stage3-artifact-${{ needs.seal.outputs.nonce }}
+          path: ${{ runner.temp }}/myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
 
       - name: Verify sealed sequence closure
         shell: bash
@@ -158,13 +159,14 @@ jobs:
           set -euo pipefail
           nonce="${{ needs.seal.outputs.nonce }}"
           expected_hash="${{ needs.seal.outputs.closure_sha256 }}"
-          closure_root="${{ runner.temp }}/myspeed-stage3-artifact-$nonce/myspeed-stage3-closure-$nonce"
+          closure_root="${{ runner.temp }}/myspeed-stage3-closure-$nonce"
 
           members=(
             "scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage3.mjs"
+            "scripts/qualification/windows-baseline-guest-bootstrap.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs"
             "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs"
@@ -173,7 +175,6 @@ jobs:
             "scripts/qualification/linux-kvm-capability.mjs"
             "scripts/qualification/linux-kvm-privileged-capability.mjs"
             "scripts/qualification/windows-msi-post-setup-activation.mjs"
-            "scripts/qualification/windows-msi-stage2-request.mjs"
             "scripts/qualification/safety.mjs"
           )
 
@@ -205,31 +206,57 @@ jobs:
         run: |
           set -euo pipefail
           nonce="${{ needs.seal.outputs.nonce }}"
-          closure_root="${{ runner.temp }}/myspeed-stage3-artifact-$nonce/myspeed-stage3-closure-$nonce"
-          transport_root="${{ runner.temp }}/myspeed-stage3-transport-$nonce"
-          mkdir -p "$transport_root"
+          closure_root="${{ runner.temp }}/myspeed-stage3-closure-$nonce"
+          transport_root="${{ runner.temp }}/myspeed-stage2-transport-$nonce"
+          envelope_root="${{ runner.temp }}/myspeed-stage3-sequence-envelope-$nonce"
+          install -d -m 700 "$transport_root"
+          install -d -m 700 "$envelope_root"
+          install -m 600 /dev/null "$transport_root/controller.stdout"
+          install -m 600 /dev/null "$transport_root/controller.stderr"
 
-          echo "Sealed closure verified. Stage 3 sequence runner ready."
-          # Sequence invocation is wired directly to the sealed copy
-          test -f "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs"
+          # The request envelope is written by the caller (launcher) before invoking the sequence.
+          # The sequence reads request.json and result.json from the envelope root.
+          request_file="$envelope_root/request.json"
+          result_file="$envelope_root/result.json"
 
-      - name: Verify process cleanup
+          # Compute SHA-256 of the pre-written request
+          request_sha256="$(node -e 'const fs=require("node:fs"),crypto=require("node:crypto");process.stdout.write(crypto.createHash("sha256").update(fs.readFileSync(process.argv[1])).digest("hex"))' "$request_file")"
+
+          set +e
+          node "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs" run \
+            --nonce "$nonce" \
+            --request "$request_file" \
+            --request-sha256 "$request_sha256" \
+            --result "$result_file" \
+            > "$transport_root/controller.stdout" 2> "$transport_root/controller.stderr"
+          sequence_exit=$?
+          set -e
+          printf 'sequence_exit=%s\n' "$sequence_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Verify task-owned process cleanup
         if: always()
         shell: bash
         run: |
           set -euo pipefail
-          # Ensure no leftover QEMU processes remain in the session
-          if pgrep -f qemu-system-x86_64 > /dev/null 2>&1; then
-            echo "::error::Leftover QEMU process detected"
-            pkill -9 -f qemu-system-x86_64 || true
-            exit 1
-          fi
+          nonce="${{ needs.seal.outputs.nonce }}"
+          stage2_pid_file="${{ runner.temp }}/myspeed-windows-cpu-floor-$nonce/qemu.pid"
+          stage3_pid_file="${{ runner.temp }}/myspeed-stage3-$nonce/baseline-qemu.pid"
+          for pid_file in "$stage2_pid_file" "$stage3_pid_file"; do
+            if [[ -f "$pid_file" ]]; then
+              pid="$(cat "$pid_file" | tr -d '[:space:]')"
+              if [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null; then
+                echo "::error::Task-owned QEMU process $pid from $pid_file is still alive"
+                kill -9 "$pid" 2>/dev/null || true
+                exit 1
+              fi
+            fi
+          done
 
       - name: Upload non-qualifying evidence
         if: always()
         uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb99baeddf # v4
         with:
           name: windows-cpu-floor-post-release-v1.6.1-evidence
-          path: ${{ runner.temp }}/myspeed-stage3-transport-${{ needs.seal.outputs.nonce }}
+          path: ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.seal.outputs.nonce }}
           retention-days: 7
           if-no-files-found: ignore

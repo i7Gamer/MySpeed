@@ -98,7 +98,7 @@ function writeExclusive(target, bytes) {
     return {path: target, bytes: String(bytes.length), sha256: sha256(bytes)};
 }
 
-function validateSequence(value, actualContext) {
+export function validateSequence(value, actualContext) {
     exactKeys(value, ["closure", "context", "guestFiles", "kind", "schemaVersion", "stage2Request", "stage3",
         "transportRoot"], "Stage 3 sequence");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== SEQUENCE_KIND || !same(value.context, actualContext) ||

@@ -375,7 +375,7 @@ function validateCandidate(value, context) {
     return structuredClone(value);
 }
 
-function validateRequest(value) {
+export function validateRequest(value) {
     keys(value, ["authorization", "candidate", "context", "paths", "profile", "schemaVersion", "stage2"],
         "Stage 3 request");
     if (value.schemaVersion !== SCHEMA_VERSION || value.profile !== PROFILE) throw new TypeError("Stage 3 profile is invalid");

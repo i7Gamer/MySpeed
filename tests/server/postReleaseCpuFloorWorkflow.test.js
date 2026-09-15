@@ -60,4 +60,57 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(workflow.on.workflow_dispatch.inputs.confirmation.description,
             /RUN-WINDOWS-BASELINE-CPU-FLOOR/);
     });
+
+    it("binds confirmation via env var, not direct Bash interpolation (Finding 6)", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        // Must NOT contain the raw interpolation inside a Bash string comparison
+        assert.doesNotMatch(text, /\[\[ "\$\{\{ github\.event\.inputs\.confirmation \}\}"/u);
+        // Confirmation step must declare INPUT_CONFIRMATION as an env var
+        assert.match(text, /INPUT_CONFIRMATION:\s*\$\{\{ github\.event\.inputs\.confirmation \}\}/u);
+        // Bash comparison must use the env var
+        assert.match(text, /\[\[ "\$\{INPUT_CONFIRMATION\}" != "\$\{WORKFLOW_CONFIRMATION\}"/u);
+    });
+
+    it("closure list uses windows-baseline-guest-bootstrap.mjs not windows-msi-stage2-request.mjs (Finding 2)", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        assert.doesNotMatch(text, /windows-msi-stage2-request\.mjs/u);
+        assert.match(text, /windows-baseline-guest-bootstrap\.mjs/u);
+    });
+
+    it("execute job runs real Node sequence invocation not a test-f placeholder (Finding 1)", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        const workflow = parse(text);
+        const executeSteps = workflow.jobs.execute.steps;
+        const runSeqStep = executeSteps.find(s => s.id === "run-sequence");
+        assert.ok(runSeqStep, "run-sequence step must exist in execute job");
+        // Must invoke node, not just test -f
+        assert.match(runSeqStep.run, /node.*linux-windows-cpu-floor-stage3-sequence\.mjs/u);
+        assert.doesNotMatch(runSeqStep.run, /^[^#]*test -f/mu);
+    });
+
+    it("cleanup step reads task-owned pidfiles and does not use global pkill (Finding 5)", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        const workflow = parse(text);
+        const executeSteps = workflow.jobs.execute.steps;
+        const cleanupStep = executeSteps.find(s =>
+            typeof s.run === "string" && s.run.includes("qemu.pid"));
+        assert.ok(cleanupStep, "A cleanup step reading qemu.pid must exist");
+        // Must read task-owned pidfiles
+        assert.match(cleanupStep.run, /myspeed-windows-cpu-floor-\$nonce[/\\]qemu\.pid/u);
+        assert.match(cleanupStep.run, /myspeed-stage3-\$nonce[/\\]baseline-qemu\.pid/u);
+        // Must not use global pkill as primary cleanup
+        assert.doesNotMatch(cleanupStep.run, /pkill.*qemu-system-x86_64/u);
+    });
+
+    it("evidence is uploaded from stage2 transport root not stage3 transport root (Finding 3)", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        const workflow = parse(text);
+        const executeSteps = workflow.jobs.execute.steps;
+        const uploadStep = executeSteps.find(s =>
+            String(s.uses ?? "").includes("upload-artifact") &&
+            String(s.with?.name ?? "").includes("evidence"));
+        assert.ok(uploadStep, "evidence upload step must exist");
+        assert.match(String(uploadStep.with.path), /myspeed-stage2-transport-/u);
+        assert.doesNotMatch(String(uploadStep.with.path), /myspeed-stage3-transport-/u);
+    });
 });
