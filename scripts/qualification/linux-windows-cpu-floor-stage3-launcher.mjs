@@ -297,7 +297,8 @@ export async function executeStage3Launcher(options, dependencies = {}) {
         // 2. Build both pre-execution requests through the real branded consumer APIs.
         const fileIdentity = dependencies.fileIdentity ?? ((targetPath) => {
             const bytes = fs.readFileSync(targetPath);
-            return {path: targetPath, bytes: String(bytes.length), sha256: sha256(bytes)};
+            // Stage 2 staged-input identities use integers, unlike artifact provenance strings.
+            return {path: targetPath, bytes: bytes.length, sha256: sha256(bytes)};
         });
         const stage2Request = buildStage2Request(binding, probeArtifact, fileIdentity);
         const stage3Template = buildStage3Template(acquired);

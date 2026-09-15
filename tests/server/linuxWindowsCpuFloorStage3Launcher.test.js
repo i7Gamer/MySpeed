@@ -22,6 +22,11 @@ import {
     buildV161PostReleaseCpuFloorStage3Template
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
+import {runHostedStage2Controller} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
+import {WINDOWS_MSI_STAGE2_CLOSURE, WINDOWS_MSI_STAGE2_INPUT_NAMES,
+    WINDOWS_MSI_STAGE2_PROBE_ROLES, windowsMsiStage2Roots} from
+    "../../scripts/qualification/windows-msi-stage2-request.mjs";
 import {
     targetInput,
     hostedContext,
@@ -176,6 +181,69 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             assert.equal(stage3Template.authorization.scope, "windows-baseline-cpu-floor-full-runtime");
             assert.equal(stage3Template.candidate.sourceSha, CANDIDATE_SHA);
             assert.notEqual(stage3Template.candidate.sourceSha, context.sourceSha);
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
+    });
+
+    it("default launcher file identities reach the real Stage 2 controller admission boundary", async (t) => {
+        const {binding, acquired, context} = buildBinding();
+        const tempRoot = makeTempDir("myspeed-stage3-controller-contract-");
+        const closureRoot = path.join(tempRoot, "closure");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        const roots = windowsMsiStage2Roots(context.nonce);
+        const contents = new Map();
+        const admissionReached = new Error("synthetic stop before native admission");
+        let stage2Request;
+        try {
+            const records = populateCopiedClosure(closureRoot);
+            for (const name of WINDOWS_MSI_STAGE2_CLOSURE) {
+                contents.set(`${roots.closureRoot}/${name}`, fs.readFileSync(path.join(closureRoot, name)));
+            }
+            for (const name of WINDOWS_MSI_STAGE2_INPUT_NAMES) {
+                contents.set(`${roots.inputRoot}/${name}`, Buffer.from(`synthetic ${name}\n`));
+            }
+            const archive = contents.get(`${roots.inputRoot}/artifact.zip`);
+            const probeArtifact = {sourceSha: context.sourceSha, runId: context.runId,
+                runAttempt: context.runAttempt, artifactId: "99999", archiveBytes: String(archive.length),
+                archiveSha256: hash(archive), files: WINDOWS_MSI_STAGE2_PROBE_ROLES.map(role => {
+                    const name = `${role.replaceAll("-", "_")}.exe`;
+                    const bytes = contents.get(`${roots.inputRoot}/${name}`);
+                    return {role, name, bytes: String(bytes.length), sha256: hash(bytes)};
+                })};
+            // Only replace file IO for synthetic hosted paths. Keep the default identity reader,
+            // branded request builder and real controller validation together in this regression.
+            const originalRead = fs.readFileSync.bind(fs);
+            t.mock.method(fs, "readFileSync", (target, ...args) =>
+                contents.has(target) ? Buffer.from(contents.get(target)) : originalRead(target, ...args));
+            await assert.rejects(() => executeStage3Launcher({closureRoot, closureRecords: records,
+                transportRoot, envelopeRoot, binding, acquired, probeArtifact}, {
+                runSequence: request => {
+                    stage2Request = request.stage2Request;
+                    return runHostedStage2Controller(stage2Request, {
+                        readVerified: target => {
+                            assert.ok(contents.has(target), "controller may only read staged fixture inputs");
+                            const bytes = contents.get(target);
+                            return {bytes, path: target, sha256: hash(bytes)};
+                        },
+                        collectAdmission: () => { throw admissionReached; }
+                    });
+                }
+            }), error => error === admissionReached);
+            const inputs = [...stage2Request.closure.files, ...Object.values(stage2Request.kvm),
+                stage2Request.probeStage.archive, stage2Request.probeStage.result,
+                ...stage2Request.probeStage.files];
+            for (const input of inputs) {
+                assert.equal(input.bytes, contents.get(input.path).length);
+                assert.equal(input.sha256, hash(contents.get(input.path)));
+            }
+            assert.equal(typeof stage2Request.probeArtifact.archive.bytes, "string",
+                "artifact provenance keeps its separate decimal-string schema");
+            assert.equal(fs.existsSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.ACCEPTED_INSPECTION_FILE)), false);
         } finally {
             fs.rmSync(tempRoot, {recursive: true, force: true});
         }
