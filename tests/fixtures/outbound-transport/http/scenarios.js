@@ -17,7 +17,7 @@ const FIRST_IPV4 = {address: "127.0.0.2", family: 4};
 const BLOCKED = {address: "169.254.169.254", family: 4};
 const BODY = "Grüezi 🌍 synthetic notification";
 const PROXY_ENV = /^(?:https?_proxy|all_proxy|no_proxy)$/i;
-const URL_CREDENTIALS = /\/\/[^/\s@]*:[^/\s@]*@/gu;
+const URL_CREDENTIALS = /\/\/[^/\s@]*@/gu;
 const REPORTED_RESULT_FIELDS = ["status", "ok", "error", "drainError", "bodyDeadlineFired"];
 const compiled = Boolean(process.versions.bun) && !/^bun(?:-debug)?(?:\.exe)?$/i.test(path.basename(process.execPath));
 const directory = () => process.env.OUTBOUND_HTTP_FIXTURE_DIR || path.resolve("tests/fixtures/outbound-transport/http");
@@ -359,5 +359,10 @@ httpScenarios.push({name: "http failure diagnostics never carry proxy credential
     assert.match(described, /"drainError":"AbortError"/u);
     assert.match(described, /http:\/\/\*\*\*@127\.0\.0\.1:1/u);
     assert.doesNotMatch(described, /synthetic-secret/u);
+    for (const userinfo of ["synthetic-token", "synthetic-token:", ":synthetic-token", "synthetic%40token"]) {
+        const message = `proxy https://${userinfo}@127.0.0.1:1 refused the tunnel`;
+        assert.equal(describeChildResults([{message}]),
+            JSON.stringify([{message: "proxy https://***@127.0.0.1:1 refused the tunnel"}]));
+    }
     assert.equal(describeChildResults(undefined), "null");
 }});
