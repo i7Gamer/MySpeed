@@ -201,4 +201,34 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(String(uploadStep.with.path), /myspeed-stage3-logs-/u);
         assert.equal(uploadStep.with["if-no-files-found"], "error");
     });
+
+    it("uses verified repository-standard commit SHAs for all external actions", () => {
+        const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
+        const workflow = parse(text);
+        const STANDARD_PINS = Object.freeze({
+            "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "actions/setup-node": "820762786026740c76f36085b0efc47a31fe5020",
+            "oven-sh/setup-bun": "0c5077e51419868618aeaa5fe8019c62421857d6",
+            "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+            "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3"
+        });
+
+        const actionUses = [];
+        for (const job of Object.values(workflow.jobs)) {
+            for (const step of job.steps ?? []) {
+                if (step.uses && !step.uses.startsWith("./")) {
+                    actionUses.push(step.uses);
+                }
+            }
+        }
+
+        assert.ok(actionUses.length > 0, "workflow must contain external action steps");
+        for (const use of actionUses) {
+            const [action, sha] = use.split("@");
+            assert.ok(action in STANDARD_PINS, `Unknown action ${action} in workflow`);
+            assert.equal(sha, STANDARD_PINS[action],
+                `Action ${action} does not use standard verified pin ${STANDARD_PINS[action]}, found ${sha}`);
+        }
+    });
 });
