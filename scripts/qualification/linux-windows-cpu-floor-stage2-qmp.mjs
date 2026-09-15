@@ -4,7 +4,14 @@ const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
 const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
-const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}))\/(early|late)-boot-([12])\.png$/u;
+/*
+ * The containment preflight boots one disposable overlay under its own fixed child of the MSI
+ * task root - not a row, and never a descendant of one. It is admitted for the two early frames
+ * only: MSI enables no late capture, so a late name under this root would widen the shared
+ * validator for a caller that has no use for it.
+ */
+const EARLY_ONLY_ROOT_SUFFIX = "/containment-preflight";
+const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/(?:row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}|containment-preflight)))\/(early|late)-boot-([12])\.png$/u;
 
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
@@ -27,7 +34,8 @@ export function validateLateScreenshots(paths) {
     const matches = paths.map(value => typeof value === "string" ? value.match(SCREENSHOT_PATH_PATTERN) : null);
     if (!matches[0] || !matches[1] || matches[0][1] !== matches[1][1] ||
         matches[0][2] !== "late" || matches[1][2] !== "late" ||
-        matches[0][3] !== "1" || matches[1][3] !== "2")
+        matches[0][3] !== "1" || matches[1][3] !== "2" ||
+        matches[0][1].endsWith(EARLY_ONLY_ROOT_SUFFIX))
         throw new TypeError("QMP late screenshot path is invalid");
     return [...paths];
 }

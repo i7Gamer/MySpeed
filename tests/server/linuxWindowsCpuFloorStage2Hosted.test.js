@@ -1211,6 +1211,57 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(monitoredRequest.executionDeadline, Math.min(600_000 + 16_200 * 1000, 1000 + 16_200 * 1000));
         // Deadline-less callers MUST NOT receive lateScreenshotPaths
         assert.equal(monitoredRequest.qmp.lateScreenshotPaths, undefined);
+
+        /*
+         * 4. A named reservation. It is launch-relative like the diagnostic one, but it is a
+         * separate input: the containment preflight must never reach the CPU diagnostic's flag, and
+         * it must never fall through to the 270-minute default it would otherwise get.
+         */
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            reservation: {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000}
+        });
+        assert.equal(commandArgv.includes("900s"), true);
+        assert.equal(commandArgv.includes("16200s"), false);
+        assert.equal(monitoredRequest.timeoutMs, 1_020_000);
+        assert.equal(monitoredRequest.executionDeadline, 600_000 + 900_000);
+        assert.equal(monitoredRequest.qmp.lateScreenshotPaths, undefined);
+
+        // 5. A reservation may only tighten the launcher deadline, and must be complete.
+        for (const reservation of [
+            {label: "", executionMilliseconds: 900_000, cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 999,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 0},
+            {label: "containment-preflight", executionMilliseconds: 16_200_001,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900.5,
+                cleanupMilliseconds: 120_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000},
+            {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000, extra: 1}])
+            await assert.rejects(launcher({toolchain, paths: paths(), argv: ["-m", "4G"],
+                privilegeMode: "ordinary-kvm", reservation}), /QEMU reservation/u,
+            JSON.stringify(reservation));
+
+        // 6. The diagnostic flag and a reservation are never both in force.
+        await assert.rejects(launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5},
+            reservation: {label: "containment-preflight", executionMilliseconds: 900_000,
+                cleanupMilliseconds: 120_000}
+        }), /QEMU reservation/u);
+
+        // 7. The diagnostic behaviour is exactly what it was before the reservation existed.
+        await launcher({
+            toolchain, paths: paths(), argv: ["-m", "4G"], privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5}
+        });
+        assert.equal(commandArgv.includes("1500s"), true);
+        assert.equal(monitoredRequest.timeoutMs, 1_540_000);
+        assert.equal(monitoredRequest.executionDeadline, 600_000 + 1500 * 1000);
     });
 
     it("gates failure receipt extraction strictly on proven cleanup and owned output identity", async () => {

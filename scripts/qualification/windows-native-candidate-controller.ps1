@@ -444,6 +444,26 @@ function Invoke-MyspeedCandidateModuleCommand {
     } $call
 }
 
+function Invoke-MyspeedCandidateInitialConsole {
+    param([object]$ControllerModule,[object]$Operations,[int64]$NativeCurrentPid,[int64]$ExpectedPid)
+    if($NativeCurrentPid -ne $ExpectedPid){throw 'Native controller PID differs'}
+    return Invoke-MyspeedCandidateModuleCommand $ControllerModule 'Invoke-MyspeedCleanInitialConsoleCore' @($NativeCurrentPid,$Operations)
+}
+
+function Invoke-MyspeedCandidateInjectedInitialConsole {
+    param([object]$ControllerModule,[object]$InputValue)
+    Assert-MyspeedCandidateKeys $InputValue @('currentPid','expectedPid','observation','observeFailure','detachResult','consoleFreeAfter') 'Injected initial console'
+    $observeFailure=Assert-MyspeedCandidateBoolean $InputValue.observeFailure 'Injected initial console observation failure'
+    $operations=[pscustomobject]@{
+        observe={if($observeFailure){throw 'Injected initial console observation failed'};return $InputValue.observation}.GetNewClosure()
+        detach={return $InputValue.detachResult}.GetNewClosure()
+        proveFree={return $InputValue.consoleFreeAfter}.GetNewClosure()
+    }
+    $currentPid=Assert-MyspeedCandidateInteger $InputValue.currentPid 'Injected current PID' 1 4294967295
+    $expectedPid=Assert-MyspeedCandidateInteger $InputValue.expectedPid 'Injected expected PID' 1 4294967295
+    return Invoke-MyspeedCandidateInitialConsole $ControllerModule $operations $currentPid $expectedPid
+}
+
 function New-MyspeedCandidateNativeOperations {
     param([object]$Request,[Diagnostics.Stopwatch]$Watch)
     $req=$Request
@@ -486,7 +506,8 @@ function New-MyspeedCandidateNativeOperations {
 }
 
 function Invoke-MyspeedHostedCandidate {
-    param([string]$Path,[string]$Sha,[string]$RunId,[string]$RunAttempt,[string]$EventSha,[string]$SourceSha,[string]$ImageVersion,[string]$ExpectedNonce)
+    param([string]$Path,[string]$Sha,[string]$RunId,[string]$RunAttempt,[string]$EventSha,[string]$SourceSha,[string]$ImageVersion,[string]$ExpectedNonce,
+        [object]$InitialConsoleOperations=$null,[scriptblock]$NativePidProvider=$null,[object]$LifecycleOperations=$null)
     $watch=[Diagnostics.Stopwatch]::StartNew()
     # Assert-MyspeedCandidateHostedContext must remain before request I/O, module import, Add-Type, or native calls.
     Assert-MyspeedCandidateHostedContext $RunId $RunAttempt $EventSha $SourceSha $ImageVersion $ExpectedNonce
@@ -510,7 +531,7 @@ function Invoke-MyspeedHostedCandidate {
     if($controllerSha -cne $request.controllerSha256){throw 'Hosted candidate controller SHA differs'}
     $controllerText=[Text.UTF8Encoding]::new($false,$true).GetString($controllerBytes)
     $controllerScript=[scriptblock]::Create($controllerText)
-    $controllerModule=New-Module -ScriptBlock {param($trustedControllerScript);. $trustedControllerScript -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource} -ArgumentList $controllerScript
+    $controllerModule=New-Module -ScriptBlock {param($trustedControllerScript);. $trustedControllerScript -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource,Invoke-MyspeedCleanInitialConsoleCore} -ArgumentList $controllerScript
     try{
         $nativeSource=Invoke-MyspeedCandidateModuleCommand $controllerModule 'Get-MyspeedCleanNativeSource'
         foreach($entry in @(
@@ -521,9 +542,20 @@ function Invoke-MyspeedHostedCandidate {
             @($request.stopRequestPath,'Candidate stop request','Absent'),@($request.resultPath,'Candidate result','Absent'))){
             Invoke-MyspeedCandidateModuleCommand $controllerModule 'Assert-MyspeedCleanPhysicalPath' $entry|Out-Null
         }
+        if($null -eq $LifecycleOperations){Add-Type -TypeDefinition $nativeSource -Language CSharp}
+        $nativeCurrentPid=if($null -ne $NativePidProvider){& $NativePidProvider}else{[int64][MySpeed.Qualification.CleanStop.Session]::CurrentProcessId()}
+        $initialConsoleOperations=if($null -ne $InitialConsoleOperations){$InitialConsoleOperations}else{
+            [pscustomobject]@{
+                observe={$native=[MySpeed.Qualification.CleanStop.Session]::ObserveInitialConsole()
+                    return [pscustomobject]@{processIds=@($native.processIds);error=[int64]$native.error}}
+                detach={return [MySpeed.Qualification.CleanStop.Session]::DetachInitialConsole()}
+                proveFree={[MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();return $true}
+            }
+        }
+        [void](Invoke-MyspeedCandidateInitialConsole $controllerModule $initialConsoleOperations $nativeCurrentPid ([int64]$PID))
     }finally{Remove-Module $controllerModule -Force}
-    Add-Type -TypeDefinition $nativeSource -Language CSharp
     $operations=New-MyspeedCandidateNativeOperations $request $watch
+    if($null -ne $LifecycleOperations){$operations=$LifecycleOperations}
     $result=Invoke-MyspeedCandidateLifecycleCore $request $operations $runnerTemp
     Write-MyspeedCandidateJson $request.resultPath $result
     if($result.status -cne 'completed'){throw (Get-MyspeedCandidateLifecycleFailure $result)}

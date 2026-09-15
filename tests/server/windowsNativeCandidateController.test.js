@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -531,5 +532,197 @@ describe("Windows native candidate controller", () => {
         assert.notEqual(result.status, 0);
         assert.match(result.stderr, /Hosted context/u);
         assert.doesNotMatch(result.stderr, /must-not-be-read|Add-Type/u);
+    });
+
+    powershellIt("normalizes initial console via trusted dynamic module preserving scope and state rules", () => {
+        const invokeInjectedConsole = fixture => {
+            const encoded = Buffer.from(JSON.stringify(fixture), "utf8").toString("base64");
+            const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+                + `. '${CLEAN_SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+                + `$cleanText=[IO.File]::ReadAllText('${CLEAN_SCRIPT.replaceAll("'", "''")}'); `
+                + "$cleanScript=[scriptblock]::Create($cleanText); "
+                + "$mod=New-Module -ScriptBlock {param($s);. $s -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource,Invoke-MyspeedCleanInitialConsoleCore} -ArgumentList $cleanScript; "
+                + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')); `
+                + "$inputVal=ConvertFrom-MyspeedCandidateJson $json 'Initial console fixture'; "
+                + "$res=Invoke-MyspeedCandidateInjectedInitialConsole $mod $inputVal; "
+                + "$res|ConvertTo-Json -Depth 5 -Compress";
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+            if (result.status !== 0) throw new Error(result.stderr || result.stdout);
+            return JSON.parse(result.stdout);
+        };
+
+        const input = (currentPid, expectedPid, processIds, error, detachResult = null, consoleFreeAfter = null) => ({
+            currentPid,
+            expectedPid,
+            observation: {processIds, error},
+            observeFailure: false,
+            detachResult,
+            consoleFreeAfter
+        });
+
+        // 1. Already free: zero processes and error 6 (ERROR_INVALID_HANDLE)
+        assert.deepEqual(invokeInjectedConsole(input(4000, 4000, [], 6)), {
+            initialConsoleProcessIds: [], initialConsoleError: 6,
+            initialConsoleDetached: false, consoleFreeAfter: true
+        });
+
+        // 2. Sole self: one process matching currentPid and error 0
+        assert.deepEqual(invokeInjectedConsole(input(4000, 4000, [4000], 0, true, true)), {
+            initialConsoleProcessIds: [4000], initialConsoleError: 0,
+            initialConsoleDetached: true, consoleFreeAfter: true
+        });
+
+        // 3. Foreign PID, multiple PIDs, wrong sole PID, error != 0
+        for (const invalid of [
+            input(4000, 4000, [], 0),
+            input(4000, 4000, [4242], 0, true, true),
+            input(4000, 4000, [4000, 4242], 0, true, true),
+            input(4000, 4000, [4000, 4000], 0, true, true),
+            input(4000, 4000, [4000], 5, true, true),
+            input(4000, 4000, [4000], 0, false, true),
+            input(4000, 4000, [4000], 0, true, false)
+        ]) {
+            assert.throws(() => invokeInjectedConsole(invalid), /console|detach|process|solely owned/i);
+        }
+
+        // 4. PID mismatch between nativeCurrentPid and expectedPid
+        assert.throws(() => invokeInjectedConsole(input(4001, 4000, [4001], 0, true, true)),
+            /Native controller PID differs/i);
+
+        // 5. Dynamic-module callback lifetime: after module removal, calls fail
+        const lifetimeCommand = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + `$cleanText=[IO.File]::ReadAllText('${CLEAN_SCRIPT.replaceAll("'", "''")}'); `
+            + "$cleanScript=[scriptblock]::Create($cleanText); "
+            + "$mod=New-Module -ScriptBlock {param($s);. $s -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource,Invoke-MyspeedCleanInitialConsoleCore} -ArgumentList $cleanScript; "
+            + "Remove-Module $mod -Force; "
+            + "$inputVal=@{currentPid=4000;expectedPid=4000;observation=@{processIds=@();error=6};observeFailure=$false;detachResult=$null;consoleFreeAfter=$null}; "
+            + "Invoke-MyspeedCandidateInjectedInitialConsole $mod ([pscustomobject]$inputVal)";
+        const lifetimeResult = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", lifetimeCommand],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.notEqual(lifetimeResult.status, 0);
+    });
+
+    powershellIt("integrates initial console normalization into hosted candidate entry before lifecycle entry", t => {
+        const systemTemp = fs.realpathSync.native(os.tmpdir());
+        const runnerTemp = fs.mkdtempSync(path.join(systemTemp, "myspeed-candidate-entry-"));
+        t.after(() => fs.rmSync(runnerTemp, {recursive: true}));
+        const testNonce = crypto.randomBytes(16).toString("hex");
+        const expectedTaskRoot = path.join(runnerTemp, `myspeed-native-candidate-${testNonce}`);
+        fs.mkdirSync(expectedTaskRoot);
+        {
+            const req = request("fresh-no-config-reset");
+            req.nonce = testNonce;
+            req.taskRoot = expectedTaskRoot;
+            req.candidatePath = path.join(expectedTaskRoot, "MySpeed.exe");
+            req.workingDirectory = path.join(expectedTaskRoot, "work");
+            req.controllerPath = path.join(expectedTaskRoot, "windows-clean-stop-controller.ps1");
+            req.stdoutPath = path.join(expectedTaskRoot, "candidate.stdout.log");
+            req.stderrPath = path.join(expectedTaskRoot, "candidate.stderr.log");
+            req.readyPath = path.join(expectedTaskRoot, "candidate.ready.json");
+            req.stopRequestPath = path.join(expectedTaskRoot, "candidate.stop.json");
+            req.resultPath = path.join(expectedTaskRoot, "candidate.result.json");
+
+            fs.mkdirSync(req.workingDirectory, {recursive: true});
+            fs.writeFileSync(req.candidatePath, "fake-exe");
+            const cleanContent = fs.readFileSync(CLEAN_SCRIPT);
+            fs.writeFileSync(req.controllerPath, cleanContent);
+            req.controllerSha256 = crypto.createHash("sha256").update(cleanContent).digest("hex");
+
+            const alignedJson = JSON.stringify(req);
+            const alignedSha = crypto.createHash("sha256").update(alignedJson, "utf8").digest("hex");
+            const alignedReqPath = path.join(expectedTaskRoot, "candidate.request.json");
+            fs.writeFileSync(alignedReqPath, alignedJson, "utf8");
+
+            const testSeam = (initialConsoleOps, shouldSucceed) => {
+                const env = {
+                    ...process.env,
+                    GITHUB_ACTIONS: "true",
+                    CI: "true",
+                    GITHUB_REPOSITORY: "i7Gamer/MySpeed",
+                    RUNNER_OS: "Windows",
+                    RUNNER_ARCH: "X64",
+                    RUNNER_ENVIRONMENT: "github-hosted",
+                    ImageOS: "win25-vs2026",
+                    GITHUB_RUN_ID: req.expectedRunId,
+                    GITHUB_RUN_ATTEMPT: req.expectedRunAttempt,
+                    GITHUB_SHA: req.expectedEventSha,
+                    ImageVersion: req.expectedImageVersion,
+                    RUNNER_TEMP: runnerTemp
+                };
+                const opsJson = Buffer.from(JSON.stringify(initialConsoleOps), "utf8").toString("base64");
+                const harness = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+                    + `$opsData=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${opsJson}')); `
+                    + "$opsJsonObj=ConvertFrom-Json $opsData; "
+                    + "$pids=if($opsJsonObj.useSelfPid){@([int64]$PID)}else{@($opsJsonObj.processIds)}; "
+                    + "$initialOps=[pscustomobject]@{ "
+                    + "  observe={return [pscustomobject]@{processIds=,$pids;error=[int64]$opsJsonObj.error}}.GetNewClosure(); "
+                    + "  detach={return [bool]$opsJsonObj.detachResult}.GetNewClosure(); "
+                    + "  proveFree={return [bool]$opsJsonObj.consoleFreeAfter}.GetNewClosure() "
+                    + "}; "
+                    + "$mockLifecycleOps=[pscustomobject]@{ "
+                    + "  elapsed={return 0L}; "
+                    + "  assertConsoleFree={}; "
+                    + "  launch={param($r,$n,$h)return [pscustomobject]@{candidatePid=100;candidateCreationTime='0123456789abcdef';candidateImagePath=$r.candidatePath;candidateSha256=$r.candidateSha256;candidateVolumeSerial=$r.candidateVolumeSerial;candidateFileId=$r.candidateFileId;candidateCreatedSuspended=$true;privateConsoleRequested=$true;handleListConfigured=$true;jobAssignedBeforeResume=$true;initialJobMembership=$true;candidateIdentityCaptured=$true;candidateResumed=$true;threadHandleClosedBeforeReady=$true}}; "
+                    + "  writeReady={param($ready)}; "
+                    + "  stopExists={return $false}; "
+                    + "  readStop={return $null}; "
+                    + "  sleep={param($ms)}; "
+                    + "  stop={param($s,$g,$c)return $null}; "
+                    + "  lastResult={param($s)return [pscustomobject]@{forced=$false;preAttachIdentityMatch=$false;postAttachHandleUnsignaled=$false;postAttachIdentityMatch=$false;postAttachJobMembership=$false;consoleProcessIdsExact=$false;ctrlEventGenerated=$false;candidateExited=$true;graceExpired=$false;exitCode=113;jobZero=$true;consoleFreeAfter=$true;handlesClosed=$true}}; "
+                    + "  active={param($s)return 0L}; "
+                    + "  force={param($s,$t)}; "
+                    + "  close={param($s)return $true} "
+                    + "}; "
+                    + `Invoke-MyspeedHostedCandidate '${alignedReqPath.replaceAll("'", "''")}' '${alignedSha}' `
+                    + `'${req.expectedRunId}' '${req.expectedRunAttempt}' '${req.expectedEventSha}' '${req.expectedSourceSha}' `
+                    + `'${req.expectedImageVersion}' '${testNonce}' $initialOps {return [int64]$PID} $mockLifecycleOps; `
+                    + "[Console]::Out.Write('entry-completed')";
+
+                const res = childProcess.spawnSync(POWERSHELL,
+                    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
+                    {encoding: "utf8", timeout: TEST_TIMEOUT_MS, env, windowsHide: true});
+                if (shouldSucceed) {
+                    assert.equal(res.status, 0, res.stderr);
+                    assert.match(res.stdout, /entry-completed/u);
+                } else {
+                    assert.notEqual(res.status, 0);
+                    assert.doesNotMatch(res.stdout, /entry-completed/u);
+                }
+            };
+
+            // Case 1: Sole-self console -> detaches and proceeds to lifecycle
+            testSeam({useSelfPid: true, error: 0, detachResult: true, consoleFreeAfter: true}, true);
+
+            // Case 2: Foreign PID console -> rejected before lifecycle
+            testSeam({processIds: [999999], error: 0, detachResult: true, consoleFreeAfter: true}, false);
+
+            // Case 3: Failed detach -> rejected before lifecycle
+            testSeam({useSelfPid: true, error: 0, detachResult: false, consoleFreeAfter: true}, false);
+        }
+    });
+
+    it("verifies source ordering: context -> request -> paths -> Add-Type -> native PID -> initial console -> lifecycle", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        // 1. Context validation before request/paths
+        assert.match(source,
+            /Assert-MyspeedCandidateHostedContext[\s\S]*?Read-MyspeedCandidateJson[\s\S]*?Assert-MyspeedCandidateRequest/u);
+        // 2. Physical path validation via dynamic module before Add-Type
+        assert.match(source,
+            /Assert-MyspeedCleanPhysicalPath[\s\S]*?Add-Type -TypeDefinition \$nativeSource -Language CSharp/u);
+        // 3. Add-Type before native PID and initial console
+        assert.match(source,
+            /Add-Type -TypeDefinition \$nativeSource -Language CSharp[\s\S]*?CurrentProcessId\(\)[\s\S]*?Invoke-MyspeedCandidateInitialConsole/u);
+        // 4. Initial console normalization before New-MyspeedCandidateNativeOperations and lifecycle
+        assert.match(source,
+            /Invoke-MyspeedCandidateInitialConsole[\s\S]*?New-MyspeedCandidateNativeOperations[\s\S]*?Invoke-MyspeedCandidateLifecycleCore/u);
+        // 5. AssertConsoleFree remains in operations
+        assert.match(source,
+            /assertConsoleFree=\{\[MySpeed\.Qualification\.CleanStop\.Session\]::AssertConsoleFree\(\)\}/u);
+        // 6. CREATE_NEW_CONSOLE preserved without detached/no-window/new-process-group
+        assert.match(source, /privateConsoleRequested=\$session\.PrivateConsoleRequested/u);
+        assert.doesNotMatch(source, /CREATE_NO_WINDOW|CREATE_NEW_PROCESS_GROUP|detached:\s*true/u);
     });
 });

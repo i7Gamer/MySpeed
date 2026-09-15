@@ -26,6 +26,9 @@ const PRIVILEGED_COMMAND_TIMEOUT_SECONDS = 25;
 const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
 const QEMU_TIMEOUT_SECONDS = 16_200;
+const RESERVATION_KEYS = Object.freeze(["label", "executionMilliseconds", "cleanupMilliseconds"]);
+const RESERVATION_LABEL = /^[a-z][a-z0-9-]{0,63}$/u;
+const MINIMUM_RESERVATION_MILLISECONDS = 1_000;
 const QEMU_OUTER_TIMEOUT_MILLISECONDS = 16_240_000;
 export const DIAGNOSTIC_EXECUTION_MINUTES = 25;
 export const DIAGNOSTIC_CLEANUP_MINUTES = 5;
@@ -1325,6 +1328,29 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     let timeoutSeconds = QEMU_TIMEOUT_SECONDS;
     let outerTimeoutMs = QEMU_OUTER_TIMEOUT_MILLISECONDS;
     const isDiagnostic = input.deadlines !== undefined;
+    /*
+     * A named reservation, for a caller whose cost is charged against a budget this launcher cannot
+     * see - the containment preflight, which boots before the matrix that would otherwise admit it.
+     * It is deliberately not the CPU diagnostic's flag: that one names one fixed 25-minute mode, and
+     * widening it would make a second caller's budget depend on the first one's constant. It can
+     * only tighten the default deadline, never reach past it.
+     */
+    const isReserved = input.reservation !== undefined;
+    if (isReserved) {
+        const reservation = input.reservation;
+        if (!reservation || typeof reservation !== "object" || Array.isArray(reservation) || isDiagnostic
+            || Object.keys(reservation).length !== RESERVATION_KEYS.length
+            || RESERVATION_KEYS.some(name => !Object.hasOwn(reservation, name))
+            || typeof reservation.label !== "string" || !RESERVATION_LABEL.test(reservation.label)
+            || !Number.isSafeInteger(reservation.executionMilliseconds)
+            || reservation.executionMilliseconds < MINIMUM_RESERVATION_MILLISECONDS
+            || reservation.executionMilliseconds > QEMU_TIMEOUT_SECONDS * 1_000
+            || !Number.isSafeInteger(reservation.cleanupMilliseconds)
+            || reservation.cleanupMilliseconds < MINIMUM_RESERVATION_MILLISECONDS)
+            throw new TypeError("QEMU reservation is invalid");
+        timeoutSeconds = Math.floor(reservation.executionMilliseconds / 1_000);
+        outerTimeoutMs = reservation.executionMilliseconds + reservation.cleanupMilliseconds;
+    }
     if (isDiagnostic) {
         if (!input.deadlines || typeof input.deadlines !== "object" ||
             input.deadlines.executionMinutes !== DIAGNOSTIC_EXECUTION_MINUTES ||
@@ -1350,7 +1376,12 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
             throw new Error(`${name} launcher identity is unsafe`);
     }
     const launchTime = io.monotonicMilliseconds();
-    const executionDeadline = isDiagnostic ?
+    /*
+     * A reserved launch is launch-relative: its reservation was opened when the preflight started
+     * and has already charged everything spent since, so measuring it from the stage start again
+     * would take the same time twice.
+     */
+    const executionDeadline = isDiagnostic || isReserved ?
         (launchTime + timeoutSeconds * 1_000) :
         Math.min(launchTime + timeoutSeconds * 1_000, stageStartedMilliseconds + timeoutSeconds * 1_000);
     if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
