@@ -10,7 +10,8 @@ const HELPER_HASH = "b".repeat(64);
 const NODE_HASH = "c".repeat(64);
 const ROOT = `/home/runner/work/_temp/myspeed-windows-cpu-floor-${NONCE}`;
 const PORTABLE = `/tmp/myspeed-windows-cpu-floor-tools-${NONCE}`;
-const CLOSURE = `/home/runner/work/_temp/myspeed-stage2-closure-${NONCE}`;
+const CLOSURE = `/home/runner/work/_temp/myspeed-msi-closure-${NONCE}`;
+const STAGE2_CLOSURE = `/home/runner/work/_temp/myspeed-stage2-closure-${NONCE}`;
 const HELPER_SOURCE = `${CLOSURE}/scripts/qualification/windows-msi-installed-base-seal-helper.mjs`;
 const HELPER_STAGED = `${PORTABLE}/windows-msi-installed-base-seal-helper.mjs`;
 const NODE = "/opt/hostedtoolcache/node/22.19.0/x64/bin/node";
@@ -139,6 +140,11 @@ describe("hosted installed-base sealing operations", () => {
             helperSource: {...base.helperSource, path: `${CLOSURE}/other.mjs`}}, {environment: environment(),
             runtime: {platform: "linux", architecture: "x64", nodeVersion: "22.19.0", nodePath: NODE},
             inspectFile() { called = true; }}));
+        assert.equal(called, false);
+        await assert.rejects(() => prepareHostedInstalledBaseOperations({...base,
+            helperSource: {...base.helperSource, path: `${STAGE2_CLOSURE}/scripts/qualification/windows-msi-installed-base-seal-helper.mjs`}},
+        {environment: environment(), runtime: {platform: "linux", architecture: "x64", nodeVersion: "22.19.0",
+            nodePath: NODE}, inspectFile() { called = true; }}), /installed-base helper closure identity/u);
         assert.equal(called, false);
         const unsafeToolchain = stage2Result();
         unsafeToolchain.toolchain.runtime.libraryPath[0] = "/usr/lib";

@@ -157,10 +157,11 @@ export async function runHostedStage3Sequence(value, dependencies = {}) {
     const runStage2 = dependencies.runStage2 ?? runHostedStage2Controller;
     const runStage3 = dependencies.runStage3 ?? runHostedStage3Controller;
     const stage2 = await runStage2(checked.stage2Request);
+    // Retain failed calibration diagnostics too; rejecting first discards the only native failure detail.
+    const stage2Bytes = Buffer.from(`${JSON.stringify(stage2 ?? null)}\n`, "utf8");
+    const stage2Identity = writeExclusive(path.join(checked.transportRoot, STAGE2_RESULT_NAME), stage2Bytes);
     if (stage2?.status !== "observed" || stage2.cleanupProven !== true || stage2.cpuCalibrationAccepted !== true)
         throw new Error("Stage 2 did not produce accepted calibration evidence");
-    const stage2Bytes = Buffer.from(`${JSON.stringify(stage2)}\n`, "utf8");
-    const stage2Identity = writeExclusive(path.join(checked.transportRoot, STAGE2_RESULT_NAME), stage2Bytes);
     const rawSource = path.join(checked.stage2Request.paths.root, GUEST_RESULT_NAME);
     const raw = (dependencies.readOwned ?? readOwned)(rawSource, MAX_EVIDENCE_BYTES);
     const guestIdentity = writeExclusive(path.join(checked.transportRoot, GUEST_RESULT_NAME), raw.bytes);

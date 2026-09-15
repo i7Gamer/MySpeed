@@ -167,7 +167,7 @@ export async function prepareHostedInstalledBaseOperations(input, dependencies =
         nodeVersion: process.versions.node, nodePath: process.execPath};
     validateRuntime(context, environment, runtime);
     exactKeys(input.helperSource, ["bytes", "path", "sha256"], "installed-base helper source");
-    const closureRoot = `/home/runner/work/_temp/myspeed-stage2-closure-${context.nonce}`;
+    const closureRoot = `/home/runner/work/_temp/myspeed-msi-closure-${context.nonce}`;
     if (input.helperSource.path !== `${closureRoot}/${HELPER_RELATIVE_PATH}` ||
         !Number.isSafeInteger(input.helperSource.bytes) || input.helperSource.bytes < 1 ||
         input.helperSource.bytes > MAX_HELPER_BYTES || !SHA256.test(input.helperSource.sha256))

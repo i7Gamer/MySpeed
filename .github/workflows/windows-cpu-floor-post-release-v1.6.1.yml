@@ -481,6 +481,19 @@ jobs:
           if (proof.cleanupProven !== true) throw new Error("QEMU cleanup was not proven");
           NODE
 
+      - name: Upload non-qualifying diagnostics without candidate binaries
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-cpu-floor-post-release-v1.6.1-diagnostics
+          path: |
+            ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.seal.outputs.nonce }}/*.json
+            ${{ runner.temp }}/myspeed-stage3-sequence-envelope-${{ needs.seal.outputs.nonce }}/request.json
+            ${{ runner.temp }}/myspeed-stage3-logs-${{ needs.seal.outputs.nonce }}/controller.stderr
+            ${{ runner.temp }}/myspeed-stage3-logs-${{ needs.seal.outputs.nonce }}/controller.stdout
+          retention-days: 7
+          if-no-files-found: error
+
       - name: Upload non-qualifying evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

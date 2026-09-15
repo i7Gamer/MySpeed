@@ -101,6 +101,48 @@ describe("hosted Windows CPU-floor Stage2 to Stage3 sequence", () => {
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
+    it("retains bounded failed calibration evidence without ever invoking Stage3", async () => {
+        const failures = [
+            {schemaVersion: 1, status: "failed", stage: "qemu-launch", cleanupProven: true,
+                cpuCalibrationAccepted: false, failure: "synthetic guest observation deadline",
+                qemuLaunch: {stderr: {bytesBase64: Buffer.from("synthetic QEMU diagnostic").toString("base64")}}},
+            {schemaVersion: 1, status: "observed", cleanupProven: false, cpuCalibrationAccepted: true},
+            {schemaVersion: 1, status: "observed", cleanupProven: true, cpuCalibrationAccepted: false},
+            null
+        ];
+        for (const stage2 of failures) {
+            const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-failed-retention-")));
+            try {
+                const request = fixture(root);
+                let stage3Called = false;
+                await assert.rejects(runHostedStage3Sequence(request, {
+                    deriveActualContext: () => CONTEXT,
+                    runStage2: async () => stage2,
+                    runStage3: async () => { stage3Called = true; }
+                }), /Stage 2 did not produce accepted calibration evidence/u);
+                assert.equal(stage3Called, false);
+                assert.equal(fs.readFileSync(path.join(request.transportRoot, "stage2-result.json"), "utf8"),
+                    `${JSON.stringify(stage2)}\n`);
+                assert.equal(fs.existsSync(path.join(request.transportRoot, "guest-result.json")), false);
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        }
+    });
+
+    it("refuses oversized failed calibration evidence before writing or invoking Stage3", async () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-failed-bound-")));
+        try {
+            const request = fixture(root);
+            let stage3Called = false;
+            await assert.rejects(runHostedStage3Sequence(request, {
+                deriveActualContext: () => CONTEXT,
+                runStage2: async () => ({status: "failed", failure: "x".repeat(STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES)}),
+                runStage3: async () => { stage3Called = true; }
+            }), /retained Stage 2 evidence size differs/u);
+            assert.equal(stage3Called, false);
+            assert.deepEqual(fs.readdirSync(request.transportRoot), []);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
     it("fails closed before any operation when outer sequence closure member is removed or altered", async () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage3-closure-inert-")));
         try {

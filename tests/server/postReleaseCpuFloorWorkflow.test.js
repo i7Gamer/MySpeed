@@ -202,6 +202,25 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.equal(uploadStep.with["if-no-files-found"], "error");
     });
 
+    it("uploads diagnostics separately before bulky candidate evidence", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const steps = workflow.jobs.execute.steps;
+        const diagnostic = steps.find(step => step.with?.name === "windows-cpu-floor-post-release-v1.6.1-diagnostics");
+        const evidence = steps.find(step => step.with?.name === "windows-cpu-floor-post-release-v1.6.1-evidence");
+        assert.ok(diagnostic);
+        assert.equal(diagnostic.if, "always()");
+        assert.equal(diagnostic.with["if-no-files-found"], "error");
+        const prefix = "${{ runner.temp }}";
+        const nonce = "${{ needs.seal.outputs.nonce }}";
+        assert.deepEqual(diagnostic.with.path.trim().split("\n").map(line => line.trim()), [
+            `${prefix}/myspeed-stage2-transport-${nonce}/*.json`,
+            `${prefix}/myspeed-stage3-sequence-envelope-${nonce}/request.json`,
+            `${prefix}/myspeed-stage3-logs-${nonce}/controller.stderr`,
+            `${prefix}/myspeed-stage3-logs-${nonce}/controller.stdout`
+        ]);
+        assert.ok(steps.indexOf(diagnostic) < steps.indexOf(evidence));
+    });
+
     it("uses verified repository-standard commit SHAs for all external actions", () => {
         const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
         const workflow = parse(text);
