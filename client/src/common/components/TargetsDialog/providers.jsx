@@ -1,7 +1,8 @@
-import {faGaugeHigh, faServer} from "@fortawesome/free-solid-svg-icons";
 import OoklaImage from "./assets/img/ookla.webp";
 import LibreImage from "./assets/img/libre.webp";
 import CloudflareImage from "./assets/img/cloudflare.webp";
+import IperfImage from "./assets/img/iperf3.png";
+import OpenSpeedTestImage from "./assets/img/openspeedtest.png";
 
 /**
  * Every provider a target can measure with, in the order the cards are drawn.
@@ -11,17 +12,16 @@ import CloudflareImage from "./assets/img/cloudflare.webp";
  * The names are proper nouns and deliberately untranslated - the description
  * under each card is where the locale speaks.
  *
- * iperf3 carries a glyph rather than a logo, and not for want of an asset: the
- * other three are services with a brand, and this one is a tool measuring
- * against a machine the operator runs. A server is what the card is actually
- * about.
+ * Logos are bundled locally, including the self-hosted providers: selecting
+ * a provider must not contact its website to load its artwork. Upstream asset
+ * provenance and notices are in public/provider-logo-notices.txt.
  */
 export const providers = [
     {id: "ookla", name: "Ookla", image: OoklaImage},
     {id: "libre", name: "LibreSpeed", image: LibreImage},
     {id: "cloudflare", name: "Cloudflare", image: CloudflareImage},
-    {id: "iperf3", name: "iperf3", icon: faServer},
-    {id: "openspeedtest", name: "OpenSpeedTest", icon: faGaugeHigh}
+    {id: "iperf3", name: "iperf3", image: IperfImage},
+    {id: "openspeedtest", name: "OpenSpeedTest", image: OpenSpeedTestImage}
 ];
 
 export const providerById = (id) => providers.find((provider) => provider.id === id) ?? null;

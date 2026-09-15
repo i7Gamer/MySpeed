@@ -18,11 +18,8 @@ export const ProviderChooser = ({provider, setProvider, endpoint, setEndpoint}) 
                 {providers.map((current) => (
                     <SelectableOption key={current.id}
                                       icon={current.icon}
-                                      // Only the providers that have a logo. A
-                                      // card given `{src: undefined}` draws a
-                                      // broken image, which is what iperf3 -
-                                      // the one carrying a glyph instead -
-                                      // rendered here.
+                                      // Preserve the glyph fallback for a future
+                                      // provider without bundled artwork.
                                       image={current.image
                                           ? {src: current.image, alt: current.name} : undefined}
                                       title={current.name}

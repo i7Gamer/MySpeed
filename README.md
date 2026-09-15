@@ -26,7 +26,7 @@ MySpeed is a speed test analysis software that records your internet speed over 
 - 🩺 Configure health checks to notify you via email, Signal, WhatsApp, or Telegram in case of errors or downtime
 - 📆 Test results can be stored for any retention period you configure - from a few days to forever
 - 🔥 Support for Prometheus and Grafana
-- 🗳️ Choose between Ookla, LibreSpeed, Cloudflare and your own iperf3 or OpenSpeedTest server
+- 🗳️ Choose between Ookla, LibreSpeed, Cloudflare, or your own iperf3 (TCP/UDP) or OpenSpeedTest (HTTP/HTTPS) server
 - 🎯 Measure against several targets in one round - the internet and your own LAN, side by side
 - 📉 Get alerted when a target falls below what it usually delivers, measured against its own rolling median
 - 🛰️ Trace the route to the test server when a test fails or slows down, and see hop by hop where the line broke
@@ -240,6 +240,15 @@ rest_command:
 ```
 
 Tokens travel in a configuration export only when it includes the secrets, the way node passwords do; a redacted export leaves them out and restoring it leaves them alone.
+
+#### iperf3 targets
+
+Add an iperf3 target with the host and optional port of a server you operate (the
+default port is `5201`). MySpeed downloads the pinned iperf3 build on first use.
+TCP runs default to 10 seconds and four parallel streams; the target editor can
+set 5–60 seconds and 1–32 streams. UDP is an explicit opt-in: it requires a
+1–10,000 Mbps bitrate and reports jitter and packet loss. MySpeed measures
+latency separately because iperf3 does not provide it.
 
 #### OpenSpeedTest targets
 
