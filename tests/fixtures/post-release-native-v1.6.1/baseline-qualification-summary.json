@@ -1,0 +1,49 @@
+{
+  "status": "passed",
+  "mode": "listener-free-reset",
+  "commit": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+  "sourceSha": "4fa4dd40a89a062735f98bd85d685e0624ff46a8",
+  "artifact": "D:\\a\\MySpeed\\MySpeed\\MySpeed.exe",
+  "artifactSha256": "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154",
+  "bunLockSha256": "c7527962ce4e9d4fbf0d7cae89590734c479b83573e86129295b5110d01686d7",
+  "packageSha256": "9b274f55bbe22bb56330301026911644680da4880b675537b02bc7784a9197bd",
+  "runtime": "v22.23.2",
+  "platform": "win32",
+  "architecture": "x64",
+  "osVersion": "Windows Server 2025 Datacenter",
+  "cpu": "AMD EPYC 7763 64-Core Processor                ",
+  "command": [
+    "D:\\a\\MySpeed\\MySpeed\\MySpeed.exe"
+  ],
+  "port": 59888,
+  "host": "127.0.0.1",
+  "work": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\myspeed-qualification-XkbyoR",
+  "evidence": "D:\\a\\MySpeed\\MySpeed\\qualification-evidence\\myspeed-evidence-BkizjH",
+  "originalBuildRoot": null,
+  "processes": [
+    {
+      "scenario": "listener-free-reset",
+      "pid": 4988
+    }
+  ],
+  "databaseChecks": [
+    {
+      "scenario": "listener-free-reset",
+      "integrity": "ok",
+      "configTable": false
+    }
+  ],
+  "openGraphChecks": [],
+  "fixtures": {
+    "reset": {
+      "root": "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\myspeed-qualification-XkbyoR",
+      "nonce": "1813414cd54ddd3e23da9a54912769c49305db36259cc8da",
+      "markerSha256": "ae5f973b864093c050d274e7af576ab33fdb5092c41262e43b8db051d76cd631"
+    }
+  },
+  "healthcheckHandshake": null,
+  "networkIsolation": null,
+  "exit": 0,
+  "finishedAt": "2026-09-14T09:51:23.509Z",
+  "error": null
+}

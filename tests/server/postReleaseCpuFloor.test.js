@@ -1,317 +1,388 @@
 import assert from "node:assert/strict";
 import {createHash} from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
 import {describe, it} from "node:test";
-import {fileURLToPath} from "node:url";
 
-import {bindV161PostReleaseTarget}
-    from "../../scripts/release/post-release-target.mjs";
+import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
 import {
-    createV161PostReleaseCpuFloorBinding,
+    POST_RELEASE_CPU_FLOOR_CONSTANTS,
+    acquireV161PostReleaseCpuFloorBaselineSummary,
     buildV161PostReleaseCpuFloorStage2Request,
     buildV161PostReleaseCpuFloorStage3Request,
+    createV161PostReleaseCpuFloorBinding,
     inspectV161PostReleaseCpuFloorEvidence
 } from "../../scripts/release/post-release-cpu-floor.mjs";
-import {WINDOWS_MSI_STAGE2_CLOSURE}
-    from "../../scripts/qualification/windows-msi-stage2-request.mjs";
+import {WINDOWS_MSI_STAGE2_CLOSURE} from "../../scripts/qualification/windows-msi-stage2-request.mjs";
 import {runHostedStage2Controller}
     from "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
+import {
+    BASELINE_ARCHIVE_DIGEST,
+    BASELINE_ARTIFACT_NAME,
+    BASELINE_SUMMARY_SHA256,
+    CANDIDATE_SHA,
+    DEFAULT_VARIANT_SUMMARY_SHA256,
+    HARNESS_SHA,
+    HOSTED_NONCE,
+    HOSTED_RUN_ATTEMPT,
+    HOSTED_RUN_ID,
+    TAG_NAME,
+    acquisitionInput,
+    authenticBaselineSummaryBytes,
+    buildOtherExecutionStage3Fixture,
+    buildPostReleaseStage3Fixture,
+    buildUnrelatedStage3Fixture,
+    hostedContext,
+    manifestBytes,
+    placeholderStage2Receipts,
+    targetInput
+} from "../helpers/post-release-cpu-floor-fixture.mjs";
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
-const MANIFEST_PATH = path.join(HERE, "..", "fixtures", "post-release-native-v1.6.1",
-    "qualification-manifest.json");
-const HARNESS_SHA = "dce629fd50ea007221b3a9f2698c32a573bca160";
-const CANDIDATE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
-const REPOSITORY = "i7Gamer/MySpeed";
-const TAG_NAME = "v1.6.1";
-const HOSTED_RUN_ID = "40000000001";
-const HOSTED_RUN_ATTEMPT = "1";
-const HOSTED_NONCE = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
-const HOSTED_IMAGE_VERSION = "20260914.1";
-const BASELINE_ARTIFACT_ID = 10341896645;
-const BASELINE_ARCHIVE_SIZE = 46649471;
-const BASELINE_ARCHIVE_DIGEST = "sha256:280b4a99c8a1f20aca5958c065b12ecb14519125769ee0460840168963db07ed";
-const DEFAULT_SUMMARY_SHA256 = "042d5f2d2d761680891d3140ca2278f9aa358400c2a00601f8780b6bdfdf98ec";
-const RELEASE_URL = `https://github.com/${REPOSITORY}/releases/download/${TAG_NAME}`;
+const AUTHENTIC_SUMMARY_BYTES = 1649;
+const STAGE2_INPUT_ROOT = `/home/runner/work/_temp/myspeed-stage2-input-${HOSTED_NONCE}`;
+const PROBE_ROLES = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
+const PROBE_MEMBER_BYTES = "4096";
 
-const asset = (id, name, size, digest, createdAt, updatedAt = createdAt) => ({
-    id, name, size, digest: `sha256:${digest}`, state: "uploaded",
-    url: `${RELEASE_URL}/${name}`, createdAt, updatedAt
+const target = () => bindV161PostReleaseTarget(targetInput());
+const binding = () => createV161PostReleaseCpuFloorBinding({
+    target: target(), manifestBytes: manifestBytes(), hostedContext: hostedContext()
+});
+const acquired = () => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), acquisitionInput());
+
+const identityOf = targetPath => ({
+    path: targetPath, bytes: Number(PROBE_MEMBER_BYTES),
+    sha256: createHash("sha256").update(targetPath).digest("hex")
 });
 
-const PUBLISHED_ASSETS = [
-    asset(563102879, "chooser.sh", 2147, "498a962a39ffb4be3724e1760a884ea5db0589006339b80399fa2bb854dcbb01", "2026-09-14T09:57:03Z"),
-    asset(563102916, "docker-install.sh", 4029, "f86678e7c6eecb9eeded69e7a6a8dbc86b0e46513457860af1d1fee78a7fb973", "2026-09-14T09:57:04Z"),
-    asset(563102933, "install.sh", 40748, "1d7af2bf2827546ee59dfea772dc6b2252edb3aa27979383b30116a9e49b0d24", "2026-09-14T09:57:04Z"),
-    asset(563102948, "MySpeed-installer-baseline.msi", 53702656, "7536c7668dcb0721c643493f595bf8714114d9aa4807357a8263ffe1c9c6bbed", "2026-09-14T09:57:05Z", "2026-09-14T09:57:06Z"),
-    asset(563103039, "MySpeed-installer.msi", 53702656, "5f9573c785ee8d51a661548e74da514a24c2932c200f1c0a1de6b6e0c1a03f6d", "2026-09-14T09:57:07Z", "2026-09-14T09:57:09Z"),
-    asset(563103127, "MySpeed-linux-arm64", 109889832, "2291f02f5b995729c7aa4e63b8064f121c10b573a5b95ae676db33f159e15aec", "2026-09-14T09:57:09Z", "2026-09-14T09:57:13Z"),
-    asset(563103263, "MySpeed-linux-x64", 110970336, "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d", "2026-09-14T09:57:13Z", "2026-09-14T09:57:17Z"),
-    asset(563103405, "MySpeed-linux-x64-baseline", 110970336, "a609c72e046711dff4f5455dc9dd23a9f75d231d941bcf355ebe91ff3043b56d", "2026-09-14T09:57:17Z", "2026-09-14T09:57:21Z"),
-    asset(563103531, "MySpeed-macos-arm64", 86846322, "dc0f6d0e856c34c429732a4c6bbdf45c0a34197d326a1d54dcf6543ed0c7ac4b", "2026-09-14T09:57:21Z", "2026-09-14T09:57:24Z"),
-    asset(563103597, "MySpeed-macos-x64", 94089488, "9203f8a2f12da52843bc8e0088b089ea51b632abd035181f4e3aa2ee9660df1a", "2026-09-14T09:57:24Z", "2026-09-14T09:57:28Z"),
-    asset(563103679, "MySpeed-windows-x64-baseline.exe", 111524352, "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154", "2026-09-14T09:57:28Z", "2026-09-14T09:57:32Z"),
-    asset(563103772, "MySpeed-windows-x64.exe", 111524352, "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154", "2026-09-14T09:57:32Z", "2026-09-14T09:57:36Z"),
-    asset(563103908, "MySpeed.zip", 2544233, "94a59173b54fcac832792ba63991e9668e56e8f6b31e0d0eaa085378f90707e6", "2026-09-14T09:57:36Z", "2026-09-14T09:57:37Z"),
-    asset(563103929, "qualification-manifest.json", 21518, "7339a6446d048bbae93759734bcafc94208e2b847af15677e847ae9a4b2f8bca", "2026-09-14T09:57:37Z", "2026-09-14T09:57:38Z"),
-    asset(563103942, "qualification-manifest.json.sha256", 65, "88f72f092718559b38b9ed99ff3fad7dd738164bc43eb93bd7749b5a004f82de", "2026-09-14T09:57:38Z"),
-    asset(563103918, "SHA256SUMS", 1123, "41bd455bfc3875f3ec722406e15bae173836ca6ddafe99524fc8c8aa21a002e0", "2026-09-14T09:57:37Z")
-];
-
-const targetFixture = () => ({
-    harnessSourceSha: HARNESS_SHA,
-    observedAt: "2026-09-14T12:30:00Z",
-    manifestBytes: fs.readFileSync(MANIFEST_PATH),
-    tag: {repository: REPOSITORY, name: TAG_NAME, commitSha: CANDIDATE_SHA},
-    qualificationRun: {repository: REPOSITORY, id: 34829932391, attempt: 1,
-        headSha: CANDIDATE_SHA, event: "workflow_dispatch", status: "completed", conclusion: "success",
-        workflowName: "Qualify release candidate", createdAt: "2026-09-14T09:48:50Z",
-        updatedAt: "2026-09-14T09:54:31Z"},
-    qualificationArchive: {repository: REPOSITORY, id: 10342345489,
-        name: "release-qualification-manifest", size: 7046,
-        digest: "sha256:18c3ecc771432edd7d4e3434243b449d58dc983851d9c1bf244ca12897aec077",
-        expired: false, createdAt: "2026-09-14T09:54:28Z", updatedAt: "2026-09-14T09:54:28Z",
-        expiresAt: "2026-09-21T09:54:27Z", runId: 34829932391, runAttempt: 1,
-        headSha: CANDIDATE_SHA},
-    release: {repository: REPOSITORY, id: 388294074, tagName: TAG_NAME,
-        targetCommitish: "development", createdAt: "2026-09-14T09:48:17Z",
-        publishedAt: "2026-09-14T10:00:58Z", draft: false, prerelease: false,
-        platformImmutable: false, assets: structuredClone(PUBLISHED_ASSETS)}
+const probeArtifact = () => ({
+    sourceSha: HARNESS_SHA, runId: HOSTED_RUN_ID, runAttempt: HOSTED_RUN_ATTEMPT,
+    artifactId: "123456", archiveBytes: PROBE_MEMBER_BYTES,
+    archiveSha256: identityOf(`${STAGE2_INPUT_ROOT}/artifact.zip`).sha256,
+    files: PROBE_ROLES.map(role => {
+        const name = `${role.replaceAll("-", "_")}.exe`;
+        return {role, name, bytes: PROBE_MEMBER_BYTES, sha256: identityOf(`${STAGE2_INPUT_ROOT}/${name}`).sha256};
+    })
 });
 
-const hostedContext = () => ({
-    repository: REPOSITORY,
-    runId: HOSTED_RUN_ID,
-    runAttempt: HOSTED_RUN_ATTEMPT,
-    eventSha: HARNESS_SHA,
-    imageVersion: HOSTED_IMAGE_VERSION,
-    nonce: HOSTED_NONCE
-});
-
-const baselineSummaryArtifactFixture = () => {
-    // Exact synthetic summary payload matching BASELINE_SUMMARY_SHA256
-    // Since we want the digest to match, we can create buffer with known hash or match the fixture
-    const summaryContent = JSON.stringify({
-        schemaVersion: 1, mode: "listener-free-reset", artifact: "MySpeed-windows-x64-baseline.exe",
-        sha256: "bc4eea0a06c890eb5c0da0472a1705b3219aac3f5000383d9847120b5681d154"
-    });
-    const bytes = Buffer.from(summaryContent);
-    const hash = createHash("sha256").update(bytes).digest("hex");
-    return {
-        id: BASELINE_ARTIFACT_ID,
-        name: "MySpeed-windows-x64-baseline.exe",
-        runId: 34829932391,
-        runAttempt: 1,
-        headSha: CANDIDATE_SHA,
-        archiveDigest: BASELINE_ARCHIVE_DIGEST,
-        archiveSize: BASELINE_ARCHIVE_SIZE,
-        summaryPath: "qualification-summary.json",
-        summaryBytes: bytes,
-        summarySha256: hash
-    };
-};
+/** The full authentic path: binding, acquisition, Stage 3 request, real producer, consumer. */
+async function producedEvidence() {
+    const acquiredBinding = acquired();
+    const projection = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, placeholderStage2Receipts());
+    const fixture = await buildPostReleaseStage3Fixture(projection.candidate);
+    const request = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, fixture.request.stage2);
+    return {acquiredBinding, fixture, request};
+}
 
 describe("v1.6.1 post-release CPU-floor consumer", () => {
-    it("creates an immutable binding from valid target, hosted context, and baseline summary", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        const binding = createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact);
-
-        assert.equal(binding.kind, "myspeed-v1.6.1-post-release-cpu-floor-binding");
-        assert.equal(binding.qualifying, false);
-        assert.equal(binding.releaseGateCleared, false);
-        assert.deepEqual(binding.releaseGatesCleared, []);
-        assert.equal(binding.candidate.sourceSha, CANDIDATE_SHA);
-        assert.equal(binding.harness.sourceSha, HARNESS_SHA);
-        assert.equal(binding.candidate.artifact.id, String(BASELINE_ARTIFACT_ID));
-        assert.equal(binding.candidate.exeAsset.name, "MySpeed-windows-x64-baseline.exe");
-        assert.ok(Object.isFrozen(binding));
-    });
-
-    it("fails closed when harness source SHA is substituted with candidate SHA", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        const badContext = hostedContext();
-        badContext.eventSha = CANDIDATE_SHA;
-
-        assert.throws(() => createV161PostReleaseCpuFloorBinding(target, badContext, summaryArtifact),
-            /harness source/i);
-    });
-
-    it("fails closed when default summary is swapped for baseline summary", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        summaryArtifact.summarySha256 = DEFAULT_SUMMARY_SHA256;
-
-        assert.throws(() => createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact),
-            /baseline summary/i);
-    });
-
-    it("fails closed when summary bytes do not match declared summary SHA256", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        summaryArtifact.summaryBytes = Buffer.from("tampered bytes");
-
-        assert.throws(() => createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact),
-            /summary digest|hash/i);
-    });
-
-    it("fails closed when artifact metadata is altered or wrong", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        for (const mutate of [
-            art => { art.id = 99999999999; },
-            art => { art.name = "MySpeed-windows-x64.exe"; },
-            art => { art.runId = 11111; },
-            art => { art.archiveDigest = "sha256:" + "0".repeat(64); }
-        ]) {
-            const summaryArtifact = baselineSummaryArtifactFixture();
-            mutate(summaryArtifact);
-            assert.throws(() => createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact),
-                /artifact/i);
-        }
-    });
-
-    it("builds a Stage 2 request compatible with runHostedStage2Controller", async () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        const binding = createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact);
-
-        const inputRoot = `/home/runner/work/_temp/myspeed-stage2-input-${HOSTED_NONCE}`;
-        const identity = targetPath => ({
-            path: targetPath,
-            bytes: 4096,
-            sha256: createHash("sha256").update(targetPath).digest("hex")
+    describe("identity binding", () => {
+        it("derives the required baseline summary digest from the authenticated manifest", () => {
+            const value = binding();
+            assert.equal(value.kind, POST_RELEASE_CPU_FLOOR_CONSTANTS.KIND);
+            assert.equal(value.qualifying, false);
+            assert.equal(value.releaseGateCleared, false);
+            assert.deepEqual(value.releaseGatesCleared, []);
+            assert.equal(value.requiredBaselineSummary.sha256, BASELINE_SUMMARY_SHA256);
+            assert.equal(value.requiredBaselineSummary.name, "qualification-summary.json");
+            assert.notEqual(value.requiredBaselineSummary.sha256, DEFAULT_VARIANT_SUMMARY_SHA256);
+            assert.equal(value.candidate.sourceSha, CANDIDATE_SHA);
+            assert.equal(value.harness.sourceSha, HARNESS_SHA);
+            assert.equal(value.hostedContext.sourceSha, HARNESS_SHA);
+            assert.equal(value.hostedContext.eventSha, HARNESS_SHA);
+            assert.ok(Object.isFrozen(value));
+            assert.ok(Object.isFrozen(value.hostedContext));
+            assert.equal(value.summary, undefined);
         });
 
-        const probeArtifact = {
-            sourceSha: HARNESS_SHA, runId: HOSTED_RUN_ID, runAttempt: HOSTED_RUN_ATTEMPT,
-            artifactId: "123456",
-            archiveBytes: "4096",
-            archiveSha256: identity(`${inputRoot}/artifact.zip`).sha256,
-            files: ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"].map(role => {
-                const name = `${role.replaceAll("-", "_")}.exe`;
-                return {
-                    role,
-                    name,
-                    bytes: "4096",
-                    sha256: identity(`${inputRoot}/${name}`).sha256
-                };
-            })
-        };
-
-        const stage2Req = buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact, identity);
-
-        assert.equal(stage2Req.context.eventSha, HARNESS_SHA);
-        assert.equal(stage2Req.closure.files.length, WINDOWS_MSI_STAGE2_CLOSURE.length);
-
-        // Verify compatibility against runHostedStage2Controller with injected inert operations
-        let admittedContext = null;
-        await runHostedStage2Controller(stage2Req, {
-            readVerified: targetPath => {
-                const member = stage2Req.closure.files.find(f => f.path === targetPath) || {
-                    path: targetPath, bytes: "4096", sha256: identity(targetPath).sha256
-                };
-                return {bytes: Buffer.alloc(Number(member.bytes)), sha256: member.sha256};
-            },
-            collectAdmission: value => {
-                admittedContext = value.context;
-                throw new Error("stopped after validation");
-            }
-        }).catch(error => {
-            if (error.message !== "stopped after validation") throw error;
+        it("refuses a target that did not come from the sealed binder", () => {
+            assert.throws(() => createV161PostReleaseCpuFloorBinding({
+                target: structuredClone(target()), manifestBytes: manifestBytes(), hostedContext: hostedContext()
+            }), /immutable target|binder/i);
         });
 
-        assert.equal(admittedContext.eventSha, HARNESS_SHA);
-    });
+        it("refuses manifest bytes that are not the sealed manifest", () => {
+            const tampered = Buffer.from(manifestBytes());
+            tampered[tampered.length - 2] = tampered[tampered.length - 2] === 0x20 ? 0x09 : 0x20;
+            assert.throws(() => createV161PostReleaseCpuFloorBinding({
+                target: target(), manifestBytes: tampered, hostedContext: hostedContext()
+            }), /manifest/i);
+            assert.throws(() => createV161PostReleaseCpuFloorBinding({
+                target: target(), manifestBytes: Buffer.from("{}"), hostedContext: hostedContext()
+            }), /manifest/i);
+        });
 
-    it("builds a Stage 3 request binding distinct candidate target and harness context", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        const binding = createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact);
-
-        const sameExecutionStage2 = {
-            result: {
-                path: `/home/runner/work/_temp/myspeed-stage2-transport-${HOSTED_NONCE}/stage2-result.json`,
-                bytes: "4096",
-                sha256: "1".repeat(64)
-            },
-            guestResult: {
-                path: `/home/runner/work/_temp/myspeed-stage2-transport-${HOSTED_NONCE}/guest-result.json`,
-                bytes: "2048",
-                sha256: "2".repeat(64)
+        it("refuses source-role swaps between harness and candidate context", () => {
+            for (const mutate of [
+                context => { context.sourceSha = CANDIDATE_SHA; },
+                context => { context.eventSha = CANDIDATE_SHA; },
+                context => { context.sourceSha = "b".repeat(40); }
+            ]) {
+                const context = hostedContext();
+                mutate(context);
+                assert.throws(() => createV161PostReleaseCpuFloorBinding({
+                    target: target(), manifestBytes: manifestBytes(), hostedContext: context
+                }), /harness|candidate|source/i);
             }
-        };
+        });
 
-        const stage3Req = buildV161PostReleaseCpuFloorStage3Request(binding, sameExecutionStage2);
-
-        assert.equal(stage3Req.schemaVersion, 1);
-        assert.equal(stage3Req.profile, "baseline-cpu");
-        assert.equal(stage3Req.context.eventSha, HARNESS_SHA);
-        assert.notEqual(stage3Req.candidate.sourceSha, stage3Req.context.sourceSha);
-        assert.equal(stage3Req.candidate.sourceSha, CANDIDATE_SHA);
-        assert.equal(stage3Req.candidate.tagName, TAG_NAME);
-        assert.equal(stage3Req.candidate.file.name, "MySpeed.exe");
-        assert.equal(stage3Req.candidate.file.sha256, binding.candidate.exeAsset.sha256);
-        assert.equal(stage3Req.candidate.qualificationSummary.sha256, summaryArtifact.summarySha256);
-        assert.equal(stage3Req.paths.root, `/home/runner/work/_temp/myspeed-stage3-${HOSTED_NONCE}`);
-        assert.deepEqual(stage3Req.stage2, sameExecutionStage2);
+        it("refuses an incomplete hosted context instead of inventing defaults", () => {
+            for (const mutate of [
+                context => { delete context.sourceSha; },
+                context => { delete context.environment; },
+                context => { delete context.environment.ImageVersion; },
+                context => { context.environment.RUNNER_ENVIRONMENT = "self-hosted"; }
+            ]) {
+                const context = hostedContext();
+                mutate(context);
+                assert.throws(() => createV161PostReleaseCpuFloorBinding({
+                    target: target(), manifestBytes: manifestBytes(), hostedContext: context
+                }));
+            }
+        });
     });
 
-    it("inspects evidence and maintains non-qualifying invariants", () => {
-        const target = bindV161PostReleaseTarget(targetFixture());
-        const summaryArtifact = baselineSummaryArtifactFixture();
-        const binding = createV161PostReleaseCpuFloorBinding(target, hostedContext(), summaryArtifact);
+    describe("baseline summary acquisition", () => {
+        it("accepts the authentic historical summary bytes", () => {
+            const value = acquired();
+            assert.equal(value.summary.name, "qualification-summary.json");
+            assert.equal(value.summary.sha256, BASELINE_SUMMARY_SHA256);
+            assert.equal(value.summary.bytes, String(AUTHENTIC_SUMMARY_BYTES));
+            assert.equal(createHash("sha256").update(authenticBaselineSummaryBytes()).digest("hex"),
+                BASELINE_SUMMARY_SHA256);
+            assert.ok(Object.isFrozen(value));
+        });
 
-        const evidence = {
-            schemaVersion: 1,
-            status: "observed",
-            stage: "complete",
-            classification: "windows-baseline-cpu-floor-full-runtime-stage3-nonqualifying",
-            qualifying: false,
-            releaseGateCleared: false,
-            releaseGatesCleared: [],
-            baselineFullRuntimeAccepted: true,
-            cpuFloorAccepted: true,
-            cleanupProven: true,
-            context: {
-                repository: REPOSITORY,
-                sourceSha: CANDIDATE_SHA,
-                eventSha: HARNESS_SHA,
-                runId: HOSTED_RUN_ID,
-                runAttempt: HOSTED_RUN_ATTEMPT,
-                nonce: HOSTED_NONCE
-            },
-            candidate: {
-                sourceSha: CANDIDATE_SHA,
-                file: {name: "MySpeed.exe", bytes: "111524352", sha256: binding.candidate.exeAsset.sha256}
-            },
-            guest: {
-                cpu: {model: "Westmere-v2", sse42: true, popcnt: true, avx: false, avx2: false, osxsave: false, xcr0: null},
-                network: {hardwareNics: 0, enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}
-            },
-            qemuProcess: {cleanupProven: true, treeGone: true}
-        };
+        it("reproduces the arbitrary-summary bypass as a refusal", () => {
+            const bytes = Buffer.from("not the historical summary");
+            const input = acquisitionInput();
+            input.summaryBytes = bytes;
+            assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), input), /summary/i);
 
-        const inspection = inspectV161PostReleaseCpuFloorEvidence(binding, evidence);
-        assert.equal(inspection.accepted, true);
-        assert.equal(inspection.qualifying, false);
-        assert.equal(inspection.releaseGateCleared, false);
-        assert.deepEqual(inspection.releaseGatesCleared, []);
+            // The original defect: bytes accompanied by their own digest were accepted.
+            const withOwnDigest = acquisitionInput();
+            withOwnDigest.summaryBytes = bytes;
+            withOwnDigest.artifact.summarySha256 = createHash("sha256").update(bytes).digest("hex");
+            assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), withOwnDigest));
+        });
 
-        // Rejects qualifying: true or releaseGateCleared: true
-        for (const mutate of [
-            ev => { ev.qualifying = true; },
-            ev => { ev.releaseGateCleared = true; },
-            ev => { ev.releaseGatesCleared = ["windows-cpu-floor"]; },
-            ev => { ev.guest.cpu.avx = true; },
-            ev => { ev.guest.network.hardwareNics = 1; },
-            ev => { ev.qemuProcess.treeGone = false; },
-            ev => { ev.candidate.sourceSha = HARNESS_SHA; }
-        ]) {
-            const bad = structuredClone(evidence);
-            mutate(bad);
-            assert.throws(() => inspectV161PostReleaseCpuFloorEvidence(binding, bad), /evidence|qualifying|gate|cpu|network|cleanup|candidate/i);
-        }
+        it("refuses the default-variant summary in place of the baseline summary", () => {
+            const input = acquisitionInput();
+            input.summaryBytes = Buffer.from(JSON.stringify({substituted: DEFAULT_VARIANT_SUMMARY_SHA256}));
+            assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), input), /summary/i);
+        });
+
+        it("refuses a single altered byte in the authentic summary", () => {
+            const input = acquisitionInput();
+            const bytes = Buffer.from(authenticBaselineSummaryBytes());
+            bytes[0] = bytes[0] ^ 0x01;
+            input.summaryBytes = bytes;
+            assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), input), /summary/i);
+        });
+
+        it("refuses expired, missing or mismatched artifact provenance", () => {
+            const mutations = [
+                artifact => { artifact.expired = true; },
+                artifact => { delete artifact.headSha; },
+                artifact => { artifact.headSha = HARNESS_SHA; },
+                artifact => { artifact.id = 99999999999; },
+                artifact => { artifact.name = "MySpeed-windows-x64.exe"; },
+                artifact => { artifact.runId = 11111; },
+                artifact => { artifact.runAttempt = 2; },
+                artifact => { artifact.archiveSize = 1; },
+                artifact => { artifact.archiveDigest = `sha256:${"0".repeat(64)}`; },
+                artifact => { artifact.expiresAt = "2026-09-14T00:00:00Z"; }
+            ];
+            for (const mutate of mutations) {
+                const input = acquisitionInput();
+                mutate(input.artifact);
+                assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(binding(), input));
+            }
+        });
+
+        it("refuses a fabricated kind-only binding", () => {
+            assert.throws(() => acquireV161PostReleaseCpuFloorBaselineSummary(
+                {kind: POST_RELEASE_CPU_FLOOR_CONSTANTS.KIND,
+                    requiredBaselineSummary: {name: "qualification-summary.json",
+                        sha256: BASELINE_SUMMARY_SHA256}},
+                acquisitionInput()), /binding/i);
+        });
+    });
+
+    describe("request builders", () => {
+        it("builds a Stage 2 request the real controller admits", async () => {
+            const request = buildV161PostReleaseCpuFloorStage2Request(binding(), probeArtifact(), identityOf);
+            assert.equal(request.context.sourceSha, HARNESS_SHA);
+            assert.equal(request.context.eventSha, HARNESS_SHA);
+            assert.notEqual(request.context.sourceSha, CANDIDATE_SHA);
+            assert.equal(request.closure.files.length, WINDOWS_MSI_STAGE2_CLOSURE.length);
+
+            let admitted = null;
+            await runHostedStage2Controller(request, {
+                readVerified: targetPath => {
+                    const member = request.closure.files.find(file => file.path === targetPath)
+                        ?? {bytes: PROBE_MEMBER_BYTES, sha256: identityOf(targetPath).sha256};
+                    return {bytes: Buffer.alloc(Number(member.bytes)), sha256: member.sha256};
+                },
+                collectAdmission: value => { admitted = value.context; throw new Error("stop after validation"); }
+            }).catch(error => { if (error.message !== "stop after validation") throw error; });
+            assert.equal(admitted.eventSha, HARNESS_SHA);
+            assert.equal(admitted.sourceSha, HARNESS_SHA);
+        });
+
+        it("refuses fabricated or unacquired bindings in both request builders", () => {
+            const fabricated = {kind: POST_RELEASE_CPU_FLOOR_CONSTANTS.KIND, hostedContext: hostedContext(),
+                candidate: {sourceSha: CANDIDATE_SHA}};
+            assert.throws(() => buildV161PostReleaseCpuFloorStage2Request(fabricated, probeArtifact(), identityOf),
+                /binding/i);
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(fabricated, placeholderStage2Receipts()),
+                /binding/i);
+            // An identity binding has no verified summary, so it cannot build a Stage 3 request.
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(binding(), placeholderStage2Receipts()),
+                /acquir/i);
+            // A structural clone loses the brand and must not be trusted at a subsequent call.
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(
+                structuredClone(acquired()), placeholderStage2Receipts()), /binding/i);
+        });
+
+        it("separates candidate identity from harness context in the Stage 3 request", () => {
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts());
+            assert.equal(request.context.sourceSha, HARNESS_SHA);
+            assert.notEqual(request.candidate.sourceSha, request.context.sourceSha);
+            assert.equal(request.candidate.sourceSha, CANDIDATE_SHA);
+            assert.equal(request.candidate.tagName, TAG_NAME);
+            assert.equal(request.candidate.artifactName, BASELINE_ARTIFACT_NAME);
+            assert.equal(request.candidate.archive.sha256,
+                BASELINE_ARCHIVE_DIGEST.slice("sha256:".length));
+            assert.equal(request.candidate.qualificationSummary.sha256, BASELINE_SUMMARY_SHA256);
+            assert.equal(request.candidate.qualificationSummary.bytes, String(AUTHENTIC_SUMMARY_BYTES));
+            assert.equal(request.paths.root, `/home/runner/work/_temp/myspeed-stage3-${HOSTED_NONCE}`);
+        });
+
+        it("refuses malformed same-execution Stage 2 receipts", () => {
+            for (const mutate of [
+                receipts => { delete receipts.guestResult; },
+                receipts => { receipts.extra = {}; },
+                receipts => { delete receipts.result.sha256; }
+            ]) {
+                const receipts = placeholderStage2Receipts();
+                mutate(receipts);
+                assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), receipts));
+            }
+        });
+    });
+
+    describe("evidence inspection", () => {
+        it("accepts the actual producer result and stays non-qualifying", async () => {
+            const {acquiredBinding, fixture, request} = await producedEvidence();
+            assert.deepEqual(request, fixture.request);
+
+            const inspection = inspectV161PostReleaseCpuFloorEvidence({
+                binding: acquiredBinding, request, result: fixture.completedResult,
+                retainedStage2Bytes: fixture.retainedStage2Bytes
+            });
+            assert.equal(inspection.accepted, true);
+            assert.equal(inspection.qualifying, false);
+            assert.equal(inspection.releaseGateCleared, false);
+            assert.deepEqual(inspection.releaseGatesCleared, []);
+            assert.equal(inspection.classification,
+                "windows-baseline-cpu-floor-full-runtime-stage3-nonqualifying");
+            assert.equal(inspection.candidate.sourceSha, CANDIDATE_SHA);
+            assert.equal(inspection.context.sourceSha, HARNESS_SHA);
+            assert.ok(Object.isFrozen(inspection));
+            // The strict Stage 3 result schema has no outer releaseGatesCleared field.
+            assert.equal(Object.hasOwn(fixture.completedResult, "releaseGatesCleared"), false);
+        });
+
+        it("accepts the identity binding as well as the acquired binding", async () => {
+            const {fixture, request} = await producedEvidence();
+            const inspection = inspectV161PostReleaseCpuFloorEvidence({
+                binding: binding(), request, result: fixture.completedResult,
+                retainedStage2Bytes: fixture.retainedStage2Bytes
+            });
+            assert.equal(inspection.accepted, true);
+        });
+
+        it("refuses tampered or missing raw retained receipts", async () => {
+            const {acquiredBinding, fixture, request} = await producedEvidence();
+            const tampered = Buffer.from(fixture.retainedStage2Bytes);
+            tampered[tampered.length - 2] = tampered[tampered.length - 2] ^ 0x01;
+            for (const bytes of [tampered, Buffer.alloc(0), undefined]) {
+                assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                    binding: acquiredBinding, request, result: fixture.completedResult,
+                    retainedStage2Bytes: bytes
+                }));
+            }
+        });
+
+        it("refuses stripped raw runtime evidence rather than trusting the projections", async () => {
+            const {acquiredBinding, fixture, request} = await producedEvidence();
+            const mutations = [
+                result => { delete result.guestEvidence.bytesBase64; },
+                result => { result.guest.cpu.cpuidBytesBase64 = Buffer.from("[]").toString("base64"); },
+                result => { delete result.guest.verifier.summaryBytesBase64; },
+                result => { result.guest.verifier.summary.shutdownProofs = []; },
+                result => { result.guest.cpu.avx = true; },
+                result => { result.guest.network.hardwareNics = 1; },
+                result => { result.qemuProcess.treeGone = false; },
+                result => { result.cleanupProven = false; },
+                result => { result.qualifying = true; },
+                result => { result.releaseGateCleared = true; },
+                result => { result.releaseGatesCleared = ["windows-cpu-floor"]; },
+                result => { delete result.argv; }
+            ];
+            for (const mutate of mutations) {
+                const broken = structuredClone(fixture.completedResult);
+                mutate(broken);
+                assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                    binding: acquiredBinding, request, result: broken,
+                    retainedStage2Bytes: fixture.retainedStage2Bytes
+                }), `mutation should have been refused: ${mutate}`);
+            }
+        });
+
+        it("refuses a result whose request drifts from the binding", async () => {
+            const {acquiredBinding, fixture} = await producedEvidence();
+            const mutations = [
+                request => { request.candidate.sourceSha = HARNESS_SHA; },
+                request => { request.context.sourceSha = CANDIDATE_SHA; },
+                request => { request.candidate.qualificationSummary.sha256 = DEFAULT_VARIANT_SUMMARY_SHA256; },
+                request => { request.candidate.tagName = "v1.6.0"; },
+                request => { request.candidate.archive.sha256 = "0".repeat(64); }
+            ];
+            for (const mutate of mutations) {
+                const drifted = structuredClone(fixture.request);
+                mutate(drifted);
+                assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                    binding: acquiredBinding, request: drifted, result: fixture.completedResult,
+                    retainedStage2Bytes: fixture.retainedStage2Bytes
+                }));
+            }
+        });
+
+        it("refuses a self-consistent execution that was not the one this binding sealed", async () => {
+            // Both cases are internally valid Stage 3 executions, so the core validator accepts
+            // them. Only the request-to-binding check can tell that they are not this binding's.
+            const unrelated = await buildUnrelatedStage3Fixture();
+            assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                binding: binding(), request: unrelated.request, result: unrelated.completedResult,
+                retainedStage2Bytes: unrelated.retainedStage2Bytes
+            }), /hosted context|candidate/i);
+
+            const acquiredBinding = acquired();
+            const projection = buildV161PostReleaseCpuFloorStage3Request(
+                acquiredBinding, placeholderStage2Receipts());
+            const otherExecution = await buildOtherExecutionStage3Fixture(projection.candidate);
+            assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                binding: acquiredBinding, request: otherExecution.request,
+                result: otherExecution.completedResult,
+                retainedStage2Bytes: otherExecution.retainedStage2Bytes
+            }), /hosted context/i);
+        });
+
+        it("refuses a fabricated kind-only binding at inspection", async () => {
+            const {fixture, request} = await producedEvidence();
+            assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
+                binding: {kind: POST_RELEASE_CPU_FLOOR_CONSTANTS.KIND, hostedContext: hostedContext()},
+                request, result: fixture.completedResult,
+                retainedStage2Bytes: fixture.retainedStage2Bytes
+            }), /binding/i);
+        });
     });
 });
