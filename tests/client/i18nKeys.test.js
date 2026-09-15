@@ -64,6 +64,8 @@ describe("i18n keys", () => {
             "dialog.provider.ookla_desc",
             "dialog.provider.libre_desc",
             "dialog.provider.cloudflare_desc",
+            "dialog.provider.ost_skip_tls_verification",
+            "dialog.provider.ost_skip_tls_warning",
             "calendar.select_start",
             "calendar.select_end",
             "calendar.last_7_days",
@@ -102,6 +104,14 @@ describe("i18n keys", () => {
         it("keeps the interpolation placeholders of the new strings intact", () => {
             assert.match(english.statistics.downsampled, /\{\{shown\}\}/);
             assert.match(english.statistics.downsampled, /\{\{total\}\}/);
+        });
+
+        it("ships both OpenSpeedTest TLS warnings in every locale without relying on fallback", () => {
+            for (const file of fs.readdirSync(LOCALES_DIR).filter((name) => name.endsWith(".json"))) {
+                const locale = readLocale(path.basename(file, ".json"));
+                for (const key of ["ost_skip_tls_verification", "ost_skip_tls_warning"])
+                    assert.equal(typeof locale.dialog?.provider?.[key], "string", `${file} lacks ${key}`);
+            }
         });
 
         /*

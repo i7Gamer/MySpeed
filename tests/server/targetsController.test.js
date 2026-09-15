@@ -68,6 +68,26 @@ describe("targetProblem", () => {
             assert.notEqual(ostEndpointProblem(endpoint), null, JSON.stringify(endpoint));
     });
 
+    it("rejects raw format controls without decoding visible URL bytes", () => {
+        assert.match(ostEndpointProblem("https://speed.lan/\u200badmin"), /control/i);
+        assert.equal(ostEndpointProblem("https://speed.lan/%E2%80%8Badmin"), null);
+    });
+
+    it("binds certificate bypass to an OpenSpeedTest HTTPS endpoint", () => {
+        const ost = {name: "LAN", provider: "openspeedtest", serverId: null,
+            endpoint: "https://speed.lan:3001"};
+
+        assert.equal(targetProblem({...ost, ostSkipCertificateVerification: true}), null);
+        assert.equal(targetProblem({...ost, ostSkipCertificateVerification: 1}), null);
+        assert.equal(targetProblem({...ost, ostSkipCertificateVerification: 0}), null);
+        assert.match(targetProblem({...ost, ostSkipCertificateVerification: "true"}), /certificate|TLS/i);
+        assert.match(targetProblem({...ost, ostSkipCertificateVerification: null}), /certificate|TLS/i);
+        assert.match(targetProblem({...ost, endpoint: "http://speed.lan:3000",
+            ostSkipCertificateVerification: true}), /HTTPS/i);
+        assert.match(targetProblem({name: "WAN", provider: "ookla",
+            ostSkipCertificateVerification: true}), /OpenSpeedTest/i);
+    });
+
     it("names which private provider is missing its required endpoint", () => {
         assert.match(targetProblem({name: "LAN", provider: "iperf3"}), /iperf3/i);
         assert.match(targetProblem({name: "LAN", provider: "openspeedtest"}), /OpenSpeedTest/i);

@@ -32,7 +32,7 @@ const DELETE_CODE_POINT = 0x7f;
 const URL_USERINFO = /^https?:\/\/[^/?#]*@/i;
 const hasWhitespaceOrControl = (value) => [...value].some((character) => {
     const codePoint = character.codePointAt(0);
-    return /\s/.test(character) || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
+    return /[\s\p{Cf}]/u.test(character) || codePoint < FIRST_PRINTABLE_CODE_POINT || codePoint === DELETE_CODE_POINT;
 });
 
 /** Whether an OpenSpeedTest base URL has the shape the server accepts. */
@@ -51,6 +51,10 @@ export const ostEndpointAccepted = (endpoint) => {
         return false;
     }
 };
+
+/** The exception is available only for a valid HTTPS OpenSpeedTest URL. */
+export const ostSupportsCertificateBypass = (provider, endpoint) =>
+    provider === "openspeedtest" && ostEndpointAccepted(endpoint) && new URL(endpoint.trim()).protocol === "https:";
 
 // A TCP port is sixteen bits, and iperfEndpointProblem refuses anything outside
 // 1-65535 - 0 included, which is a port no server listens on.

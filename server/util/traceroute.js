@@ -127,17 +127,18 @@ const URL_SCHEME = /^[a-z][a-z0-9+.-]*:\/\//i;
 
 const hostOf = (value) => {
     if (typeof value !== "string" || value.trim() === "") return null;
+    const trimmed = value.trim();
 
     let host;
 
-    if (URL_SCHEME.test(value)) {
+    if (URL_SCHEME.test(trimmed)) {
         try {
-            host = new URL(value).hostname;
+            host = new URL(trimmed).hostname;
         } catch {
             return null;
         }
     } else {
-        host = splitEndpoint(value).host;
+        host = splitEndpoint(trimmed).host;
     }
 
     // URL.hostname keeps an IPv6 literal's brackets; splitEndpoint removes them.

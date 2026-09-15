@@ -37,6 +37,13 @@ describe("migrations", () => {
         assert.ok(names.includes("0010-widen-speedtest-ping.js"));
         assert.ok(names.includes("0011-add-server-location-column.js"));
         assert.ok(names.includes("0014-index-speedtests-target.js"));
+        assert.ok(names.includes("0021-add-target-ost-skip-certificate-verification.js"));
+    });
+
+    it("defaults existing targets to certificate verification", async () => {
+        const description = await queryInterface.describeTable("targets");
+        assert.equal(description.ostSkipCertificateVerification.allowNull, false);
+        assert.equal(Boolean(description.ostSkipCertificateVerification.defaultValue), false);
     });
 
     /**

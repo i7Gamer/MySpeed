@@ -451,8 +451,19 @@ export const REGISTRY = {
             if (typeof target?.endpoint !== "string" || target.endpoint === "")
                 throw new Error("This OpenSpeedTest target names no server URL");
 
+            const endpoint = target.endpoint.trim();
+            const certificateSetting = target.ostSkipCertificateVerification;
+            if (![undefined, false, true, 0, 1].includes(certificateSetting))
+                throw new Error("The OpenSpeedTest TLS certificate setting is invalid");
+            const insecure = certificateSetting === true || certificateSetting === 1;
+            if (insecure && new URL(endpoint).protocol !== "https:")
+                throw new Error("The OpenSpeedTest TLS certificate bypass requires HTTPS");
+
+            const args = ["--server", endpoint, "--duration", String(OST_DURATION_SECONDS), "--json"];
+            if (insecure) args.push("--insecure");
+
             return {
-                args: ["--server", target.endpoint, "--duration", String(OST_DURATION_SECONDS), "--json"],
+                args,
                 temporaryServer: null
             };
         },

@@ -53,7 +53,7 @@ describe("the round under shutdown", () => {
         const once = bodyOf(bodyOf(source, "export default async (mode"), "const runOnce = async");
 
         const guard = once.indexOf("isShuttingDown()");
-        const spawned = once.indexOf("trackProcess(spawn(");
+        const spawned = once.indexOf("trackProcess(spawnProcess(");
 
         assert.notEqual(guard, -1, "the runner spawns a child without asking whether it may");
         assert.ok(guard < spawned, "the guard sits after the child it is meant to prevent");

@@ -243,7 +243,11 @@ Tokens travel in a configuration export only when it includes the secrets, the w
 
 #### OpenSpeedTest targets
 
-Add an OpenSpeedTest target with your server's HTTP or HTTPS base URL. MySpeed downloads the MIT-licensed [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) on its first test and verifies the pinned archive checksum. Supported builds are Windows and Linux x64/ARM64, and macOS x64/ARM64. Each transfer phase lasts 15 seconds. Untrusted HTTPS certificates are refused; no automatic certificate bypass is enabled.
+Add an OpenSpeedTest target with your server's HTTP or HTTPS base URL. Trusted HTTPS works without extra configuration. MySpeed downloads the MIT-licensed [ost-cli v0.1.1](https://github.com/ajthom90/ost-cli/releases/tag/v0.1.1) on its first test and verifies the pinned archive checksum. Supported builds are Windows and Linux x64/ARM64, and macOS x64/ARM64. Each transfer phase lasts 15 seconds.
+
+The advanced target editor offers an explicit certificate-verification waiver for a trusted server with an invalid or self-signed certificate. It is off by default and passes ost-cli's `--insecure` option; this disables verification rather than pinning a certificate, and it also applies to redirects. Changing the endpoint or provider clears the waiver unless an operator explicitly reaffirms it. The welcome wizard always creates the strict default; edit the target after setup if the exception is genuinely required.
+
+ost-cli emits only a final JSON result, not streamed progress. While it runs, MySpeed therefore shows an animated indeterminate state and elapsed time, with no fake percent complete.
 
 OpenSpeedTest follows the operating system's routing table: its CLI cannot bind to MySpeed's selected network interface, so its measurements may describe a different connection. Configure targets only for servers trusted by the administrator. MySpeed rejects literal metadata/link-local addresses, but the external CLI's DNS, proxy and redirect handling is not confined by that check. It does not protect against a hostname or redirect reaching those destinations.
 

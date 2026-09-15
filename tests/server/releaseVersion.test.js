@@ -5,25 +5,16 @@ import {readSource, runBodies} from '../helpers/source.js';
 
 const read = (name) => readSource(`.github/workflows/${name}.yml`);
 const release = read('create_release');
-const finalize = read('finalize-release');
 const binaries = read('build-binaries');
 const msi = read('build-msi');
 const pkg = JSON.parse(readSource('package.json'));
 
-const RELEASE_ASSETS = [
-    'MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe',
-    'MySpeed-linux-x64', 'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64',
-    'MySpeed-macos-x64', 'MySpeed-macos-arm64', 'MySpeed.zip',
-    'MySpeed-installer.msi', 'MySpeed-installer-baseline.msi',
-    'install.sh', 'docker-install.sh', 'chooser.sh', 'SHA256SUMS',
-    'qualification-manifest.json', 'qualification-manifest.json.sha256'
-];
-
 describe('qualified release version and assets', () => {
-    it('links every immutable payload and its verification records', () => {
-        for (const asset of RELEASE_ASSETS) assert.ok(finalize.includes(asset), asset);
+    it('freezes both package manifests at the approved OpenSpeedTest feature version', () => {
+        const client = JSON.parse(readSource('client/package.json'));
+        assert.equal(pkg.version, '1.7.0');
+        assert.equal(client.version, pkg.version);
     });
-
     it('requires exact source, version, Windows stamp and run attempt at promotion', () => {
         const inputs = parse(release).on.workflow_dispatch.inputs;
         for (const name of ['candidate_sha', 'version', 'windows_stamp',

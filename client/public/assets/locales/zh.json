@@ -62,6 +62,8 @@
       "cloudflare_desc": "基于 CDN 的快速测试",
       "iperf3_desc": "你自己的 iperf3 服务器，就在你的网络中",
       "openspeedtest_desc": "你自己的 OpenSpeedTest 服务器，就在你的网络中",
+      "ost_skip_tls_verification": "跳过 TLS 证书验证",
+      "ost_skip_tls_warning": "仅用于使用无效或自签名证书的可信服务器。此目标及其重定向的证书验证将被禁用；中间人攻击者可能更改目标地址或结果。请优先使用有效证书。",
       "iperf_advanced": "运行设置",
       "iperf_duration": "每个方向的秒数",
       "iperf_streams": "并行流数",

@@ -62,6 +62,8 @@
       "cloudflare_desc": "CDN tabanlı hızlı test",
       "iperf3_desc": "Kendi ağınızda çalışan iperf3 sunucunuz",
       "openspeedtest_desc": "Kendi ağınızda çalışan OpenSpeedTest sunucunuz",
+      "ost_skip_tls_verification": "TLS sertifikası doğrulamasını atla",
+      "ost_skip_tls_warning": "Yalnızca geçersiz veya kendinden imzalı sertifikaya sahip güvenilir bir sunucu için kullanın. Bu hedef ve yönlendirmeleri için sertifika doğrulaması devre dışıdır; aradaki bir saldırgan hedefi veya sonuçları değiştirebilir. Geçerli bir sertifika tercih edin.",
       "iperf_advanced": "Çalıştırma ayarları",
       "iperf_duration": "Yön başına saniye",
       "iperf_streams": "Paralel akışlar",

@@ -63,17 +63,18 @@ jobs:
             const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
             if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
             const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
-            const approvedScope = 'owner-approved-reduced-v1.6.1';
+            const approvedVersions = ['1.6.1', '1.7.0'];
+            const approvedScope = 'owner-approved-reduced-v' + manifest.source.version;
             const deferredChecks = ['Windows native full verification with enforced outbound denial',
               'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
             if (context.repo.owner + '/' + context.repo.repo !== 'i7Gamer/MySpeed'
-              || manifest.source.repository !== 'i7Gamer/MySpeed' || manifest.source.version !== '1.6.1'
+              || manifest.source.repository !== 'i7Gamer/MySpeed' || !approvedVersions.includes(manifest.source.version)
               || manifest.promotion.scope?.id !== approvedScope
               || JSON.stringify(manifest.promotion.scope.deferredChecks) !== JSON.stringify(deferredChecks)
               || manifest.promotion.evidence?.windowsNative !== null
               || manifest.promotion.evidence?.windowsCpuFloor !== null
               || manifest.promotion.evidence?.msiLifecycle !== null)
-              throw new Error('Qualification scope is not the approved reduced v1.6.1 policy');
+              throw new Error('Qualification scope is not an approved release-specific reduced policy');
             if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
               || manifest.source.version !== process.env.VERSION || manifest.source.windowsStamp !== process.env.WINDOWS_STAMP
               || manifest.promotion.eligible !== true || manifest.promotion.blockers?.length !== 0) throw new Error('Qualification is not promotion eligible');
@@ -148,7 +149,8 @@ jobs:
                 + link('Manifest SHA-256', 'qualification-manifest.json.sha256')
             ].join('\n');
             const compatibility = '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 compiler target is Nehalem/SSE4.2 with runtime AVX dispatch; the baseline filenames are compatibility aliases. The Windows CPU floor has not been verified on AVX-disabled hardware.';
-            const qualification = '## Qualification scope and limitations\n\nv1.6.1 uses the owner-approved-reduced-v1.6.1 qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. Windows native HTTP/service runtime with enforced outbound denial is not verified. AVX-disabled Windows CPU-floor execution is not verified. The complete Windows MSI install/upgrade/rollback/uninstall lifecycle is not verified. These checks are deferred, not passed; see the qualification manifest for the exact evidence and artifact digests.';
+            const qualification = '## Qualification scope and limitations\n\n' + tag
+              + ' uses the owner-approved-reduced-' + tag + ' qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. Windows native HTTP/service runtime with enforced outbound denial is not verified. AVX-disabled Windows CPU-floor execution is not verified. The complete Windows MSI install/upgrade/rollback/uninstall lifecycle is not verified. These checks are deferred, not passed; see the qualification manifest for the exact evidence and artifact digests.';
             const body = compatibility + '\n\n' + qualification + '\n\n---\n\n' + downloads
               + '\n\n---\n\n' + generated.body;
             await github.rest.repos.updateRelease({owner: context.repo.owner, repo: context.repo.repo,

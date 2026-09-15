@@ -84,8 +84,8 @@ describe("the run path", () => {
     const run = bodyOf(readSource("server/util/speedtest.js"), "export default async (mode");
 
     it("prepares the CLI before it spawns one", () => {
-        const prepared = run.indexOf("ensureBinary(");
-        const spawned = run.indexOf("spawn(");
+        const prepared = run.indexOf("ensureProviderBinary(");
+        const spawned = run.indexOf("spawnProcess(");
 
         assert.notEqual(prepared, -1, "a run spawns whatever is on disk and never asks for what is not");
         assert.notEqual(spawned, -1, "the run no longer spawns anything");
@@ -93,14 +93,14 @@ describe("the run path", () => {
     });
 
     it("waits for it rather than racing the spawn", () => {
-        assert.match(run, /await ensureBinary\(/,
+        assert.match(run, /await ensureProviderBinary\(/,
             "the download is not awaited, so the spawn runs against a file that is still arriving");
     });
 
     // The path that is spawned, not a second spelling of it: a message naming
     // one file while another was spawned is worse than no message.
     it("prepares the same path it spawns", () => {
-        assert.match(run, /ensureBinary\(mode,\s*binaryPath\)/,
+        assert.match(run, /ensureProviderBinary\(mode,\s*binaryPath\)/,
             "the CLI prepared is named differently from the one spawned");
     });
 });

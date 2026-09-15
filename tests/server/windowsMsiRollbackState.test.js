@@ -40,6 +40,25 @@ const ERROR_SYSTEM_PARAMETER_INDEX = 0;
 const PAYLOAD_BYTES = 4096;
 
 const clone = value => structuredClone(value);
+const processFailureDetails = ({status, signal, error}) =>
+    `status=${status}; signal=${signal ?? "none"}; error=${error
+        ? `${error.code ?? error.name ?? "unknown"}: ${error.message}` : "none"}`;
+
+it("reports status, signal, and spawn error for an interrupted PowerShell helper", () => {
+    const details = processFailureDetails({status: null, signal: "SIGTERM",
+        error: {code: "ETIMEDOUT", message: "spawnSync pwsh ETIMEDOUT"}});
+    assert.match(details, /status=null/);
+    assert.match(details, /signal=SIGTERM/);
+    assert.match(details, /error=ETIMEDOUT: spawnSync pwsh ETIMEDOUT/);
+});
+
+it("reports absent signal and error plus a named spawn error", () => {
+    assert.equal(processFailureDetails({status: 1, signal: null, error: undefined}),
+        "status=1; signal=none; error=none");
+    assert.match(processFailureDetails({status: null, signal: null,
+        error: {name: "AbortError", message: "PowerShell aborted"}}),
+    /error=AbortError: PowerShell aborted/);
+});
 
 const actionStartRecord = () => ({messageTypeCode: ACTIONSTART_MESSAGE, actionName: "InstallFiles",
     description: "Installing files", template: "File: [1], Directory: [9], Size: [6]"});
@@ -98,15 +117,17 @@ const invoke = input => childProcess.spawnSync(POWERSHELL, [
 
 const run = input => {
     const result = invoke(input);
-    assert.equal(result.error, undefined, result.error?.message);
-    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    const details = processFailureDetails(result);
+    assert.equal(result.error, undefined, details);
+    assert.equal(result.status, 0, `${details}\n${result.stdout}\n${result.stderr}`);
     return JSON.parse(result.stdout);
 };
 
 const reject = (input, pattern) => {
     const result = invoke(input);
-    assert.equal(result.error, undefined, result.error?.message);
-    assert.notEqual(result.status, 0, "expected state helper rejection");
+    const details = processFailureDetails(result);
+    assert.equal(result.error, undefined, details);
+    assert.notEqual(result.status, 0, `expected state helper rejection; ${details}`);
     assert.match(`${result.stdout}\n${result.stderr}`, pattern);
 };
 

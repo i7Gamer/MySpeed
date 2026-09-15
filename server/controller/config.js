@@ -603,7 +603,10 @@ export const exportConfig = async ({includeSecrets = false} = {}) => {
     // The targets, with the one credential-shaped column treated the way a
     // node URL is: a libre endpoint is a URL and a URL is allowed userinfo,
     // so a redacted export strips it rather than shipping it verbatim.
-    const targetRows = await listAllTargets();
+    const targetRows = (await listAllTargets()).map((row) => ({...row,
+        ostSkipCertificateVerification: row.ostSkipCertificateVerification === true
+            || row.ostSkipCertificateVerification === 1
+    }));
     obj.targets = includeSecrets ? targetRows
         : targetRows.map((row) => ({...row,
             endpoint: row.endpoint === null ? null : withoutUrlCredentials(row.endpoint)}));
@@ -786,6 +789,16 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
     }
 
     if (targetRows.length > MAX_IMPORTED_ROWS) return {ok: false, key: "targets"};
+    const normalizedTargets = [];
+    for (const row of targetRows) {
+        if (!row || typeof row !== "object" || Array.isArray(row)) return {ok: false, key: "targets"};
+
+        const value = row.ostSkipCertificateVerification;
+        if (![undefined, false, true, 0, 1].includes(value)) return {ok: false, key: "targets"};
+        normalizedTargets.push({...row,
+            ostSkipCertificateVerification: value === true || value === 1});
+    }
+    targetRows = normalizedTargets;
     if (targetRows.some((row) => targetProblem(row) !== null)) return {ok: false, key: "targets"};
 
     /*
@@ -961,6 +974,7 @@ export const importConfig = (obj) => mutateAdminEntities(async () => {
         provider: row.provider,
         serverId: row.serverId ?? null,
         endpoint: row.endpoint ?? null,
+        ostSkipCertificateVerification: row.ostSkipCertificateVerification,
         enabled: Boolean(row.enabled ?? true),
         alerts: Boolean(row.alerts ?? true),
         optimalPing: row.optimalPing ?? null,
