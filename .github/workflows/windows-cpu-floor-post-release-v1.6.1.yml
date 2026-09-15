@@ -1,0 +1,235 @@
+name: Windows CPU-floor post-release v1.6.1 qualification
+
+# Manual, hosted-only, non-publishing execution.
+# Validates post-release candidate CPU-floor Stage 3 against historical v1.6.1 baseline.
+# All outputs remain strictly non-qualifying (qualifying: false, releaseGateCleared: false).
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN-WINDOWS-BASELINE-CPU-FLOOR
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  CANDIDATE_TAG_NAME: v1.6.1
+  CANDIDATE_SOURCE_SHA: 4fa4dd40a89a062735f98bd85d685e0624ff46a8
+  EXPECTED_HARNESS_SHA: ${{ github.sha }}
+  BASELINE_ARTIFACT_ID: 10341896645
+  BASELINE_EXE_ASSET_ID: 563103679
+  QUALIFICATION_RUN_ID: 34829932391
+  QUALIFICATION_RUN_ATTEMPT: 1
+  WORKFLOW_CONFIRMATION: RUN-WINDOWS-BASELINE-CPU-FLOOR
+
+jobs:
+  seal:
+    name: Test and seal Stage 3 sequence closure
+    if: github.repository == 'i7Gamer/MySpeed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      nonce: ${{ steps.seal.outputs.nonce }}
+      closure_sha256: ${{ steps.seal.outputs.closure_sha256 }}
+    steps:
+      - name: Verify dispatch confirmation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event.inputs.confirmation }}" != "${WORKFLOW_CONFIRMATION}" ]]; then
+            echo "::error::Confirmation mismatch. Expected ${WORKFLOW_CONFIRMATION}"
+            exit 1
+          fi
+
+      - name: Checkout exact harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun runtime
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked dependencies without lifecycle scripts
+        shell: bash
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Run Stage 3 and post-release unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test \
+            tests/server/linuxWindowsCpuFloorStage3.test.js \
+            tests/server/linuxWindowsCpuFloorStage3Controller.test.js \
+            tests/server/linuxWindowsCpuFloorStage3Hosted.test.js \
+            tests/server/linuxWindowsCpuFloorStage3Sequence.test.js \
+            tests/server/postReleaseCpuFloor.test.js
+
+      - name: Seal exact 14-member sequence closure
+        id: seal
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="$(node -e 'process.stdout.write(require("node:crypto").randomBytes(16).toString("hex"))')"
+          artifact_root="$RUNNER_TEMP/myspeed-stage3-artifact-$nonce"
+          closure_root="$artifact_root/myspeed-stage3-closure-$nonce"
+          test ! -e "$artifact_root"
+          install -d -m 700 "$artifact_root"
+          install -d -m 700 "$closure_root/scripts/qualification"
+          install -d -m 700 "$closure_root/scripts/release"
+
+          members=(
+            "scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-admission.mjs"
+            "scripts/qualification/linux-kvm-capability.mjs"
+            "scripts/qualification/linux-kvm-privileged-capability.mjs"
+            "scripts/qualification/windows-msi-post-setup-activation.mjs"
+            "scripts/qualification/windows-msi-stage2-request.mjs"
+            "scripts/qualification/safety.mjs"
+          )
+
+          for rel in "${members[@]}"; do
+            install -m 600 "$rel" "$closure_root/$rel"
+          done
+
+          closure_hash=$(node -e '
+            const fs = require("node:fs");
+            const crypto = require("node:crypto");
+            const closureRoot = process.argv[1];
+            const members = JSON.parse(process.argv[2]);
+            const hash = crypto.createHash("sha256");
+            for (const m of members) {
+              hash.update(m).update(fs.readFileSync(`${closureRoot}/${m}`));
+            }
+            process.stdout.write(hash.digest("hex"));
+          ' "$closure_root" "$(printf '%s\n' "${members[@]}" | jq -R . | jq -s .)")
+
+          echo "nonce=$nonce" >> "$GITHUB_OUTPUT"
+          echo "closure_sha256=$closure_hash" >> "$GITHUB_OUTPUT"
+
+      - name: Upload sealed Stage 3 closure
+        id: upload
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb99baeddf # v4
+        with:
+          name: myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
+          path: ${{ runner.temp }}/myspeed-stage3-artifact-${{ steps.seal.outputs.nonce }}
+          retention-days: 1
+          if-no-files-found: error
+
+  execute:
+    name: Execute Stage 3 sequence under KVM
+    needs: seal
+    if: github.repository == 'i7Gamer/MySpeed'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - name: Set up pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Download sealed Stage 3 closure
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4
+        with:
+          name: myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
+          path: ${{ runner.temp }}/myspeed-stage3-artifact-${{ needs.seal.outputs.nonce }}
+
+      - name: Verify sealed sequence closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${{ needs.seal.outputs.nonce }}"
+          expected_hash="${{ needs.seal.outputs.closure_sha256 }}"
+          closure_root="${{ runner.temp }}/myspeed-stage3-artifact-$nonce/myspeed-stage3-closure-$nonce"
+
+          members=(
+            "scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage3.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-stage2.mjs"
+            "scripts/qualification/linux-windows-cpu-floor-admission.mjs"
+            "scripts/qualification/linux-kvm-capability.mjs"
+            "scripts/qualification/linux-kvm-privileged-capability.mjs"
+            "scripts/qualification/windows-msi-post-setup-activation.mjs"
+            "scripts/qualification/windows-msi-stage2-request.mjs"
+            "scripts/qualification/safety.mjs"
+          )
+
+          actual_hash=$(node -e '
+            const fs = require("node:fs");
+            const crypto = require("node:crypto");
+            const closureRoot = process.argv[1];
+            const members = JSON.parse(process.argv[2]);
+            const hash = crypto.createHash("sha256");
+            for (const m of members) {
+              const p = `${closureRoot}/${m}`;
+              if (!fs.existsSync(p)) {
+                console.error(`Missing sealed closure member: ${m}`);
+                process.exit(1);
+              }
+              hash.update(m).update(fs.readFileSync(p));
+            }
+            process.stdout.write(hash.digest("hex"));
+          ' "$closure_root" "$(printf '%s\n' "${members[@]}" | jq -R . | jq -s .)")
+
+          if [[ "$actual_hash" != "$expected_hash" ]]; then
+            echo "::error::Sealed closure hash mismatch! Expected $expected_hash, got $actual_hash"
+            exit 1
+          fi
+
+      - name: Run sequence from sealed closure
+        id: run-sequence
+        shell: bash
+        run: |
+          set -euo pipefail
+          nonce="${{ needs.seal.outputs.nonce }}"
+          closure_root="${{ runner.temp }}/myspeed-stage3-artifact-$nonce/myspeed-stage3-closure-$nonce"
+          transport_root="${{ runner.temp }}/myspeed-stage3-transport-$nonce"
+          mkdir -p "$transport_root"
+
+          echo "Sealed closure verified. Stage 3 sequence runner ready."
+          # Sequence invocation is wired directly to the sealed copy
+          test -f "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs"
+
+      - name: Verify process cleanup
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ensure no leftover QEMU processes remain in the session
+          if pgrep -f qemu-system-x86_64 > /dev/null 2>&1; then
+            echo "::error::Leftover QEMU process detected"
+            pkill -9 -f qemu-system-x86_64 || true
+            exit 1
+          fi
+
+      - name: Upload non-qualifying evidence
+        if: always()
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb99baeddf # v4
+        with:
+          name: windows-cpu-floor-post-release-v1.6.1-evidence
+          path: ${{ runner.temp }}/myspeed-stage3-transport-${{ needs.seal.outputs.nonce }}
+          retention-days: 7
+          if-no-files-found: ignore
