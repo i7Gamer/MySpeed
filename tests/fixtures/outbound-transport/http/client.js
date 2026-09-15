@@ -18,6 +18,9 @@ const EVICTION_REQUESTS = 17;
 const EXPIRY_WAIT_MS = 5250;
 const BODY = "Grüezi 🌍 synthetic notification";
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+// A DOMException carries a legacy numeric code, so an aborted request would record 23 and
+// say nothing. Every other failure here records a string code; keep one rule for all of them.
+const namedCode = error => (typeof error.code === "string" ? error.code : error.name);
 
 export async function runHttpChild() {
     // A deliberately held DNS callback has no native socket to keep Node alive;
@@ -94,8 +97,8 @@ export async function runHttpChild() {
                 if (options.cancelBody) await response.body.cancel(new Error("synthetic body cancellation"));
                 else await response.body.pipeTo(new WritableStream());
             }
-            catch (error) {result.drainError = error.code || error.name;}
-        } catch (error) {result.error = error.code || error.name; result.message = error.message;}
+            catch (error) {result.drainError = namedCode(error);}
+        } catch (error) {result.error = namedCode(error); result.message = error.message;}
         finally {
             bodyDeadlineSignal?.removeEventListener("abort", forwardBodyDeadline);
             if (bodyDeadlineController) result.bodyDeadlineFired = bodyDeadlineController.signal.aborted;
