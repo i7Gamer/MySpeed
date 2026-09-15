@@ -295,10 +295,10 @@ export async function executeStage3Launcher(options, dependencies = {}) {
         verifyClosure(closureRoot, options.closureRecords);
 
         // 2. Build both pre-execution requests through the real branded consumer APIs.
-        const fileIdentity = (targetPath) => {
+        const fileIdentity = dependencies.fileIdentity ?? ((targetPath) => {
             const bytes = fs.readFileSync(targetPath);
             return {path: targetPath, bytes: String(bytes.length), sha256: sha256(bytes)};
-        };
+        });
         const stage2Request = buildStage2Request(binding, probeArtifact, fileIdentity);
         const stage3Template = buildStage3Template(acquired);
 

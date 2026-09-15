@@ -374,4 +374,119 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
         }
     });
 
+    it("refuses acceptance and writes failure evidence when transport root path does not match canonical hosted transport contract", async () => {
+        const {binding, acquired} = buildBinding();
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const fixture = await buildPostReleaseStage3Fixture(template.candidate);
+        const tempRoot = makeTempDir("myspeed-stage3-launcher-transport-mismatch-");
+        const closureRoot = path.join(tempRoot, "closure");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        try {
+            const records = populateCopiedClosure(closureRoot);
+            const probeFiles = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"]
+                .map(role => ({role, name: `${role.replaceAll("-", "_")}.exe`, bytes: "100", sha256: "0".repeat(64)}));
+            const probeArtifact = {
+                sourceSha: CANDIDATE_SHA,
+                runId: "12345",
+                runAttempt: "1",
+                artifactId: "99999",
+                archiveBytes: "1000",
+                archiveSha256: "0".repeat(64),
+                files: probeFiles
+            };
+
+            let sequenceObserved = false;
+            const runSequence = async (sequenceRequest) => {
+                sequenceObserved = true;
+                assert.equal(sequenceRequest.schemaVersion, 1);
+                assert.equal(sequenceRequest.kind, "myspeed-windows-cpu-floor-stage3-sequence");
+                assert.equal(sequenceRequest.transportRoot, transportRoot);
+                assert.equal(fs.existsSync(path.join(envelopeRoot, "request.json")), true);
+                fs.writeFileSync(path.join(transportRoot, "stage2-result.json"), fixture.retainedStage2Bytes);
+                fs.writeFileSync(path.join(transportRoot, "guest-result.json"), fixture.retainedStage2GuestBytes);
+                return fixture.completedResult;
+            };
+
+            // When executeStage3Launcher runs with default inspectEvidence, sameExecutionStage2 derives
+            // from the actual read path (in local tempRoot). Because tempRoot does not match the canonical
+            // hosted contract (/home/runner/work/_temp/myspeed-stage2-transport-<nonce>), the consumer
+            // validator strictly rejects the mismatched declared/actual transport root.
+            await assert.rejects(
+                () => executeStage3Launcher({
+                    closureRoot,
+                    closureRecords: records,
+                    transportRoot,
+                    envelopeRoot,
+                    binding,
+                    acquired,
+                    probeArtifact,
+                    guestFiles: []
+                }, {
+                    fileIdentity: targetPath => ({path: targetPath, bytes: "100", sha256: "0".repeat(64)}),
+                    runSequence
+                }),
+                /Stage 2 result path is invalid|Stage 2 retained evidence paths differ/
+            );
+
+            assert.equal(sequenceObserved, true);
+
+            // Accepted inspection must NOT be written
+            assert.equal(fs.existsSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.ACCEPTED_INSPECTION_FILE)), false);
+
+            // Bounded failure evidence must be retained
+            const manifest = JSON.parse(fs.readFileSync(
+                path.join(transportRoot, "evidence-manifest.json"), "utf8"));
+            assert.equal(manifest.accepted, false);
+            assert.equal(manifest.status, "failed");
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
+    });
+
+    it("refuses acceptance in real consumer when retained Stage 2 evidence bytes are corrupted", async () => {
+        const {binding, acquired} = buildBinding();
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const fixture = await buildPostReleaseStage3Fixture(template.candidate);
+        assert.throws(
+            () => inspectCompletedStage3Sequence({
+                binding,
+                acquired,
+                sequenceResult: fixture.completedResult,
+                sameExecutionStage2: fixture.request.stage2,
+                stage2ResultBytes: Buffer.from("{\"corrupted\":\"evidence\"}\n")
+            }),
+            /Stage 2 observation keys are invalid|retained Stage 2 result bytes differ/
+        );
+    });
+
+    it("refuses acceptance in real consumer when candidate source SHA in sequence result does not match binding", async () => {
+        const {binding, acquired} = buildBinding();
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const fixture = await buildPostReleaseStage3Fixture(template.candidate);
+        const tamperedResult = {
+            ...fixture.completedResult,
+            candidate: {
+                ...fixture.completedResult.candidate,
+                candidate: {
+                    ...fixture.completedResult.candidate.candidate,
+                    sourceSha: "0".repeat(40)
+                }
+            }
+        };
+        assert.throws(
+            () => inspectCompletedStage3Sequence({
+                binding,
+                acquired,
+                sequenceResult: tamperedResult,
+                sameExecutionStage2: fixture.request.stage2,
+                stage2ResultBytes: fixture.retainedStage2Bytes
+            }),
+            /acquired candidate provenance differs/
+        );
+    });
+
 });
