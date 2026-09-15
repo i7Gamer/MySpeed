@@ -30,6 +30,9 @@ const NONCE = crypto.createHash("sha256").update(`${EXPECTED_RUN_ID}\0${EXPECTED
 const CANDIDATE_CONTROLLER = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
     "../../scripts/qualification/windows-native-candidate-controller.ps1");
 const TEST_TIMEOUT_MS = 30_000;
+const FIRST_CANDIDATE_PORT = 45_000;
+const WINDOWS_DEFAULT_DYNAMIC_PORT_START = 49_152;
+const CANDIDATE_REQUEST_COUNT = 6;
 const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const PRESEAL_ARCHIVE_DIGEST = `sha256:${"9".repeat(64)}`;
 const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: true, withFileTypes: true})
@@ -328,6 +331,10 @@ describe("Windows native standalone hosted request factory", () => {
         assert.equal(plan.proofRequest.qualificationManifestArtifactDigest, `sha256:${"f".repeat(64)}`);
         assert.equal(plan.hostRequest.proofRequestSha256, plan.proofRequestSha256);
         assert.equal(plan.proofRequest.candidates[0].sha256, executionInput().candidates[0].expectedSha256);
+        const candidatePorts = plan.controllerRequests.map(entry => Number(entry.value.environment.SERVER_PORT));
+        assert.deepEqual(candidatePorts,
+            Array.from({length: CANDIDATE_REQUEST_COUNT}, (_, index) => FIRST_CANDIDATE_PORT + index));
+        assert.equal(candidatePorts.every(port => port < WINDOWS_DEFAULT_DYNAMIC_PORT_START), true);
         assert.deepEqual(plan.hostRequest.coordinatorArguments,
             [executionInput().closure.proofPath, "--request", `${executionInput().taskRoot}\\proof.request.json`,
                 "--sha256", plan.proofRequestSha256]);

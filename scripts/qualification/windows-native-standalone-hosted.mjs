@@ -21,7 +21,10 @@ const STOP_REQUEST_TIMEOUT_MS = 240_000;
 const STOP_REQUEST_POLL_MS = 50;
 const GRACEFUL_EXIT_TIMEOUT_MS = 30_000;
 const FORCED_CLEANUP_TIMEOUT_MS = 10_000;
-const MIN_PORT = 65_000;
+// Keep the six fixed loopback listeners below Windows' default dynamic TCP
+// range (49152-65535). A runner's unrelated outbound connection can otherwise
+// own the selected local port between request construction and candidate bind.
+const FIRST_CANDIDATE_PORT = 45_000;
 const MAXIMUM_CANDIDATE_BYTES = 268_435_456;
 const MAXIMUM_CLI_INPUT_BYTES = 2_097_152;
 // The watchdog deadline is not an outer process-kill deadline. Leave headroom
@@ -303,7 +306,7 @@ export const buildWindowsNativeStandaloneExecutionPlan = input => {
             assertIdentity(scenario.candidateIdentity, scenario.candidatePath, candidate.expectedSha256,
                 "Execution scenario candidate identity");
             const fixture = input.fixtures[aliasIndex];
-            const port = MIN_PORT + aliasIndex * SCENARIOS.length + scenarioIndex;
+            const port = FIRST_CANDIDATE_PORT + aliasIndex * SCENARIOS.length + scenarioIndex;
             const value = {schemaVersion: 1, kind: CANDIDATE_REQUEST_KIND,
                 expectedRunId: input.expectedRunId, expectedRunAttempt: input.expectedRunAttempt,
                 expectedEventSha: input.expectedEventSha, expectedSourceSha: input.expectedSourceSha,
