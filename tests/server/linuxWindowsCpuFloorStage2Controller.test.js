@@ -10,8 +10,9 @@ import {deriveActualHostedContext, runHostedStage2Controller} from
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_ROOT = path.join(HERE, "..", "fixtures", "linux-kvm-privileged-capability-evidence");
-const ordinaryBytes = fs.readFileSync(path.join(EVIDENCE_ROOT, "result.json"));
-const combinedBytes = fs.readFileSync(path.join(EVIDENCE_ROOT, "privileged-result.json"));
+const readCanonical = p => Buffer.from(fs.readFileSync(p, "utf8").replace(/\r\n/gu, "\n"), "utf8");
+const ordinaryBytes = readCanonical(path.join(EVIDENCE_ROOT, "result.json"));
+const combinedBytes = readCanonical(path.join(EVIDENCE_ROOT, "privileged-result.json"));
 const context = JSON.parse(ordinaryBytes).context;
 const GENERIC_EVIDENCE_LIMIT_BYTES = 4_194_304;
 const PROBE_ARCHIVE_LIMIT_BYTES = 268_435_456;

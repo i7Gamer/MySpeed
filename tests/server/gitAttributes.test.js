@@ -10,6 +10,10 @@ import {readSource} from "../helpers/source.js";
 const ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const FILES = ["scripts/install.sh", "Dockerfile", ".github/workflows/test.yml", "example.yaml"];
 const ATTRIBUTES = readSource(".gitattributes");
+const BYTE_PINNED_EVIDENCE = [
+    "tests/fixtures/linux-kvm-privileged-capability-evidence/result.json",
+    "tests/fixtures/linux-kvm-privileged-capability-evidence/privileged-result.json"
+];
 const git = (directory, ...args) => execFileSync("git", args, {cwd: directory, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]});
 const assertLf = directory => {
     const fields = git(directory, "check-attr", "-z", "text", "eol", "--", ...FILES).split("\0");
@@ -31,6 +35,19 @@ const fixture = run => {
 };
 
 describe("Git line-ending configuration", () => {
+    it("preserves the exact retained KVM evidence bytes on an autocrlf checkout", () => fixture(directory => {
+        const original = Buffer.from('{"retainedEvidence":true}\n');
+        for (const file of BYTE_PINNED_EVIDENCE) {
+            const target = path.join(directory, file);
+            fs.mkdirSync(path.dirname(target), {recursive: true});
+            fs.writeFileSync(target, original);
+        }
+        git(directory, "add", "--", ".gitattributes", ...BYTE_PINNED_EVIDENCE);
+        for (const file of BYTE_PINNED_EVIDENCE) fs.unlinkSync(path.join(directory, file));
+        git(directory, "checkout-index", "--all");
+        for (const file of BYTE_PINNED_EVIDENCE)
+            assert.deepEqual(fs.readFileSync(path.join(directory, file)), original, `${file} bytes changed on checkout`);
+    }));
     it("keeps shell, Docker and YAML paths LF in the actual checkout", () => assertLf(ROOT));
     it("normalizes CRLF input in the index while autocrlf is enabled", () => fixture(directory => {
         assertLf(directory);

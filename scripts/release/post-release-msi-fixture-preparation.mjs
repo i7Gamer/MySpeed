@@ -10,7 +10,10 @@ const SCHEMA_VERSION = 1;
 const PLAN_KIND = "myspeed-v1.6.1-post-release-msi-fixture-plan";
 const RESULT_KIND = "myspeed-v1.6.1-post-release-msi-fixture-preparation";
 const CANDIDATE_BINDING = "candidate-default";
+const BASELINE_CANDIDATE_BINDING = "candidate-baseline";
 const PREDECESSOR_SOURCE_BINDING = "authentic-1.6.0-default-msi";
+const AUTHENTIC_SOURCE_BINDINGS = Object.freeze([PREDECESSOR_SOURCE_BINDING,
+    "authentic-1.6.0-baseline-msi", "authentic-1.1.0-msi"]);
 const MYSPEED_UPGRADE_CODE = "{A1B2C3D4-5E6F-7890-ABCD-EF1234567890}";
 const CANDIDATE_WINDOWS_STAMP = "1.6.1.45";
 const MAX_FILE_BYTES = 1_073_741_824;
@@ -134,9 +137,9 @@ const validatePayload = (value, label) => {
             || matches[0].sha256 !== value[name].sha256) fail(`${label} ${name} inventory binding differs`);
     }
 };
-const validateCandidate = value => {
+const validateCandidate = (value, bindingId = CANDIDATE_BINDING) => {
     exactKeys(value, ["bindingId", "local", "properties"], "candidate inspection");
-    if (value.bindingId !== CANDIDATE_BINDING) fail("candidate binding differs");
+    if (value.bindingId !== bindingId) fail("candidate binding differs");
     exactKeys(value.local, ["path", "bytes", "sha256"], "candidate local identity");
     windowsPath(value.local.path, "candidate path"); integer(value.local.bytes, "candidate bytes");
     scalar(value.local.sha256, HASH, "candidate SHA-256"); validateProperties(value.properties, "candidate");
@@ -159,6 +162,9 @@ export const buildV161PostReleaseMsiFixturePlan = input => {
     validatePreparation(preparation);
     const candidate = input.windowsPreparation.inspections.find(item => item.bindingId === CANDIDATE_BINDING);
     validateCandidate(candidate);
+    const baselineCandidate = input.windowsPreparation.inspections.find(item =>
+        item.bindingId === BASELINE_CANDIDATE_BINDING);
+    validateCandidate(baselineCandidate, BASELINE_CANDIDATE_BINDING);
     const predecessorSource = input.windowsPreparation.inspections.find(item =>
         item.bindingId === PREDECESSOR_SOURCE_BINDING);
     if (!predecessorSource) fail("rollback predecessor source differs");
@@ -166,11 +172,25 @@ export const buildV161PostReleaseMsiFixturePlan = input => {
     if (predecessorSource.properties.UpgradeCode !== MYSPEED_UPGRADE_CODE
         || compareVersions(predecessorSource.properties.ProductVersion, candidate.properties.ProductVersion) >= 0)
         fail("rollback predecessor source properties differ");
+    const authenticSources = AUTHENTIC_SOURCE_BINDINGS.map(bindingId => {
+        const source = input.windowsPreparation.inspections.find(item => item.bindingId === bindingId);
+        if (!source) fail("authentic historical source differs");
+        validateProperties(source.properties, "authentic historical source");
+        if (source.properties.UpgradeCode !== MYSPEED_UPGRADE_CODE
+            || compareVersions(source.properties.ProductVersion, candidate.properties.ProductVersion) >= 0)
+            fail("authentic historical source properties differ");
+        return source;
+    });
     const candidateExecutable = input.windowsPreparation.files.find(item =>
         item.bindingId === CANDIDATE_BINDING && item.role === "exe");
     const candidateExecutableIdentity = candidateExecutable && {path: candidateExecutable.path,
         bytes: candidateExecutable.bytes, sha256: candidateExecutable.sha256};
     validateFileIdentity(candidateExecutableIdentity, "candidate executable");
+    const baselineCandidateExecutable = input.windowsPreparation.files.find(item =>
+        item.bindingId === BASELINE_CANDIDATE_BINDING && item.role === "exe");
+    const baselineCandidateExecutableIdentity = baselineCandidateExecutable && {path: baselineCandidateExecutable.path,
+        bytes: baselineCandidateExecutable.bytes, sha256: baselineCandidateExecutable.sha256};
+    validateFileIdentity(baselineCandidateExecutableIdentity, "baseline candidate executable");
     const outputRoot = windowsPath(input.outputRoot, "fixture output root");
     const sources = new Map([[CANDIDATE_BINDING, candidate], [PREDECESSOR_SOURCE_BINDING, predecessorSource]]);
     const fixtures = FIXTURE_SPECS.map(spec => { const source = sources.get(spec.sourceBindingId); return {...spec,
@@ -182,8 +202,11 @@ export const buildV161PostReleaseMsiFixturePlan = input => {
     if (fixtures.some(item => compareVersions(item.productVersion, candidate.properties.ProductVersion) >= 0))
         fail("fixture ProductVersion is not below candidate");
     const plan = {schemaVersion: SCHEMA_VERSION, kind: PLAN_KIND, preparation: structuredClone(preparation),
-        candidate: structuredClone(candidate), predecessorSource: structuredClone(predecessorSource),
+        candidate: structuredClone(candidate), baselineCandidate: structuredClone(baselineCandidate),
+        predecessorSource: structuredClone(predecessorSource),
+        authenticSources: structuredClone(authenticSources),
         candidateExecutable: structuredClone(candidateExecutableIdentity),
+        baselineCandidateExecutable: structuredClone(baselineCandidateExecutableIdentity),
         outputRoot, fixtures};
     Object.defineProperty(plan, PLAN_IDENTITY, {value: true});
     return freeze(plan);
@@ -216,6 +239,14 @@ export const prepareV161PostReleaseMsiFixturesOnWindows = async (plan, operation
     if (candidatePayload.exe.fileVersion !== CANDIDATE_WINDOWS_STAMP
         || candidatePayload.exe.productVersion !== CANDIDATE_WINDOWS_STAMP)
         fail("candidate executable Windows stamp differs");
+    const candidateBaselinePayload = await operations.inspectPayload(plan.baselineCandidate);
+    validatePayload(candidateBaselinePayload, "candidate baseline");
+    if (candidateBaselinePayload.exe.bytes !== plan.baselineCandidateExecutable.bytes
+        || candidateBaselinePayload.exe.sha256 !== plan.baselineCandidateExecutable.sha256)
+        fail("candidate baseline MSI executable differs from published executable");
+    if (candidateBaselinePayload.exe.fileVersion !== CANDIDATE_WINDOWS_STAMP
+        || candidateBaselinePayload.exe.productVersion !== CANDIDATE_WINDOWS_STAMP)
+        fail("candidate baseline executable Windows stamp differs");
     const predecessorPayload = await operations.inspectPayload(plan.predecessorSource);
     validatePayload(predecessorPayload, "rollback predecessor source");
     if (predecessorPayload.exe.sha256 === candidatePayload.exe.sha256)
@@ -223,6 +254,13 @@ export const prepareV161PostReleaseMsiFixturesOnWindows = async (plan, operation
     if (compareVersions(predecessorPayload.exe.fileVersion, candidatePayload.exe.fileVersion) >= 0
         || compareVersions(predecessorPayload.exe.productVersion, candidatePayload.exe.productVersion) >= 0)
         fail("fixture executable Windows stamp is not lower than candidate");
+    const authenticPayloads = [{bindingId: PREDECESSOR_SOURCE_BINDING,
+        payload: structuredClone(predecessorPayload)}];
+    for (const source of plan.authenticSources.slice(1)) {
+        const payload = await operations.inspectPayload(source);
+        validatePayload(payload, `${source.bindingId} payload`);
+        authenticPayloads.push({bindingId: source.bindingId, payload: structuredClone(payload)});
+    }
     const fixtures = [];
     for (const fixture of plan.fixtures) {
         const expectedPayload = fixture.sourceBindingId === CANDIDATE_BINDING ? candidatePayload : predecessorPayload;
@@ -244,20 +282,27 @@ export const prepareV161PostReleaseMsiFixturesOnWindows = async (plan, operation
     return freeze({schemaVersion: SCHEMA_VERSION, kind: RESULT_KIND, status: "prepared",
         authority: "windows-hosted-fixture-preparation-only", installerExecution: false,
         preparation: structuredClone(plan.preparation), candidate: structuredClone(plan.candidate),
+        baselineCandidate: structuredClone(plan.baselineCandidate),
         predecessorSource: structuredClone(plan.predecessorSource),
-        candidateExecutable: structuredClone(plan.candidateExecutable), candidatePayload: structuredClone(candidatePayload),
-        predecessorPayload: structuredClone(predecessorPayload), fixtures});
+        candidateExecutable: structuredClone(plan.candidateExecutable),
+        baselineCandidateExecutable: structuredClone(plan.baselineCandidateExecutable),
+        candidatePayload: structuredClone(candidatePayload),
+        candidateBaselinePayload: structuredClone(candidateBaselinePayload),
+        predecessorPayload: structuredClone(predecessorPayload), authenticPayloads, fixtures});
 };
 
 export const validateV161PostReleaseMsiFixturePreparation = (value, plan) => {
     exactKeys(value, ["schemaVersion", "kind", "status", "authority", "installerExecution", "preparation",
-        "candidate", "predecessorSource", "candidateExecutable", "candidatePayload", "predecessorPayload",
+        "candidate", "baselineCandidate", "predecessorSource", "authenticPayloads", "candidateExecutable",
+        "baselineCandidateExecutable", "candidatePayload", "candidateBaselinePayload", "predecessorPayload",
         "fixtures"], "fixture preparation");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== RESULT_KIND || value.status !== "prepared"
         || value.authority !== "windows-hosted-fixture-preparation-only" || value.installerExecution !== false
         || !isDeepStrictEqual(value.preparation, plan.preparation) || !isDeepStrictEqual(value.candidate, plan.candidate)
+        || !isDeepStrictEqual(value.baselineCandidate, plan.baselineCandidate)
         || !isDeepStrictEqual(value.predecessorSource, plan.predecessorSource)
-        || !isDeepStrictEqual(value.candidateExecutable, plan.candidateExecutable))
+        || !isDeepStrictEqual(value.candidateExecutable, plan.candidateExecutable)
+        || !isDeepStrictEqual(value.baselineCandidateExecutable, plan.baselineCandidateExecutable))
         fail("fixture preparation header differs");
     validatePayload(value.candidatePayload, "candidate");
     if (value.candidatePayload.exe.bytes !== plan.candidateExecutable.bytes
@@ -266,6 +311,13 @@ export const validateV161PostReleaseMsiFixturePreparation = (value, plan) => {
     if (value.candidatePayload.exe.fileVersion !== CANDIDATE_WINDOWS_STAMP
         || value.candidatePayload.exe.productVersion !== CANDIDATE_WINDOWS_STAMP)
         fail("candidate executable Windows stamp differs");
+    validatePayload(value.candidateBaselinePayload, "candidate baseline");
+    if (value.candidateBaselinePayload.exe.bytes !== plan.baselineCandidateExecutable.bytes
+        || value.candidateBaselinePayload.exe.sha256 !== plan.baselineCandidateExecutable.sha256)
+        fail("candidate baseline MSI executable differs from published executable");
+    if (value.candidateBaselinePayload.exe.fileVersion !== CANDIDATE_WINDOWS_STAMP
+        || value.candidateBaselinePayload.exe.productVersion !== CANDIDATE_WINDOWS_STAMP)
+        fail("candidate baseline executable Windows stamp differs");
     validatePayload(value.predecessorPayload, "rollback predecessor source");
     if (value.predecessorPayload.exe.sha256 === value.candidatePayload.exe.sha256)
         fail("rollback predecessor executable does not force candidate replacement");
@@ -273,6 +325,17 @@ export const validateV161PostReleaseMsiFixturePreparation = (value, plan) => {
         || compareVersions(value.predecessorPayload.exe.productVersion,
             value.candidatePayload.exe.productVersion) >= 0)
         fail("fixture executable Windows stamp is not lower than candidate");
+    if (!Array.isArray(value.authenticPayloads)
+        || value.authenticPayloads.length !== AUTHENTIC_SOURCE_BINDINGS.length)
+        fail("authentic historical payload count differs");
+    value.authenticPayloads.forEach((record, index) => {
+        exactKeys(record, ["bindingId", "payload"], "authentic historical payload");
+        if (record.bindingId !== AUTHENTIC_SOURCE_BINDINGS[index])
+            fail("authentic historical payload order differs");
+        validatePayload(record.payload, `${record.bindingId} payload`);
+    });
+    if (!isDeepStrictEqual(value.authenticPayloads[0].payload, value.predecessorPayload))
+        fail("rollback predecessor payload binding differs");
     if (!Array.isArray(value.fixtures) || value.fixtures.length !== plan.fixtures.length)
         fail("fixture preparation count differs");
     value.fixtures.forEach((fixture, index) => {

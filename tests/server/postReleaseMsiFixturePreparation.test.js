@@ -65,6 +65,15 @@ const predecessorPayload = () => { const value = payload(); value.exe = {bytes: 
         sha256: value.configuration.sha256};
     value.inventory = value.inventory.filter(item => item.path !== "File/WinSW-LICENSE.txt");
     return value; };
+const baselinePayload = () => { const value = payload(); value.configuration = {bytes: 451, sha256: HASH("8")};
+    value.wrapper = {bytes: 12_000_001, sha256: HASH("9")};
+    value.inventory[1] = {path: "File/MySpeedService.exe", ...value.wrapper};
+    value.inventory[2] = {path: "File/MySpeedService.xml", ...value.configuration}; return value; };
+const historicalPayload = bindingId => { const value = predecessorPayload();
+    const suffix = bindingId === "authentic-1.6.0-baseline-msi" ? "a" : "b";
+    value.exe = {...value.exe, bytes: value.exe.bytes - (suffix === "a" ? 1 : 2), sha256: HASH(suffix)};
+    value.inventory[0] = {path: "File/MySpeed.exe", bytes: value.exe.bytes, sha256: value.exe.sha256};
+    return value; };
 
 describe("hosted post-release MSI fixture preparation", () => {
     it("builds two deterministic lower-version source clones and retains inspected payload identities", async () => {
@@ -79,7 +88,10 @@ describe("hosted post-release MSI fixture preparation", () => {
         const result = await prepareV161PostReleaseMsiFixturesOnWindows(plan, {
             initialize: async root => { calls.push(["initialize", root]); },
             inspectPayload: async input => { calls.push(["inspect", input.bindingId]);
-                return input.bindingId === "candidate-default" ? payload() : predecessorPayload(); },
+                return input.bindingId === "candidate-default" ? payload()
+                    : input.bindingId === "candidate-baseline" ? baselinePayload()
+                        : input.bindingId === "authentic-1.6.0-default-msi" ? predecessorPayload()
+                            : historicalPayload(input.bindingId); },
             buildClone: async input => { calls.push(["build", input.bindingId]); return {
                 bindingId: input.bindingId, path: input.destinationPath, bytes: 40_000_000,
                 sha256: input.bindingId === "lower-stamp-fixture" ? HASH("e") : HASH("f"),
@@ -88,7 +100,10 @@ describe("hosted post-release MSI fixture preparation", () => {
                 payload: structuredClone(input.expectedPayload)}; }
         });
         assert.deepEqual(calls, [["initialize", "C:\\prepare\\fixtures"], ["inspect", "candidate-default"],
+            ["inspect", "candidate-baseline"],
             ["inspect", "authentic-1.6.0-default-msi"],
+            ["inspect", "authentic-1.6.0-baseline-msi"],
+            ["inspect", "authentic-1.1.0-msi"],
             ["build", "lower-stamp-fixture"],
             ["build", "safe-rollback-predecessor"]]);
         assert.equal(result.installerExecution, false);
@@ -97,7 +112,14 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.equal(result.fixtures[1].serviceWrapperSha256, HASH("5"));
         assert.equal(result.fixtures[0].packageCode, plan.fixtures[0].packageCode);
         assert.equal(result.candidatePayload.inventory.length, 4);
+        assert.deepEqual(result.candidateBaselinePayload, baselinePayload());
         assert.equal(result.predecessorPayload.inventory.length, 3);
+        assert.deepEqual(result.authenticPayloads, [
+            {bindingId: "authentic-1.6.0-default-msi", payload: predecessorPayload()},
+            {bindingId: "authentic-1.6.0-baseline-msi", payload: historicalPayload(
+                "authentic-1.6.0-baseline-msi")},
+            {bindingId: "authentic-1.1.0-msi", payload: historicalPayload("authentic-1.1.0-msi")}
+        ]);
         assert.deepEqual(result.fixtures[1].payloadInventory, predecessorPayload().inventory);
         assert.equal(result.fixtures[0].sourceBindingId, "authentic-1.6.0-default-msi");
         assert.notEqual(result.fixtures[0].exeSha256, result.candidatePayload.exe.sha256);
@@ -122,7 +144,11 @@ describe("hosted post-release MSI fixture preparation", () => {
         }
         const plan = fixturePlan();
         const base = {initialize: async () => {}, inspectPayload: async input =>
-            input.bindingId === "candidate-default" ? payload() : predecessorPayload(), buildClone: async input => ({
+            input.bindingId === "candidate-default" ? payload()
+                : input.bindingId === "candidate-baseline" ? baselinePayload()
+                    : input.bindingId === "authentic-1.6.0-default-msi" ? predecessorPayload()
+                        : historicalPayload(input.bindingId),
+        buildClone: async input => ({
             bindingId: input.bindingId, path: input.destinationPath, bytes: 10, sha256: HASH("e"),
             properties: {ProductCode: input.productCode, ProductVersion: input.productVersion,
                 UpgradeCode: input.upgradeCode, PackageCode: input.packageCode},
@@ -131,6 +157,11 @@ describe("hosted post-release MSI fixture preparation", () => {
             inspectPayload: async () => { const value = payload(); value.exe.sha256 = HASH("8");
                 value.inventory[0].sha256 = HASH("8"); return value; }}),
         /published executable/u);
+        await assert.rejects(prepareV161PostReleaseMsiFixturesOnWindows(plan, {...base,
+            inspectPayload: async input => { if (input.bindingId !== "candidate-baseline")
+                return base.inspectPayload(input); const value = baselinePayload(); value.exe.sha256 = HASH("0");
+                value.inventory[0].sha256 = HASH("0"); return value; }
+        }), /baseline.*published executable/u);
         for (const alter of [
             value => { value.properties.ProductCode = "{33333333-3333-4333-8333-333333333333}"; },
             value => { value.properties.ProductVersion = "1.6.1.0"; },
@@ -171,6 +202,7 @@ describe("hosted post-release MSI fixture preparation", () => {
                 lightPath: "C:\\wix\\light.exe"}}), /pwsh/u);
         const source = fs.readFileSync("scripts/release/post-release-msi-fixture-preparation.ps1", "utf8");
         assert.match(source, /OpenDatabase\(\$path, 0\)/u);
+        assert.match(source, /\[void\]\$view\.Execute\(\)/u);
         assert.match(source, /'WiX decompiler'/u);
         assert.match(source, /'WiX compiler'/u);
         assert.match(source, /'WiX linker'/u);
@@ -184,6 +216,52 @@ describe("hosted post-release MSI fixture preparation", () => {
         assert.doesNotMatch(source, /Sort-Object/u);
         assert.match(source, /@Arguments \*> \$null/u);
         assert.doesNotMatch(source, /msiexec|MsiInstallProduct|Win32_Product/iu);
+    });
+
+    it("returns only MSI properties despite COM method return values and releases failed reads", {skip: !HAS_POWERSHELL}, () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-msi-properties-mock-"));
+        const timeoutMilliseconds = 10_000;
+        try {
+            const script = path.resolve("scripts/release/post-release-msi-fixture-preparation.ps1");
+            const harnessPath = path.join(root, "harness.ps1");
+            const harness = `
+. '${script.replaceAll("'", "''")}' -Mode Library
+function Get-FileIdentity([string]$Value){return @{path=$Value}}
+function New-Object {throw 'Native COM creation is forbidden in this test'}
+class MockState {static [bool]$Missing=$false;static [int]$MethodReturn=23}
+class MockRecord {[string] StringData([int]$Index){return 'property-value'}}
+class MockView {
+    [int] Execute(){return [MockState]::MethodReturn}
+    [object] Fetch(){if([MockState]::Missing){return $null};return [MockRecord]::new()}
+    [int] Close(){return [MockState]::MethodReturn}
+}
+class MockDatabase {[object] OpenView([string]$Query){return [MockView]::new()}}
+class MockSummary {[string] Property([int]$Index){return 'package-value'}}
+class MockInstaller {
+    [object] OpenDatabase([string]$Path,[int]$Mode){return [MockDatabase]::new()}
+    [object] SummaryInformation([string]$Path,[int]$Mode){return [MockSummary]::new()}
+}
+$released=[Collections.Generic.List[string]]::new()
+$release={param($Value)$released.Add($Value.GetType().Name);[MockState]::MethodReturn}
+$success=@(Get-MsiProperties 'mock-only.msi' -CreateInstaller {[MockInstaller]::new()} -ReleaseCom $release)
+$successReleased=@($released.ToArray())
+$released.Clear();[MockState]::Missing=$true;$failure=''
+try{$null=Get-MsiProperties 'mock-only.msi' -CreateInstaller {[MockInstaller]::new()} -ReleaseCom $release}
+catch{$failure=$_.Exception.Message}
+@{success=$success;successReleased=$successReleased;failure=$failure;failureReleased=@($released.ToArray())} |
+    ConvertTo-Json -Depth 8 -Compress
+`;
+            fs.writeFileSync(harnessPath, harness);
+            const value = JSON.parse(execFileSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive",
+                "-File", harnessPath], {encoding: "utf8", timeout: timeoutMilliseconds, windowsHide: true,
+                stdio: ["ignore", "pipe", "pipe"]}));
+            assert.deepEqual(value.success, [{ProductCode: "property-value", ProductVersion: "property-value",
+                UpgradeCode: "property-value", PackageCode: "package-value"}]);
+            assert.deepEqual(value.successReleased, ["MockRecord", "MockView", "MockRecord", "MockView",
+                "MockRecord", "MockView", "MockSummary", "MockDatabase", "MockInstaller"]);
+            assert.equal(value.failure, "MSI ProductCode is absent");
+            assert.deepEqual(value.failureReleased, ["MockView", "MockDatabase", "MockInstaller"]);
+        } finally { fs.rmSync(root, {recursive: true, force: false}); }
     });
 
     it("maps WiX dark File-ID exports through decompiled logical names", {skip: !HAS_POWERSHELL}, () => {

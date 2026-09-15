@@ -1,17 +1,30 @@
 name: Prepare post-release v1.6.1 MSI evidence
 
+# The preparation-only dispatch path is unchanged. `workflow_call` lets the MSI lifecycle workflow
+# run this exact preparation as a job of its own run, so the artifact it uploads carries that run's
+# id, attempt and head SHA - which is what the Linux execution job binds before it observes it.
 on:
   workflow_dispatch:
+  workflow_call:
+    outputs:
+      artifact_id:
+        description: Artifact id of the nonqualifying preparation bundle
+        value: ${{ jobs.prepare.outputs.artifact_id }}
 
 permissions:
   actions: read
   contents: read
+
+env:
+  CANDIDATE_SOURCE_SHA: 4fa4dd40a89a062735f98bd85d685e0624ff46a8
 
 jobs:
   prepare:
     if: github.repository == 'i7Gamer/MySpeed'
     runs-on: windows-2025
     timeout-minutes: 30
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
       - name: Checkout exact harness source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -19,10 +32,34 @@ jobs:
           ref: ${{ github.sha }}
           persist-credentials: false
 
+      - name: Checkout exact candidate fixture source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CANDIDATE_SOURCE_SHA }}
+          path: candidate-source
+          persist-credentials: false
+
       - name: Set up pinned Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
         with:
           node-version: 22.19.0
+
+      - name: Set up pinned Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Build exact candidate fixture source
+        working-directory: candidate-source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          bun install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture dependency installation failed' }
+          node scripts/generate-migrations.js
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate migration registry generation failed' }
+          node scripts/generate-integrations.js
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate integration registry generation failed' }
 
       - name: Capture immutable published target metadata
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -111,6 +148,17 @@ jobs:
           $wix = Join-Path $env:RUNNER_TEMP 'wix314-binaries'
           $result = Join-Path $bundle 'result.json'
           $fixtureProof = Join-Path $bundle 'fixture-proof.json'
+          $baselineProof = Join-Path $bundle 'baseline-proof.json'
+          $baselineSource = Join-Path $env:RUNNER_TEMP 'post-release-msi-baseline-source'
+          if (Test-Path -LiteralPath $baselineSource) { throw 'Candidate fixture source staging collision' }
+          [void][IO.Directory]::CreateDirectory($baselineSource)
+          [void][IO.Directory]::CreateDirectory((Join-Path $baselineSource 'populated'))
+          [void][IO.Directory]::CreateDirectory((Join-Path $baselineSource 'reset'))
+          $candidateRoot = [IO.Path]::GetFullPath((Join-Path $PWD 'candidate-source'))
+          node candidate-source/scripts/qualification/fixture.mjs handoff --repo $candidateRoot `
+            --work (Join-Path $baselineSource 'populated') --reset-work (Join-Path $baselineSource 'reset') `
+            --manifest (Join-Path $baselineSource 'transport.json') --source-sha $env:CANDIDATE_SOURCE_SHA | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate fixture source preparation failed' }
           $pwsh = (Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
           node scripts/release/post-release-msi-prepare-controller.mjs `
             --captured (Join-Path $env:RUNNER_TEMP 'post-release-msi-captured.json') `
@@ -118,10 +166,12 @@ jobs:
             --root $files --fixture-root $fixtures --fixture-work $fixtureWork `
             --wix-dark (Join-Path $wix 'dark.exe') --wix-candle (Join-Path $wix 'candle.exe') `
             --wix-light (Join-Path $wix 'light.exe') --fixture-proof $fixtureProof `
+            --baseline-source $baselineSource --baseline-proof $baselineProof `
             --output $result --pwsh $pwsh
           if ($LASTEXITCODE -ne 0) { throw 'Hosted MSI preparation failed' }
 
       - name: Upload nonqualifying preparation artifact
+        id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: post-release-v1.6.1-msi-appassets

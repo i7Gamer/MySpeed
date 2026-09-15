@@ -17,8 +17,25 @@ const FIRST_IPV4 = {address: "127.0.0.2", family: 4};
 const BLOCKED = {address: "169.254.169.254", family: 4};
 const BODY = "Grüezi 🌍 synthetic notification";
 const PROXY_ENV = /^(?:https?_proxy|all_proxy|no_proxy)$/i;
+const URL_CREDENTIALS = /\/\/[^/\s@]*@/gu;
+const REPORTED_RESULT_FIELDS = ["status", "ok", "error", "drainError", "bodyDeadlineFired"];
 const compiled = Boolean(process.versions.bun) && !/^bun(?:-debug)?(?:\.exe)?$/i.test(path.basename(process.execPath));
 const directory = () => process.env.OUTBOUND_HTTP_FIXTURE_DIR || path.resolve("tests/fixtures/outbound-transport/http");
+
+/*
+ * The child records one result per request, but a delivery expectation reads only `status`, so a
+ * failed one can say no more than `undefined !== 200`. Render what the child actually recorded
+ * instead. Proxy URLs reach these messages, so strip any userinfo before it can land in a log.
+ */
+export function describeChildResults(results) {
+    if (!Array.isArray(results)) return JSON.stringify(results ?? null);
+    return JSON.stringify(results.map(result => {
+        const reported = Object.fromEntries(REPORTED_RESULT_FIELDS
+            .filter(field => result?.[field] !== undefined).map(field => [field, result[field]]));
+        if (result?.message === undefined) return reported;
+        return {...reported, message: String(result.message).replace(URL_CREDENTIALS, "//***@")};
+    }));
+}
 
 function cleanEnvironment() {
     return Object.fromEntries(Object.entries(process.env).filter(([key]) => !PROXY_ENV.test(key)));
@@ -104,7 +121,11 @@ async function withScenario(options, check) {
         const seen = await peer.snapshot();
         assert.equal(stderr, "", "HTTP child emitted an unhandled error or warning");
         assert.deepEqual(seen.unsafe, [], "fixture intercepted an unsafe proxy destination");
-        await check(result, seen, peer);
+        try {await check(result, seen, peer);}
+        catch (error) {
+            throw new Error(`${error.message}\nchild results: ${describeChildResults(result.results)}`,
+                {cause: error});
+        }
     } finally {
         child?.kill();
         await peer.close();
@@ -307,10 +328,41 @@ for (const [label, options] of [["IPv4", {hostname: LOCAL}], ["IPv6", {hostname:
                 assert.equal(results[0].error, nativeIpIdentityError);
                 assert.equal(seen.posts.length, 0);
             } else {
-                assert.equal(results[0].status, 200, JSON.stringify(results));
+                assert.equal(results[0].status, 200, describeChildResults(results));
                 assert.equal(seen.posts.length, 1);
                 assert.equal(seen.posts[0].servername, false);
             }
             assert.equal(seen.connects.length, bypass ? 0 : 1);
             assert.deepEqual(seen.sni, []);
         });
+
+/*
+ * A delivery expectation only reads `status`, so when one fails it can only report
+ * `undefined !== 200` - the child already knows why its request settled that way, and on a shared
+ * runner that reason is the whole diagnosis. These two cases hold the harness to carrying it out.
+ */
+httpScenarios.push({name: "http a failed expectation carries the child's recorded error", run: async () => {
+    await assert.rejects(() => withScenario({stallTls: true, timeout: SHORT_REQUEST_MS},
+        ({results}) => assert.equal(results[0].status, 200)),
+    error => {
+        assert.match(error.message, /undefined !== 200/u, "the original expectation is kept");
+        assert.match(error.message, /child results: \[\{"error":"[A-Za-z][^"]*"/u,
+            "the child's reason is named, not an opaque numeric code");
+        return true;
+    });
+}});
+
+httpScenarios.push({name: "http failure diagnostics never carry proxy credentials", run: async () => {
+    const described = describeChildResults([{error: "ECONNRESET", drainError: "AbortError",
+        message: "proxy http://synthetic%20user:synthetic-secret@127.0.0.1:1 refused the tunnel"}]);
+    assert.match(described, /"error":"ECONNRESET"/u);
+    assert.match(described, /"drainError":"AbortError"/u);
+    assert.match(described, /http:\/\/\*\*\*@127\.0\.0\.1:1/u);
+    assert.doesNotMatch(described, /synthetic-secret/u);
+    for (const userinfo of ["synthetic-token", "synthetic-token:", ":synthetic-token", "synthetic%40token"]) {
+        const message = `proxy https://${userinfo}@127.0.0.1:1 refused the tunnel`;
+        assert.equal(describeChildResults([{message}]),
+            JSON.stringify([{message: "proxy https://***@127.0.0.1:1 refused the tunnel"}]));
+    }
+    assert.equal(describeChildResults(undefined), "null");
+}});

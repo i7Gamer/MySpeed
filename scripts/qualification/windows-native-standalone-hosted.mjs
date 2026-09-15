@@ -21,12 +21,33 @@ const STOP_REQUEST_TIMEOUT_MS = 240_000;
 const STOP_REQUEST_POLL_MS = 50;
 const GRACEFUL_EXIT_TIMEOUT_MS = 30_000;
 const FORCED_CLEANUP_TIMEOUT_MS = 10_000;
-const MIN_PORT = 65_000;
+// Keep the six fixed loopback listeners below Windows' default dynamic TCP
+// range (49152-65535). A runner's unrelated outbound connection can otherwise
+// own the selected local port between request construction and candidate bind.
+const FIRST_CANDIDATE_PORT = 45_000;
 const MAXIMUM_CANDIDATE_BYTES = 268_435_456;
 const MAXIMUM_CLI_INPUT_BYTES = 2_097_152;
-const HOST_EXECUTION_TIMEOUT_MS = 620_000;
-const MAXIMUM_PROCESS_OUTPUT_BYTES = 65_536;
+// The watchdog deadline is not an outer process-kill deadline. Leave headroom
+// for cold Add-Type startup and every bounded teardown/retry after that deadline.
+// Native adapter/Task Scheduler calls can still stall: the outer kill remains
+// a last resort, not evidence that restoration completed.
+const HOST_COLD_STARTUP_ALLOWANCE_MS = 60_000;
+const HOST_POST_DEADLINE_OPERATIONS = Object.freeze({
+    coordinatorDrain: 1, restorationLocks: 3, cleanupDrain: 1,
+    cancellationLock: 1, recoveryTaskExits: 2, jobDisposal: 1
+});
+const HOST_CLEANUP_ALLOWANCE_MS = Object.values(HOST_POST_DEADLINE_OPERATIONS)
+    .reduce((total, count) => total + count * FORCED_CLEANUP_TIMEOUT_MS, 0);
+const HOST_EXECUTION_TIMEOUT_MS = HARD_DEADLINE_MS + HOST_CLEANUP_ALLOWANCE_MS
+    + HOST_COLD_STARTUP_ALLOWANCE_MS;
+// InvokeHostedProof emits the same bounded JSON retained in host.result.json.
+const MAXIMUM_HOST_RESULT_BYTES = 262_144;
+const WINDOWS_LINE_ENDING_BYTES = 2;
+const MAXIMUM_PROCESS_OUTPUT_BYTES = MAXIMUM_HOST_RESULT_BYTES + WINDOWS_LINE_ENDING_BYTES;
 const MAXIMUM_FAILURE_CHARACTERS = 1_024;
+const MAXIMUM_ENTRY_DIAGNOSTIC_BYTES = 4_096;
+const MAXIMUM_ENTRY_FAILURE_CHARACTERS = 512;
+const MAXIMUM_PRIMARY_FAILURE_CHARACTERS = 384;
 const MAXIMUM_PRESEAL_BYTES = 10_485_760;
 const SHA256 = /^[0-9a-f]{64}$/u;
 const SHA256_DIGEST = /^sha256:[0-9a-f]{64}$/u;
@@ -285,7 +306,7 @@ export const buildWindowsNativeStandaloneExecutionPlan = input => {
             assertIdentity(scenario.candidateIdentity, scenario.candidatePath, candidate.expectedSha256,
                 "Execution scenario candidate identity");
             const fixture = input.fixtures[aliasIndex];
-            const port = MIN_PORT + aliasIndex * SCENARIOS.length + scenarioIndex;
+            const port = FIRST_CANDIDATE_PORT + aliasIndex * SCENARIOS.length + scenarioIndex;
             const value = {schemaVersion: 1, kind: CANDIDATE_REQUEST_KIND,
                 expectedRunId: input.expectedRunId, expectedRunAttempt: input.expectedRunAttempt,
                 expectedEventSha: input.expectedEventSha, expectedSourceSha: input.expectedSourceSha,
@@ -436,6 +457,53 @@ const writeExclusive = (file, bytes) => {
 const boundedFailure = value => String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "?")
     .slice(0, MAXIMUM_FAILURE_CHARACTERS);
 
+export const readWindowsStandaloneBoundedBytes = (file, maximumBytes = MAXIMUM_CLI_INPUT_BYTES) => {
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 2 || maximumBytes > MAXIMUM_CLI_INPUT_BYTES)
+        throw new Error("Standalone evidence read bound differs");
+    const before = fs.lstatSync(file, {bigint: true});
+    const ordinary = stat => stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n;
+    if (!ordinary(before)) throw new Error("Standalone evidence is not an ordinary file");
+    const handle = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0)
+        | (fs.constants.O_NONBLOCK ?? 0));
+    try {
+        const opened = fs.fstatSync(handle, {bigint: true});
+        const same = stat => ordinary(stat) && stat.dev === opened.dev && stat.ino === opened.ino
+            && stat.size === opened.size && stat.mtimeNs === opened.mtimeNs && stat.ctimeNs === opened.ctimeNs;
+        if (!same(before) || opened.size < 2n || opened.size > BigInt(maximumBytes))
+            throw new Error("Standalone evidence file identity or bound differs");
+        const bytes = Buffer.alloc(Number(opened.size));
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = fs.readSync(handle, bytes, offset, bytes.length - offset, offset);
+            if (count === 0) throw new Error("Standalone evidence read was truncated");
+            offset += count;
+        }
+        const trailing = Buffer.alloc(1);
+        if (fs.readSync(handle, trailing, 0, trailing.length, offset) !== 0
+            || !same(fs.fstatSync(handle, {bigint: true})) || !same(fs.lstatSync(file, {bigint: true})))
+            throw new Error("Standalone evidence changed during its read");
+        return bytes;
+    } finally { fs.closeSync(handle); }
+};
+
+const withEntryDiagnostic = async (primary, request, operations) => {
+    try {
+        const bytes = await operations.readBytes(request.entryDiagnosticPath, MAXIMUM_ENTRY_DIAGNOSTIC_BYTES);
+        if (!Buffer.isBuffer(bytes) || bytes.length < 2 || bytes.length > MAXIMUM_ENTRY_DIAGNOSTIC_BYTES)
+            return primary;
+        const value = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+        exactKeys(value, ["schemaVersion", "kind", "status", "stage", "failure"], "Standalone entry diagnostic");
+        if (value.schemaVersion !== 1 || value.kind !== "myspeed-windows-native-standalone-entry-failure"
+            || value.status !== "failed") return primary;
+        string(value.stage, "Standalone diagnostic stage", /^[a-z][a-z-]{0,31}$/u);
+        if (typeof value.failure !== "string" || value.failure.length < 1
+            || value.failure.length > MAXIMUM_ENTRY_FAILURE_CHARACTERS) return primary;
+        const detail = value.failure.replace(/[\u0000-\u001f\u007f]+/gu, " ");
+        return new Error(`${boundedFailure(primary.message).slice(0, MAXIMUM_PRIMARY_FAILURE_CHARACTERS)}; `
+            + `${value.stage}: ${detail}`, {cause: primary});
+    } catch { return primary; } // Diagnostics never replace the authoritative invocation failure.
+};
+
 const defaultExecutionOperations = Object.freeze({
     invokeHost: async value => {
         const result = childProcess.spawnSync(value.executable, value.arguments, {cwd: value.workingDirectory,
@@ -444,7 +512,7 @@ const defaultExecutionOperations = Object.freeze({
         if (result.error) throw new Error(`Standalone host invocation failed: ${boundedFailure(result.error.message)}`);
         return {exitCode: result.status, stdout: boundedFailure(result.stdout), stderr: boundedFailure(result.stderr)};
     },
-    readBytes: async file => fs.readFileSync(file)
+    readBytes: async (file, maximumBytes) => readWindowsStandaloneBoundedBytes(file, maximumBytes)
 });
 
 export const executeWindowsNativeStandaloneExecutionPlan = async (plan, operations = defaultExecutionOperations) => {
@@ -471,14 +539,18 @@ export const executeWindowsNativeStandaloneExecutionPlan = async (plan, operatio
         "-ExpectedRunAttempt", request.expectedRunAttempt, "-ExpectedEventSha", request.expectedEventSha,
         "-ExpectedSourceSha", request.expectedSourceSha, "-ExpectedImageVersion", request.expectedImageVersion,
         "-Nonce", request.nonce];
-    const invocation = await operations.invokeHost({executable: plan.proofRequest.powershellPath,
-        arguments: argumentsList, workingDirectory: request.taskRoot,
-        timeoutMilliseconds: HOST_EXECUTION_TIMEOUT_MS, maximumOutputBytes: MAXIMUM_PROCESS_OUTPUT_BYTES});
+    let invocation;
+    try {
+        invocation = await operations.invokeHost({executable: plan.proofRequest.powershellPath,
+            arguments: argumentsList, workingDirectory: request.taskRoot,
+            timeoutMilliseconds: HOST_EXECUTION_TIMEOUT_MS, maximumOutputBytes: MAXIMUM_PROCESS_OUTPUT_BYTES});
+    } catch (error) { throw await withEntryDiagnostic(error, request, operations); }
     if (!isObject(invocation) || !Number.isSafeInteger(invocation.exitCode)
         || typeof invocation.stdout !== "string" || typeof invocation.stderr !== "string")
         throw new Error("Standalone host invocation result differs");
     if (invocation.exitCode !== 0)
-        throw new Error(`Standalone host exited ${invocation.exitCode}: ${boundedFailure(invocation.stderr)}`);
+        throw await withEntryDiagnostic(new Error(`Standalone host exited ${invocation.exitCode}: `
+            + boundedFailure(invocation.stderr)), request, operations);
     const retainedHostRequest = await operations.readBytes(hostRequestPath);
     const retainedProofRequest = await operations.readBytes(request.coordinatorArguments[2]);
     const retainedHostResult = await operations.readBytes(request.resultPath);

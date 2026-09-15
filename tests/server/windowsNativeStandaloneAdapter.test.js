@@ -25,6 +25,7 @@ const OFFLINE_EVIDENCE = {schemaVersion: 1,
 const OFFLINE_BYTES = Buffer.from(JSON.stringify(OFFLINE_EVIDENCE), "utf8");
 const OFFLINE_SHA = createHash("sha256").update(OFFLINE_BYTES).digest("hex");
 const OFFLINE_BASE64 = OFFLINE_BYTES.toString("base64");
+const failed = (stage, detail) => ({stage, classification: "failed", detail});
 
 const request = () => ({
     schemaVersion: 1,
@@ -163,7 +164,8 @@ describe("Windows native standalone adapter", () => {
         const harness = makeHarness({failAt: "assert:default:populated-first-boot:running"});
         const result = await runWindowsNativeStandaloneAdapter(request(), harness.operations);
         assert.equal(result.status, "failed");
-        assert.deepEqual(result.failures[0], {stage: "running-assertions", classification: "failed"});
+        assert.deepEqual(result.failures[0], failed("running-assertions",
+            "injected assert:default:populated-first-boot:running"));
         assert.ok(harness.events.includes("session:default:populated-first-boot:close"));
         assert.ok(harness.events.includes("offline:default:after-stop:populated-first-boot"));
         assert.equal(harness.events.at(-1), "fixture:default:cleanup");
@@ -183,7 +185,8 @@ describe("Windows native standalone adapter", () => {
         const harness = makeHarness({failAt: "session:default:populated-first-boot:close"});
         const result = await runWindowsNativeStandaloneAdapter(request(), harness.operations);
         assert.equal(result.status, "failed");
-        assert.deepEqual(result.failures[0], {stage: "close-owned-session", classification: "failed"});
+        assert.deepEqual(result.failures[0], failed("close-owned-session",
+            "injected session:default:populated-first-boot:close"));
         assert.ok(harness.events.includes("offline:default:after-stop:populated-first-boot"));
         assert.equal(harness.events.at(-1), "fixture:default:cleanup");
     });
@@ -214,7 +217,9 @@ describe("Windows native standalone adapter", () => {
             };
             const result = await runWindowsNativeStandaloneAdapter(request(), harness.operations);
             assert.equal(result.status, "failed");
-            assert.deepEqual(result.failures[0], {stage: "close-owned-session", classification: "failed"});
+            assert.equal(result.failures[0].stage, "close-owned-session");
+            assert.equal(result.failures[0].classification, "failed");
+            assert.ok(result.failures[0].detail.length > 0);
             assert.ok(harness.events.includes("offline:default:after-stop:populated-first-boot"));
             assert.equal(harness.events.at(-1), "fixture:default:cleanup");
         }
@@ -258,7 +263,8 @@ describe("Windows native standalone adapter", () => {
         partial.operations.closeOwnedSession = async input => ({...await partialClose(input),
             candidateStarted: true, candidateExited: true, exitCode: 197, forced: true});
         const partialResult = await runWindowsNativeStandaloneAdapter(request(), partial.operations);
-        assert.deepEqual(partialResult.failures, [{stage: "launch-owned-session", classification: "failed"}]);
+        assert.deepEqual(partialResult.failures,
+            [failed("launch-owned-session", "injected session:default:populated-first-boot:launch")]);
         assert.equal(partial.events.at(-1), "fixture:default:cleanup");
     });
 
@@ -288,7 +294,8 @@ describe("Windows native standalone adapter", () => {
         const negative = makeHarness({badPostStop: true});
         const result = await runWindowsNativeStandaloneAdapter(request(), negative.operations);
         assert.equal(result.status, "failed");
-        assert.deepEqual(result.failures[0], {stage: "offline-after-stop", classification: "failed"});
+        assert.equal(result.failures[0].stage, "offline-after-stop");
+        assert.match(result.failures[0].detail, /offline boundary/iu);
         assert.equal(negative.events.at(-1), "fixture:default:cleanup");
 
         const missing = makeHarness();
@@ -298,7 +305,8 @@ describe("Windows native standalone adapter", () => {
             : observeOffline(request);
         const absent = await runWindowsNativeStandaloneAdapter(request(), missing.operations);
         assert.equal(absent.status, "failed");
-        assert.deepEqual(absent.failures[0], {stage: "offline-after-stop", classification: "failed"});
+        assert.equal(absent.failures[0].stage, "offline-after-stop");
+        assert.match(absent.failures[0].detail, /object/u);
         assert.equal(missing.events.at(-1), "fixture:default:cleanup");
     });
 
@@ -321,5 +329,22 @@ describe("Windows native standalone adapter", () => {
         const duplicateBytes = request();
         duplicateBytes.aliases[1].candidateSha256 = duplicateBytes.aliases[0].candidateSha256;
         assert.doesNotThrow(() => assertWindowsNativeAdapterRequest(duplicateBytes));
+    });
+
+    it("retains bounded normalized failure details without changing cleanup ordering", async () => {
+        const harness = makeHarness();
+        harness.operations.launchOwnedSession = async () => {
+            throw new Error(`secret\u0000\r\n${"x".repeat(700)}`);
+        };
+        const result = await runWindowsNativeStandaloneAdapter(request(), harness.operations);
+        assert.equal(result.failures[0].stage, "launch-owned-session");
+        assert.equal(result.failures[0].classification, "failed");
+        assert.equal(result.failures[0].detail.length, 512);
+        assert.match(result.failures[0].detail, /^secret x+/u);
+        assert.ok([...result.failures[0].detail].every(character => {
+            const code = character.codePointAt(0);
+            return code > 31 && code !== 127;
+        }));
+        assert.equal(harness.events.at(-1), "fixture:default:cleanup");
     });
 });

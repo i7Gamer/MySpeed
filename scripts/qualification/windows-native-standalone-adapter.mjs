@@ -14,6 +14,7 @@ const SUCCESS_EXIT = 0;
 const MAXIMUM_ASSERTION_ELAPSED_MILLISECONDS = 600_000;
 const MAXIMUM_BOUNDARY_BYTES = 262_144;
 const MAXIMUM_BOUNDARY_BASE64_CHARACTERS = Math.ceil(MAXIMUM_BOUNDARY_BYTES / 3) * 4;
+const MAXIMUM_FAILURE_DETAIL_CHARACTERS = 512;
 
 export const WINDOWS_NATIVE_ALIASES = Object.freeze(["default", "baseline"]);
 export const WINDOWS_NATIVE_ARTIFACTS = Object.freeze([
@@ -305,7 +306,12 @@ const assertFixtureCleanup = (value, request, ownership) => {
     return value;
 };
 
-const failure = stage => ({stage, classification: "failed"});
+const failureDetail = error => {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalized = message.replace(/[\u0000-\u001f\u007f]+/gu, " ").replace(/\s+/gu, " ").trim();
+    return (normalized || "Unknown failure").slice(0, MAXIMUM_FAILURE_DETAIL_CHARACTERS);
+};
+const failure = (stage, error) => ({stage, classification: "failed", detail: failureDetail(error)});
 const ownershipId = (...parts) => createHash("sha256").update(parts.join("\0"), "utf8").digest("hex").slice(0, 32);
 
 export const runWindowsNativeStandaloneAdapter = async (input, operations) => {
@@ -372,19 +378,19 @@ export const runWindowsNativeStandaloneAdapter = async (input, operations) => {
                             request, session, "running")));
                     }
                     runningAssertionsPassed = true;
-                } catch {
-                    failures.push(failure(scenarioStage));
+                } catch (error) {
+                    failures.push(failure(scenarioStage, error));
                 } finally {
                     if (sessionCleanupRequired) {
                         try { scenarioResult.closed = structuredClone(assertClosed(await operations.closeOwnedSession({session, fixture,
                             ownership: sessionOwnership}), request, sessionOwnership, ready,
                         session !== null, launchAttempted)); }
-                        catch { failures.push(failure("close-owned-session")); }
+                        catch (error) { failures.push(failure("close-owned-session", error)); }
                         try {
                             scenarioResult.afterStopBoundary = structuredClone(assertBoundary(await operations.observeOffline(
                                 {alias: aliasRecord.alias, scenario, phase: "after-stop"}),
                             request, aliasRecord.alias, scenario, "after-stop"));
-                        } catch { failures.push(failure("offline-after-stop")); }
+                        } catch (error) { failures.push(failure("offline-after-stop", error)); }
                     }
                 }
                 if (runningAssertionsPassed && failures.length === 0) {
@@ -393,17 +399,17 @@ export const runWindowsNativeStandaloneAdapter = async (input, operations) => {
                             await operations.runExistingAssertions({session, fixture, stage: "post-stop"}),
                             request, session, "post-stop")));
                         scenarioResult.passed = true;
-                    } catch { failures.push(failure("post-stop-assertions")); }
+                    } catch (error) { failures.push(failure("post-stop-assertions", error)); }
                 }
             }
-        } catch {
-            failures.push(failure(aliasStage));
+        } catch (error) {
+            failures.push(failure(aliasStage, error));
         } finally {
             if (fixtureCleanupRequired) {
                 try { aliasResult.fixtureCleanup = structuredClone(assertFixtureCleanup(
                     await operations.cleanupFixture({fixture, ownership: fixtureOwnership}),
                     request, fixtureOwnership)); }
-                catch { failures.push(failure("cleanup-fixture")); }
+                catch (error) { failures.push(failure("cleanup-fixture", error)); }
             }
         }
     }

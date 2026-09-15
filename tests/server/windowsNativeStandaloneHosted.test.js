@@ -11,7 +11,8 @@ import {
     buildWindowsNativeStandaloneAcquiredExecutionPlan,
     executeWindowsNativeStandaloneExecutionPlan,
     executeWindowsNativeStandaloneRequestFiles,
-    materializeWindowsNativeStandaloneFixture
+    materializeWindowsNativeStandaloneFixture,
+    readWindowsStandaloneBoundedBytes
 } from "../../scripts/qualification/windows-native-standalone-hosted.mjs";
 import {createWindowsNativeStandaloneEvidenceFixture} from
     "../helpers/windows-native-standalone-evidence-fixture.mjs";
@@ -22,7 +23,16 @@ const MODULE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..
 const HASH = "a".repeat(64);
 const SOURCE_SHA = "b".repeat(40);
 const EVENT_SHA = "c".repeat(40);
-const NONCE = "0123456789abcdef0123456789abcdef";
+const EXPECTED_RUN_ID = "12345";
+const EXPECTED_RUN_ATTEMPT = "2";
+const NONCE = crypto.createHash("sha256").update(`${EXPECTED_RUN_ID}\0${EXPECTED_RUN_ATTEMPT}\0${EVENT_SHA}`)
+    .digest("hex").slice(0, 32);
+const CANDIDATE_CONTROLLER = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
+    "../../scripts/qualification/windows-native-candidate-controller.ps1");
+const TEST_TIMEOUT_MS = 30_000;
+const FIRST_CANDIDATE_PORT = 45_000;
+const WINDOWS_DEFAULT_DYNAMIC_PORT_START = 49_152;
+const CANDIDATE_REQUEST_COUNT = 6;
 const sha = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const PRESEAL_ARCHIVE_DIGEST = `sha256:${"9".repeat(64)}`;
 const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: true, withFileTypes: true})
@@ -69,7 +79,7 @@ const executionInput = () => {
     const closure = `${taskRoot}\\closure`;
     const scenarios = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
     return {schemaVersion: 1, kind: "myspeed-windows-native-standalone-execution-input", qualifying: false,
-        expectedRunId: "12345", expectedRunAttempt: "2", expectedEventSha: EVENT_SHA,
+        expectedRunId: EXPECTED_RUN_ID, expectedRunAttempt: EXPECTED_RUN_ATTEMPT, expectedEventSha: EVENT_SHA,
         expectedSourceSha: SOURCE_SHA, expectedImageVersion: "20260914.1", nonce: NONCE,
         qualification: {sourceSha: SOURCE_SHA, runId: "98765", runAttempt: "3", manifestSha256: HASH,
             artifactId: "8001", artifactDigest: `sha256:${"f".repeat(64)}`}, taskRoot,
@@ -135,6 +145,23 @@ const acquiredExecutionInput = () => {
 };
 
 describe("Windows native standalone hosted request factory", () => {
+    it("emits candidate requests accepted by the exact trusted runner scope", {skip: process.platform !== "win32"}, () => {
+        const plan = buildWindowsNativeStandaloneExecutionPlan(executionInput());
+        const values = plan.controllerRequests.map(record => record.value);
+        const encoded = Buffer.from(JSON.stringify({values}), "utf8").toString("base64");
+        const command = `. '${CANDIDATE_CONTROLLER.replaceAll("'", "''")}' -Mode Library;`
+            + `$json=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}'));`
+            + "$values=@((ConvertFrom-Json $json).values);foreach($value in $values){"
+            + "[void](Assert-MyspeedCandidateRequest $value 'C:\\runner')};[Console]::Out.Write($values.Count)";
+        const powershell = `${process.env.SystemRoot || "C:\\Windows"}`
+            + "\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
+        const result = childProcess.spawnSync(powershell,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, "6");
+    });
+
     it("binds an acquired same-run preseal and both exact candidate artifacts before building requests", async () => {
         const acquired = acquiredExecutionInput();
         const plan = await buildWindowsNativeStandaloneAcquiredExecutionPlan(acquired.input, {
@@ -171,9 +198,23 @@ describe("Windows native standalone hosted request factory", () => {
             [path.win32.join(hostRequest.taskRoot, "host.request.json"), evidence.hostRequestBytes]]);
         const inspection = await executeWindowsNativeStandaloneExecutionPlan(plan, {
             invokeHost: async value => { invocations.push(value); return {exitCode: 0, stdout: "", stderr: ""}; },
-            readBytes: async file => files.get(file)
+            readBytes: async file => {
+                assert.notEqual(file, hostRequest.entryDiagnosticPath, "success must not consult failure diagnostics");
+                return files.get(file);
+            }
         });
         assert.equal(invocations.length, 1);
+        const hostJsonLimit = 262_144;
+        const windowsLineEndingBytes = 2;
+        assert.ok(invocations[0].maximumOutputBytes >= hostJsonLimit + windowsLineEndingBytes,
+            "stdout must fit the host's full bounded JSON result and line ending");
+        assert.ok(invocations[0].maximumOutputBytes >= evidence.hostResultBytes.length + windowsLineEndingBytes);
+        const forcedCleanupTimeoutMs = 10_000;
+        const postDeadlineCleanupOperations = 8;
+        const coldStartupAllowanceMs = 60_000;
+        assert.ok(invocations[0].timeoutMilliseconds >= hostRequest.hardDeadlineMs
+            + postDeadlineCleanupOperations * forcedCleanupTimeoutMs + coldStartupAllowanceMs,
+        "outer termination must leave room for cold startup and bounded cleanup after the inner deadline");
         assert.equal(invocations[0].executable, proofRequest.powershellPath);
         assert.deepEqual(invocations[0].arguments.slice(0, 4), ["-NoLogo", "-NoProfile", "-NonInteractive",
             "-ExecutionPolicy"]);
@@ -197,6 +238,68 @@ describe("Windows native standalone hosted request factory", () => {
             readBytes: async file => file === hostRequest.coordinatorArguments[2]
                 ? Buffer.concat([files.get(file), Buffer.from(" ")]) : files.get(file)
         }), /retained request bytes changed/u);
+    });
+
+    it("adds only bounded validated host diagnostics while preserving the primary failure", async () => {
+        const evidence = await createWindowsNativeStandaloneEvidenceFixture();
+        const proofRequest = JSON.parse(evidence.proofRequestBytes.toString("utf8"));
+        const hostRequest = JSON.parse(evidence.hostRequestBytes.toString("utf8"));
+        const plan = {proofRequest, hostRequest, proofRequestBytes: evidence.proofRequestBytes,
+            hostRequestBytes: evidence.hostRequestBytes, proofRequestSha256: sha(evidence.proofRequestBytes),
+            hostRequestSha256: sha(evidence.hostRequestBytes)};
+        const diagnostic = {schemaVersion: 1, kind: "myspeed-windows-native-standalone-entry-failure",
+            status: "failed", stage: "native-initialization", failure: "injected\nsetup failure"};
+        const maximumDiagnosticBytes = 4_096;
+        for (const throws of [false, true]) {
+            const primary = new Error("primary invocation failure");
+            await assert.rejects(executeWindowsNativeStandaloneExecutionPlan(plan, {
+                invokeHost: async () => {
+                    if (throws) throw primary;
+                    return {exitCode: 1, stdout: "", stderr: primary.message};
+                },
+                readBytes: async (file, maximumBytes) => {
+                    assert.equal(file, hostRequest.entryDiagnosticPath);
+                    assert.equal(maximumBytes, maximumDiagnosticBytes);
+                    return Buffer.from(JSON.stringify(diagnostic));
+                }
+            }), error => {
+                assert.match(error.message, /primary invocation failure/u);
+                assert.match(error.message, /native-initialization: injected setup failure/u);
+                if (throws) assert.equal(error.cause, primary);
+                return true;
+            });
+        }
+        for (const value of [undefined, Buffer.from("not JSON"), Buffer.alloc(maximumDiagnosticBytes + 1),
+            Buffer.from(JSON.stringify({...diagnostic, status: "completed"})),
+            Buffer.from(JSON.stringify({...diagnostic, stage: "bad\nstage"})),
+            Buffer.from(JSON.stringify({...diagnostic, failure: {secret: "not a string"}})),
+            Buffer.from(JSON.stringify({...diagnostic, extra: true})), new Error("diagnostic unavailable")]) {
+            await assert.rejects(executeWindowsNativeStandaloneExecutionPlan(plan, {
+                invokeHost: async () => ({exitCode: 1, stdout: "", stderr: "primary failure"}),
+                readBytes: async () => { if (value instanceof Error) throw value; return value; }
+            }), error => error.message === "Standalone host exited 1: primary failure");
+        }
+    });
+
+    it("bounds physical evidence reads and rejects nonordinary files", () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-standalone-read-"));
+        const file = path.join(root, "result.json");
+        const maximum = 16;
+        try {
+            fs.writeFileSync(file, "{}");
+            assert.deepEqual(readWindowsStandaloneBoundedBytes(file, maximum), Buffer.from("{}"));
+            for (const size of [0, 1, maximum + 1]) {
+                fs.writeFileSync(file, Buffer.alloc(size));
+                assert.throws(() => readWindowsStandaloneBoundedBytes(file, maximum), /bound|ordinary/u);
+            }
+            assert.throws(() => readWindowsStandaloneBoundedBytes(root, maximum), /ordinary/u);
+            assert.throws(() => readWindowsStandaloneBoundedBytes(file, 0), /bound/u);
+            assert.throws(() => readWindowsStandaloneBoundedBytes(file, 2_097_153), /bound/u);
+            fs.writeFileSync(file, "{}");
+            const linked = path.join(root, "linked.json");
+            fs.linkSync(file, linked);
+            assert.throws(() => readWindowsStandaloneBoundedBytes(file, maximum), /ordinary/u);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
     it("revalidates and relocates an exact transport fixture before creating an executor-local handoff", async () => {
@@ -228,6 +331,10 @@ describe("Windows native standalone hosted request factory", () => {
         assert.equal(plan.proofRequest.qualificationManifestArtifactDigest, `sha256:${"f".repeat(64)}`);
         assert.equal(plan.hostRequest.proofRequestSha256, plan.proofRequestSha256);
         assert.equal(plan.proofRequest.candidates[0].sha256, executionInput().candidates[0].expectedSha256);
+        const candidatePorts = plan.controllerRequests.map(entry => Number(entry.value.environment.SERVER_PORT));
+        assert.deepEqual(candidatePorts,
+            Array.from({length: CANDIDATE_REQUEST_COUNT}, (_, index) => FIRST_CANDIDATE_PORT + index));
+        assert.equal(candidatePorts.every(port => port < WINDOWS_DEFAULT_DYNAMIC_PORT_START), true);
         assert.deepEqual(plan.hostRequest.coordinatorArguments,
             [executionInput().closure.proofPath, "--request", `${executionInput().taskRoot}\\proof.request.json`,
                 "--sha256", plan.proofRequestSha256]);
