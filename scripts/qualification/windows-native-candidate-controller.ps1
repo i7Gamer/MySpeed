@@ -26,6 +26,7 @@ $script:MaximumJsonBytes=262144
 $script:MaximumControllerBytes=2097152
 $script:MaximumCandidateBytes=536870912
 $script:MaximumFailureCharacters=512
+$script:MaximumLifecycleFailures=4
 $script:NormalDeadlineMs=300000
 $script:HardDeadlineMs=310000
 $script:StopTimeoutMs=240000
@@ -81,6 +82,21 @@ function Get-MyspeedCandidateFailureMessage {
     if($message.Length -gt $script:MaximumFailureCharacters){$message=$message.Substring(0,$script:MaximumFailureCharacters)}
     if(-not $message){$message='unspecified failure'}
     return $message
+}
+
+function Get-MyspeedCandidateLifecycleFailure {
+    param([object]$Result)
+    if($null -eq $Result -or $Result -isnot [psobject] -or $Result.status -cne 'failed' -or
+        $Result.failureDetails -isnot [object[]] -or $Result.failureDetails.Count -lt 1 -or
+        $Result.failureDetails.Count -gt $script:MaximumLifecycleFailures){throw 'Candidate lifecycle failure result differs'}
+    $details=[object[]]$Result.failureDetails
+    foreach($detail in $details){
+        Assert-MyspeedCandidateKeys $detail @('phase','failure') 'Candidate lifecycle failure detail'
+        [void](Assert-MyspeedCandidateString $detail.phase 'Candidate lifecycle failure phase' '\A(?:lifecycle|cleanup|handle-cleanup|proof)\z')
+        [void](Assert-MyspeedCandidateString $detail.failure 'Candidate lifecycle failure message')
+    }
+    $primary=$details[0]
+    return Get-MyspeedCandidateFailureMessage "Hosted candidate lifecycle did not pass: $($primary.phase): $($primary.failure)"
 }
 
 function Assert-MyspeedCandidatePath {
@@ -510,7 +526,7 @@ function Invoke-MyspeedHostedCandidate {
     $operations=New-MyspeedCandidateNativeOperations $request $watch
     $result=Invoke-MyspeedCandidateLifecycleCore $request $operations $runnerTemp
     Write-MyspeedCandidateJson $request.resultPath $result
-    if($result.status -cne 'completed'){throw 'Hosted candidate lifecycle did not pass'}
+    if($result.status -cne 'completed'){throw (Get-MyspeedCandidateLifecycleFailure $result)}
     return $result
 }
 

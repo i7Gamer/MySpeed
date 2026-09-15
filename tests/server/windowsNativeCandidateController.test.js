@@ -469,6 +469,40 @@ describe("Windows native candidate controller", () => {
             || character.charCodeAt(0) === DELETE_CHARACTER_CODE), false);
     });
 
+    powershellIt("reports the bounded primary lifecycle failure only after durable result publication", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source,
+            /Write-MyspeedCandidateJson \$request\.resultPath \$result[\s\S]*throw \(Get-MyspeedCandidateLifecycleFailure/u);
+        const command = `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library; `
+            + "$primary='first'+[char]0+[char]0x00fc+" + '"`r`n"' + "+('x'*700);"
+            + "$failed=[pscustomobject]@{status='failed';failureDetails=[object[]]@("
+            + "[pscustomobject]@{phase='lifecycle';failure=$primary},"
+            + "[pscustomobject]@{phase='cleanup';failure='secondary-cleanup'})};"
+            + "$message=Get-MyspeedCandidateLifecycleFailure $failed;"
+            + "$malformed=[object[]]@($null,[pscustomobject]@{status='completed'},"
+            + "[pscustomobject]@{status='failed';failureDetails=@()},"
+            + "[pscustomobject]@{status='failed';failureDetails=[object[]]@([pscustomobject]@{phase='lifecycle'})},"
+            + "[pscustomobject]@{status='failed';failureDetails=[object[]]@([pscustomobject]@{phase='';failure='x'})},"
+            + "[pscustomobject]@{status='failed';failureDetails=[object[]]@([pscustomobject]@{phase='lifecycle';failure=''})});"
+            + "$rejected=0;foreach($value in $malformed){try{Get-MyspeedCandidateLifecycleFailure $value|Out-Null}"
+            + "catch{$rejected++}};[pscustomobject]@{messageBase64=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($message));"
+            + "rejected=$rejected}|ConvertTo-Json -Compress";
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        const observed = JSON.parse(result.stdout);
+        const message = Buffer.from(observed.messageBase64, "base64").toString("utf8");
+        assert.equal(message.length, MAXIMUM_FAILURE_CHARACTERS);
+        assert.match(message, /^Hosted candidate lifecycle did not pass: lifecycle: first ü /u);
+        assert.doesNotMatch(message, /secondary-cleanup/u);
+        assert.equal([...message].some(character => character.charCodeAt(0) < FIRST_PRINTABLE_CHARACTER_CODE
+            || character.charCodeAt(0) === DELETE_CHARACTER_CODE), false);
+        assert.equal(observed.rejected, 6);
+        assert.equal(Object.hasOwn(invoke("TestLifecycle", lifecycle()), "failureDetails"), false,
+            "successful lifecycle output must remain unchanged");
+    });
+
     powershellIt("rejects stop identity drift and stop files in natural-exit mode", () => {
         const drift = lifecycle();
         drift.stop.candidatePid += 1;
