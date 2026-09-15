@@ -464,3 +464,117 @@ describe("the reporter, executed", () => {
             "nothing monotonic measures the window");
     });
 });
+
+/**
+ * What the listen callback is told, and what it says about it.
+ *
+ * express 5 does not hand this function to server.listen alone. app.listen
+ * wraps it in once() and registers it for the server's 'error' event as well -
+ * express 5.2.1, node_modules/express/lib/application.js:598-605, and the
+ * app.listen entry in the version 5 migration guide - so a bind that fails
+ * calls the very same callback, with the error, instead of the 'listening'
+ * event calling it with nothing.
+ *
+ * A callback that ignores its argument therefore announces a listening server
+ * for a bind that never happened. That is not a hypothetical: the retained
+ * Windows evidence for v1.6.1 has "Server listening on port 45000" in stdout
+ * beside an EADDRINUSE on stderr, from one process that never bound anything.
+ * An operator reading that, or a harness waiting on it, is told the opposite
+ * of what occurred.
+ *
+ * Lifted and run rather than matched as text, and lifted the way the reporter
+ * above is, because index.js cannot be imported to be asked: it opens the
+ * database, downloads a CLI and takes the port.
+ */
+describe("what the http listen callback announces", () => {
+    // The port the retained Windows evidence used, so a failure here reads
+    // against that evidence rather than against an invented number.
+    const PORT = 45000;
+
+    /**
+     * The third argument of app.listen(), as written.
+     *
+     * Walked rather than matched: the callback holds a template literal with
+     * its own braces, and the argument list is the only thing that says where
+     * it ends. Backtick spans are skipped whole for that reason, and the
+     * count of top-level arguments is asserted so a rewritten call site fails
+     * here instead of silently lifting the wrong expression.
+     */
+    const listenCallbackSource = () => {
+        const stripped = withoutJsComments(source);
+        const call = stripped.slice(stripped.indexOf("app.listen("));
+        const open = call.indexOf("(");
+        const starts = [open + 1];
+        let depth = 0;
+        let inTemplate = false;
+        let end = -1;
+
+        for (let i = open; i < call.length; i++) {
+            const character = call[i];
+
+            if (character === "`") { inTemplate = !inTemplate; continue; }
+            if (inTemplate) continue;
+
+            if (character === "(" || character === "[" || character === "{") depth++;
+            else if (character === ")" || character === "]" || character === "}") {
+                if (--depth === 0) { end = i; break; }
+            } else if (character === "," && depth === 1) starts.push(i + 1);
+        }
+
+        assert.notEqual(end, -1, "app.listen's argument list is never closed, so nothing was lifted");
+        assert.equal(starts.length, 3,
+            "app.listen is no longer called with a port, an address and a callback");
+
+        return call.slice(starts[2], end).trim();
+    };
+
+    const lift = () => {
+        const log = [];
+        const error = [];
+        const warn = [];
+
+        const callback = new Function("port", "console", `return (${listenCallbackSource()});`)(
+            PORT, {log: (line) => log.push(line), error: (line) => error.push(line),
+                warn: (line) => warn.push(line)});
+
+        return {callback, log, error, warn};
+    };
+
+    // What express passes on a clash: the error, as the one argument.
+    const bindFailure = () => Object.assign(
+        new Error(`listen EADDRINUSE: address already in use 127.0.0.1:${PORT}`), {code: "EADDRINUSE"});
+
+    it("announces the listener when the bind is what happened", () => {
+        const {callback, log} = lift();
+
+        callback();
+
+        assert.deepEqual(log, [`Server listening on port ${PORT}`],
+            "a server that did come up says nothing, and the line operators look for is gone");
+    });
+
+    it("announces nothing when express hands it the bind failure instead", () => {
+        const {callback, log} = lift();
+
+        callback(bindFailure());
+
+        assert.deepEqual(log, [],
+            "a bind that failed is announced as a listening server, which is what the Windows evidence shows");
+    });
+
+    /**
+     * And it stays out of the way of the handler below it. That handler is
+     * what decides bound from unbound, writes the fault to data/logs/error.log
+     * through errorHandler and exits with the start-up code. A callback that
+     * reported the same failure as well would double every clash in the log
+     * and in whatever captured stdout, for no reader's benefit.
+     */
+    it("leaves the failure to the error handler rather than reporting it twice", () => {
+        const {callback, error, warn} = lift();
+
+        callback(bindFailure());
+
+        assert.deepEqual(error, [], "the clash is reported here as well as by the handler below");
+        assert.deepEqual(warn, [], "the clash is reported here as well as by the handler below");
+    });
+});

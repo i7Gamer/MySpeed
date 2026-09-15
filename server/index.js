@@ -328,7 +328,15 @@ const run = async () => {
 
     await announceAccess();
 
-    const httpServer = app.listen(port, bindAddress, () => console.log(`Server listening on port ${port}`));
+    // express 5 hands this callback the bind failure as well as the bind:
+    // app.listen wraps it in once() and registers it for the server's 'error'
+    // event before passing it to server.listen. Ignoring the argument announced
+    // a listening server for a bind that never happened - v1.6.1's retained
+    // Windows evidence has this line beside an EADDRINUSE. The failure itself
+    // stays with the handler below, which is the half that can tell a bind that
+    // never happened from an error on a listener that is up.
+    const httpServer = app.listen(port, bindAddress,
+        (err) => { if (!err) console.log(`Server listening on port ${port}`); });
     const reportHttpError = listenerErrorReporter();
 
     // The HTTP listener is the instance's only way in on a plain-HTTP install,
