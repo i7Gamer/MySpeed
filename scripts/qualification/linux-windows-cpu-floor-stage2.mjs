@@ -7,6 +7,7 @@ import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHand
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 
 const SCHEMA_VERSION = 1;
+export const MAX_STAGE2_RESULT_BYTES = 4_194_304;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const MAX_SYSTEM_TOOL_BYTES = 268_435_456n;
 export const WINDOWS_SYSTEM_TOOL_PATHS = deepFreeze([
@@ -43,6 +44,11 @@ const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqu
 const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 SERVERSTANDARD", architecture: "x64",
     editionId: "ServerStandardEval", installationType: "Server"});
 const WIM_SELECTION_DIAGNOSTIC_KIND = "windows-server-2025-wim-selection-diagnostic";
+export const STAGE2_DIAGNOSTIC_DEADLINES = Object.freeze({executionMinutes: 25, cleanupMinutes: 5});
+const MAX_LATE_BOOT_SCREENSHOT_BYTES = 1_048_576;
+const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREENSHOT_BYTES / 3) * 4;
+const MAX_LATE_BOOT_MILESTONES = 2;
+const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const TOP_LEVEL_PACKAGE_PINS = deepFreeze([
     {name: "7zip", version: "23.01+dfsg-11", architecture: "amd64",
@@ -110,11 +116,22 @@ class WimSelectionError extends TypeError {
     }
 }
 
-class QemuLaunchError extends Error {
-    constructor(diagnostic, earlyBoot = null) {
+export class GuestBootstrapError extends Error {
+    constructor(guestFailure, earlyBoot = null, lateBoot = null) {
+        super(`guest bootstrap failed: ${guestFailure.failure}`);
+        this.guestFailure = guestFailure;
+        this.earlyBoot = earlyBoot;
+        this.lateBoot = lateBoot;
+    }
+}
+
+export class QemuLaunchError extends Error {
+    constructor(diagnostic, earlyBoot = null, guestFailure = null, lateBoot = null) {
         super("QEMU process did not complete cleanly");
         this.diagnostic = diagnostic;
         this.earlyBoot = earlyBoot;
+        this.guestFailure = guestFailure;
+        this.lateBoot = lateBoot;
     }
 }
 
@@ -818,15 +835,19 @@ function validatePreparedMedia(value, pathsValue, seedSpec, toolchain) {
     return deepFreeze(structuredClone(value));
 }
 
+export function validateGuestFailure(value, expectedNonce) {
+    assertKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.nonce !== expectedNonce ||
+        value.stage !== "guest-bootstrap" || value.status !== "failed" ||
+        typeof value.failure !== "string" || value.failure.length < 1 ||
+        value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS ||
+        /[\x00-\x1f\x7f]/u.test(value.failure)) throw new TypeError("guest failure evidence is invalid");
+    return deepFreeze(structuredClone(value));
+}
+
 function validateGuest(value, pathsValue, expectedNonce, activation) {
     if (value?.status === "failed") {
-        assertKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
-        if (value.schemaVersion !== SCHEMA_VERSION || value.nonce !== expectedNonce ||
-            value.stage !== "guest-bootstrap" ||
-            typeof value.failure !== "string" || value.failure.length < 1 ||
-            value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS ||
-            /[\x00-\x1f\x7f]/u.test(value.failure)) throw new TypeError("guest failure evidence is invalid");
-        throw new Error(`guest bootstrap failed: ${value.failure}`);
+        return validateGuestFailure(value, expectedNonce);
     }
     assertKeys(value, ["activation", "cpu", "instructions", "network", "output", "schemaVersion", "status",
         "systemTools"],
@@ -857,12 +878,26 @@ function failure(context, stage, error, cleanupProven = true) {
     const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ")
         .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
     const diagnostic = stage === "wim-inspection" && error instanceof WimSelectionError ?
-        {wimSelection: structuredClone(error.diagnostic)} : stage === "qemu-launch" && error instanceof QemuLaunchError ?
-            {qemuLaunch: structuredClone(error.diagnostic), ...(error.earlyBoot === null ? {} :
-                {qemuEarlyBoot: structuredClone(error.earlyBoot)})} : {};
-    return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
+        {wimSelection: structuredClone(error.diagnostic)} : stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) ?
+            {
+                ...(error instanceof QemuLaunchError ? {qemuLaunch: structuredClone(error.diagnostic)} : {}),
+                ...(error.earlyBoot === null || error.earlyBoot === undefined ? {} :
+                    {qemuEarlyBoot: structuredClone(error.earlyBoot)}),
+                ...(error.guestFailure === null || error.guestFailure === undefined ? {} :
+                    {guestFailure: structuredClone(error.guestFailure)})
+            } : {};
+    const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
-        context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic});
+        context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic};
+    if (stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) &&
+        error.lateBoot !== null && error.lateBoot !== undefined) {
+        const candidateResult = {...baseResult, qemuLateBoot: structuredClone(error.lateBoot)};
+        const serialized = Buffer.byteLength(`${JSON.stringify(candidateResult)}\n`, "utf8");
+        if (serialized <= MAX_STAGE2_RESULT_BYTES) {
+            return deepFreeze(candidateResult);
+        }
+    }
+    return deepFreeze(baseResult);
 }
 
 export function validateWindowsSystemTools(value) {
@@ -959,6 +994,35 @@ export function validateEarlyBoot(value, pathsValue) {
     return deepFreeze(structuredClone(value));
 }
 
+export function validateLateBoot(value, pathsValue) {
+    assertKeys(value, ["kind", "milestones", "schemaVersion"], "QEMU late-boot observation");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-late-boot-observation" ||
+        !Array.isArray(value.milestones) || value.milestones.length < 1 ||
+        value.milestones.length > MAX_LATE_BOOT_MILESTONES)
+        throw new TypeError("QEMU late-boot observation is invalid");
+    for (const [index, item] of value.milestones.entries()) {
+        assertKeys(item, ["milestone", "offsetMs", "running", "screenshot", "status"], "QEMU late-boot milestone");
+        const expectedMilestone = index + 1;
+        const expectedOffset = LATE_BOOT_OFFSETS[index];
+        if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
+            typeof item.running !== "boolean" || typeof item.status !== "string" || item.status.length < 1)
+            throw new TypeError("QEMU late-boot milestone is invalid");
+        assertKeys(item.screenshot, ["bytes", "bytesBase64", "path", "sha256"], "QEMU late-boot screenshot");
+        const expectedPath = `${pathsValue.root}/late-boot-${expectedMilestone}.png`;
+        const byteCount = decimal(item.screenshot.bytes, "QEMU late-boot screenshot bytes", {positive: true});
+        exactString(item.screenshot.sha256, SHA256_PATTERN, "QEMU late-boot screenshot hash");
+        if (item.screenshot.path !== expectedPath || byteCount > BigInt(MAX_LATE_BOOT_SCREENSHOT_BYTES) ||
+            typeof item.screenshot.bytesBase64 !== "string" ||
+            item.screenshot.bytesBase64.length > MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(item.screenshot.bytesBase64))
+            throw new TypeError("QEMU late-boot screenshot is invalid");
+        const bytes = Buffer.from(item.screenshot.bytesBase64, "base64");
+        if (bytes.length !== Number(byteCount) || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+            sha256(bytes) !== item.screenshot.sha256) throw new TypeError("QEMU late-boot screenshot identity differs");
+    }
+    return deepFreeze(structuredClone(value));
+}
+
 export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact}, operations) {
     const required = ["acquirePackages", "acquireProbeClosure", "acquireWindowsIso", "extractInstallWim", "extractPortableTools",
         "inspectInstallWim", "launchOwnedQemu", "prepareOfflineMedia", "resolveSignedPackageClosure"];
@@ -1007,13 +1071,26 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         const argv = buildQemuArguments({paths: checkedPaths, toolchain});
         stage = "qemu-launch";
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
-            argv, selectedImage, privilegeMode, deadlines: {executionMinutes: 270, cleanupMinutes: 30}});
-        assertKeys(launchObservation, launchObservation?.failureDiagnostic === undefined ?
-            ["argv", "earlyBoot", "guest", "process"] :
-            ["argv", "earlyBoot", "failureDiagnostic", "guest", "process"], "QEMU observation");
+            argv, selectedImage, privilegeMode, deadlines: STAGE2_DIAGNOSTIC_DEADLINES});
+        const allowedObservationKeys = ["argv", "earlyBoot", "process"];
+        if (launchObservation?.guest !== undefined) allowedObservationKeys.push("guest");
+        if (launchObservation?.guestFailure !== undefined) allowedObservationKeys.push("guestFailure");
+        if (!allowedObservationKeys.includes("guest") && !allowedObservationKeys.includes("guestFailure")) {
+            allowedObservationKeys.push("guest");
+        }
+        if (launchObservation?.failureDiagnostic !== undefined) allowedObservationKeys.push("failureDiagnostic");
+        if (launchObservation?.lateBoot !== undefined) allowedObservationKeys.push("lateBoot");
+        assertKeys(launchObservation, allowedObservationKeys, "QEMU observation");
         if (!same(launchObservation.argv, argv)) throw new TypeError("QEMU observed argv mismatch");
         const earlyBoot = launchObservation.earlyBoot === null ? null : validateEarlyBoot(launchObservation.earlyBoot,
             checkedPaths);
+        const lateBoot = launchObservation.lateBoot ? validateLateBoot(launchObservation.lateBoot, checkedPaths) : null;
+        let guestFailure = null;
+        if (launchObservation.guestFailure) {
+            guestFailure = validateGuestFailure(launchObservation.guestFailure, context.nonce);
+        } else if (launchObservation.guest?.status === "failed") {
+            guestFailure = validateGuestFailure(launchObservation.guest, context.nonce);
+        }
         assertKeys(launchObservation.process, ["cleanupProven", "exitCode", "launcherExecutablePath", "processGroupId",
             "qemuPid", "qemuPidAbsentAfter", "qemuStartTicks", "signal", "terminationReason", "timedOut", "treeGone"],
             "QEMU process observation");
@@ -1028,9 +1105,12 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             launchObservation.process.terminationReason !== null ||
             launchObservation.process.qemuPidAbsentAfter !== true)
             throw new QemuLaunchError(validateQemuLaunchDiagnostic(launchObservation.failureDiagnostic,
-                launchObservation.process), earlyBoot);
+                launchObservation.process), earlyBoot, guestFailure, lateBoot);
         if (earlyBoot === null) throw new QemuLaunchError(validateQemuLaunchDiagnostic(
-            launchObservation.failureDiagnostic, launchObservation.process));
+            launchObservation.failureDiagnostic, launchObservation.process), earlyBoot, guestFailure, lateBoot);
+        if (guestFailure !== null) {
+            throw new GuestBootstrapError(guestFailure, earlyBoot, lateBoot);
+        }
         const guest = validateGuest(launchObservation.guest, checkedPaths, context.nonce, activation);
         return deepFreeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,

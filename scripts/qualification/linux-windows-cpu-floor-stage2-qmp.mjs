@@ -4,16 +4,68 @@ const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
 const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
-const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}))\/early-boot-([12])\.png$/u;
+const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}))\/(early|late)-boot-([12])\.png$/u;
+
+export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
+export const MAX_LATE_BOOT_MILESTONES = 2;
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
-function validateScreenshots(paths) {
+export function validateScreenshots(paths) {
     if (!Array.isArray(paths) || paths.length !== 2) throw new TypeError("QMP screenshot path set is invalid");
     const matches = paths.map(value => typeof value === "string" ? value.match(SCREENSHOT_PATH_PATTERN) : null);
-    if (!matches[0] || !matches[1] || matches[0][1] !== matches[1][1] || matches[0][2] !== "1" ||
-        matches[1][2] !== "2") throw new TypeError("QMP screenshot path is invalid");
+    if (!matches[0] || !matches[1] || matches[0][1] !== matches[1][1] ||
+        matches[0][2] !== "early" || matches[1][2] !== "early" ||
+        matches[0][3] !== "1" || matches[1][3] !== "2")
+        throw new TypeError("QMP screenshot path is invalid");
     return [...paths];
+}
+
+export function validateLateScreenshots(paths) {
+    if (!Array.isArray(paths) || paths.length !== MAX_LATE_BOOT_MILESTONES)
+        throw new TypeError("QMP late screenshot path set is invalid");
+    const matches = paths.map(value => typeof value === "string" ? value.match(SCREENSHOT_PATH_PATTERN) : null);
+    if (!matches[0] || !matches[1] || matches[0][1] !== matches[1][1] ||
+        matches[0][2] !== "late" || matches[1][2] !== "late" ||
+        matches[0][3] !== "1" || matches[1][3] !== "2")
+        throw new TypeError("QMP late screenshot path is invalid");
+    return [...paths];
+}
+
+function cancellableDelay(milliseconds, dependencies, session) {
+    if (session.cancelled || session.expired || milliseconds <= 0) return Promise.resolve();
+    if (dependencies.setTimer) {
+        const clearTimer = dependencies.clearTimer ?? clearTimeout;
+        return new Promise(resolve => {
+            let timer = null;
+            const done = () => {
+                if (timer !== null) clearTimer(timer);
+                session.activeTimer = null;
+                session.onCancel = null;
+                resolve();
+            };
+            session.onCancel = done;
+            timer = dependencies.setTimer(done, milliseconds);
+            session.activeTimer = timer;
+        });
+    }
+    if (dependencies.wait) {
+        return Promise.resolve(dependencies.wait(milliseconds));
+    }
+    const clearTimer = dependencies.clearTimer ?? clearTimeout;
+    const setTimer = dependencies.setTimer ?? setTimeout;
+    return new Promise(resolve => {
+        let timer = null;
+        const done = () => {
+            if (timer !== null) clearTimer(timer);
+            session.activeTimer = null;
+            session.onCancel = null;
+            resolve();
+        };
+        session.onCancel = done;
+        timer = setTimer(done, milliseconds);
+        session.activeTimer = timer;
+    });
 }
 
 function withDeadline(promise, dependencies, milliseconds = QMP_MESSAGE_TIMEOUT_MILLISECONDS,
@@ -73,8 +125,26 @@ async function expectResponse(readMessage, id) {
 
 async function runSession(input, dependencies, session) {
     const screenshotPaths = validateScreenshots(input?.screenshotPaths);
+    const lateScreenshotPaths = input?.lateScreenshotPaths !== undefined ?
+        validateLateScreenshots(input.lateScreenshotPaths) : null;
     if (typeof input.writeBytes !== "function") throw new TypeError("QMP writer is invalid");
+
+    const cancelSession = () => {
+        session.cancelled = true;
+        if (session.activeTimer !== null) {
+            const clearTimer = dependencies.clearTimer ?? clearTimeout;
+            clearTimer(session.activeTimer);
+            session.activeTimer = null;
+        }
+        if (typeof session.onCancel === "function") {
+            session.onCancel();
+        }
+    };
+    input.onSession?.({cancel: cancelSession});
+
     const readMessage = createMessageReader(input.readable, dependencies);
+    const getTime = dependencies.now ?? (() => Date.now());
+    const sessionStartTime = getTime();
     const greeting = await readMessage();
     const version = greeting?.QMP?.version?.qemu;
     if (![version?.major, version?.minor, version?.micro].every(value => Number.isSafeInteger(value) && value >= 0) ||
@@ -82,9 +152,9 @@ async function runSession(input, dependencies, session) {
         !greeting.QMP.capabilities.every(value => typeof value === "string"))
         throw new Error("QMP greeting is invalid");
     const write = value => {
-        if (session.expired) return Promise.reject(new Error("QMP session deadline exceeded"));
+        if (session.expired || session.cancelled) return Promise.reject(new Error("QMP session deadline exceeded"));
         return withDeadline(Promise.resolve().then(() => {
-            if (session.expired) throw new Error("QMP session deadline exceeded");
+            if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
             return input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
         }), dependencies);
     };
@@ -102,12 +172,58 @@ async function runSession(input, dependencies, session) {
         await write({execute: "screendump", arguments: {filename: screenshotPaths[index], format: "png"}, id});
         await expectResponse(readMessage, id);
     }
-    return Object.freeze({version: Object.freeze({...version}), status: status.status, running: status.running,
+    const earlyResult = Object.freeze({version: Object.freeze({...version}), status: status.status, running: status.running,
         screenshotPaths: Object.freeze(screenshotPaths), inputSent: false});
+
+    if (lateScreenshotPaths !== null) {
+        const runLateMilestones = async () => {
+            const milestones = [];
+            try {
+                for (let i = 0; i < MAX_LATE_BOOT_MILESTONES; i += 1) {
+                    if (session.cancelled || session.expired) break;
+                    const targetOffset = LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS[i];
+                    const elapsed = getTime() - sessionStartTime;
+                    const remaining = Math.max(0, targetOffset - elapsed);
+                    await cancellableDelay(remaining, dependencies, session);
+                    if (session.cancelled || session.expired) break;
+                    const milestoneIndex = i + 1;
+                    const statusId = `late-status-${milestoneIndex}`;
+                    await write({execute: "query-status", id: statusId});
+                    const lateStatus = await expectResponse(readMessage, statusId);
+                    if (session.cancelled || session.expired) break;
+                    const screenshotId = `late-screenshot-${milestoneIndex}`;
+                    await write({execute: "screendump", arguments: {
+                        filename: lateScreenshotPaths[i], format: "png"
+                    }, id: screenshotId});
+                    await expectResponse(readMessage, screenshotId);
+                    milestones.push(Object.freeze({
+                        milestone: milestoneIndex,
+                        offsetMs: targetOffset,
+                        status: lateStatus.status,
+                        running: lateStatus.running,
+                        screenshotPath: lateScreenshotPaths[i]
+                    }));
+                }
+            } catch {
+                // Non-blocking failure handled gracefully
+            }
+            if (milestones.length === 0) return null;
+            return Object.freeze({
+                schemaVersion: 1,
+                kind: "qemu-late-boot-observation",
+                milestones: Object.freeze(milestones)
+            });
+        };
+        const latePromise = runLateMilestones();
+        latePromise.catch(() => undefined);
+        input.onLateObservation?.(latePromise);
+    }
+
+    return earlyResult;
 }
 
 export function runEarlyBootQmpSession(input, dependencies = {}) {
-    const session = {expired: false};
+    const session = {expired: false, cancelled: false, activeTimer: null, onCancel: null};
     return withDeadline(runSession(input, dependencies, session), dependencies, QMP_SESSION_TIMEOUT_MILLISECONDS,
-        () => { session.expired = true; });
+        () => { session.expired = true; if (typeof session.onCancel === "function") session.onCancel(); });
 }

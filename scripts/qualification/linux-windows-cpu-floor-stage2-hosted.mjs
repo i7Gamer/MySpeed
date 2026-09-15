@@ -18,6 +18,7 @@ const KILL = "/usr/bin/kill";
 const READLINK = "/usr/bin/readlink";
 const SUDO = "/usr/bin/sudo";
 const TIMEOUT = "/usr/bin/timeout";
+
 const STAT = "/usr/bin/stat";
 const UBUNTU_KEYRING = "/usr/share/keyrings/ubuntu-archive-keyring.gpg";
 const COMMAND_TIMEOUT_MILLISECONDS = 30_000;
@@ -26,6 +27,13 @@ const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
 const QEMU_TIMEOUT_SECONDS = 16_200;
 const QEMU_OUTER_TIMEOUT_MILLISECONDS = 16_240_000;
+export const DIAGNOSTIC_EXECUTION_MINUTES = 25;
+export const DIAGNOSTIC_CLEANUP_MINUTES = 5;
+export const DIAGNOSTIC_TIMEOUT_SECONDS = DIAGNOSTIC_EXECUTION_MINUTES * 60;
+export const DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS = 40;
+export const DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS =
+    (DIAGNOSTIC_TIMEOUT_SECONDS + DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS) * 1_000;
+const OUTPUT_DISK_BYTES = 67_108_864n;
 const MAX_WIMINFO_BYTES = 1_048_576;
 const MAX_GUEST_BYTES = 262_144;
 const GUEST_FAILURE_FALLBACK_NAME = "bootstrap-failure.json";
@@ -105,9 +113,14 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
         const stdout = [], stderr = [];
         const stdoutState = {bytes: 0, overflow: false}, stderrState = {bytes: 0, overflow: false};
         let timedOut = false, errorObserved = false, settled = false, cleanupTimer = null, executionTimer = null;
+        let qmpCancelHandle = null;
+        const cancelQmp = () => {
+            try { qmpCancelHandle?.cancel?.(); } catch { /* ignore */ }
+        };
         const resolveResult = (exitCode, signal, cleanupProven) => {
             if (settled) return;
             settled = true;
+            cancelQmp();
             if (executionTimer !== null) clearTimer(executionTimer);
             if (cleanupTimer !== null) clearTimer(cleanupTimer);
             child.stdin?.destroy();
@@ -117,6 +130,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
         };
         options.onSpawn?.(child.pid);
         const terminate = reason => {
+            cancelQmp();
             const externallyOwned = options.onTerminationRequested?.(reason) === true;
             if (!externallyOwned) try { killGroup(child.pid); } catch { /* cleanup remains unproved */ }
             if (cleanupTimer === null) cleanupTimer = setTimer(() => {
@@ -137,11 +151,13 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
         });
         child.once("error", error => {
             if (settled) return;
+            cancelQmp();
             if (Number.isInteger(child.pid) && child.pid > 0) { errorObserved = true; terminate("process-error"); }
             else { settled = true; clearTimer(executionTimer); reject(error); }
         });
         child.once("close", (code, signal) => {
             if (settled) return;
+            cancelQmp();
             let cleanupProven = false;
             try { cleanupProven = !isGroupAlive(child.pid); } catch { cleanupProven = false; }
             if (!cleanupProven) {
@@ -153,8 +169,21 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 if (!child.stdin || child.stdin.destroyed) return writeReject(new Error("QMP input pipe is unavailable"));
                 child.stdin.write(bytes, error => error ? writeReject(error) : writeResolve());
             });
-            const qmpSession = runEarlyBootQmpSession({readable: child.stdout, writeBytes,
-                screenshotPaths: options.qmp.screenshotPaths}, options.qmpDependencies);
+            const qmpSession = runEarlyBootQmpSession({
+                readable: child.stdout,
+                writeBytes,
+                screenshotPaths: options.qmp.screenshotPaths,
+                ...(options.qmp.lateScreenshotPaths ? {lateScreenshotPaths: options.qmp.lateScreenshotPaths} : {}),
+                onSession: handle => {
+                    qmpCancelHandle = handle;
+                    options.onQmpSessionHandle?.(handle);
+                    options.qmp.onSession?.(handle);
+                },
+                onLateObservation: promise => {
+                    options.onLateObservation?.(promise);
+                    options.qmp.onLateObservation?.(promise);
+                }
+            }, options.qmpDependencies);
             qmpSession.catch(() => undefined);
             options.onQmpSession?.(qmpSession);
         }
@@ -551,6 +580,88 @@ export function parseProbeArtifactEvidence(bytes, artifact) {
         eventSha: value.eventSha, nonce: value.nonce, imageVersion: value.imageVersion});
 }
 
+export function defaultValidateOutputDisk(target, expectedIdentity = null, fileSystem = fs, expectedOwner = null) {
+    if (typeof target !== "string" || target.length === 0) {
+        throw new TypeError("target must be a non-empty string");
+    }
+    const lstat = fileSystem.lstatSync(target, {bigint: true});
+    if (typeof lstat.isSymbolicLink === "function" && lstat.isSymbolicLink()) {
+        throw new Error("output disk must not be a symlink");
+    }
+    if (typeof lstat.isFile === "function" && !lstat.isFile()) {
+        throw new Error("output disk must be an ordinary file");
+    }
+    if (lstat.nlink !== 1n && lstat.nlink !== 1) {
+        throw new Error("output disk must be a single-link file");
+    }
+    const oReadOnly = fileSystem.constants?.O_RDONLY ?? fs.constants.O_RDONLY;
+    const oNoFollow = fileSystem.constants?.O_NOFOLLOW ?? fs.constants.O_NOFOLLOW;
+    const flags = oReadOnly | oNoFollow;
+    const descriptor = fileSystem.openSync(target, flags);
+    let fstat;
+    try {
+        fstat = fileSystem.fstatSync(descriptor, {bigint: true});
+    } finally {
+        fileSystem.closeSync(descriptor);
+    }
+    if (typeof fstat.isFile === "function" && !fstat.isFile()) {
+        throw new Error("output disk descriptor must be a regular file");
+    }
+    if (fstat.nlink !== 1n && fstat.nlink !== 1) {
+        throw new Error("output disk descriptor must be a single-link file");
+    }
+    if (fstat.size !== OUTPUT_DISK_BYTES && fstat.size !== Number(OUTPUT_DISK_BYTES)) {
+        throw new Error("output disk size must match expected raw FAT size (stat mismatch)");
+    }
+    if (fstat.dev !== lstat.dev || fstat.ino !== lstat.ino || fstat.uid !== lstat.uid || fstat.gid !== lstat.gid) {
+        throw new Error("output disk lexical and descriptor stat mismatch");
+    }
+
+    // Retain and compare all permission bits
+    const lstatMode = (lstat.mode !== undefined && lstat.mode !== null) ? (BigInt(lstat.mode) & 0o7777n) : null;
+    const fstatMode = (fstat.mode !== undefined && fstat.mode !== null) ? (BigInt(fstat.mode) & 0o7777n) : null;
+    if (lstatMode === null || fstatMode === null) {
+        throw new Error("output disk mode is missing");
+    }
+    if (lstatMode !== fstatMode) {
+        throw new Error("output disk lexical and descriptor mode mismatch");
+    }
+    if ((fstatMode & 0o022n) !== 0n) {
+        throw new Error("output disk permissions are unsafe (group/world-writable)");
+    }
+    if ((fstatMode & 0o200n) === 0n) {
+        throw new Error("output disk permissions must retain owner writability");
+    }
+
+    // Reject unknown owner identity rather than skipping ownership checks
+    const resolvedOwner = expectedOwner ?? (typeof process.getuid === "function" ?
+        {uid: BigInt(process.getuid()), gid: typeof process.getgid === "function" ? BigInt(process.getgid()) : null} : null);
+    if (resolvedOwner === null || resolvedOwner.uid === undefined || resolvedOwner.uid === null) {
+        throw new Error("output disk owner identity is unknown");
+    }
+    if (BigInt(fstat.uid) !== BigInt(resolvedOwner.uid)) {
+        throw new Error("output disk owner UID does not match expected task owner");
+    }
+    if (resolvedOwner.gid !== undefined && resolvedOwner.gid !== null && BigInt(fstat.gid) !== BigInt(resolvedOwner.gid)) {
+        throw new Error("output disk owner GID does not match expected task owner");
+    }
+
+    const modeOctal = (fstatMode & 0o7777n).toString(8);
+    if (expectedIdentity !== null && expectedIdentity !== undefined) {
+        if (fstat.dev !== expectedIdentity.dev || fstat.ino !== expectedIdentity.ino ||
+            BigInt(fstat.uid) !== BigInt(expectedIdentity.uid) || BigInt(fstat.gid) !== BigInt(expectedIdentity.gid) ||
+            BigInt(fstat.size) !== BigInt(expectedIdentity.size)) {
+            throw new Error("output disk identity does not match pre-launch identity");
+        }
+        const expectedMode = typeof expectedIdentity.mode === "bigint" ?
+            (expectedIdentity.mode & 0o7777n).toString(8) : String(expectedIdentity.mode);
+        if (modeOctal !== expectedMode) {
+            throw new Error("output disk mode changed post-launch");
+        }
+    }
+    return {dev: fstat.dev, ino: fstat.ino, uid: fstat.uid, gid: fstat.gid, size: fstat.size, mode: modeOctal};
+}
+
 function defaultWriteExclusive(target, bytes) {
     fs.writeFileSync(target, bytes, {flag: "wx", mode: 0o600});
 }
@@ -877,21 +988,57 @@ export async function runMonitoredQemu(io, request) {
     let requestOwnedSettlement = null;
     let qmpSession = null;
     let qmpObservation = null;
+    let qmpSessionHandle = null;
+    let lateBootObservation = null;
+    let lateBootSettled = false;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
+    const cancelQmp = () => {
+        try { qmpSessionHandle?.cancel?.(); } catch { /* ignore */ }
+    };
     const identityAttempt = {pid: null, expected: {processGroupId: null,
         executablePath: request.expectedExecutable}, observed: null};
     const terminationReasons = [];
     const operation = io.runOwned(request.command, request.argv,
         {timeoutMs: request.timeoutMs, maxStreamBytes: request.maxStreamBytes,
             onSpawn: pid => { outerProcessGroupId = pid; },
-            onTerminationRequested: reason => { terminationReasons.push(reason); return true; },
+            onTerminationRequested: reason => {
+                cancelQmp();
+                terminationReasons.push(reason);
+                return true;
+            },
             onTerminationReady: requestTermination => { requestOwnedSettlement = requestTermination; },
-            ...(request.qmp ? {qmp: request.qmp, qmpDependencies: request.qmpDependencies,
-                onQmpSession: value => { qmpSession = value; qmpState = "pending";
+            ...(request.qmp ? {
+                qmp: request.qmp,
+                qmpDependencies: request.qmpDependencies,
+                onQmpSessionHandle: handle => {
+                    qmpSessionHandle = handle;
+                    request.onQmpSessionHandle?.(handle);
+                },
+                onLateObservation: promise => {
+                    request.onLateObservation?.(promise);
+                    promise.then(
+                        observation => {
+                            lateBootSettled = true;
+                            lateBootObservation = observation;
+                        },
+                        () => {
+                            lateBootSettled = true;
+                            lateBootObservation = null;
+                        }
+                    ).catch(() => undefined);
+                },
+                onQmpSession: value => {
+                    qmpSession = value;
+                    qmpState = "pending";
                     value.then(observation => { qmpObservation = observation; qmpState = "complete"; },
-                        () => { qmpState = "failed"; }); }} : {})})
-        .finally(() => { finished = true; });
+                        () => { qmpState = "failed"; });
+                }
+            } : {})})
+        .finally(() => {
+            cancelQmp();
+            finished = true;
+        });
     const identityDeadline = io.monotonicMilliseconds() + QEMU_IDENTITY_TIMEOUT_MILLISECONDS;
     let identity = null;
     let monitorFailed = false;
@@ -951,7 +1098,9 @@ export async function runMonitoredQemu(io, request) {
         catch { qmpState = "failed"; terminationReasons.push("qmp-failed"); }
     }
     let teardownProven = true;
-    if (terminationReasons.length > 0 && outerProcessGroupId !== null) {
+    if (terminationReasons.length > 0) {
+        cancelQmp();
+        if (outerProcessGroupId !== null) {
         let terminationRequired = true;
         try { terminationRequired = io.isProcessGroupAlive(outerProcessGroupId); }
         catch {
@@ -963,6 +1112,7 @@ export async function runMonitoredQemu(io, request) {
                 reason: terminationReasons[0]}); }
             catch { teardownProven = false; }
         }
+    }
     }
     if (terminationReasons.length > 0) {
         if (typeof requestOwnedSettlement !== "function") teardownProven = false;
@@ -978,6 +1128,7 @@ export async function runMonitoredQemu(io, request) {
             terminationReasons.push("group-observation-failed");
         }
     }
+    const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
     const finish = value => {
         if (pidfile && io.pathExists(request.pidPath)) {
             if (value.absentAfter !== true || value.processGroupGone !== true)
@@ -987,7 +1138,7 @@ export async function runMonitoredQemu(io, request) {
         return value;
     };
     if (monitorFailed || identity === null || !teardownProven)
-        return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false, processGroupGone: false,
+        return finish({observation, identity, qmp: qmpObservation, lateBoot: finalLateBoot, monitorFailure, absentAfter: false, processGroupGone: false,
             terminationReason: terminationReasons[0] ?? null});
     const cleanupDeadline = io.monotonicMilliseconds() + QEMU_CLEANUP_TIMEOUT_MILLISECONDS;
     while (io.monotonicMilliseconds() <= cleanupDeadline) {
@@ -999,16 +1150,16 @@ export async function runMonitoredQemu(io, request) {
                 monitorFailed = true;
                 terminationReasons.push("group-observation-failed");
             }
-            return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: true,
+            return finish({observation, identity, qmp: qmpObservation, lateBoot: finalLateBoot, monitorFailure, absentAfter: true,
                 processGroupGone, terminationReason: terminationReasons[0] ?? null});
         }
         if (after.startTicks !== identity.startTicks || after.executablePath !== identity.executablePath)
-            return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
+            return finish({observation, identity, qmp: qmpObservation, lateBoot: finalLateBoot, monitorFailure, absentAfter: false,
                 processGroupGone: false,
                 terminationReason: terminationReasons[0] ?? null});
         await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
     }
-    return finish({observation, identity, qmp: qmpObservation, monitorFailure, absentAfter: false,
+    return finish({observation, identity, qmp: qmpObservation, lateBoot: finalLateBoot, monitorFailure, absentAfter: false,
         processGroupGone: false, terminationReason: terminationReasons[0] ?? null});
 }
 
@@ -1048,6 +1199,9 @@ function normalizeDependencies(value) {
         observeRuntimeResources: value.observeRuntimeResources,
         terminateQemuGroup: value.terminateQemuGroup,
         resolveAptClosure: value.resolveAptClosure,
+        validateOutputDisk: value.validateOutputDisk ??
+            ((target, expected, owner) => defaultValidateOutputDisk(target, expected, fs,
+                owner ?? (typeof process.getuid === "function" ? {uid: BigInt(process.getuid()), gid: BigInt(process.getgid())} : null))),
         parseProbeEvidence: value.parseProbeEvidence ?? parseProbeArtifactEvidence};
     normalized.readQemuProcessIdentity = value.readQemuProcessIdentity ??
         (processId => defaultReadQemuProcessIdentity(normalized, processId));
@@ -1168,11 +1322,23 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     assertCriticalFileUnchanged(io, input.toolchain.qemu, "QEMU executable");
     assertCriticalFileUnchanged(io, input.toolchain.firmware.kvmvapic, "QEMU kvmvapic firmware");
     assertCriticalFileUnchanged(io, input.toolchain.firmware.vga, "QEMU VGA firmware");
+    let timeoutSeconds = QEMU_TIMEOUT_SECONDS;
+    let outerTimeoutMs = QEMU_OUTER_TIMEOUT_MILLISECONDS;
+    const isDiagnostic = input.deadlines !== undefined;
+    if (isDiagnostic) {
+        if (!input.deadlines || typeof input.deadlines !== "object" ||
+            input.deadlines.executionMinutes !== DIAGNOSTIC_EXECUTION_MINUTES ||
+            input.deadlines.cleanupMinutes !== DIAGNOSTIC_CLEANUP_MINUTES) {
+            throw new TypeError("unsupported QEMU deadlines");
+        }
+        timeoutSeconds = DIAGNOSTIC_TIMEOUT_SECONDS;
+        outerTimeoutMs = DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS;
+    }
     const qemuInvocation = portableInvocation(input.toolchain, input.toolchain.qemu, input.argv);
     const launcher = input.privilegeMode === "reviewed-sudo-kvm" ? {
         command: SUDO, argv: ["-n", "--", TIMEOUT, "--foreground", "--signal=KILL",
-            `${QEMU_TIMEOUT_SECONDS}s`, qemuInvocation.command, ...qemuInvocation.argv]
-    } : {command: TIMEOUT, argv: ["--foreground", "--signal=KILL", `${QEMU_TIMEOUT_SECONDS}s`,
+            `${timeoutSeconds}s`, qemuInvocation.command, ...qemuInvocation.argv]
+    } : {command: TIMEOUT, argv: ["--foreground", "--signal=KILL", `${timeoutSeconds}s`,
         qemuInvocation.command, ...qemuInvocation.argv]};
     const sudoIdentity = input.privilegeMode === "reviewed-sudo-kvm" ? io.inspectOwned(SUDO) : null;
     const timeoutIdentity = io.inspectOwned(TIMEOUT);
@@ -1184,18 +1350,24 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
             throw new Error(`${name} launcher identity is unsafe`);
     }
     const launchTime = io.monotonicMilliseconds();
-    const executionDeadline = Math.min(launchTime + QEMU_TIMEOUT_SECONDS * 1_000,
-        stageStartedMilliseconds + QEMU_TIMEOUT_SECONDS * 1_000);
+    const executionDeadline = isDiagnostic ?
+        (launchTime + timeoutSeconds * 1_000) :
+        Math.min(launchTime + timeoutSeconds * 1_000, stageStartedMilliseconds + timeoutSeconds * 1_000);
     if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
     const screenshotPaths = [`${input.paths.root}/early-boot-1.png`, `${input.paths.root}/early-boot-2.png`];
     if (screenshotPaths.some(target => io.pathExists(target)))
         throw new Error("early-boot screenshot target already exists");
+    const lateScreenshotPaths = isDiagnostic ?
+        [`${input.paths.root}/late-boot-1.png`, `${input.paths.root}/late-boot-2.png`] : null;
+    if (lateScreenshotPaths !== null && lateScreenshotPaths.some(target => io.pathExists(target)))
+        throw new Error("late-boot screenshot target already exists");
     const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
-        timeoutMs: QEMU_OUTER_TIMEOUT_MILLISECONDS, pidPath: input.paths.qemuPid,
+        timeoutMs: outerTimeoutMs, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
         executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
         resources: {taskPath: path.posix.dirname(input.paths.root),
-            roots: [input.paths.root, input.paths.portableRoot]}, qmp: {screenshotPaths}});
+            roots: [input.paths.root, input.paths.portableRoot]},
+        qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {})}});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
         monitored.absentAfter === true && monitored.processGroupGone === true;
@@ -1219,6 +1391,41 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
                 version: structuredClone(monitored.qmp.version), status: monitored.qmp.status, running: true, screenshots};
         } catch { /* a missing or changed screenshot keeps the launch non-acceptable */ }
     }
+    let lateBoot = null;
+    if (cleanupProven && processRecord.treeGone && monitored.lateBoot?.milestones &&
+        Array.isArray(monitored.lateBoot.milestones)) {
+        try {
+            const validatedMilestones = monitored.lateBoot.milestones.map(item => {
+                const observed = io.readOwnedVerified(item.screenshotPath, MAX_EARLY_BOOT_SCREENSHOT_BYTES);
+                if (observed.identity.path !== item.screenshotPath || observed.bytes.length < PNG_SIGNATURE.length ||
+                    !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+                    sha256(observed.bytes) !== observed.identity.sha256) {
+                    throw new Error("late-boot screenshot is invalid");
+                }
+                return {
+                    milestone: item.milestone,
+                    offsetMs: item.offsetMs,
+                    status: item.status,
+                    running: item.running,
+                    screenshot: {
+                        path: item.screenshotPath,
+                        bytes: observed.identity.bytes,
+                        sha256: observed.identity.sha256,
+                        bytesBase64: observed.bytes.toString("base64")
+                    }
+                };
+            });
+            if (validatedMilestones.length > 0) {
+                lateBoot = {
+                    schemaVersion: 1,
+                    kind: "qemu-late-boot-observation",
+                    milestones: validatedMilestones
+                };
+            }
+        } catch {
+            lateBoot = null;
+        }
+    }
     const result = {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
         timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
         treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
@@ -1226,7 +1433,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         launcherExecutablePath: processRecord.launcherExecutablePath,
         processGroupId: processRecord.processGroupId,
         qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
-        terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot};
+        terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot,
+        ...(lateBoot !== null ? {lateBoot} : {})};
     const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
         && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
         && !processRecord.stdoutOverflow && !processRecord.stderrOverflow && earlyBoot !== null;
@@ -1508,9 +1716,52 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             ovmfVars: {path: variables.path, sha256: variables.sha256}};
         },
         async launchOwnedQemu(input) {
+            const taskOwner = typeof process.getuid === "function" ?
+                {uid: BigInt(process.getuid()), gid: typeof process.getgid === "function" ? BigInt(process.getgid()) : null} : null;
+            let preLaunchDiskIdentity = null;
+            try {
+                preLaunchDiskIdentity = io.validateOutputDisk(input.paths.outputDisk, null, taskOwner);
+            } catch {
+                preLaunchDiskIdentity = null;
+            }
             const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
             const launched = monitoredLaunch.result;
-            if (!monitoredLaunch.guestParsingAllowed) return {...launched, guest: null};
+            if (!monitoredLaunch.guestParsingAllowed) {
+                let guestFailure = null;
+                if (launched.process?.cleanupProven === true && launched.process?.treeGone === true &&
+                    preLaunchDiskIdentity !== null) {
+                    try {
+                        io.validateOutputDisk(input.paths.outputDisk, preLaunchDiskIdentity, taskOwner);
+                        const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
+                            "guest-result.json");
+                        let receiptBytes = null;
+                        try {
+                            const extractResult = portableInvocation(input.toolchain, input.toolchain.mcopy,
+                                ["-i", input.paths.outputDisk, "::result.json", guestResult]);
+                            assertSuccessful(await io.runOwned(extractResult.command, extractResult.argv,
+                                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest result extraction");
+                            const guestRead = io.readOwnedVerified(guestResult, MAX_GUEST_BYTES);
+                            receiptBytes = guestRead.bytes;
+                        } catch {
+                            const fallback = directChild(input.paths.root,
+                                `${input.paths.root}/${GUEST_FAILURE_FALLBACK_NAME}`, GUEST_FAILURE_FALLBACK_NAME);
+                            const extractFailure = portableInvocation(input.toolchain, input.toolchain.mcopy,
+                                ["-i", input.paths.outputDisk, `::${GUEST_FAILURE_FALLBACK_NAME}`, fallback]);
+                            assertSuccessful(await io.runOwned(extractFailure.command, extractFailure.argv,
+                                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest fallback failure extraction");
+                            const read = io.readOwnedVerified(fallback, MAX_GUEST_BYTES);
+                            receiptBytes = read.bytes;
+                        }
+                        if (receiptBytes !== null) {
+                            const parsed = parseGuestFailure(receiptBytes, context.nonce);
+                            if (parsed.status === "failed") guestFailure = parsed;
+                        }
+                    } catch {
+                        guestFailure = null;
+                    }
+                }
+                return {...launched, guest: null, ...(guestFailure ? {guestFailure} : {})};
+            }
             const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
                 "guest-result.json");
             try {
@@ -1520,7 +1771,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest result extraction");
                 const guestRead = io.readOwnedVerified(guestResult, MAX_GUEST_BYTES);
                 const parsed = parseGuestOutcome(guestRead.bytes, context.nonce);
-                if (parsed.status === "failed") return {...launched, guest: parsed};
+                if (parsed.status === "failed") return {...launched, guest: parsed, guestFailure: parsed};
                 const output = io.inspectOwned(input.paths.outputDisk);
                 return {...launched,
                     guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
@@ -1538,7 +1789,8 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     assertSuccessful(await io.runOwned(extractFailure.command, extractFailure.argv,
                         {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest fallback failure extraction");
                     const read = io.readOwnedVerified(fallback, MAX_GUEST_BYTES);
-                    return {...launched, guest: parseGuestFailure(read.bytes, context.nonce)};
+                    const fallbackFailure = parseGuestFailure(read.bytes, context.nonce);
+                    return {...launched, guest: fallbackFailure, guestFailure: fallbackFailure};
                 } catch { return {...launched, guest: null}; }
             }
         }
@@ -1546,6 +1798,8 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
 }
 
 export const HOSTED_STAGE2_NATIVE_CONSTANTS = Object.freeze({APT_GET, DPKG_DEB, GPGV, INSTALL, KILL, READLINK, STAT,
-    SUDO, TIMEOUT, QEMU_TIMEOUT_SECONDS, QEMU_OUTER_TIMEOUT_MILLISECONDS, RESOURCE_POLL_MILLISECONDS,
+    SUDO, TIMEOUT, QEMU_TIMEOUT_SECONDS, QEMU_OUTER_TIMEOUT_MILLISECONDS, DIAGNOSTIC_EXECUTION_MINUTES,
+    DIAGNOSTIC_CLEANUP_MINUTES, DIAGNOSTIC_TIMEOUT_SECONDS, DIAGNOSTIC_OUTER_TIMEOUT_MILLISECONDS,
+    RESOURCE_POLL_MILLISECONDS,
     LOW_MEMORY_ABORT_MILLISECONDS, MINIMUM_RUNTIME_MEMORY_BYTES: MINIMUM_RUNTIME_MEMORY_BYTES.toString(),
     MINIMUM_FREE_DISK_BYTES: MINIMUM_FREE_DISK_BYTES.toString(), MAXIMUM_TASK_BYTES: MAXIMUM_TASK_BYTES.toString()});

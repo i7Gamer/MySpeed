@@ -7,12 +7,18 @@ import path from "node:path";
 import {describe, it} from "node:test";
 
 import {
+    GuestBootstrapError,
+    MAX_STAGE2_RESULT_BYTES,
     PACKAGE_ROOTS,
+    QemuLaunchError,
+    STAGE2_DIAGNOSTIC_DEADLINES,
     STAGE2_PROVENANCE,
     TOP_LEVEL_PACKAGE_PINS,
     buildQemuArguments,
     renderGuestBootstrap,
     runWindowsCpuFloorStage2,
+    validateGuestFailure,
+    validateLateBoot,
     validatePackageClosure,
     selectWindowsImage
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -707,5 +713,362 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(artifactResult.stage, "probe-artifact");
         assert.equal(artifactFixture.calls.includes("acquire-probes"), false);
         assert.equal(artifactFixture.calls.includes("acquire-iso"), false);
+    });
+
+    it("validates guest failure evidence and rejects forged, observed or malformed receipts", () => {
+        const valid = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "probe execution failed"};
+        const result = validateGuestFailure(valid, NONCE);
+        assert.deepEqual(result, valid);
+        assert.equal(Object.isFrozen(result), true);
+
+        // Wrong nonce
+        assert.throws(() => validateGuestFailure(valid, "wrong-nonce".padEnd(32, "0")), /guest failure/u);
+        // Status observed is rejected on failed receipt
+        assert.throws(() => validateGuestFailure({...valid, status: "observed"}, NONCE), /guest failure/u);
+        // Wrong stage
+        assert.throws(() => validateGuestFailure({...valid, stage: "guest-probe"}, NONCE), /guest failure/u);
+        // Wrong schema version
+        assert.throws(() => validateGuestFailure({...valid, schemaVersion: 2}, NONCE), /guest failure/u);
+        // Control characters in failure message
+        assert.throws(() => validateGuestFailure({...valid, failure: "bad\x00message"}, NONCE), /guest failure/u);
+        // Extra keys
+        assert.throws(() => validateGuestFailure({...valid, extra: "unauthorized"}, NONCE), /guest failure/u);
+        // Missing failure message
+        assert.throws(() => validateGuestFailure({...valid, failure: ""}, NONCE), /guest failure/u);
+    });
+
+    it("validates late-boot observations with bounded milestones and screenshots", () => {
+        const lateScreenshots = [`${paths().root}/late-boot-1.png`, `${paths().root}/late-boot-2.png`];
+        const valid = {
+            schemaVersion: 1,
+            kind: "qemu-late-boot-observation",
+            milestones: [
+                {
+                    milestone: 1,
+                    offsetMs: 120_000,
+                    status: "running",
+                    running: true,
+                    screenshot: {
+                        path: lateScreenshots[0],
+                        bytes: String(PNG.length),
+                        sha256: HASH(PNG),
+                        bytesBase64: PNG.toString("base64")
+                    }
+                }
+            ]
+        };
+        const validated = validateLateBoot(valid, paths());
+        assert.deepEqual(validated, valid);
+        assert.equal(Object.isFrozen(validated), true);
+
+        // Invalid kind
+        assert.throws(() => validateLateBoot({...valid, kind: "unknown"}, paths()), /late-boot/u);
+        // Missing milestones
+        assert.throws(() => validateLateBoot({...valid, milestones: []}, paths()), /late-boot/u);
+        // Wrong screenshot path
+        const badPath = structuredClone(valid);
+        badPath.milestones[0].screenshot.path = "/tmp/late-boot-1.png";
+        assert.throws(() => validateLateBoot(badPath, paths()), /late-boot/u);
+    });
+
+    it("instantiates typed GuestBootstrapError and QemuLaunchError with failure diagnostics", () => {
+        const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "synthetic probe crash"};
+        const early = earlyBoot();
+
+        const guestErr = new GuestBootstrapError(failureEvidence, early);
+        assert.equal(guestErr instanceof Error, true);
+        assert.equal(guestErr.message, "guest bootstrap failed: synthetic probe crash");
+        assert.deepEqual(guestErr.guestFailure, failureEvidence);
+        assert.deepEqual(guestErr.earlyBoot, early);
+
+        const diagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: {exitCode: 1}};
+        const launchErr = new QemuLaunchError(diagnostic, early, failureEvidence);
+        assert.equal(launchErr instanceof Error, true);
+        assert.equal(launchErr.message, "QEMU process did not complete cleanly");
+        assert.deepEqual(launchErr.diagnostic, diagnostic);
+        assert.deepEqual(launchErr.earlyBoot, early);
+        assert.deepEqual(launchErr.guestFailure, failureEvidence);
+    });
+
+    it("enforces 25-minute diagnostic deadline contract in Stage 2 launch request", async () => {
+        assert.deepEqual(STAGE2_DIAGNOSTIC_DEADLINES, {executionMinutes: 25, cleanupMinutes: 5});
+        assert.equal(Object.isFrozen(STAGE2_DIAGNOSTIC_DEADLINES), true);
+
+        let capturedDeadlines = null;
+        const fixture = operations({
+            launchOwnedQemu: async input => {
+                capturedDeadlines = input.deadlines;
+                return {
+                    process: {
+                        exitCode: 0, signal: null, timedOut: false, cleanupProven: true,
+                        treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
+                        launcherExecutablePath: toolchain().runtime.loader.path,
+                        processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null
+                    },
+                    argv: input.argv,
+                    earlyBoot: earlyBoot(),
+                    guest: guestEvidence()
+                };
+            }
+        });
+
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, fixture.op);
+
+        assert.equal(result.status, "observed");
+        assert.deepEqual(capturedDeadlines, STAGE2_DIAGNOSTIC_DEADLINES);
+    });
+
+    it("propagates guest failure on clean QEMU exit without qemuLaunch", async () => {
+        const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "probe execution failed"};
+        const bootstrap = operations({
+            launchOwnedQemu: async input => ({
+                process: {
+                    exitCode: 0, signal: null, timedOut: false, cleanupProven: true,
+                    treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
+                    launcherExecutablePath: toolchain().runtime.loader.path,
+                    processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null
+                },
+                argv: input.argv,
+                earlyBoot: earlyBoot(),
+                guest: failureEvidence
+            })
+        });
+
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, bootstrap.op);
+
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "qemu-launch");
+        assert.equal(result.cleanupProven, true);
+        assert.equal(result.failure, "guest bootstrap failed: probe execution failed");
+        assert.deepEqual(result.guestFailure, failureEvidence);
+        assert.deepEqual(result.qemuEarlyBoot, earlyBoot());
+        assert.equal("qemuLaunch" in result, false);
+    });
+
+    it("propagates guest failure on non-clean QEMU exit while preserving primary QEMU error", async () => {
+        const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "bootstrap script timed out"};
+        const stderr = Buffer.from("qemu error output\n");
+        const process = {
+            exitCode: 1, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
+            qemuPid: 2345, qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path,
+            processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null
+        };
+        const diagnostic = {
+            schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
+            processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            monitorFailure: null,
+            stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}
+        };
+
+        const fixture = operations({
+            launchOwnedQemu: async input => ({
+                process,
+                argv: input.argv,
+                earlyBoot: earlyBoot(),
+                guestFailure: failureEvidence,
+                failureDiagnostic: diagnostic
+            })
+        });
+
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, fixture.op);
+
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "qemu-launch");
+        assert.equal(result.cleanupProven, true);
+        // Primary QEMU error preserved!
+        assert.equal(result.failure, "QEMU process did not complete cleanly");
+        assert.deepEqual(result.qemuLaunch, diagnostic);
+        assert.deepEqual(result.guestFailure, failureEvidence);
+        assert.deepEqual(result.qemuEarlyBoot, earlyBoot());
+    });
+
+    it("omits late boot diagnostic if candidate result exceeds aggregate 4MB envelope limit", async () => {
+        const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "bootstrap script timed out"};
+        const stderr = Buffer.from("qemu error output\n");
+        const process = {
+            exitCode: 1, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
+            qemuPid: 2345, qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path,
+            processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null
+        };
+        const diagnostic = {
+            schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
+            processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            monitorFailure: null,
+            stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}
+        };
+
+        const largePng = Buffer.concat([PNG, Buffer.alloc(1_048_576 - PNG.length)]);
+        const largePngBase64 = largePng.toString("base64");
+        const largeEarly = {
+            schemaVersion: 1,
+            kind: "qemu-early-boot-observation",
+            inputSent: false,
+            version: {major: 8, minor: 2, micro: 2},
+            status: "running",
+            running: true,
+            screenshots: [1, 2].map(index => ({
+                path: `${paths().root}/early-boot-${index}.png`,
+                bytes: String(largePng.length),
+                sha256: HASH(largePng),
+                bytesBase64: largePngBase64
+            }))
+        };
+        const largeLate = {
+            schemaVersion: 1,
+            kind: "qemu-late-boot-observation",
+            milestones: [
+                {
+                    milestone: 1,
+                    offsetMs: 120_000,
+                    status: "running",
+                    running: true,
+                    screenshot: {
+                        path: `${paths().root}/late-boot-1.png`,
+                        bytes: String(largePng.length),
+                        sha256: HASH(largePng),
+                        bytesBase64: largePngBase64
+                    }
+                },
+                {
+                    milestone: 2,
+                    offsetMs: 300_000,
+                    status: "running",
+                    running: true,
+                    screenshot: {
+                        path: `${paths().root}/late-boot-2.png`,
+                        bytes: String(largePng.length),
+                        sha256: HASH(largePng),
+                        bytesBase64: largePngBase64
+                    }
+                }
+            ]
+        };
+
+        const fixture = operations({
+            launchOwnedQemu: async input => ({
+                process,
+                argv: input.argv,
+                earlyBoot: largeEarly,
+                guestFailure: failureEvidence,
+                failureDiagnostic: diagnostic,
+                lateBoot: largeLate
+            })
+        });
+
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, fixture.op);
+
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "qemu-launch");
+        assert.equal(result.cleanupProven, true);
+        assert.equal(result.failure, "QEMU process did not complete cleanly");
+        assert.deepEqual(result.qemuLaunch, diagnostic);
+        assert.deepEqual(result.guestFailure, failureEvidence);
+        assert.deepEqual(result.qemuEarlyBoot, largeEarly);
+        // Omitted because aggregate candidate result exceeds 4MB
+        assert.equal("qemuLateBoot" in result, false);
+        const resultBytes = Buffer.byteLength(`${JSON.stringify(result)}\n`, "utf8");
+        assert.equal(resultBytes <= MAX_STAGE2_RESULT_BYTES, true);
+    });
+
+    it("includes late boot diagnostic when candidate result fits within aggregate 4MB envelope limit", async () => {
+        const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "guest-bootstrap", failure: "bootstrap script timed out"};
+        const stderr = Buffer.from("qemu error output\n");
+        const process = {
+            exitCode: 1, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
+            qemuPid: 2345, qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path,
+            processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null
+        };
+        const diagnostic = {
+            schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
+            processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            monitorFailure: null,
+            stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}
+        };
+
+        const smallLate = {
+            schemaVersion: 1,
+            kind: "qemu-late-boot-observation",
+            milestones: [
+                {
+                    milestone: 1,
+                    offsetMs: 120_000,
+                    status: "running",
+                    running: true,
+                    screenshot: {
+                        path: `${paths().root}/late-boot-1.png`,
+                        bytes: String(PNG.length),
+                        sha256: HASH(PNG),
+                        bytesBase64: PNG.toString("base64")
+                    }
+                }
+            ]
+        };
+
+        const fixture = operations({
+            launchOwnedQemu: async input => ({
+                process,
+                argv: input.argv,
+                earlyBoot: earlyBoot(),
+                guestFailure: failureEvidence,
+                failureDiagnostic: diagnostic,
+                lateBoot: smallLate
+            })
+        });
+
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, fixture.op);
+
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "qemu-launch");
+        assert.equal(result.cleanupProven, true);
+        assert.equal(result.failure, "QEMU process did not complete cleanly");
+        assert.deepEqual(result.qemuLaunch, diagnostic);
+        assert.deepEqual(result.guestFailure, failureEvidence);
+        assert.deepEqual(result.qemuEarlyBoot, earlyBoot());
+        // Attached because candidate result fits within 4MB
+        assert.equal("qemuLateBoot" in result, true);
+        assert.deepEqual(result.qemuLateBoot, smallLate);
+        const resultBytes = Buffer.byteLength(`${JSON.stringify(result)}\n`, "utf8");
+        assert.equal(resultBytes <= MAX_STAGE2_RESULT_BYTES, true);
+    });
+
+    it("ensures successful Stage 2 result keys match exact baseline schema without extra diagnostic keys", async () => {
+        const fixture = operations();
+        const result = await runWindowsCpuFloorStage2({
+            context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()
+        }, fixture.op);
+
+        assert.equal(result.status, "observed");
+        assert.equal(result.cpuCalibrationAccepted, true);
+        assert.equal("guestFailure" in result, false);
+        assert.equal("qemuLateBoot" in result, false);
+        assert.equal("failureDiagnostic" in result, false);
+        assert.equal("qemuLaunch" in result, false);
+
+        const actualKeys = Object.keys(result).sort();
+        for (const forbidden of ["guestFailure", "qemuLateBoot", "failureDiagnostic", "qemuLaunch"]) {
+            assert.equal(actualKeys.includes(forbidden), false);
+        }
     });
 });
