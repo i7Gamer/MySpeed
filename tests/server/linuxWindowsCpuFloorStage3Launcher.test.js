@@ -3,29 +3,23 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {spawn} from "node:child_process";
 import {describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
 
 import {
     STAGE3_LAUNCHER_CLOSURE_PATHS,
+    STAGE3_LAUNCHER_CONSTANTS,
     verifyClosureFiles,
-    performTaskOwnedProcessCleanup,
     writeBoundedFailureEvidence,
-    buildStage3SequenceRequest,
+    readBoundedRegularFile,
+    inspectCompletedStage3Sequence,
     executeStage3Launcher
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3-launcher.mjs";
-import {
-    validateSequence
-} from "../../scripts/qualification/linux-windows-cpu-floor-stage3-sequence.mjs";
-import {
-    validateRequest
-} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {
     createV161PostReleaseCpuFloorBinding,
     acquireV161PostReleaseCpuFloorBaselineSummary,
     buildV161PostReleaseCpuFloorStage2Request,
-    buildV161PostReleaseCpuFloorStage3Request
+    buildV161PostReleaseCpuFloorStage3Template
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
 import {
@@ -40,10 +34,9 @@ import {
     QUALIFICATION_RUN_ATTEMPT,
     CANDIDATE_SHA,
     BASELINE_ARTIFACT_EXPIRES_AT,
-    OBSERVED_AT,
-    HOSTED_NONCE
+    OBSERVED_AT
 } from "../helpers/post-release-cpu-floor-fixture.mjs";
-import {buildAcceptedStage3Fixture} from "../helpers/windows-cpu-floor-stage3-fixture.mjs";
+import {buildPostReleaseStage3Fixture} from "../helpers/post-release-cpu-floor-fixture.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "..", "..");
@@ -107,6 +100,10 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             assert.equal(verified.valid, true);
             assert.equal(verified.files.length, STAGE3_LAUNCHER_CLOSURE_PATHS.length);
 
+            fs.writeFileSync(path.join(closureRoot, "execution-closure.json"), "{}\n");
+            assert.equal(verifyClosureFiles(closureRoot, records).valid, true,
+                "the externally authenticated execution manifest is metadata, not an extra member");
+
             // Tampered file with a harmless top-level marker appended
             const tamperedRel = "scripts/qualification/safety.mjs";
             const tamperedPath = path.join(closureRoot, tamperedRel);
@@ -140,15 +137,11 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
         }
     });
 
-    it("feeds real request-builder outputs to actual Stage 3 request validation", async () => {
+    it("feeds real branded builder outputs into the Stage 3 sequence template", async () => {
         const {binding, acquired, context} = buildBinding();
-        const nonce = context.nonce;
         const tempRoot = makeTempDir("myspeed-stage3-builders-test-");
         try {
             // The sequence and controller expect these paths to be under the runner temp prefix
-            const closureRoot = `${RUNNER_TEMP_PREFIX}/myspeed-stage3-closure-${nonce}`;
-            const transportRoot = `${RUNNER_TEMP_PREFIX}/myspeed-stage2-transport-${nonce}`;
-
             const fileIdentity = (targetPath) => ({
                 path: targetPath,
                 bytes: "100",
@@ -177,34 +170,12 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             assert.equal(stage2Request.schemaVersion, 1);
             assert.equal(stage2Request.authorization.confirmation, "RUN-CANDIDATE-NEUTRAL-STAGE2");
 
-            // Stage 3 request must use runner temp transport paths
-            const dummyReceipt = {
-                path: `${transportRoot}/stage2-result.json`,
-                bytes: "100",
-                sha256: "0".repeat(64)
-            };
-            const dummyGuestReceipt = {
-                path: `${transportRoot}/guest-result.json`,
-                bytes: "100",
-                sha256: "0".repeat(64)
-            };
-            const stage3Request = buildV161PostReleaseCpuFloorStage3Request(acquired, {
-                result: dummyReceipt,
-                guestResult: dummyGuestReceipt
-            });
-
-            // validateRequest from the Stage 3 module itself validates schema
-            const validatedStage3 = validateRequest(stage3Request);
-            assert.equal(validatedStage3.request.profile, "baseline-cpu");
-            assert.equal(validatedStage3.request.authorization.confirmation, "RUN-WINDOWS-BASELINE-CPU-FLOOR");
-
-            // buildStage3SequenceRequest builds the envelope for the sequence CLI
-            // The sequence validator requires closure files to be physically present on disk
-            // so we use a mock read function approach by testing the request shape instead
-            assert.equal(stage3Request.profile, "baseline-cpu");
-            assert.equal(stage3Request.authorization.scope, "windows-baseline-cpu-floor-full-runtime");
-            assert.equal(stage3Request.candidate.sourceSha, CANDIDATE_SHA);
-            assert.notEqual(stage3Request.candidate.sourceSha, context.sourceSha);
+            const stage3Template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+            assert.equal(Object.hasOwn(stage3Template, "stage2"), false);
+            assert.equal(stage3Template.profile, "baseline-cpu");
+            assert.equal(stage3Template.authorization.scope, "windows-baseline-cpu-floor-full-runtime");
+            assert.equal(stage3Template.candidate.sourceSha, CANDIDATE_SHA);
+            assert.notEqual(stage3Template.candidate.sourceSha, context.sourceSha);
         } finally {
             fs.rmSync(tempRoot, {recursive: true, force: true});
         }
@@ -215,6 +186,12 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
         // Use injected binding+acquired so we skip the consumer brand check at launch.
         const {binding, acquired, context} = buildBinding();
         const nonce = context.nonce;
+        const tempRoot = makeTempDir("myspeed-stage3-launcher-failure-");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        let cleanupAttempted = false;
 
         // Sequence returns a failed (non-observed) result
         const failingSequence = async () => ({
@@ -227,8 +204,9 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             () => executeStage3Launcher({
                 nonce,
                 closureRoot: `${RUNNER_TEMP_PREFIX}/myspeed-stage3-closure-${nonce}`,
-                transportRoot: `${RUNNER_TEMP_PREFIX}/myspeed-stage2-transport-${nonce}`,
-                envelopeRoot: `${RUNNER_TEMP_PREFIX}/myspeed-stage3-sequence-envelope-${nonce}`,
+                closureRecords: [],
+                transportRoot,
+                envelopeRoot,
                 stage2Root: `${RUNNER_TEMP_PREFIX}/myspeed-windows-cpu-floor-${nonce}`,
                 stage3Root: `${RUNNER_TEMP_PREFIX}/myspeed-stage3-${nonce}`,
                 binding,
@@ -245,16 +223,120 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
                 },
                 guestFiles: []
             }, {
-                // Inject both buildRequests and buildSequenceRequest to avoid file I/O for launcher paths
-                buildRequests: () => ({
-                    stage2Request: {schemaVersion: 1, authorization: {confirmation: "RUN-CANDIDATE-NEUTRAL-STAGE2"}},
-                    stage3Request: {profile: "baseline-cpu", schemaVersion: 1, authorization: {confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"}}
-                }),
+                buildStage2Request: () => ({schemaVersion: 1,
+                    authorization: {confirmation: "RUN-CANDIDATE-NEUTRAL-STAGE2"}}),
+                buildStage3Template: () => ({profile: "baseline-cpu", schemaVersion: 1,
+                    authorization: {confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"}}),
                 buildSequenceRequest: () => ({schemaVersion: 1, nonce}),
-                runSequence: failingSequence
+                verifyClosure: () => ({valid: true, files: []}),
+                runSequence: failingSequence,
+                cleanupProcesses: async () => { cleanupAttempted = true; }
             }),
             /Stage 3 sequence did not produce an observed result/
         );
+        assert.equal(cleanupAttempted, true);
+        const failure = JSON.parse(fs.readFileSync(path.join(transportRoot, "evidence-manifest.json"), "utf8"));
+        assert.equal(failure.accepted, false);
+        fs.rmSync(tempRoot, {recursive: true, force: true});
+    });
+
+    it("passes actual producer output across the sequence boundary into the real consumer", async () => {
+        const {binding, acquired} = buildBinding();
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const fixture = await buildPostReleaseStage3Fixture(template.candidate);
+        const inspection = inspectCompletedStage3Sequence({binding, acquired,
+            sequenceResult: fixture.completedResult, sameExecutionStage2: fixture.request.stage2,
+            stage2ResultBytes: fixture.retainedStage2Bytes});
+        assert.equal(inspection.accepted, true);
+        assert.equal(inspection.candidate.sourceSha, CANDIDATE_SHA);
+        assert.equal(inspection.stage2.status, "observed");
+    });
+
+    it("reads retained evidence through a bounded stable regular-file descriptor", () => {
+        const tempRoot = makeTempDir("myspeed-stage3-retained-read-");
+        const evidencePath = path.join(tempRoot, "stage2-result.json");
+        const evidence = Buffer.from("{\"status\":\"observed\"}\n", "utf8");
+        try {
+            fs.writeFileSync(evidencePath, evidence);
+            assert.deepEqual(readBoundedRegularFile(evidencePath, evidence.length), evidence);
+
+            assert.throws(() => readBoundedRegularFile(evidencePath, evidence.length - 1),
+                /identity differs/);
+
+            const linkedPath = path.join(tempRoot, "linked-result.json");
+            fs.linkSync(evidencePath, linkedPath);
+            assert.throws(() => readBoundedRegularFile(evidencePath, evidence.length), /identity differs/);
+            fs.unlinkSync(linkedPath);
+
+            const symlinkPath = path.join(tempRoot, "symlink-result.json");
+            try {
+                fs.symlinkSync(evidencePath, symlinkPath, "file");
+                assert.throws(() => readBoundedRegularFile(symlinkPath, evidence.length), /identity differs/);
+            } catch (error) {
+                if (error?.code !== "EPERM") throw error;
+            }
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
+    });
+
+    it("retains the raw sequence result before inspection and the accepted inspection only after acceptance", async () => {
+        const tempRoot = makeTempDir("myspeed-stage3-retention-");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        fs.writeFileSync(path.join(transportRoot, "stage2-result.json"), "stage2\n");
+        fs.writeFileSync(path.join(transportRoot, "guest-result.json"), "guest\n");
+        const sequenceResult = {status: "observed", evidence: "bounded"};
+        const acceptedInspection = {accepted: true, status: "accepted"};
+        const options = {closureRoot: tempRoot, closureRecords: [], transportRoot, envelopeRoot,
+            binding: {hostedContext: {}}, acquired: {}, probeArtifact: {}};
+        const dependencies = {
+            verifyClosure: () => ({valid: true}),
+            buildStage2Request: () => ({}),
+            buildStage3Template: () => ({}),
+            buildStage3Request: () => ({}),
+            buildSequenceRequest: () => ({}),
+            runSequence: async () => sequenceResult,
+            inspectEvidence: () => acceptedInspection
+        };
+        try {
+            assert.deepEqual(await executeStage3Launcher(options, dependencies), acceptedInspection);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.STAGE3_RESULT_FILE), "utf8")), sequenceResult);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.ACCEPTED_INSPECTION_FILE), "utf8")), acceptedInspection);
+            assert.equal(fs.readFileSync(path.join(transportRoot, "stage2-result.json"), "utf8"), "stage2\n");
+            assert.equal(fs.readFileSync(path.join(transportRoot, "guest-result.json"), "utf8"), "guest\n");
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
+    });
+
+    it("retains no accepted inspection when consumer inspection fails", async () => {
+        const tempRoot = makeTempDir("myspeed-stage3-refused-retention-");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        fs.writeFileSync(path.join(transportRoot, "stage2-result.json"), "stage2\n");
+        fs.writeFileSync(path.join(transportRoot, "guest-result.json"), "guest\n");
+        try {
+            await assert.rejects(() => executeStage3Launcher({closureRoot: tempRoot, closureRecords: [],
+                transportRoot, envelopeRoot, binding: {hostedContext: {}}, acquired: {}, probeArtifact: {}}, {
+                verifyClosure: () => ({valid: true}), buildStage2Request: () => ({}),
+                buildStage3Template: () => ({}), buildStage3Request: () => ({}),
+                buildSequenceRequest: () => ({}), runSequence: async () => ({status: "observed"}),
+                inspectEvidence: () => { throw new Error("consumer refusal"); }
+            }), /consumer refusal/);
+            assert.equal(fs.existsSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.STAGE3_RESULT_FILE)), true);
+            assert.equal(fs.existsSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.ACCEPTED_INSPECTION_FILE)), false);
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
     });
 
     it("timeout and partial-result paths write bounded failure evidence without claiming acceptance", () => {
@@ -292,53 +374,4 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
         }
     });
 
-    it("cleanup ignores an unrelated fake process and terminates only task-owned PIDs", () => {
-        const tempRoot = makeTempDir("myspeed-stage3-cleanup-test-");
-        let fakeProc = null;
-        try {
-            // Spawn an unrelated background dummy process
-            fakeProc = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {stdio: "ignore"});
-            const unrelatedPid = fakeProc.pid;
-            assert.ok(unrelatedPid > 0, "unrelated process should have a PID");
-
-            const stage2Root = path.join(tempRoot, "stage2");
-            const stage3Root = path.join(tempRoot, "stage3");
-            fs.mkdirSync(stage2Root, {recursive: true});
-            fs.mkdirSync(stage3Root, {recursive: true});
-
-            // Write one owned PID in stage2Root; stage3Root has a distinct non-alive PID
-            const ownedPid = 999998;
-            const unownedPid = 999997; // not alive
-            fs.writeFileSync(path.join(stage2Root, "qemu.pid"), `${ownedPid}\n`);
-            fs.writeFileSync(path.join(stage3Root, "baseline-qemu.pid"), `${unownedPid}\n`);
-
-            const killCalls = []; // tracks {pid, sig}
-            const {cleanedPids} = performTaskOwnedProcessCleanup({
-                stage2Root,
-                stage3Root,
-                killFn: (pid, sig) => { killCalls.push({pid, sig}); },
-                // Only ownedPid is "alive"; after SIGTERM pretend it's gone
-                isAliveFn: (pid, _callIndex) => {
-                    // Always return false — pretend SIGTERM worked
-                    return pid === ownedPid && killCalls.filter(c => c.pid === pid).length === 0;
-                }
-            });
-
-            // cleanedPids must contain ownedPid, not unownedPid or unrelatedPid
-            assert.ok(cleanedPids.includes(ownedPid), "owned PID should be cleaned");
-            assert.ok(!cleanedPids.includes(unrelatedPid), "unrelated PID must not be cleaned");
-            assert.ok(!cleanedPids.includes(unownedPid), "non-alive PID should not be cleaned");
-
-            // killFn must have been called only for ownedPid
-            assert.ok(killCalls.every(c => c.pid === ownedPid), "killFn must only target owned PIDs");
-
-            // The unrelated process must still be running
-            let stillAlive = false;
-            try { process.kill(unrelatedPid, 0); stillAlive = true; } catch {}
-            assert.equal(stillAlive, true, "Unrelated process was incorrectly killed");
-        } finally {
-            if (fakeProc?.pid) { try { fakeProc.kill(); } catch {} }
-            fs.rmSync(tempRoot, {recursive: true, force: true});
-        }
-    });
 });

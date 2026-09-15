@@ -7,6 +7,7 @@ import {
     POST_RELEASE_CPU_FLOOR_CONSTANTS,
     acquireV161PostReleaseCpuFloorBaselineSummary,
     buildV161PostReleaseCpuFloorStage2Request,
+    buildV161PostReleaseCpuFloorStage3Template,
     buildV161PostReleaseCpuFloorStage3Request,
     createV161PostReleaseCpuFloorBinding,
     inspectV161PostReleaseCpuFloorEvidence
@@ -253,6 +254,16 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
             assert.equal(request.candidate.qualificationSummary.sha256, BASELINE_SUMMARY_SHA256);
             assert.equal(request.candidate.qualificationSummary.bytes, String(AUTHENTIC_SUMMARY_BYTES));
             assert.equal(request.paths.root, `/home/runner/work/_temp/myspeed-stage3-${HOSTED_NONCE}`);
+        });
+
+        it("builds a branded acquired Stage 3 template without invented Stage 2 identities", () => {
+            const template = buildV161PostReleaseCpuFloorStage3Template(acquired());
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts());
+            assert.deepEqual(template, Object.fromEntries(Object.entries(request)
+                .filter(([key]) => key !== "stage2")));
+            assert.equal(Object.hasOwn(template, "stage2"), false);
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(binding()), /acquir/i);
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(structuredClone(acquired())), /binding/i);
         });
 
         it("refuses malformed same-execution Stage 2 receipts", () => {

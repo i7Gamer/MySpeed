@@ -1,39 +1,28 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import {fileURLToPath} from "node:url";
 
 import {
     runHostedStage3Sequence,
     STAGE3_SEQUENCE_CONSTANTS
 } from "./linux-windows-cpu-floor-stage3-sequence.mjs";
+import {STAGE3_EXECUTION_PATHS} from "./linux-windows-cpu-floor-stage3-closure.mjs";
 import {
-    STAGE3_CONTROLLER_CONSTANTS
-} from "./linux-windows-cpu-floor-stage3-controller.mjs";
-import {
-    STAGE3_CONSTANTS
-} from "./linux-windows-cpu-floor-stage3.mjs";
-import {
-    createV161PostReleaseCpuFloorBinding,
-    acquireV161PostReleaseCpuFloorBaselineSummary,
     buildV161PostReleaseCpuFloorStage2Request,
+    buildV161PostReleaseCpuFloorStage3Template,
     buildV161PostReleaseCpuFloorStage3Request,
     inspectV161PostReleaseCpuFloorEvidence
 } from "../release/post-release-cpu-floor.mjs";
-import {bindV161PostReleaseTarget} from "../release/post-release-target.mjs";
 
 const SCHEMA_VERSION = 1;
 const LAUNCHER_KIND = "myspeed-windows-cpu-floor-stage3-launcher";
 const MAX_CLOSURE_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_STREAM_BYTES = 1024 * 1024;
 const MAX_FAILURE_CHARACTERS = 512;
+const STAGE3_RESULT_FILE = "stage3-sequence-result.json";
+const ACCEPTED_INSPECTION_FILE = "stage3-accepted-inspection.json";
 
-export const STAGE3_LAUNCHER_CLOSURE_PATHS = Object.freeze([
-    "scripts/qualification/linux-windows-cpu-floor-stage3-launcher.mjs",
-    ...STAGE3_SEQUENCE_CONSTANTS.SEQUENCE_CLOSURE_PATHS,
-    "scripts/release/post-release-cpu-floor.mjs",
-    "scripts/release/post-release-target.mjs"
-]);
+export const STAGE3_LAUNCHER_CLOSURE_PATHS = STAGE3_EXECUTION_PATHS;
 
 const STAGE2_CLOSURE_NAMES = Object.freeze([
     "scripts/qualification/linux-windows-cpu-floor-admission.mjs",
@@ -47,6 +36,51 @@ const STAGE2_CLOSURE_NAMES = Object.freeze([
 ]);
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+
+function writeBoundedCanonicalJson(target, value, maximumBytes) {
+    const bytes = Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
+    if (bytes.length < 2 || bytes.length > maximumBytes) throw new Error("Stage 3 retained result size is out of bounds");
+    fs.writeFileSync(target, bytes, {flag: "wx", mode: 0o600});
+    return bytes;
+}
+
+export function readBoundedRegularFile(target, maximumBytes) {
+    const lexical = fs.lstatSync(target, {bigint: true});
+    if (!lexical.isFile() || lexical.isSymbolicLink() || lexical.nlink !== 1n || lexical.size < 1n
+            || lexical.size > BigInt(maximumBytes)) throw new Error("retained Stage 2 evidence identity differs");
+    const openFlags = fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0);
+    const descriptor = fs.openSync(target, openFlags);
+    try {
+        const opened = fs.fstatSync(descriptor, {bigint: true});
+        if (!opened.isFile() || opened.nlink !== 1n || opened.dev !== lexical.dev || opened.ino !== lexical.ino
+                || opened.size !== lexical.size || opened.mtimeNs !== lexical.mtimeNs
+                || opened.ctimeNs !== lexical.ctimeNs) {
+            throw new Error("retained Stage 2 evidence changed before reading");
+        }
+
+        const capacity = Number(opened.size) + 1;
+        const buffer = Buffer.alloc(capacity);
+        let offset = 0;
+        while (offset < capacity) {
+            const count = fs.readSync(descriptor, buffer, offset, capacity - offset, offset);
+            if (count === 0) break;
+            offset += count;
+        }
+
+        const after = fs.fstatSync(descriptor, {bigint: true});
+        const finalLexical = fs.lstatSync(target, {bigint: true});
+        if (offset !== Number(opened.size) || after.dev !== opened.dev || after.ino !== opened.ino
+                || after.size !== opened.size || after.mtimeNs !== opened.mtimeNs || after.ctimeNs !== opened.ctimeNs
+                || finalLexical.dev !== opened.dev || finalLexical.ino !== opened.ino
+                || finalLexical.size !== opened.size || finalLexical.mtimeNs !== opened.mtimeNs
+                || finalLexical.ctimeNs !== opened.ctimeNs || finalLexical.nlink !== 1n) {
+            throw new Error("retained Stage 2 evidence changed while reading");
+        }
+        return buffer.subarray(0, offset);
+    } finally {
+        fs.closeSync(descriptor);
+    }
+}
 
 export function verifyClosureFiles(closureRoot, expectedFiles) {
     if (typeof closureRoot !== "string" || !fs.existsSync(closureRoot)) {
@@ -100,7 +134,7 @@ export function verifyClosureFiles(closureRoot, expectedFiles) {
                 scanDir(entryPath);
             } else if (entry.isFile()) {
                 const rel = path.relative(closureRoot, entryPath).replace(/\\/g, "/");
-                if (rel === "closure-manifest.json" || rel === "stage2-closure.json") continue;
+                if (rel === "execution-closure.json") continue;
                 if (!expectedMap.has(rel)) {
                     throw new Error(`untracked or unexpected closure file: ${rel}`);
                 }
@@ -113,72 +147,40 @@ export function verifyClosureFiles(closureRoot, expectedFiles) {
 }
 
 export function stage2ClosureFromStage3Closure(stage3ClosureRoot, stage2ClosureRoot) {
-    fs.mkdirSync(path.join(stage2ClosureRoot, "scripts", "qualification"), {recursive: true, mode: 0o700});
+    if (typeof stage3ClosureRoot !== "string" || typeof stage2ClosureRoot !== "string" ||
+        path.resolve(stage3ClosureRoot) !== stage3ClosureRoot || path.resolve(stage2ClosureRoot) !== stage2ClosureRoot)
+        throw new TypeError("Stage 2 closure roots must be canonical absolute paths");
+    const parent = path.dirname(stage2ClosureRoot);
+    if (fs.realpathSync.native(parent) !== parent || fs.existsSync(stage2ClosureRoot))
+        throw new Error("Stage 2 closure root is not fresh");
+    fs.mkdirSync(stage2ClosureRoot, {recursive: false, mode: 0o700});
+    fs.mkdirSync(path.join(stage2ClosureRoot, "scripts"), {recursive: false, mode: 0o700});
+    fs.mkdirSync(path.join(stage2ClosureRoot, "scripts", "qualification"), {recursive: false, mode: 0o700});
     const files = [];
     for (const name of STAGE2_CLOSURE_NAMES) {
         const src = path.join(stage3ClosureRoot, name);
         const dest = path.join(stage2ClosureRoot, name);
-        fs.mkdirSync(path.dirname(dest), {recursive: true, mode: 0o700});
+        const source = fs.lstatSync(src, {bigint: true});
+        if (!source.isFile() || source.isSymbolicLink() || source.nlink !== 1n ||
+            fs.realpathSync.native(src) !== src || source.size < 1n || source.size > BigInt(MAX_CLOSURE_FILE_BYTES))
+            throw new Error(`Stage 2 closure source is unsafe: ${name}`);
         const bytes = fs.readFileSync(src);
-        fs.writeFileSync(dest, bytes, {mode: 0o600});
+        if (BigInt(bytes.length) !== source.size) throw new Error(`Stage 2 closure source changed: ${name}`);
+        fs.writeFileSync(dest, bytes, {flag: "wx", mode: 0o600});
         files.push({name, bytes: bytes.length, sha256: sha256(bytes)});
     }
     fs.writeFileSync(
         path.join(stage2ClosureRoot, "stage2-closure.json"),
         `${JSON.stringify({schemaVersion: 1, files})}\n`,
-        {mode: 0o600}
+        {flag: "wx", mode: 0o600}
     );
     return {root: stage2ClosureRoot, files};
-}
-
-export function performTaskOwnedProcessCleanup({
-    stage2Root,
-    stage3Root,
-    spawnedPid = null,
-    killFn = (pid, sig = "SIGTERM") => { try { process.kill(pid, sig); } catch {} },
-    isAliveFn = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } }
-}) {
-    const taskOwnedPids = new Set();
-    if (spawnedPid !== null && /^[1-9][0-9]*$/u.test(String(spawnedPid))) {
-        taskOwnedPids.add(Number(spawnedPid));
-    }
-    if (stage2Root) {
-        const pidPath = path.join(stage2Root, "qemu.pid");
-        if (fs.existsSync(pidPath)) {
-            try {
-                const text = fs.readFileSync(pidPath, "utf8").trim();
-                if (/^[1-9][0-9]*$/u.test(text)) taskOwnedPids.add(Number(text));
-            } catch {}
-        }
-    }
-    if (stage3Root) {
-        const pidPath = path.join(stage3Root, "baseline-qemu.pid");
-        if (fs.existsSync(pidPath)) {
-            try {
-                const text = fs.readFileSync(pidPath, "utf8").trim();
-                if (/^[1-9][0-9]*$/u.test(text)) taskOwnedPids.add(Number(text));
-            } catch {}
-        }
-    }
-
-    const cleanedPids = [];
-    for (const pid of taskOwnedPids) {
-        if (isAliveFn(pid)) {
-            killFn(pid, "SIGTERM");
-            if (isAliveFn(pid)) {
-                killFn(pid, "SIGKILL");
-            }
-            cleanedPids.push(pid);
-        }
-    }
-    return {cleanedPids};
 }
 
 export function writeBoundedFailureEvidence({
     evidenceRoot,
     error,
-    streams = {},
-    accepted = false
+    streams = {}
 }) {
     fs.mkdirSync(evidenceRoot, {recursive: true, mode: 0o700});
 
@@ -242,17 +244,13 @@ export function buildStage3SequenceRequest({
         };
     });
 
-    // Strip stage2 property from stage3Request because sequence populates it after Stage 2
-    const stage3Template = {...stage3Request};
-    delete stage3Template.stage2;
-
     return {
         schemaVersion: SCHEMA_VERSION,
         kind: STAGE3_SEQUENCE_CONSTANTS.SEQUENCE_KIND,
         context: structuredClone(context),
         transportRoot,
         stage2Request,
-        stage3: stage3Template,
+        stage3: structuredClone(stage3Request),
         closure: {
             root: closureRoot,
             files: sequenceFiles
@@ -261,14 +259,20 @@ export function buildStage3SequenceRequest({
     };
 }
 
+export function inspectCompletedStage3Sequence({binding, acquired, sequenceResult, sameExecutionStage2,
+    stage2ResultBytes}, dependencies = {}) {
+    const buildStage3Request = dependencies.buildStage3Request ?? buildV161PostReleaseCpuFloorStage3Request;
+    const inspectEvidence = dependencies.inspectEvidence ?? inspectV161PostReleaseCpuFloorEvidence;
+    const executedStage3Request = buildStage3Request(acquired, sameExecutionStage2);
+    return inspectEvidence({binding, request: executedStage3Request, result: sequenceResult,
+        retainedStage2Bytes: stage2ResultBytes});
+}
+
 export async function executeStage3Launcher(options, dependencies = {}) {
     const {
-        nonce,
         closureRoot,
         transportRoot,
         envelopeRoot,
-        stage2Root,
-        stage3Root,
         binding,
         acquired,
         probeArtifact,
@@ -278,85 +282,80 @@ export async function executeStage3Launcher(options, dependencies = {}) {
     const verifyClosure = dependencies.verifyClosure ?? verifyClosureFiles;
     const runSequence = dependencies.runSequence ?? runHostedStage3Sequence;
     const inspectEvidence = dependencies.inspectEvidence ?? inspectV161PostReleaseCpuFloorEvidence;
-    const buildRequests = dependencies.buildRequests ?? null;
+    const buildStage2Request = dependencies.buildStage2Request ?? buildV161PostReleaseCpuFloorStage2Request;
+    const buildStage3Template = dependencies.buildStage3Template ?? buildV161PostReleaseCpuFloorStage3Template;
+    const buildStage3Request = dependencies.buildStage3Request ?? buildV161PostReleaseCpuFloorStage3Request;
+    const cleanupProcesses = dependencies.cleanupProcesses;
 
     let sequenceResult = null;
     let stage2ResultBytes = null;
     try {
         // 1. Verify closure files externally
-        if (options.closureRecords) {
-            verifyClosure(closureRoot, options.closureRecords);
-        }
+        if (!options.closureRecords) throw new Error("Stage 3 launcher closure records are missing");
+        verifyClosure(closureRoot, options.closureRecords);
 
-        let stage2Request, stage3Request;
-        if (buildRequests) {
-            // Injected for inert tests that do not have real closure files on disk
-            const built = buildRequests({binding, acquired, probeArtifact, nonce, transportRoot});
-            stage2Request = built.stage2Request;
-            stage3Request = built.stage3Request;
-        } else {
-            // 2. Build Stage 2 request and Stage 3 request template using real consumer
-            const fileIdentity = (targetPath) => {
-                const bytes = fs.readFileSync(targetPath);
-                return {path: targetPath, bytes: String(bytes.length), sha256: sha256(bytes)};
-            };
-            stage2Request = buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact, fileIdentity);
-            const dummyStage2 = {
-                result: {path: `/home/runner/work/_temp/myspeed-stage2-transport-${nonce}/stage2-result.json`, bytes: "1", sha256: "0".repeat(64)},
-                guestResult: {path: `/home/runner/work/_temp/myspeed-stage2-transport-${nonce}/guest-result.json`, bytes: "1", sha256: "0".repeat(64)}
-            };
-            stage3Request = buildV161PostReleaseCpuFloorStage3Request(acquired, dummyStage2);
-        }
+        // 2. Build both pre-execution requests through the real branded consumer APIs.
+        const fileIdentity = (targetPath) => {
+            const bytes = fs.readFileSync(targetPath);
+            return {path: targetPath, bytes: String(bytes.length), sha256: sha256(bytes)};
+        };
+        const stage2Request = buildStage2Request(binding, probeArtifact, fileIdentity);
+        const stage3Template = buildStage3Template(acquired);
 
         // 3. Build sequence request envelope and write it
         let sequenceRequest;
         if (dependencies.buildSequenceRequest) {
             sequenceRequest = dependencies.buildSequenceRequest({context: binding.hostedContext, closureRoot,
-                transportRoot, stage2Request, stage3Request, guestFiles});
+                transportRoot, stage2Request, stage3Request: stage3Template, guestFiles});
         } else {
             sequenceRequest = buildStage3SequenceRequest({
                 context: binding.hostedContext,
                 closureRoot,
                 transportRoot,
                 stage2Request,
-                stage3Request,
+                stage3Request: stage3Template,
                 guestFiles
             });
         }
 
-        if (envelopeRoot && fs.existsSync(envelopeRoot)) {
-            const requestPath = path.join(envelopeRoot, "request.json");
-            const requestBytes = Buffer.from(`${JSON.stringify(sequenceRequest)}\n`, "utf8");
-            fs.writeFileSync(requestPath, requestBytes, {mode: 0o600});
-        }
+        if (!envelopeRoot || !fs.existsSync(envelopeRoot)) throw new Error("Stage 3 launcher envelope root is missing");
+        const requestPath = path.join(envelopeRoot, "request.json");
+        const requestBytes = Buffer.from(`${JSON.stringify(sequenceRequest)}\n`, "utf8");
+        fs.writeFileSync(requestPath, requestBytes, {flag: "wx", mode: 0o600});
 
         // 4. Run sequence
         sequenceResult = await runSequence(sequenceRequest);
         if (!sequenceResult || sequenceResult.status !== "observed") {
             throw new Error("Stage 3 sequence did not produce an observed result");
         }
+        writeBoundedCanonicalJson(path.join(transportRoot, STAGE3_RESULT_FILE), sequenceResult,
+            STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
 
         const stage2Path = path.join(transportRoot, "stage2-result.json");
-        if (fs.existsSync(stage2Path)) {
-            stage2ResultBytes = fs.readFileSync(stage2Path);
-        }
-
-        // 5. Inspect evidence with consumer
-        const executedStage3Request = {
-            ...stage3Request,
-            stage2: sequenceResult.stage2
+        const guestResultPath = path.join(transportRoot, "guest-result.json");
+        stage2ResultBytes = readBoundedRegularFile(stage2Path, STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
+        const guestResultBytes = readBoundedRegularFile(guestResultPath,
+            STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
+        const sameExecutionStage2 = {
+            result: {path: stage2Path, bytes: String(stage2ResultBytes.length), sha256: sha256(stage2ResultBytes)},
+            guestResult: {path: guestResultPath, bytes: String(guestResultBytes.length), sha256: sha256(guestResultBytes)}
         };
 
-        const inspection = inspectEvidence({
-            binding,
-            request: executedStage3Request,
-            result: sequenceResult,
-            retainedStage2Bytes: stage2ResultBytes
-        });
+        // 5. Inspect evidence with consumer
+        const inspection = inspectCompletedStage3Sequence({binding, acquired, sequenceResult,
+            sameExecutionStage2, stage2ResultBytes}, {buildStage3Request, inspectEvidence});
+        if (inspection?.accepted !== true) throw new Error("Stage 3 consumer did not accept the execution");
+        writeBoundedCanonicalJson(path.join(transportRoot, ACCEPTED_INSPECTION_FILE), inspection,
+            STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
 
         return inspection;
     } catch (error) {
-        performTaskOwnedProcessCleanup({stage2Root, stage3Root});
+        let cleanupError = null;
+        try {
+            if (cleanupProcesses) await cleanupProcesses();
+        } catch (failure) {
+            cleanupError = failure;
+        }
         const evidenceDir = fs.existsSync(transportRoot) ? transportRoot : null;
         if (evidenceDir) {
             writeBoundedFailureEvidence({
@@ -365,6 +364,8 @@ export async function executeStage3Launcher(options, dependencies = {}) {
                 streams: dependencies.streams ?? {}
             });
         }
+        if (cleanupError) throw new AggregateError([error, cleanupError],
+            "Stage 3 launcher execution and authenticated cleanup both failed");
         throw error;
     }
 }
@@ -375,6 +376,8 @@ export const STAGE3_LAUNCHER_CONSTANTS = Object.freeze({
     MAX_CLOSURE_FILE_BYTES,
     MAX_FAILURE_CHARACTERS,
     MAX_STREAM_BYTES,
+    ACCEPTED_INSPECTION_FILE,
     SCHEMA_VERSION,
+    STAGE3_RESULT_FILE,
     STAGE2_CLOSURE_NAMES
 });

@@ -259,13 +259,8 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
     });
 }
 
-export function buildV161PostReleaseCpuFloorStage3Request(binding, sameExecutionStage2) {
-    requireAcquiredBinding(binding, "Stage 3 request");
-    exactKeys(sameExecutionStage2, STAGE2_RECEIPT_KEYS, "same-execution Stage 2 receipts");
-    for (const key of STAGE2_RECEIPT_KEYS) {
-        exactKeys(sameExecutionStage2[key], IDENTITY_KEYS, `same-execution Stage 2 ${key} identity`);
-    }
-
+export function buildV161PostReleaseCpuFloorStage3Template(binding) {
+    requireAcquiredBinding(binding, "Stage 3 template");
     const root = `${STAGE3_ROOT_PREFIX}${binding.hostedContext.nonce}`;
     return deepFreeze({
         schemaVersion: SCHEMA_VERSION,
@@ -314,9 +309,17 @@ export function buildV161PostReleaseCpuFloorStage3Request(binding, sameExecution
                 bytes: String(binding.originalQualification.manifest.bytes),
                 sha256: binding.originalQualification.manifest.sha256
             }
-        },
-        stage2: structuredClone(sameExecutionStage2)
+        }
     });
+}
+
+export function buildV161PostReleaseCpuFloorStage3Request(binding, sameExecutionStage2) {
+    const template = buildV161PostReleaseCpuFloorStage3Template(binding);
+    exactKeys(sameExecutionStage2, STAGE2_RECEIPT_KEYS, "same-execution Stage 2 receipts");
+    for (const key of STAGE2_RECEIPT_KEYS) {
+        exactKeys(sameExecutionStage2[key], IDENTITY_KEYS, `same-execution Stage 2 ${key} identity`);
+    }
+    return deepFreeze({...template, stage2: structuredClone(sameExecutionStage2)});
 }
 
 /** Binds the executed request back to the post-release identity the binding sealed. */

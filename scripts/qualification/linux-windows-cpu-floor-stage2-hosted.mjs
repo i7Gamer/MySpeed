@@ -41,6 +41,8 @@ const MAX_WIMINFO_BYTES = 1_048_576;
 const MAX_GUEST_BYTES = 262_144;
 const GUEST_FAILURE_FALLBACK_NAME = "bootstrap-failure.json";
 const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
+const CLEANUP_AUTHORITY_FILENAME = "cleanup-authority.json";
+const CLEANUP_AUTHORITY_KIND = "myspeed-windows-cpu-floor-cleanup-authority";
 const MAX_GUEST_ACTIVATION_FILE_BYTES = 1_048_576;
 const MAX_GUEST_ACTIVATION_STRING_CHARACTERS = 1_024;
 const MAX_PROBE_MANIFEST_BYTES = 262_144;
@@ -984,6 +986,17 @@ function boundedMonitorFailure(phase, error, identity) {
     return {phase, message: message || "unspecified monitor failure", identity};
 }
 
+export function cpuFloorCleanupAuthorityPath(pidPath) {
+    if (typeof pidPath !== "string" || !path.posix.isAbsolute(pidPath) ||
+        path.posix.normalize(pidPath) !== pidPath) throw new TypeError("QEMU pid path is invalid");
+    return path.posix.join(path.posix.dirname(pidPath), CLEANUP_AUTHORITY_FILENAME);
+}
+
+function defaultWriteCleanupAuthority(pidPath, identity) {
+    const receipt = {schemaVersion: 1, kind: CLEANUP_AUTHORITY_KIND, authorities: [structuredClone(identity)]};
+    fs.writeFileSync(cpuFloorCleanupAuthorityPath(pidPath), `${JSON.stringify(receipt)}\n`, {flag: "wx", mode: 0o600});
+}
+
 export async function runMonitoredQemu(io, request) {
     const pidfile = request.precreatePidFile === true ? io.createOwnedPidFile(request.pidPath) : null;
     let finished = false;
@@ -1067,6 +1080,17 @@ export async function runMonitoredQemu(io, request) {
                     throw new Error("QEMU live process identity differs");
                 identity = {pid, processGroupId: observed.processGroupId, startTicks: observed.startTicks,
                     executablePath: observed.executablePath};
+                if (io.writeCleanupAuthority) {
+                    const leader = await io.readQemuProcessIdentity(outerProcessGroupId);
+                    if (leader.state !== "present" || leader.pid !== outerProcessGroupId ||
+                        leader.processGroupId !== outerProcessGroupId ||
+                        typeof leader.startTicks !== "string" || !/^[1-9][0-9]{0,23}$/u.test(leader.startTicks) ||
+                        typeof leader.executablePath !== "string" || leader.executablePath.length < 1)
+                        throw new Error("QEMU process group leader identity differs");
+                    io.writeCleanupAuthority(request.pidPath, {pid: outerProcessGroupId,
+                        processGroupId: outerProcessGroupId, startTicks: leader.startTicks,
+                        executablePath: leader.executablePath});
+                }
                 break;
             }
             await io.wait(QEMU_IDENTITY_POLL_MILLISECONDS);
@@ -1177,6 +1201,7 @@ function normalizeDependencies(value) {
         createOwnedPidFile: value.createOwnedPidFile ?? defaultCreateOwnedPidFile,
         readOwnedPidFile: value.readOwnedPidFile ?? defaultReadOwnedPidFile,
         removeOwnedPidFile: value.removeOwnedPidFile ?? defaultRemoveOwnedPidFile,
+        writeCleanupAuthority: value.writeCleanupAuthority ?? defaultWriteCleanupAuthority,
         readProcessIdentity: value.readProcessIdentity ?? defaultReadProcessIdentity,
         isProcessGroupAlive: value.isProcessGroupAlive ?? defaultIsProcessGroupAlive,
         wait: value.wait ?? waitMilliseconds,
@@ -1214,6 +1239,30 @@ function normalizeDependencies(value) {
         (request => defaultTerminateQemuGroup(normalized, request));
     normalized.runMonitoredQemu = value.runMonitoredQemu ?? (request => runMonitoredQemu(normalized, request));
     return normalized;
+}
+
+export function createHostedCpuFloorCleanupOperations(dependencies = {}) {
+    const io = normalizeDependencies(dependencies);
+    return Object.freeze({
+        readProcessIdentity: processId => io.readQemuProcessIdentity(processId),
+        isProcessGroupAlive: processGroupId => io.isProcessGroupAlive(processGroupId),
+        monotonicMilliseconds: () => io.monotonicMilliseconds(),
+        wait: milliseconds => io.wait(milliseconds),
+        async signalProcessGroup(processGroupId, signal) {
+            if (!Number.isInteger(processGroupId) || processGroupId < 1 || processGroupId > 0x7fff_ffff ||
+                !["SIGTERM", "SIGKILL"].includes(signal)) throw new TypeError("cleanup signal request is invalid");
+            const tool = io.inspectOwned(KILL);
+            if (tool.path !== KILL || tool.ownership.uid !== "0" || tool.ownership.ordinaryUserWritable !== false)
+                throw new Error("cleanup kill tool identity is unsafe");
+            const command = boundedSudo([KILL, signal === "SIGTERM" ? "-TERM" : "-KILL", "--",
+                `-${processGroupId}`]);
+            const observation = assertSuccessful(await io.runOwned(command.command, command.argv,
+                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS, maxStreamBytes: MAX_STREAM_BYTES}),
+            "cleanup process group signal");
+            if (observation.stdout.length !== 0 || observation.stderr.length !== 0)
+                throw new Error("cleanup process group signal output differs");
+        }
+    });
 }
 
 export async function collectHostedAdmissionObservations({context, paths: pathsValue, dependencies = {}}) {

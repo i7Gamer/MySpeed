@@ -14,7 +14,9 @@ import {
     buildIsolatedAptVectors,
     collectHostedAdmissionObservations,
     createHostedQemuProcessLauncher,
+    createHostedCpuFloorCleanupOperations,
     createHostedStage2Operations,
+    cpuFloorCleanupAuthorityPath,
     defaultValidateOutputDisk,
     parseInReleaseIndexes,
     parseGuestFailure,
@@ -101,6 +103,21 @@ const rootFileIdentity = target => ({path: target, bytes: "4096", sha256: "f".re
 const commandIdentity = target => ({...rootFileIdentity(target), invocationPath: target});
 
 describe("hosted Stage 2 native adapter preparation", () => {
+    it("uses the bounded reviewed-sudo adapter for root-owned cleanup groups", async () => {
+        const calls = [];
+        const cleanup = createHostedCpuFloorCleanupOperations({
+            inspectOwned: target => ({path: target, ownership: {uid: "0", ordinaryUserWritable: false}}),
+            readProcessIdentity: pid => ({state: "present", pid, processGroupId: pid, startTicks: "66",
+                executablePath: "/owned/timeout"}),
+            runOwned: async (command, argv, options) => { calls.push({command, argv, options});
+                return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; }
+        });
+        assert.equal((await cleanup.readProcessIdentity(2300)).startTicks, "66");
+        await cleanup.signalProcessGroup(2300, "SIGTERM");
+        assert.equal(calls[0].command, "/usr/bin/sudo");
+        assert.deepEqual(calls[0].argv.slice(-4), ["/usr/bin/kill", "-TERM", "--", "-2300"]);
+    });
+
     it("accepts only bounded fail-closed guest bootstrap diagnostics", () => {
         const value = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
             failure: "probe execution failed"};
@@ -300,6 +317,90 @@ describe("hosted Stage 2 native adapter preparation", () => {
             pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
             precreatePidFile: true, resources: {taskPath: "/owned", roots: ["/owned"]}}), /already exists/u);
         assert.equal(launched, false);
+    });
+
+    it("derives separate Stage 2 and Stage 3 cleanup authority receipts beside their pidfiles", () => {
+        assert.equal(cpuFloorCleanupAuthorityPath("/owned/stage2/qemu.pid"),
+            "/owned/stage2/cleanup-authority.json");
+        assert.equal(cpuFloorCleanupAuthorityPath("/owned/stage3/baseline-qemu.pid"),
+            "/owned/stage3/cleanup-authority.json");
+    });
+
+    it("persists the exact observed live identity rather than trusting pidfile fields", async () => {
+        let finish; let written;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const observedIdentity = {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77",
+            executablePath: "/owned/loader"};
+        let identityReads = 0;
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300); return operation; },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async pid => pid === 2300 ? {state: "present", pid: 2300,
+                processGroupId: 2300, startTicks: "66", executablePath: "/owned/timeout"} :
+                (identityReads++ === 0 ? observedIdentity : {state: "absent"}),
+            writeCleanupAuthority: (pidPath, identity) => { written = {pidPath, identity};
+                finish({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}); },
+            observeRuntimeResources: async () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "4294967295"}),
+            monotonicMilliseconds: () => 1,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => false,
+            terminateQemuGroup: async () => true
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/stage2/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.deepEqual(written, {pidPath: "/owned/stage2/qemu.pid", identity: {
+            pid: 2300, processGroupId: 2300, startTicks: "66", executablePath: "/owned/timeout"}});
+        assert.equal(result.identity.pid, 2345);
+    });
+
+    it("routes cleanup authority receipt collisions and write failures through owned teardown", async () => {
+        for (const message of ["already exists", "write failed"]) {
+            let finish; let teardown;
+            const operation = new Promise(resolve => { finish = resolve; });
+            const result = await runMonitoredQemu({
+                runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                    options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137},
+                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+                pathExists: () => true,
+                readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+                readQemuProcessIdentity: async pid => ({state: "present", pid, processGroupId: 2300,
+                    startTicks: pid === 2300 ? "66" : "77",
+                    executablePath: pid === 2300 ? "/owned/timeout" : "/owned/loader"}),
+                writeCleanupAuthority: () => { throw new Error(message); },
+                monotonicMilliseconds: () => 1,
+                wait: async () => undefined,
+                isProcessGroupAlive: () => true,
+                terminateQemuGroup: async request => { teardown = request; return true; }
+            }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+                pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+                resources: {taskPath: "/owned", roots: ["/owned"]}});
+            assert.equal(teardown.processGroupId, 2300);
+            assert.equal(result.terminationReason, "identity-observation-failed");
+            assert.equal(result.monitorFailure.phase, "identity-observation");
+        }
+    });
+
+    it("refuses to publish authority when the observed group leader has already transitioned", async () => {
+        let finish; let wrote = false; let teardown = false;
+        const operation = new Promise(resolve => { finish = resolve; });
+        const result = await runMonitoredQemu({
+            runOwned: (_command, _argv, options) => { options.onSpawn(2300);
+                options.onTerminationReady(() => finish({process: {...okProcess, exitCode: 137},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)})); return operation; },
+            pathExists: () => true, readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async pid => pid === 2345 ? {state: "present", pid, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"} : {state: "absent"},
+            writeCleanupAuthority: () => { wrote = true; }, monotonicMilliseconds: () => 1,
+            wait: async () => undefined, isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => { teardown = true; return true; }
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(wrote, false);
+        assert.equal(teardown, true);
+        assert.equal(result.terminationReason, "identity-observation-failed");
     });
 
     it("fails closed when reviewed-sudo QEMU replaces the precreated pidfile", async () => {
@@ -642,10 +743,13 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 return {bytes: Buffer.from("2345\n")}; },
             removeOwnedPidFile: (target, expected) => { pidfileCalls.push(["remove", target]);
                 assert.equal(expected, PIDFILE_IDENTITY); },
+            writeCleanupAuthority: (target, identity) => pidfileCalls.push(["authority", target, identity.pid]),
             readOwnedVerified: target => target === paths().qemuPid ?
                 {bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5", sha256: "1".repeat(64)}} :
                 {bytes: Buffer.from("{}"), identity: {path: target, bytes: "2", sha256: "2".repeat(64)}},
             readProcessIdentity: pid => {
+                if (pid === 2300) return {state: "present", pid, processGroupId: 2300, startTicks: "66",
+                    executablePath: "/owned/timeout"};
                 assert.equal(pid, 2345);
                 identityReads += 1;
                 return identityReads === 1 ? {state: "present", processGroupId: 2300, startTicks: "77",
@@ -667,7 +771,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
         {pid: 2345, startTicks: "77",
             executablePath: `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`, absent: true});
         assert.deepEqual(pidfileCalls, [["create", paths().qemuPid], ["launch", "/usr/bin/sudo"],
-            ["read", paths().qemuPid], ["remove", paths().qemuPid]]);
+            ["read", paths().qemuPid], ["authority", paths().qemuPid, 2300], ["remove", paths().qemuPid]]);
     });
 
     it("exposes the normalized monitored QEMU process proof without parsing guest output", async () => {
@@ -833,6 +937,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     return Promise.resolve({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}); }
                 options.onSpawn(2300); return new Promise(resolve => { finish = resolve; });
             }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            writeCleanupAuthority: () => undefined,
             pathExists: target => target === paths().qemuPid,
             readOwnedPidFile: () => ({bytes: Buffer.alloc(0)}),
             removeOwnedPidFile: () => { throw new Error("unclean launch must retain pidfile identity"); },
@@ -871,14 +976,17 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 options.onQmpSession(Promise.resolve(qmpObservation()));
                 return new Promise(resolve => { finish = resolve; });
             }, createOwnedPidFile: () => PIDFILE_IDENTITY,
+            writeCleanupAuthority: () => undefined,
             pathExists: target => target === paths().qemuPid,
             readOwnedPidFile: (_target, _maximumBytes, expected) => { assert.equal(expected, PIDFILE_IDENTITY);
                 return {bytes: Buffer.from("2345\n")}; },
             removeOwnedPidFile: (_target, expected) => assert.equal(expected, PIDFILE_IDENTITY),
             readOwnedVerified: target => ({bytes: Buffer.from("2345\n"), identity: {path: target, bytes: "5",
                 sha256: "1".repeat(64)}}),
-            readProcessIdentity: () => ++identityReads <= 2 ? {state: "present", processGroupId: 2300,
-                startTicks: "77", executablePath: null} : {state: "absent"},
+            readProcessIdentity: pid => pid === 2300 ? {state: "present", pid, processGroupId: 2300,
+                startTicks: "66", executablePath: "/owned/timeout"} :
+                (++identityReads <= 2 ? {state: "present", pid, processGroupId: 2300,
+                    startTicks: "77", executablePath: null} : {state: "absent"}),
             observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
                 effectiveMemoryBytes: "4294967295"}),
             monotonicMilliseconds: () => clock,
