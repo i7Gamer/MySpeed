@@ -616,11 +616,28 @@ function validateInstallWim(value, pathsValue, iso) {
     return structuredClone(value);
 }
 
+/*
+ * Windows Setup shows a page whenever the answer file leaves that page's settings empty, and the
+ * very first one - "Select language settings" - is what run 35106186247 sat on until the launch
+ * budget killed QEMU. The documented settings for it are the windowsPE international component, so
+ * both generated answer files take the component from here rather than from a second copy. The
+ * installation media is the en-us evaluation ISO, so one locale covers every field and needs no
+ * language pack. This component is valid only in the windowsPE pass.
+ */
+const GUEST_SETUP_LOCALE = "en-US";
+export const WINDOWS_PE_INTERNATIONAL_COMPONENT =
+    `<component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" ` +
+    `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">` +
+    `<SetupUILanguage><UILanguage>${GUEST_SETUP_LOCALE}</UILanguage></SetupUILanguage>` +
+    `<InputLocale>${GUEST_SETUP_LOCALE}</InputLocale><SystemLocale>${GUEST_SETUP_LOCALE}</SystemLocale>` +
+    `<UILanguage>${GUEST_SETUP_LOCALE}</UILanguage><UserLocale>${GUEST_SETUP_LOCALE}</UserLocale></component>`;
+
 function renderAutounattend(image, nonce) {
     const password = `Myspeed-Eval-${nonce.slice(0, 16)}!aA1`;
     const xml = `<?xml version="1.0" encoding="utf-8"?>\r\n<unattend xmlns="urn:schemas-microsoft-com:unattend" ` +
         `xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">\r\n` +
-        `<settings pass="windowsPE"><component name="Microsoft-Windows-Setup" processorArchitecture="amd64" ` +
+        `<settings pass="windowsPE">${WINDOWS_PE_INTERNATIONAL_COMPONENT}` +
+        `<component name="Microsoft-Windows-Setup" processorArchitecture="amd64" ` +
         `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><DiskConfiguration>` +
         `<Disk wcm:action="add"><DiskID>0</DiskID><WillWipeDisk>true</WillWipeDisk><CreatePartitions>` +
         `<CreatePartition wcm:action="add"><Order>1</Order><Size>100</Size><Type>EFI</Type></CreatePartition>` +

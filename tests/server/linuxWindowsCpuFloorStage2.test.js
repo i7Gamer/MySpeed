@@ -452,6 +452,23 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             `${paths().probeRoot}/known_good.exe`);
     });
 
+    it("answers the Windows Setup language page from the windowsPE pass", async () => {
+        const {op, seen} = operations();
+        const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, op);
+        assert.equal(result.status, "observed", result.failure);
+        const unattend = Buffer.from(seen.seedSpec.files.find(file => file.name === "Autounattend.xml").bytesBase64,
+            "base64").toString("utf8");
+        const windowsPe = unattend.match(/<settings pass="windowsPE">([\s\S]*?)<\/settings>/u);
+        assert.ok(windowsPe, "answer file has no windowsPE pass");
+        assert.match(windowsPe[1], /<component name="Microsoft-Windows-International-Core-WinPE" /u);
+        assert.match(windowsPe[1], /<SetupUILanguage><UILanguage>en-US<\/UILanguage><\/SetupUILanguage>/u);
+        for (const setting of ["InputLocale", "SystemLocale", "UILanguage", "UserLocale"])
+            assert.match(windowsPe[1], new RegExp(`<${setting}>en-US</${setting}>`, "u"));
+        assert.doesNotMatch(unattend.replace(/<settings pass="windowsPE">[\s\S]*?<\/settings>/u, ""),
+            /International-Core-WinPE/u);
+    });
+
     it("captures native collector constants in its returned detached closure", {skip: process.platform !== "win32"}, () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-native-closure-"));
         const script = path.join(root, "bootstrap.ps1");

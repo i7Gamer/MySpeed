@@ -3,7 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {deriveActualHostedContext} from "./linux-windows-cpu-floor-stage2-controller.mjs";
-import {PROBE_SEED_FILES, probeSeedName, renderGuestBootstrap} from "./linux-windows-cpu-floor-stage2.mjs";
+import {PROBE_SEED_FILES, WINDOWS_PE_INTERNATIONAL_COMPONENT, probeSeedName, renderGuestBootstrap} from
+    "./linux-windows-cpu-floor-stage2.mjs";
 import {
     createHostedStage2Operations,
     runHostedOwnedProcess
@@ -141,7 +142,8 @@ export function renderBaselineAutounattend(image, nonce) {
     const password = `Myspeed-Eval-${nonce.slice(0, 16)}!aA1`;
     const xml = `<?xml version="1.0" encoding="utf-8"?>\r\n<unattend xmlns="urn:schemas-microsoft-com:unattend" ` +
         `xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">\r\n` +
-        `<settings pass="windowsPE"><component name="Microsoft-Windows-Setup" processorArchitecture="amd64" ` +
+        `<settings pass="windowsPE">${WINDOWS_PE_INTERNATIONAL_COMPONENT}` +
+        `<component name="Microsoft-Windows-Setup" processorArchitecture="amd64" ` +
         `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><DiskConfiguration>` +
         `<Disk wcm:action="add"><DiskID>0</DiskID><WillWipeDisk>true</WillWipeDisk><CreatePartitions>` +
         `<CreatePartition wcm:action="add"><Order>1</Order><Size>100</Size><Type>EFI</Type></CreatePartition>` +

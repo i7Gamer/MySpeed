@@ -348,6 +348,19 @@ describe("hosted Windows CPU-floor Stage 3 seed contract", () => {
         assert.doesNotMatch(unattend, /bootstrap\.ps1/u);
     });
 
+    it("answers the Windows Setup language page from the windowsPE pass", () => {
+        const unattend = renderBaselineAutounattend({name: "Windows Server 2025 SERVERSTANDARD"}, NONCE)
+            .toString("utf8");
+        const windowsPe = unattend.match(/<settings pass="windowsPE">([\s\S]*?)<\/settings>/u);
+        assert.ok(windowsPe, "answer file has no windowsPE pass");
+        assert.match(windowsPe[1], /<component name="Microsoft-Windows-International-Core-WinPE" /u);
+        assert.match(windowsPe[1], /<SetupUILanguage><UILanguage>en-US<\/UILanguage><\/SetupUILanguage>/u);
+        for (const setting of ["InputLocale", "SystemLocale", "UILanguage", "UserLocale"])
+            assert.match(windowsPe[1], new RegExp(`<${setting}>en-US</${setting}>`, "u"));
+        assert.doesNotMatch(unattend.replace(/<settings pass="windowsPE">[\s\S]*?<\/settings>/u, ""),
+            /International-Core-WinPE/u);
+    });
+
     it("carries the launcher's early-boot observation out of the Stage 3 launch", async () => {
         const value = fixture();
         await value.operations.replayStage2({identity: value.stage2ResultIdentity,
