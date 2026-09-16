@@ -8,8 +8,11 @@ import {describe, it} from "node:test";
 
 import {renderWindowsBaselineGuestBootstrap} from "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsBaselineGuestSeedDocuments} from "../../scripts/qualification/windows-baseline-guest-seed-documents.mjs";
-import {renderGuestBootstrap} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {WINDOWS_SYSTEM_TOOL_PATHS, renderGuestBootstrap} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 import {parseGuestOutcome} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
+    "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
 const NONCE = "3".repeat(32);
 const SOURCE_SHA = "1".repeat(40);
@@ -103,7 +106,7 @@ describe("Windows baseline guest bootstrap", () => {
 
     it("retains the exact primary stage across injected operation failures", {skip: !HAS_INBOX_POWERSHELL}, () => {
         const expected = ["guard", "input-staging", "runtime-installation", "cpu-loading", "error-mode-change",
-            "evidence-collection", "executor-invocation"];
+            "evidence-collection", "activation-observation", "system-tool-observation", "executor-invocation"];
         const body = `$observed=@()\r\nfunction Invoke-Case([string]$Target){$script:casePublished=@();try{` +
             `Invoke-MyspeedBaselineBootstrap ` +
             `-ObserveGuard {if($Target-ceq'guard'){throw 'injected'};[pscustomobject]@{seed='D:\\';output='E:\\'}} ` +
@@ -112,7 +115,9 @@ describe("Windows baseline guest bootstrap", () => {
             `-InstallRuntime {param($Seed,$Root)if($Target-ceq'runtime-installation'){throw 'injected'};[pscustomobject]@{installed=$true;root=$Root}} ` +
             `-LoadCpu {param($Seed)if($Target-ceq'cpu-loading'){throw 'injected'};[pscustomobject]@{` +
             `SetErrorMode={param($Value)if($Target-ceq'error-mode-change'){throw 'injected'};[uint32]0}.GetNewClosure();` +
-            `CollectEvidence={param($Seed)if($Target-ceq'evidence-collection'){throw 'injected'};[pscustomobject]@{status='observed'}}.GetNewClosure()}} ` +
+            `CollectEvidence={param($Seed)if($Target-ceq'evidence-collection'){throw 'injected'};[ordered]@{status='observed'}}.GetNewClosure();` +
+            `ObserveActivation={if($Target-ceq'activation-observation'){throw 'injected'};[ordered]@{state='ready'}}.GetNewClosure();` +
+            `ObserveSystemTools={if($Target-ceq'system-tool-observation'){throw 'injected'};@()}.GetNewClosure()}} ` +
             `-StartExecutor {param($Root,$Seed)if($Target-ceq'executor-invocation'){throw 'injected'};` +
             `[pscustomobject]@{bytes=[byte[]](1,2);status='observed';diagnostics=@()}} ` +
             `-RemoveRuntime {param($Root,$Seed)if($Target-ceq'executor-invocation'){throw 'cleanup injected'};` +
@@ -143,7 +148,8 @@ describe("Windows baseline guest bootstrap", () => {
                 `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
-                `CollectEvidence={param($Seed)[pscustomobject]@{schemaVersion=1;status='observed'}}}} ` +
+                `CollectEvidence={param($Seed)[ordered]@{schemaVersion=1;status='observed'}};` +
+                `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                 `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[byte[]](1,2);status='observed';diagnostics=@()}} ` +
                 `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
@@ -169,7 +175,8 @@ describe("Windows baseline guest bootstrap", () => {
                 `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
-                `CollectEvidence={param($Seed)[pscustomobject]@{schemaVersion=1;status='observed'}}}} ` +
+                `CollectEvidence={param($Seed)[ordered]@{schemaVersion=1;status='observed'}};` +
+                `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                 `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('${baseline}');status='failed';diagnostics=@()}} ` +
                 `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
@@ -192,7 +199,8 @@ describe("Windows baseline guest bootstrap", () => {
                 `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
-                `CollectEvidence={param($Seed)[pscustomobject]@{schemaVersion=1;status='observed'}}}} ` +
+                `CollectEvidence={param($Seed)[ordered]@{schemaVersion=1;status='observed'}};` +
+                `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                 `-StartExecutor {param($Root,$Seed)$errorValue=[InvalidOperationException]::new('executor failed');` +
                 `$errorValue.Data['MyspeedDiagnostics']=@([pscustomobject]@{name='baseline-result.raw.json';bytes=[byte[]](1,2)},` +
                 `[pscustomobject]@{name='baseline-executor.stdout';bytes=[byte[]](3)},` +
@@ -295,7 +303,9 @@ describe("Windows baseline guest bootstrap", () => {
                 `-LoadCpu {param($Seed). '${cpuPath.replaceAll("'", "''")}' -LibraryMode;` +
                 `$script:events+=("load-cpu:"+$BASELINE_MAX_STREAM_BYTES);[pscustomobject]@{` +
                 `SetErrorMode={param($Value)$script:events+="mode:$Value";[uint32]7};` +
-                `CollectEvidence={param($Value)$script:events+='cpu';[pscustomobject]@{schemaVersion=1;status='observed'}}}} ` +
+                `CollectEvidence={param($Value)$script:events+='cpu';[ordered]@{schemaVersion=1;status='observed'}};` +
+                `ObserveActivation={$script:events+='activation';[ordered]@{state='ready'}};` +
+                `ObserveSystemTools={$script:events+='system-tools';@()}}} ` +
                 `-StartExecutor {param($Root,$Seed)$script:events+='executor';[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{"schemaVersion":1,"status":"observed","profile":"baseline-cpu","cleanupProven":true,"summary":{}}');status='observed';diagnostics=@()}} ` +
                 `-RemoveRuntime {param($Root)$script:events+='cleanup';[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)$script:events+='cleanup-inputs';[pscustomobject]@{cleanupProven=$true}} ` +
@@ -308,8 +318,8 @@ describe("Windows baseline guest bootstrap", () => {
             assert.equal(result.stderr, "");
             assert.notEqual(result.stdout.trim(), "", result.stderr);
             assert.deepEqual(JSON.parse(result.stdout), ["guard", "stage-inputs", "install", "load-cpu:4194304", "mode:3",
-                "cpu", "executor", "cleanup", "cleanup-inputs", "mode:7", "publish:baseline-result.json",
-                "publish:result.json", "shutdown"]);
+                "cpu", "activation", "system-tools", "executor", "cleanup", "cleanup-inputs", "mode:7",
+                "publish:baseline-result.json", "publish:result.json", "shutdown"]);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
@@ -323,7 +333,9 @@ describe("Windows baseline guest bootstrap", () => {
                 `try{Invoke-MyspeedBaselineBootstrap -ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} ` +
                 `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                 `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
-                `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)$script:calls++;if($script:calls -eq 1){[uint32]7}else{throw 'restore failed'}};CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)$script:calls++;if($script:calls -eq 1){[uint32]7}else{throw 'restore failed'}};` +
+                `CollectEvidence={param($Value)[ordered]@{status='observed'}};` +
+                `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                 `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                 `-RemoveRuntime {param($Root)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
@@ -363,7 +375,8 @@ describe("Windows baseline guest bootstrap", () => {
                     `Invoke-MyspeedBaselineBootstrap -ObserveGuard {[pscustomobject]@{seed='${escapedRoot}';output='${escapedRoot}'}} ` +
                     `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                     `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
-                    `CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                    `CollectEvidence={param($Value)[ordered]@{status='observed'}};` +
+                    `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                     `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                     `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
                     `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
@@ -414,7 +427,8 @@ describe("Windows baseline guest bootstrap", () => {
                     `-ResolveInputRoot {'${ownedInputRoot.replaceAll("'", "''")}'} ` +
                     `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
                     `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
-                    `CollectEvidence={param($Value)[pscustomobject]@{status='observed'}}}} ` +
+                    `CollectEvidence={param($Value)[ordered]@{status='observed'}};` +
+                    `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                     `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                     `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                     `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
@@ -535,5 +549,152 @@ describe("Windows baseline guest bootstrap", () => {
                 assert.deepEqual(JSON.parse(result.stdout), {rootExists: true, candidateExists: true,
                     fixtureExists: true});
             } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+});
+
+const psLiteral = value => {
+    if (value === null) return "$null";
+    if (typeof value === "boolean") return value ? "$true" : "$false";
+    if (typeof value === "number") return String(value);
+    if (typeof value === "string") return `'${value.replaceAll("'", "''")}'`;
+    if (Array.isArray(value)) return `@(${value.map(psLiteral).join(",")})`;
+    return `([ordered]@{${Object.entries(value).map(([key, item]) =>
+        `'${key}'=${psLiteral(item)}`).join(";")}})`;
+};
+
+const CPUID_EVIDENCE = {schemaVersion: 1, kind: "cpuid", maxBasicLeaf: 7,
+    leaf1: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00900000", edx: "0x00000000"},
+    leaf7Subleaf0: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00000000", edx: "0x00000000"},
+    xcr0: null, features: {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false}};
+const CONTROL_RESULTS = {"known-good": 42, "known-bad": 13, sse42: 2_276_049_685, popcnt: 32};
+const ILLEGAL_INSTRUCTION_EXIT = 3_221_225_501;
+const KNOWN_BAD_EXIT = 19;
+
+// Exactly what the reused Stage 2 collector returns from CollectEvidence, and nothing more.
+const collectedCpuEvidence = () => ({schemaVersion: 1, nonce: NONCE, runs: [
+    {role: "cpuid", exitCode: 0,
+        stdoutBase64: Buffer.from(`${JSON.stringify(CPUID_EVIDENCE)}\n`).toString("base64"), stderrBase64: ""},
+    ...Object.entries(CONTROL_RESULTS).map(([role, result]) => ({role,
+        exitCode: role === "known-bad" ? KNOWN_BAD_EXIT : 0,
+        stdoutBase64: Buffer.from(`${JSON.stringify({schemaVersion: 1, kind: role, result})}\n`).toString("base64"),
+        stderrBase64: ""})),
+    ...["illegal", "avx", "avx2"].map(role => ({role, exitCode: ILLEGAL_INSTRUCTION_EXIT,
+        stdoutBase64: "", stderrBase64: ""}))],
+network: {hardwareNics: 0, enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}});
+
+const observedActivation = () => getCompletedWindowsMsiActivationEvidence(buildWindowsMsiSetupCompleteActivation({
+    repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA, eventSha: "2".repeat(40), runId: "123",
+    runAttempt: "1", nonce: NONCE}));
+const observedSystemTools = () => WINDOWS_SYSTEM_TOOL_PATHS.map((tool, index) =>
+    ({role: tool.role, path: tool.path, bytes: String(index + 1), sha256: String(index + 1).repeat(64)}));
+
+/*
+ * Runs the real generated orchestration with every native side effect replaced by an inert script
+ * block, and returns the bytes the script itself published as result.json.
+ */
+const runProducer = ({script = render(), activation = psLiteral(observedActivation()),
+    systemTools = psLiteral(observedSystemTools()), cpu = psLiteral(collectedCpuEvidence())} = {}) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-producer-"));
+    const scriptPath = path.join(root, "bootstrap.ps1");
+    const harnessPath = path.join(root, "harness.ps1");
+    const publishedRoot = path.join(root, "published");
+    fs.mkdirSync(publishedRoot);
+    const escape = value => value.replaceAll("'", "''");
+    try {
+        fs.writeFileSync(scriptPath, script);
+        fs.writeFileSync(harnessPath, `$ErrorActionPreference='Stop'\r\n` +
+            `. '${escape(scriptPath)}' -LibraryMode\r\n` +
+            `try{Invoke-MyspeedBaselineBootstrap ` +
+            `-ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} ` +
+            `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+            `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+            `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]7};` +
+            `CollectEvidence={param($Value)${cpu}};` +
+            `ObserveActivation={${activation}};` +
+            `ObserveSystemTools={${systemTools}}}} ` +
+            `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes(` +
+            `'{"schemaVersion":1,"status":"observed","profile":"baseline-cpu","cleanupProven":true}');` +
+            `status='observed';diagnostics=@()}} ` +
+            `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
+            `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
+            `-Publish {param($Path,$Bytes)[IO.File]::WriteAllBytes(` +
+            `[IO.Path]::Combine('${escape(publishedRoot)}',[IO.Path]::GetFileName($Path)),$Bytes)} ` +
+            `-Shutdown {}}catch{}\r\n` +
+            `[Console]::Out.Write((@(Get-ChildItem -LiteralPath '${escape(publishedRoot)}'|` +
+            `ForEach-Object{$_.Name})|ConvertTo-Json -Compress))\r\n`);
+        const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
+        assert.equal(result.status, 0, result.stderr);
+        const target = path.join(publishedRoot, "result.json");
+        // ConvertTo-Json unwraps a one-element array, so normalise before comparing.
+        return {published: fs.existsSync(target) ? fs.readFileSync(target) : null,
+            names: [JSON.parse(result.stdout || "[]")].flat()};
+    } finally { fs.rmSync(root, {recursive: true, force: true}); }
+};
+
+describe("Windows baseline guest producer-to-parser contract", () => {
+    it("records the activation and system-tool stages before invoking their observations", () => {
+        const source = render().toString("utf8");
+        for (const [stage, operation] of [["activation-observation", "$cpuOperations.ObserveActivation"],
+            ["system-tool-observation", "$cpuOperations.ObserveSystemTools"]]) {
+            assert.notEqual(source.indexOf(`$failureStage='${stage}'`), -1, stage);
+            assert.ok(source.indexOf(`$failureStage='${stage}'`) < source.indexOf(`& ${operation}`), stage);
+        }
+        assert.ok(source.indexOf("$cpuOperations.CollectEvidence") <
+            source.indexOf("$cpuOperations.ObserveActivation"));
+        assert.ok(source.indexOf("$cpuOperations.ObserveSystemTools") < source.indexOf("& $StartExecutor"));
+    });
+
+    it("publishes bytes the real Stage 2 parser accepts", {skip: !HAS_INBOX_POWERSHELL}, () => {
+        const produced = runProducer();
+        assert.deepEqual(produced.names.sort(), ["baseline-result.json", "result.json"]);
+        const parsed = parseGuestOutcome(produced.published, NONCE);
+        assert.deepEqual(parsed.cpu, {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false});
+        assert.deepEqual(parsed.instructions, {sse42: "completed", popcnt: "completed",
+            avx: "illegal-instruction", avx2: "illegal-instruction"});
+        assert.deepEqual(parsed.activation, observedActivation());
+        assert.deepEqual(parsed.systemTools, observedSystemTools());
+    });
+
+    it("cannot satisfy the parser once either published assignment is removed",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const source = render().toString("utf8");
+            for (const assignment of [
+                `$failureStage='activation-observation';$cpu.activation=& $cpuOperations.ObserveActivation;`,
+                `$failureStage='system-tool-observation';$cpu.systemTools=& $cpuOperations.ObserveSystemTools;`
+            ]) {
+                assert.ok(source.includes(assignment), assignment);
+                const mutated = runProducer({script: Buffer.from(source.replace(assignment, ""), "utf8")});
+                assert.notEqual(mutated.published, null);
+                assert.throws(() => parseGuestOutcome(mutated.published, NONCE), /guest result schema is invalid/u);
+            }
+        });
+
+    it("publishes a stage-named failure instead of a success envelope when either observation fails",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            for (const [stage, overrides] of [
+                ["activation-observation", {activation: "throw 'activation unavailable'"}],
+                ["system-tool-observation", {systemTools: "throw 'system tool unavailable'"}]
+            ]) {
+                const produced = runProducer(overrides);
+                assert.deepEqual(produced.names, ["result.json"]);
+                const parsed = parseGuestOutcome(produced.published, NONCE);
+                assert.equal(parsed.status, "failed");
+                assert.equal(parsed.stage, "guest-bootstrap");
+                assert.match(parsed.failure, new RegExp(`^${stage}: `, "u"));
+            }
+        });
+
+    it("keeps a cleanup or publication failure from producing an accepted envelope",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const source = render().toString("utf8");
+            const mutated = source.replace("$cleanup=& $RemoveRuntime $runtimeRoot $boundary.seed;",
+                "$cleanup=[pscustomobject]@{cleanupProven=$false};");
+            assert.notEqual(mutated, source);
+            const produced = runProducer({script: Buffer.from(mutated, "utf8")});
+            assert.deepEqual(produced.names, ["result.json"]);
+            const parsed = parseGuestOutcome(produced.published, NONCE);
+            assert.equal(parsed.status, "failed");
+            assert.match(parsed.failure, /^runtime-cleanup: /u);
         });
 });

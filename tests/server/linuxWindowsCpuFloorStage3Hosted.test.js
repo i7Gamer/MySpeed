@@ -1,17 +1,12 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import {spawnSync} from "node:child_process";
 import {describe, it} from "node:test";
 
 import {
     createHostedStage3Operations,
-    renderBaselineAutounattend,
-    renderBaselineGuestBootstrap
+    renderBaselineAutounattend
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs";
-import {renderGuestBootstrap} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {PROBE_SEED_FILES} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 
 const NONCE = "2".repeat(32);
 const SHA = character => character.repeat(64);
@@ -62,8 +57,11 @@ const processProof = () => ({exitCode: 0, signal: null, timedOut: false, cleanup
     launcherExecutablePath: toolchain().runtime.loader.path, terminationReason: null});
 const processObservation = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true,
     errorObserved: false, stdoutOverflow: false, stderrOverflow: false};
-const POWERSHELL_TEST_TIMEOUT_MILLISECONDS = 20_000;
-const BASELINE_RESULT_FILE_NAME = "baseline-result.json";
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const EARLY_BOOT = Object.freeze({schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+    version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+    screenshots: [1, 2].map(index => ({path: `${ROOT}/early-boot-${index}.png`, bytes: String(PNG.length),
+        sha256: crypto.createHash("sha256").update(PNG).digest("hex"), bytesBase64: PNG.toString("base64")}))});
 
 function fixture(overrides = {}) {
     const calls = [];
@@ -116,7 +114,8 @@ function fixture(overrides = {}) {
                 systemDisk: {path: paths().systemDisk, bytes: "8192", sha256: SHA("b"),
                     virtualBytes: "51539607552"}, ovmfVars: {path: paths().ovmfVars, sha256: SHA("6")}}; },
             async launchOwnedQemu(request) { calls.push(["launch", request]); return {argv: request.argv,
-                process: processProof(), guest: {schemaVersion: 1, status: "observed",
+                process: processProof(), earlyBoot: structuredClone(EARLY_BOOT),
+                guest: {schemaVersion: 1, status: "observed",
                     output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}}}; }
         }; },
         ...overrides
@@ -183,7 +182,7 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         const seededNames = mediaRequest.seedSpec.files.map(file => file.name);
         assert.ok(["execution.json", "fixture-bundle.json", "guest-runtime.json", "runtime-installer.ps1"]
             .every(name => seededNames.includes(name)));
-        const bootstrapRecord = mediaRequest.seedSpec.files.find(file => file.name === "bootstrap.ps1");
+        const bootstrapRecord = mediaRequest.seedSpec.files.find(file => file.name === "baseline-bootstrap.ps1");
         const bootstrap = Buffer.from(bootstrapRecord.bytesBase64, "base64").toString("utf8");
         assert.match(bootstrap, /Install-MyspeedBaselineRuntimeBundle/u);
         assert.match(bootstrap, /windows-baseline-guest-executor\.mjs/u);
@@ -237,75 +236,6 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         assert.equal(monitored[0].argv.filter(value => value === "--argv0").length, 1);
     });
 
-    it("seals exact unattended/bootstrap files and emits a Stage 2-compatible failure", () => {
-        const unattend = renderBaselineAutounattend({name: "Windows Server 2025 SERVERSTANDARD"}, NONCE)
-            .toString("utf8");
-        assert.match(unattend, /<Key>\/IMAGE\/NAME<\/Key><Value>Windows Server 2025 SERVERSTANDARD<\/Value>/u);
-        assert.doesNotMatch(unattend, /wcm:keyValue|<Key>\/IMAGE\/INDEX<\/Key>/u);
-        const bootstrap = renderBaselineGuestBootstrap(NONCE).toString("utf8");
-        assert.match(bootstrap, /status='failed';nonce=\$EXPECTED_NONCE;stage='guest-bootstrap'/u);
-        assert.match(bootstrap, /\$null=\$process\.Handle;if\(-not \$process\.WaitForExit/u);
-        assert.match(bootstrap, /\$BASELINE_MAX_STREAM_BYTES=4194304/u);
-        assert.doesNotMatch(bootstrap, /Length -gt \$MAX_STREAM_BYTES/u);
-        const baselinePublication = `(Join-Path $outputRoot '${BASELINE_RESULT_FILE_NAME}')`;
-        const cpuPublication = "(Join-Path $outputRoot 'result.json')";
-        assert.ok(bootstrap.indexOf("SetErrorMode $previousMode") < bootstrap.indexOf(baselinePublication));
-        assert.ok(bootstrap.indexOf(baselinePublication) < bootstrap.indexOf(cpuPublication));
-        assert.equal((bootstrap.match(/Stop-Computer -Force/gu) ?? []).length, 1);
-    });
-
-    it("runs the rendered bootstrap with injected process and CPU operations", {skip: process.platform !== "win32"}, () => {
-        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage3-bootstrap-"));
-        const script = path.join(root, "bootstrap.ps1");
-        const cpuScript = path.join(root, "cpu-calibration.ps1");
-        fs.writeFileSync(script, renderBaselineGuestBootstrap(NONCE));
-        fs.writeFileSync(cpuScript, renderGuestBootstrap(context()));
-        const escapedRoot = root.replaceAll("'", "''");
-        const escapedScript = script.replaceAll("'", "''");
-        const harness = `$ErrorActionPreference='Stop';$global:events=[Collections.Generic.List[string]]::new();` +
-            `$global:restoreFails=$false;$global:testRoot='${escapedRoot}';` +
-            `function global:Get-Volume{param($FileSystemLabel)$global:events.Add('volume:'+$FileSystemLabel);` +
-            `[pscustomobject]@{DriveLetter='Z'}};function global:Join-Path{param($Path,$ChildPath)` +
-            `[IO.Path]::Combine($global:testRoot,[IO.Path]::GetFileName([string]$ChildPath))};` +
-            `function global:Start-Process{param($FilePath,$ArgumentList,[switch]$NoNewWindow,[switch]$PassThru,` +
-            `$RedirectStandardOutput,$RedirectStandardError);$global:events.Add('start');` +
-            `[IO.File]::WriteAllBytes($RedirectStandardOutput,[byte[]]@());` +
-            `[IO.File]::WriteAllBytes($RedirectStandardError,[byte[]]@());` +
-            `$resultPath=$ArgumentList[$ArgumentList.Count-1];[IO.File]::WriteAllText($resultPath,` +
-            `'${JSON.stringify({schemaVersion: 1, status: "observed"}).replaceAll("'", "''")}');` +
-            `$p=[pscustomobject]@{};$p|Add-Member ScriptProperty Handle {$global:events.Add('handle');1};` +
-            `$p|Add-Member ScriptMethod WaitForExit {param([int]$Milliseconds)$global:events.Add('wait');$true};` +
-            `$p|Add-Member ScriptProperty ExitCode {$global:events.Add('exit');0};` +
-            `$p|Add-Member ScriptMethod Kill {};$p|Add-Member ScriptMethod Dispose {$global:events.Add('dispose')};$p};` +
-            `. '${escapedScript}' -LibraryMode;$ops=@{SetErrorMode={param([uint32]$Mode)$global:events.Add('mode:'+$Mode);` +
-            `if($global:restoreFails -and $Mode -ne 3){throw 'restore failed'};if($Mode -eq 3){return [uint32]77};` +
-            `return [uint32]3};CollectEvidence={param($Seed)$global:events.Add('cpu');` +
-            `[ordered]@{schemaVersion=1;status='observed'}}};` +
-            `$loader={param($Path). $Path -LibraryMode;return $ops}.GetNewClosure();` +
-            `function global:Write-MyspeedExclusive{param($Path,[byte[]]$Bytes)` +
-            `$global:events.Add('write:'+[IO.Path]::GetFileName($Path));$global:lastBytes=$Bytes};` +
-            `Invoke-MyspeedBaselineGuest -Shutdown {$global:events.Add('shutdown')} -LoadCpuOperations $loader;` +
-            `$global:restoreFails=$true;try{Invoke-MyspeedBaselineGuest -Shutdown {$global:events.Add('shutdown2')} ` +
-            `-LoadCpuOperations $loader}` +
-            `catch{$global:events.Add('caught')};$failure=[Text.Encoding]::UTF8.GetString($global:lastBytes)|ConvertFrom-Json;` +
-            `[Console]::Out.Write(([ordered]@{events=@($global:events);failure=$failure}|ConvertTo-Json -Compress -Depth 5))`;
-        try {
-            const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
-                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
-                {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
-            assert.equal(result.status, 0, result.stderr);
-            const observed = JSON.parse(result.stdout);
-            assert.deepEqual(observed.events.slice(0, 11), ["volume:MYSPEEDSEED", "volume:MYSPEEDOUT", "mode:3", "cpu",
-                "start", "handle", "wait", "exit", "dispose", "mode:77", "write:baseline-result.json"]);
-            assert.ok(observed.events.indexOf("write:baseline-result.json") < observed.events.indexOf("write:result.json"));
-            assert.ok(observed.events.indexOf("mode:77") < observed.events.indexOf("write:baseline-result.json"));
-            assert.equal(observed.events.at(-2), "shutdown2");
-            assert.equal(observed.events.at(-1), "caught");
-            assert.deepEqual(observed.failure, {schemaVersion: 1, status: "failed", nonce: NONCE,
-                stage: "guest-bootstrap", failure: "restore failed"});
-        } finally { fs.rmSync(root, {recursive: true, force: true}); }
-    });
-
     it("does not extract output before replaying the Stage 2 toolchain", async () => {
         const value = fixture();
         await assert.rejects(value.operations.collectBaselineGuestResult({outputDisk: {path: paths().outputDisk}}),
@@ -322,6 +252,7 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         const failed = fixture({stage2Factory: _input => ({
             async prepareOfflineMedia() { throw new Error("not used"); },
             async launchOwnedQemu(request) { return {argv: request.argv, process: {...processProof(), treeGone: false},
+                earlyBoot: structuredClone(EARLY_BOOT),
                 guest: {status: "observed", output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}}}; }
         })});
         await failed.operations.replayStage2({identity: failed.stage2ResultIdentity,
@@ -329,5 +260,115 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         await assert.rejects(failed.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
             stage2: stage2(), toolchain: toolchain()}), /QEMU cleanup was not proven/u);
         assert.equal(value.calls.some(call => call[0] === "run"), false);
+    });
+});
+
+describe("hosted Windows CPU-floor Stage 3 seed contract", () => {
+    const seedFiles = async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        const acquired = await value.operations.acquireCandidate({candidate: candidate()});
+        await value.operations.prepareBaselineMedia({candidate: acquired, paths: paths(), stage2: stage2(),
+            toolchain: toolchain()});
+        return value.calls.find(call => call[0] === "media")[1].seedSpec.files;
+    };
+    const byName = files => new Map(files.map(file => [file.name, file]));
+    const text = file => Buffer.from(file.bytesBase64, "base64").toString("utf8");
+
+    it("renames only the two hyphen-role probes and keeps their source and digest untouched", async () => {
+        const files = byName(await seedFiles());
+        for (const [seedName, artifactName] of [["known-bad.exe", "known_bad.exe"],
+            ["known-good.exe", "known_good.exe"]]) {
+            const seeded = files.get(seedName);
+            const original = guestFiles().find(record => record.name === artifactName);
+            assert.ok(seeded, `${seedName} is absent from the seed`);
+            assert.equal(files.has(artifactName), false);
+            assert.equal(seeded.kind, "owned-file");
+            assert.equal(seeded.sourcePath, original.path);
+            assert.equal(seeded.sha256, original.sha256);
+            assert.equal(seeded.bytes, original.bytes);
+        }
+        for (const name of ["avx.exe", "avx2.exe", "cpuid.exe", "illegal.exe", "popcnt.exe", "sse42.exe"])
+            assert.ok(files.has(name), `${name} is absent from the seed`);
+    });
+
+    it("seeds every probe name the reused Stage 2 collector will actually open", async () => {
+        const files = byName(await seedFiles());
+        const collector = text(files.get("cpu-calibration.ps1"));
+        for (const entry of PROBE_SEED_FILES) {
+            assert.ok(collector.includes(`'${entry.role}'`), `collector omits role ${entry.role}`);
+            assert.ok(files.has(entry.seedName), `seed omits ${entry.seedName}`);
+        }
+    });
+
+    it("installs the shared post-setup activation instead of running the bootstrap inside setup", async () => {
+        const files = byName(await seedFiles());
+        assert.equal(files.has("bootstrap.ps1"), false);
+        for (const name of ["install-activation.ps1", "myspeed-baseline-cpu-handoff.json", "SetupComplete.cmd",
+            "myspeed-msi-setupcomplete.ps1", "baseline-bootstrap.ps1"])
+            assert.ok(files.has(name), `${name} is absent from the seed`);
+        assert.equal(files.get("install-activation.ps1").kind, "activation-installer");
+        assert.equal(files.get("myspeed-baseline-cpu-handoff.json").kind, "activation-handoff");
+        assert.equal(files.get("SetupComplete.cmd").kind, "activation-inline");
+        assert.equal(files.get("myspeed-msi-setupcomplete.ps1").kind, "activation-inline");
+        const handoff = JSON.parse(text(files.get("myspeed-baseline-cpu-handoff.json")));
+        const bootstrap = files.get("baseline-bootstrap.ps1");
+        assert.equal(handoff.kind, "myspeed-windows-baseline-cpu-handoff");
+        assert.deepEqual(handoff.bootstrap, {name: "baseline-bootstrap.ps1", bytes: Number(bootstrap.bytes),
+            sha256: bootstrap.sha256});
+        assert.deepEqual(handoff.host, {repository: context().repository, sourceSha: context().sourceSha,
+            eventSha: context().eventSha, runId: context().runId, runAttempt: context().runAttempt,
+            nonce: context().nonce});
+    });
+
+    it("binds the activation files the collector will hash to the ones the seed installs", async () => {
+        const files = byName(await seedFiles());
+        const collector = text(files.get("cpu-calibration.ps1"));
+        for (const name of ["SetupComplete.cmd", "myspeed-msi-setupcomplete.ps1"]) {
+            const seeded = files.get(name);
+            assert.ok(collector.includes(`'${seeded.sha256}'`), `collector does not pin ${name}`);
+            assert.ok(collector.includes(`= ${seeded.bytes}`), `collector does not pin ${name} size`);
+        }
+    });
+
+    it("dispatches after setup completion rather than inside the specialize pass", () => {
+        const unattend = renderBaselineAutounattend({name: "Windows Server 2025 SERVERSTANDARD"}, NONCE)
+            .toString("utf8");
+        assert.match(unattend, /install-activation\.ps1/u);
+        assert.doesNotMatch(unattend, /bootstrap\.ps1/u);
+    });
+
+    it("carries the launcher's early-boot observation out of the Stage 3 launch", async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+            stage2: stage2(), toolchain: toolchain()});
+        assert.deepEqual(launch.earlyBoot, EARLY_BOOT);
+        assert.deepEqual(value.calls.find(call => call[0] === "launch")[1].bootConfirmation, undefined);
+    });
+
+    it("refuses a launch whose early-boot observation the launcher could not complete", async () => {
+        const value = fixture({stage2Factory: () => ({
+            async prepareOfflineMedia() { throw new Error("not used"); },
+            async launchOwnedQemu(request) { return {argv: request.argv, process: processProof(), earlyBoot: null,
+                guest: {schemaVersion: 1, status: "observed",
+                    output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}}}; }
+        })});
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        await assert.rejects(value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+            stage2: stage2(), toolchain: toolchain()}), /early-boot observation/u);
+    });
+
+    it("forwards only an explicitly bound Stage 3 confirmation to the shared launcher", async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        await value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(), stage2: stage2(),
+            toolchain: toolchain(), bootConfirmation: "single-enter-before-setup-v1"});
+        assert.equal(value.calls.find(call => call[0] === "launch")[1].bootConfirmation,
+            "single-enter-before-setup-v1");
     });
 });

@@ -314,6 +314,14 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$failureStage='error-mode-change';$previousMode=& $cpuOperations.SetErrorMode 3;` +
         `if($previousMode -isnot [uint32]){throw 'Previous error mode is invalid'};` +
         `$modeChanged=$true;$failureStage='evidence-collection';$cpu=& $cpuOperations.CollectEvidence $boundary.seed;` +
+        /*
+         * The collector publishes the CPU floor; the host parser additionally requires the two
+         * post-setup observations, which only exist because the seed installs the shared activation
+         * and the SetupComplete dispatcher ran this bootstrap after Windows finished installing.
+         * Either observation failing must fail the run rather than publish a thinner envelope.
+         */
+        `$failureStage='activation-observation';$cpu.activation=& $cpuOperations.ObserveActivation;` +
+        `$failureStage='system-tool-observation';$cpu.systemTools=& $cpuOperations.ObserveSystemTools;` +
         `$failureStage='executor-invocation';$executorResult=& $StartExecutor $runtimeRoot $boundary.seed;` +
         `if($executorResult.bytes-isnot[byte[]]-or$executorResult.status-notin@('observed','failed')-or` +
         `$executorResult.diagnostics-isnot[array]){throw 'Baseline executor return differs'};` +

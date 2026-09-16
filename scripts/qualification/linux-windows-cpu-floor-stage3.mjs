@@ -6,6 +6,7 @@ import {STAGE2_PROVENANCE, buildQemuArguments as buildStage2QemuArguments,
     validateEarlyBoot, validatePackageClosure, validateWindowsSystemTools} from "./linux-windows-cpu-floor-stage2.mjs";
 import {parseGuestOutput as parseStage2GuestOutput} from
     "./linux-windows-cpu-floor-stage2-hosted.mjs";
+import {validateInstallerBootConfirmation} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 import {OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS} from "./safety.mjs";
@@ -44,6 +45,23 @@ const PROBE_ROLES = Object.freeze(["avx", "avx2", "cpuid", "illegal", "known-bad
     "sse42"]);
 const STAGE2_OUTPUT_DISK_BYTES = "67108864";
 const STAGE2_SYSTEM_DISK_BYTES = "51539607552";
+/*
+ * Stage 3's own boot policy, stated here rather than inherited from Stage 2.
+ *
+ * Device boot indexes, never '-boot order=/once='. The '-boot' byte travels through the RTC CMOS
+ * that SeaBIOS reads and OVMF never looks at, so an order declared that way is invisible to the
+ * firmware this stage actually runs; 'bootindex=' travels through the fw_cfg 'bootorder' file that
+ * OVMF's QemuBootOrderLib does read. Stage 3 starts from a blank system disk, so on the first boot
+ * the installer is the only entry that exists and on the second the installed boot manager wins.
+ *
+ * Keypress authority is denied unless the request itself binds a Stage 3 confirmation. Whether a
+ * blank disk raises the firmware's "press any key" prompt is unobserved, so the denial is the
+ * default and the opt-in is explicit and request-bound - never copied from a Stage 2 result.
+ */
+const STAGE3_SYSTEM_DISK_BOOT_INDEX = 0;
+const STAGE3_INSTALL_MEDIA_BOOT_INDEX = 1;
+const STAGE3_REQUIRED_QEMU_DEVICES = Object.freeze(["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA",
+    "qemu-xhci", "usb-kbd"]);
 
 function keys(value, expected, name) {
     if (!value || typeof value !== "object" || Array.isArray(value) ||
@@ -172,7 +190,7 @@ function validateToolchain(value, context) {
     keys(value.capabilities, ["accelerator", "cpuModels", "devices", "machines"], "QEMU capabilities");
     if (value.capabilities.accelerator !== "kvm" || !value.capabilities.cpuModels.includes(CPU_MODEL) ||
         !value.capabilities.machines.includes(MACHINE_MODEL) ||
-        !["ich9-ahci", "ide-cd", "ide-hd", "isa-serial"].every(item => value.capabilities.devices.includes(item)))
+        !STAGE3_REQUIRED_QEMU_DEVICES.every(item => value.capabilities.devices.includes(item)))
         throw new TypeError("Stage 3 QEMU capability set is invalid");
     if (!value.qemu.version.startsWith("QEMU emulator version 8.2.2 "))
         throw new TypeError("Stage 3 QEMU version is invalid");
@@ -408,10 +426,17 @@ export function validateRequest(value) {
         "Stage 3 request");
     if (value.schemaVersion !== SCHEMA_VERSION || value.profile !== PROFILE) throw new TypeError("Stage 3 profile is invalid");
     const context = validateHostedContext(value.context);
-    keys(value.authorization, ["candidate", "confirmation", "qemu", "scope"], "Stage 3 authorization");
+    const authorizationKeys = ["candidate", "confirmation", "qemu", "scope"];
+    if (Object.hasOwn(value.authorization ?? {}, "bootConfirmation")) authorizationKeys.push("bootConfirmation");
+    keys(value.authorization, authorizationKeys, "Stage 3 authorization");
     if (value.authorization.candidate !== true || value.authorization.qemu !== true ||
         value.authorization.confirmation !== CONFIRMATION || value.authorization.scope !== AUTHORIZATION_SCOPE)
         throw new TypeError("Stage 3 authorization is invalid");
+    /*
+     * Absent means denied. Only this request field can open the one bounded key, and it is checked
+     * against the shared token rather than against anything Stage 2 observed.
+     */
+    const bootConfirmation = validateInstallerBootConfirmation(value.authorization.bootConfirmation);
     keys(value.stage2, ["guestResult", "result"], "Stage 2 binding");
     const stage2Result = validateIdentity(value.stage2.result, "Stage 2 result");
     const stage2GuestResult = validateIdentity(value.stage2.guestResult, "Stage 2 raw guest result");
@@ -420,8 +445,8 @@ export function validateRequest(value) {
         stage2GuestResult.path !== `${transportRoot}/guest-result.json`)
         throw new TypeError("Stage 2 retained evidence paths differ");
     const paths = validatePaths(value.paths, context);
-    return {context, paths, candidate: validateCandidate(value.candidate, context), stage2Result, stage2GuestResult,
-        request: structuredClone(value)};
+    return {context, paths, bootConfirmation, candidate: validateCandidate(value.candidate, context), stage2Result,
+        stage2GuestResult, request: structuredClone(value)};
 }
 
 function drive(id, file, {readOnly = false, format = "raw"} = {}) {
@@ -430,16 +455,21 @@ function drive(id, file, {readOnly = false, format = "raw"} = {}) {
 
 export function buildBaselineQemuArguments({paths: value, toolchain, windowsIso}) {
     const iso = validateIdentity(windowsIso, "Stage 3 Windows ISO");
-    const qemu = ["-nodefaults", "-no-user-config", "-display", "none", "-monitor", "none", "-accel", "kvm",
-        "-machine", MACHINE_MODEL, "-cpu", CPU_VECTOR, "-smp", GUEST_SMP, "-m", GUEST_MEMORY, "-nic", "none",
+    const qemu = ["-nodefaults", "-no-user-config", "-display", "none", "-qmp", "stdio",
+        "-L", toolchain.firmware.searchPath, "-accel", "kvm",
+        "-machine", MACHINE_MODEL, "-cpu", CPU_VECTOR, "-smp", GUEST_SMP, "-m", GUEST_MEMORY,
+        "-device", `VGA,id=video0,romfile=${toolchain.firmware.vga.path}`, "-device", "qemu-xhci,id=usb0",
+        "-device", "usb-kbd,bus=usb0.0", "-nic", "none",
         "-drive", `if=pflash,format=raw,readonly=on,file=${toolchain.ovmfCode.path}`,
         "-drive", `if=pflash,format=raw,file=${value.ovmfVars}`, "-device", "ich9-ahci,id=sata",
-        "-drive", drive("osdisk", value.systemDisk, {format: "qcow2"}), "-device", "ide-hd,drive=osdisk,bus=sata.1",
-        "-drive", drive("install", iso.path, {readOnly: true}), "-device", "ide-cd,drive=install,bus=sata.2",
+        "-drive", drive("osdisk", value.systemDisk, {format: "qcow2"}), "-device",
+        `ide-hd,drive=osdisk,bus=sata.1,bootindex=${STAGE3_SYSTEM_DISK_BOOT_INDEX}`,
+        "-drive", drive("install", iso.path, {readOnly: true}), "-device",
+        `ide-cd,drive=install,bus=sata.2,bootindex=${STAGE3_INSTALL_MEDIA_BOOT_INDEX}`,
         "-drive", drive("seed", value.seedIso, {readOnly: true}), "-device", "ide-cd,drive=seed,bus=sata.3",
         "-drive", drive("output", value.outputDisk), "-device", "ide-hd,drive=output,bus=sata.4",
         "-chardev", `file,id=serial0,path=${value.serialLog}`, "-device", "isa-serial,chardev=serial0",
-        "-pidfile", value.qemuPid, "-boot", "once=d,order=c,strict=on"];
+        "-pidfile", value.qemuPid];
     const forbidden = /(?:^|[,=])(?:user|tap|socket|vsock)(?:[,=]|$)|(?:fat:|nbd:|ssh:|https?:)|virtio-9p/iu;
     if (qemu.some(item => forbidden.test(item))) throw new TypeError("Stage 3 QEMU vector contains a forbidden backend");
     return Object.freeze(qemu);
@@ -621,7 +651,7 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     catch { throw new TypeError("retained Stage 2 result JSON is invalid"); }
     const stage2 = validateStage2Observation(stage2Value, checked.context);
     keys(value, ["argv", "baselineFullRuntimeAccepted", "candidate", "classification", "cleanupProven", "context",
-        "cpuFloorAccepted", "guest", "guestEvidence", "media", "outputDisk", "qemuProcess", "qualifying",
+        "cpuFloorAccepted", "earlyBoot", "guest", "guestEvidence", "media", "outputDisk", "qemuProcess", "qualifying",
         "releaseGateCleared", "schemaVersion", "stage", "stage2GuestEvidence", "stage2Result", "status"],
     "completed Stage 3 result");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.stage !== "complete" ||
@@ -636,6 +666,7 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
         bytes: stage2.iso.bytes, sha256: stage2.iso.sha256};
     const argv = buildBaselineQemuArguments({paths: checked.paths, toolchain: stage2.toolchain, windowsIso});
     if (!same(value.argv, argv)) throw new TypeError("completed Stage 3 QEMU vector differs");
+    validateEarlyBoot(value.earlyBoot, checked.paths, checked.bootConfirmation);
     validateProcess(value.qemuProcess, stage2.toolchain);
     const outputDisk = validateIdentity(value.outputDisk, "completed Stage 3 output disk");
     if (outputDisk.path !== checked.paths.outputDisk || outputDisk.bytes !== OUTPUT_DISK_BYTES)
@@ -684,9 +715,11 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         stage = "qemu-launch";
         cleanupProven = false;
         const launch = await operations.launchBaselineGuest({context, argv, candidate, media, paths: checked.paths,
-            profile: PROFILE, stage2, toolchain: stage2.toolchain, windowsIso});
-        keys(launch, ["argv", "outputDisk", "process"], "Stage 3 launch observation");
+            profile: PROFILE, stage2, toolchain: stage2.toolchain, windowsIso,
+            ...(checked.bootConfirmation === undefined ? {} : {bootConfirmation: checked.bootConfirmation})});
+        keys(launch, ["argv", "earlyBoot", "outputDisk", "process"], "Stage 3 launch observation");
         if (!same(launch.argv, argv)) throw new TypeError("Stage 3 observed QEMU vector differs");
+        const earlyBoot = validateEarlyBoot(launch.earlyBoot, checked.paths, checked.bootConfirmation);
         try { validateProcess(launch.process, stage2.toolchain); }
         catch (error) { cleanupProven = false; throw error; }
         cleanupProven = true;
@@ -701,7 +734,7 @@ export async function runWindowsCpuFloorStage3(input, operations) {
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             baselineFullRuntimeAccepted: true, cpuFloorAccepted: true, cleanupProven: true, context,
             stage2Result: checked.stage2Result, stage2GuestEvidence, candidate, media, argv,
-            qemuProcess: launch.process, outputDisk,
+            earlyBoot: structuredClone(earlyBoot), qemuProcess: launch.process, outputDisk,
             guestEvidence: structuredClone(guestEvidence), guest});
     } catch (error) { return failure(context, stage, error, cleanupProven); }
 }

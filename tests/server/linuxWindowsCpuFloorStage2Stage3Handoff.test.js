@@ -586,6 +586,12 @@ async function runHandoffPipeline({
                     qemuPid: 1200, qemuStartTicks: "123456", processGroupId: 1200, qemuPidAbsentAfter: true,
                     launcherExecutablePath: toolchain().runtime.loader.path, terminationReason: null
                 },
+                earlyBoot: {
+                    schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+                    version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+                    screenshots: [1, 2].map(index => ({path: `${s3Paths.root}/early-boot-${index}.png`,
+                        bytes: String(PNG.length), sha256: HASH(PNG), bytesBase64: PNG.toString("base64")}))
+                },
                 outputDisk: {path: `${s3Paths.root}/baseline-output.img`, bytes: "67108864", sha256: SHA("0")}
             };
         },

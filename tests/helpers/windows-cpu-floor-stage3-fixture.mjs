@@ -59,7 +59,7 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
         packages: TOP_LEVEL_PACKAGE_PINS.map(value => ({...value, dependsOn: []}))};
     const packageClosure = validatePackageClosure(rawClosure);
     const toolchain = {capabilities: {accelerator: "kvm", cpuModels: ["Westmere-v2"], machines: ["q35"],
-        devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial"]},
+        devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA", "qemu-xhci", "usb-kbd"]},
     genisoimage: portable("usr/bin/genisoimage", "1", "usr/bin/genisoimage"),
     installedFilesManifest: {bytes: "8192", sha256: SHA("2")},
     licensesManifest: {bytes: "8192", sha256: SHA("3")},
@@ -202,6 +202,10 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
     const guestEvidence = {identity: {path: `${root}/baseline-result.json`, bytes: String(guestEncoding.bytes.length),
         sha256: guestEncoding.sha256}, bytesBase64: guestEncoding.bytesBase64, result: guest,
         sourceOutputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("0")}};
+    const stage3EarlyBoot = () => ({schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+        version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+        screenshots: [1, 2].map(index => ({path: `${root}/early-boot-${index}.png`, bytes: String(PNG.length),
+            sha256: PNG_HASH, bytesBase64: PNG.toString("base64")}))});
     const process = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
         qemuPid: 1200, qemuStartTicks: "123456", processGroupId: 1200, qemuPidAbsentAfter: true,
         launcherExecutablePath: toolchain.runtime.loader.path, terminationReason: null};
@@ -215,7 +219,7 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
         outputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("9")},
         systemDisk: {path: stage3Paths.systemDisk, bytes: "8388608", sha256: SHA("a"),
             virtualBytes: "51539607552"}, ovmfVars: {path: stage3Paths.ovmfVars, bytes: "4096", sha256: SHA("b")}}; },
-    async launchBaselineGuest(input) { return {argv: input.argv, process,
+    async launchBaselineGuest(input) { return {argv: input.argv, process, earlyBoot: stage3EarlyBoot(),
         outputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("0")}}; },
     async collectBaselineGuestResult() { return guestEvidence; }};
     const completedResult = await runWindowsCpuFloorStage3(request, operations);

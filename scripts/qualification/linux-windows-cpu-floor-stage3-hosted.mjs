@@ -3,25 +3,31 @@ import fs from "node:fs";
 import path from "node:path";
 
 import {deriveActualHostedContext} from "./linux-windows-cpu-floor-stage2-controller.mjs";
-import {renderGuestBootstrap} from "./linux-windows-cpu-floor-stage2.mjs";
+import {PROBE_SEED_FILES, probeSeedName, renderGuestBootstrap} from "./linux-windows-cpu-floor-stage2.mjs";
 import {
     createHostedStage2Operations,
     runHostedOwnedProcess
 } from "./linux-windows-cpu-floor-stage2-hosted.mjs";
 import {renderWindowsBaselineGuestBootstrap} from "./windows-baseline-guest-bootstrap.mjs";
+import {buildWindowsMsiSetupCompleteActivation, createWindowsBaselineCpuHandoff} from
+    "./windows-msi-post-setup-activation.mjs";
 
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_CANDIDATE_BYTES = 512 * 1024 * 1024;
 const IO_CHUNK_BYTES = 1024 * 1024;
 const COMMAND_TIMEOUT_MILLISECONDS = 25_000;
 const COMMAND_STREAM_BYTES = 1024 * 1024;
-const GUEST_RUNNER_TIMEOUT_MILLISECONDS = 14_400_000;
-const GUEST_RUNNER_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
-const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const BASELINE_RESULT_NAME = "baseline-result.json";
+const BASELINE_BOOTSTRAP_NAME = "baseline-bootstrap.ps1";
+const BASELINE_HANDOFF_NAME = "myspeed-baseline-cpu-handoff.json";
+/*
+ * The host downloads the release artifact names; the guest collector opens the seed names. The two
+ * differ for the hyphenated roles, so both come from the one shared table rather than from a local
+ * copy of either spelling.
+ */
 const REQUIRED_GUEST_FILES = Object.freeze(["node.exe", "request.json", "execution.json", "fixture-bundle.json",
-    "guest-runtime.json", "runtime-installer.ps1", "avx.exe", "avx2.exe", "cpuid.exe", "illegal.exe",
-    "known_bad.exe", "known_good.exe", "popcnt.exe", "sse42.exe"]);
+    "guest-runtime.json", "runtime-installer.ps1", ...PROBE_SEED_FILES.map(entry => entry.artifactName)]);
+const PROBE_ARTIFACT_NAMES = new Set(PROBE_SEED_FILES.map(entry => entry.artifactName));
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
 function same(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
@@ -116,6 +122,15 @@ function stage2CompatiblePaths(context, stage3Paths) {
         serialLog: stage3Paths.serialLog, probeRoot: `${stage3Paths.root}/candidate`, qemuPid: stage3Paths.qemuPid};
 }
 
+/*
+ * The identical six-field projection Stage 2 hands the public builder, so the digests the collector
+ * bakes in are the digests of the files this seed actually installs.
+ */
+function baselineActivation(context) {
+    return buildWindowsMsiSetupCompleteActivation({repository: context.repository, sourceSha: context.sourceSha,
+        eventSha: context.eventSha, runId: context.runId, runAttempt: context.runAttempt, nonce: context.nonce});
+}
+
 function inlineSeedFile(name, bytes) {
     return {name, kind: "inline", bytes: String(bytes.length),
         sha256: crypto.createHash("sha256").update(bytes).digest("hex"), bytesBase64: bytes.toString("base64")};
@@ -142,64 +157,12 @@ export function renderBaselineAutounattend(image, nonce) {
         `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS"><RunSynchronous>` +
         `<RunSynchronousCommand wcm:action="add"><Order>1</Order><Path>powershell.exe -NoLogo -NoProfile ` +
         `-NonInteractive -ExecutionPolicy Bypass -Command &quot;$s=(Get-Volume -FileSystemLabel MYSPEEDSEED ` +
-        `-ErrorAction Stop).DriveLetter; &amp; ($s+':\\bootstrap.ps1')&quot;</Path></RunSynchronousCommand>` +
+        `-ErrorAction Stop).DriveLetter; &amp; ($s+':\\install-activation.ps1')&quot;</Path></RunSynchronousCommand>` +
         `</RunSynchronous></component></settings>\r\n<settings pass="oobeSystem"><component ` +
         `name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" ` +
         `language="neutral" versionScope="nonSxS"><UserAccounts><AdministratorPassword><Value>${password}</Value>` +
         `<PlainText>true</PlainText></AdministratorPassword></UserAccounts></component></settings>\r\n</unattend>\r\n`;
     return Buffer.from(xml, "utf8");
-}
-
-export function renderBaselineGuestBootstrap(nonce) {
-    const script = `param([switch]$LibraryMode)\r\n$ErrorActionPreference='Stop'\r\nSet-StrictMode -Version Latest\r\n` +
-        `$EXPECTED_NONCE='${nonce}'\r\n$RUNNER_TIMEOUT_MILLISECONDS=${GUEST_RUNNER_TIMEOUT_MILLISECONDS}\r\n` +
-        `$RUNNER_CLEANUP_TIMEOUT_MILLISECONDS=${GUEST_RUNNER_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
-        `$BASELINE_MAX_RESULT_BYTES=${MAX_JSON_BYTES}\r\n$BASELINE_MAX_STREAM_BYTES=${MAX_JSON_BYTES}\r\n` +
-        `$BASELINE_MAX_FAILURE_MESSAGE_CHARACTERS=${MAX_GUEST_FAILURE_MESSAGE_CHARACTERS}\r\n` +
-        `function Write-MyspeedExclusive([string]$Path,[byte[]]$Bytes){` +
-        `$temporary=$Path+'.tmp';try{$stream=[IO.FileStream]::new($temporary,[IO.FileMode]::CreateNew,` +
-        `[IO.FileAccess]::Write,[IO.FileShare]::None);try{$stream.Write($Bytes,0,$Bytes.Length);$stream.Flush($true)}` +
-        `finally{$stream.Dispose()};$observed=[IO.File]::ReadAllBytes($temporary);if(-not ` +
-        `[Collections.StructuralComparisons]::StructuralEqualityComparer.Equals($observed,$Bytes)){` +
-        `throw 'Guest publication verification failed'};[IO.File]::Move($temporary,$Path)}catch{` +
-        `if([IO.File]::Exists($temporary)){[IO.File]::Delete($temporary)};throw}}\r\n` +
-        `function Invoke-MyspeedBaselineGuest([scriptblock]$Shutdown={Stop-Computer -Force},` +
-        `[scriptblock]$LoadCpuOperations={param($Path). $Path -LibraryMode;New-MyspeedGuestNativeOperations}){` +
-        `$failure=$null;$outputRoot=$null;$previousMode=[uint32]0;$modeChanged=$false;$cpu=$null;$baselineBytes=$null;` +
-        `try{$seed=((Get-Volume -FileSystemLabel MYSPEEDSEED -ErrorAction Stop).DriveLetter+':\\');` +
-        `$outputRoot=((Get-Volume -FileSystemLabel MYSPEEDOUT -ErrorAction Stop).DriveLetter+':\\');` +
-        `$cpuOperations=& $LoadCpuOperations (Join-Path $seed 'cpu-calibration.ps1');` +
-        `$previousMode=& $cpuOperations.SetErrorMode 3;if($previousMode -isnot [uint32]){throw 'Previous error mode is invalid'};` +
-        `$modeChanged=$true;$cpu=& $cpuOperations.CollectEvidence $seed;` +
-        `$runnerResult=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline-result.json';` +
-        `$stdout=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline.stdout';` +
-        `$stderr=Join-Path $env:SystemRoot 'Temp\\myspeed-baseline.stderr';` +
-        `$process=Start-Process -FilePath (Join-Path $seed 'node.exe') -ArgumentList @(` +
-        `(Join-Path $seed 'baseline-guest-runner.mjs'),'--request',(Join-Path $seed 'request.json'),'--result',` +
-        `$runnerResult) -NoNewWindow -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr;` +
-        `try{$null=$process.Handle;if(-not $process.WaitForExit($RUNNER_TIMEOUT_MILLISECONDS)){` +
-        `$process.Kill();if(-not $process.WaitForExit($RUNNER_CLEANUP_TIMEOUT_MILLISECONDS)){` +
-        `throw 'Baseline verifier cleanup exceeded its deadline'};throw 'Baseline verifier exceeded its deadline'};` +
-        `$exit=$process.ExitCode;if($exit -isnot [int] -or $exit -ne 0){throw 'Baseline verifier exit is invalid'}}` +
-        `finally{$process.Dispose()};$stdoutBytes=[IO.File]::ReadAllBytes($stdout);` +
-        `$stderrBytes=[IO.File]::ReadAllBytes($stderr);if($stdoutBytes.Length -gt $BASELINE_MAX_STREAM_BYTES -or ` +
-        `$stderrBytes.Length -gt $BASELINE_MAX_STREAM_BYTES){throw 'Baseline verifier stream exceeded its bound'};` +
-        `$baselineBytes=[IO.File]::ReadAllBytes($runnerResult);if($baselineBytes.Length -lt 2 -or ` +
-        `$baselineBytes.Length -gt $BASELINE_MAX_RESULT_BYTES){throw 'Baseline verifier result size is invalid'}}catch{$failure=$_}` +
-        `finally{try{if($modeChanged){try{$null=& $cpuOperations.SetErrorMode $previousMode}catch{$failure=$_}};` +
-        `if($null -ne $outputRoot){if($null -eq $failure){try{Write-MyspeedExclusive ` +
-        `(Join-Path $outputRoot '${BASELINE_RESULT_NAME}') $baselineBytes;` +
-        `$cpuBytes=[Text.UTF8Encoding]::new($false).GetBytes(($cpu|ConvertTo-Json -Compress -Depth 8));` +
-        `Write-MyspeedExclusive (Join-Path $outputRoot 'result.json') $cpuBytes}catch{$failure=$_}};` +
-        `if($null -ne $failure -and -not [IO.File]::Exists((Join-Path $outputRoot 'result.json'))){try{` +
-        `$message=[regex]::Replace([string]$failure.Exception.Message,'[\\x00-\\x1f\\x7f]+',' ');` +
-        `if($message.Length -gt $BASELINE_MAX_FAILURE_MESSAGE_CHARACTERS){` +
-        `$message=$message.Substring(0,$BASELINE_MAX_FAILURE_MESSAGE_CHARACTERS)};` +
-        `$failed=[ordered]@{schemaVersion=1;status='failed';nonce=$EXPECTED_NONCE;stage='guest-bootstrap';failure=$message};` +
-        `$failedBytes=[Text.UTF8Encoding]::new($false).GetBytes(($failed|ConvertTo-Json -Compress -Depth 4));` +
-        `Write-MyspeedExclusive (Join-Path $outputRoot 'result.json') $failedBytes}catch{}}}}finally{& $Shutdown}};` +
-        `if($null -ne $failure){throw $failure}}\r\nif(-not $LibraryMode){Invoke-MyspeedBaselineGuest}\r\n`;
-    return Buffer.from(script, "utf8");
 }
 
 function seedSpec(candidate, guestFiles, selectedImage, context) {
@@ -209,11 +172,24 @@ function seedSpec(candidate, guestFiles, selectedImage, context) {
         executionSha256: filesByName.get("execution.json").sha256,
         runtimeBundleSha256: filesByName.get("guest-runtime.json").sha256});
     const owned = [candidate.stagedFile, candidate.stagedSummary, candidate.stagedManifest, ...guestFiles].map(record => ({
-        name: record.name, kind: "owned-file", bytes: record.bytes, sha256: record.sha256, sourcePath: record.path
+        name: PROBE_ARTIFACT_NAMES.has(record.name) ? probeSeedName(record.name) : record.name,
+        kind: "owned-file", bytes: record.bytes, sha256: record.sha256, sourcePath: record.path
     }));
+    const activation = baselineActivation(context);
+    const handoff = Buffer.from(JSON.stringify(createWindowsBaselineCpuHandoff(activation,
+        {name: BASELINE_BOOTSTRAP_NAME, bytes: bootstrap.length,
+            sha256: crypto.createHash("sha256").update(bootstrap).digest("hex")})), "utf8");
     const files = [inlineSeedFile("Autounattend.xml", renderBaselineAutounattend(selectedImage, context.nonce)),
         inlineSeedFile("cpu-calibration.ps1", renderGuestBootstrap(context)),
-        inlineSeedFile("bootstrap.ps1", bootstrap), ...owned];
+        inlineSeedFile(BASELINE_BOOTSTRAP_NAME, bootstrap),
+        {name: activation.seedInstaller.name, kind: "activation-installer",
+            bytes: String(activation.seedInstaller.bytes), sha256: activation.seedInstaller.sha256,
+            bytesBase64: activation.seedInstaller.bytesBase64},
+        {...inlineSeedFile(BASELINE_HANDOFF_NAME, handoff), kind: "activation-handoff"},
+        ...Object.values(activation.files).map(file => ({name: path.win32.basename(file.path),
+            kind: "activation-inline", bytes: String(file.bytes), sha256: file.sha256,
+            bytesBase64: file.bytesBase64})),
+        ...owned];
     const canonical = Buffer.from(JSON.stringify(files));
     return {schemaVersion: 1, format: "iso9660", volumeLabel: "MYSPEEDSEED", files,
         sha256: crypto.createHash("sha256").update(canonical).digest("hex")};
@@ -292,19 +268,22 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
             ovmfVars: {path: prepared.ovmfVars.path, bytes: inspect(prepared.ovmfVars.path,
                 MAX_CANDIDATE_BYTES).bytes, sha256: prepared.ovmfVars.sha256}};
         },
-        async launchBaselineGuest({argv, paths: inputPaths, stage2, toolchain}) {
+        async launchBaselineGuest({argv, bootConfirmation, paths: inputPaths, stage2, toolchain}) {
             launchCleanupProven = false;
             const compatible = stage2CompatiblePaths(context, inputPaths);
             const launch = await getAdapter(stage2).launchOwnedQemu({context, paths: compatible, toolchain, argv,
-                privilegeMode: stage2.privilegeMode});
+                privilegeMode: stage2.privilegeMode,
+                ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
             if (!launch.guest || launch.guest.status !== "observed")
                 throw new Error("baseline guest did not return the CPU calibration envelope");
+            if (launch.earlyBoot === null || launch.earlyBoot === undefined)
+                throw new Error("baseline QEMU produced no early-boot observation");
             if (launch.process?.cleanupProven !== true || launch.process.treeGone !== true ||
                 launch.process.qemuPidAbsentAfter !== true)
                 throw new Error("baseline QEMU cleanup was not proven");
             launchCleanupProven = true;
             return {argv: structuredClone(argv), process: structuredClone(launch.process),
-                outputDisk: structuredClone(launch.guest.output)};
+                earlyBoot: structuredClone(launch.earlyBoot), outputDisk: structuredClone(launch.guest.output)};
         },
         async collectBaselineGuestResult({outputDisk}) {
             const target = `${paths.root}/${BASELINE_RESULT_NAME}`;
@@ -329,5 +308,5 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
     });
 }
 
-export const STAGE3_HOSTED_CONSTANTS = Object.freeze({BASELINE_RESULT_NAME, COMMAND_TIMEOUT_MILLISECONDS,
-    MAX_CANDIDATE_BYTES, MAX_JSON_BYTES});
+export const STAGE3_HOSTED_CONSTANTS = Object.freeze({BASELINE_BOOTSTRAP_NAME, BASELINE_HANDOFF_NAME,
+    BASELINE_RESULT_NAME, COMMAND_TIMEOUT_MILLISECONDS, MAX_CANDIDATE_BYTES, MAX_JSON_BYTES});

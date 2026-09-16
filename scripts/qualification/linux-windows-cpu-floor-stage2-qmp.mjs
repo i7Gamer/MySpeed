@@ -4,8 +4,16 @@ const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
 const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
+/*
+ * Stage 3 boots its own fresh install under a root of its own, bound to the same run nonce. It is
+ * admitted for the two early frames only, exactly like the preflight below: Stage 3 opens no late
+ * capture, so a late name under this root would widen the shared validator for a caller that has
+ * no use for it. A Stage 3 keypress is never implied by this admission - it stays default-denied
+ * and is authorized, if ever, only by an explicit request-bound confirmation.
+ */
+const STAGE3_ROOT_PATTERN = /^\/home\/runner\/work\/_temp\/myspeed-stage3-[a-f0-9]{32}$/u;
 const INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN =
-    /^\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32}$/u;
+    /^\/home\/runner\/work\/_temp\/myspeed-(?:windows-cpu-floor|stage3)-[a-f0-9]{32}$/u;
 /*
  * The containment preflight boots one disposable overlay under its own fixed child of the MSI
  * task root - not a row, and never a descendant of one. It is admitted for the two early frames
@@ -13,7 +21,8 @@ const INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN =
  * validator for a caller that has no use for it.
  */
 const EARLY_ONLY_ROOT_SUFFIX = "/containment-preflight";
-const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/(?:row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}|containment-preflight)))\/(early|late)-boot-([12])\.png$/u;
+const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-(?:windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/(?:row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}|containment-preflight))|stage3-[a-f0-9]{32}))\/(early|late)-boot-([12])\.png$/u;
+const isEarlyOnlyRoot = root => root.endsWith(EARLY_ONLY_ROOT_SUFFIX) || STAGE3_ROOT_PATTERN.test(root);
 
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
@@ -42,7 +51,7 @@ export function validateLateScreenshots(paths) {
     if (!matches[0] || !matches[1] || matches[0][1] !== matches[1][1] ||
         matches[0][2] !== "late" || matches[1][2] !== "late" ||
         matches[0][3] !== "1" || matches[1][3] !== "2" ||
-        matches[0][1].endsWith(EARLY_ONLY_ROOT_SUFFIX))
+        isEarlyOnlyRoot(matches[0][1]))
         throw new TypeError("QMP late screenshot path is invalid");
     return [...paths];
 }

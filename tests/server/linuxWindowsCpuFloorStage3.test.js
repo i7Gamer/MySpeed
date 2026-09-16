@@ -38,7 +38,7 @@ const portable = (relative, character = "a", invocation = null) => ({path: `${PO
         {invocationPath: `${PORTABLE_ROOT}/${invocation}`})});
 const toolchain = () => ({
     capabilities: {accelerator: "kvm", cpuModels: ["Westmere-v2"], machines: ["q35"],
-        devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial"]},
+        devices: ["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA", "qemu-xhci", "usb-kbd"]},
     genisoimage: portable("usr/bin/genisoimage", "1", "usr/bin/genisoimage"),
     installedFilesManifest: {bytes: "8192", sha256: SHA("2")}, licensesManifest: {bytes: "8192", sha256: SHA("3")},
     mcopy: portable("usr/bin/mtools", "4", "usr/bin/mcopy"), mformat: portable("usr/bin/mtools", "4", "usr/bin/mformat"),
@@ -233,6 +233,11 @@ const collectedGuestResult = () => {
     sourceOutputDisk: identity("baseline-output.img", "0", 67_108_864)};
 };
 
+const earlyBootObservation = () => ({schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+    version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+    screenshots: [1, 2].map(index => ({path: `${ROOT}/early-boot-${index}.png`, bytes: String(PNG.length),
+        sha256: PNG_HASH, bytesBase64: PNG.toString("base64")}))});
+
 const processProof = () => ({exitCode: 0, signal: null, timedOut: false, cleanupProven: true,
     treeGone: true, qemuPid: 1200, qemuStartTicks: "123456", processGroupId: 1200,
     qemuPidAbsentAfter: true, launcherExecutablePath: toolchain().runtime.loader.path,
@@ -254,7 +259,8 @@ function operations(overrides = {}) {
             systemDisk: {...identity("stage3.qcow2", "a", 8_388_608), virtualBytes: "51539607552"},
             ovmfVars: identity("OVMF_VARS.fd", "b")}; },
         async launchBaselineGuest(input) { calls.push("launch"); return {argv: input.argv,
-            process: processProof(), outputDisk: identity("baseline-output.img", "0", 67_108_864)}; },
+            process: processProof(), earlyBoot: earlyBootObservation(),
+            outputDisk: identity("baseline-output.img", "0", 67_108_864)}; },
         async collectBaselineGuestResult() { calls.push("collect"); return collectedGuestResult(); },
         ...overrides
     }};
@@ -264,8 +270,8 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
     it("renders one explicit NIC-free Westmere-v2 vector with AVX disabled", () => {
         const argv = buildBaselineQemuArguments({paths: paths(), toolchain: toolchain(),
             windowsIso: {path: `${STAGE2_ROOT}/windows.iso`, bytes: "8152356864", sha256: SHA("d")}});
-        assert.deepEqual(argv.slice(0, 9), ["-nodefaults", "-no-user-config", "-display", "none", "-monitor",
-            "none", "-accel", "kvm", "-machine"]);
+        assert.deepEqual(argv.slice(0, 8), ["-nodefaults", "-no-user-config", "-display", "none", "-qmp",
+            "stdio", "-L", toolchain().firmware.searchPath]);
         assert.equal(argv.includes("--argv0"), false);
         assert.equal(argv.includes("Westmere-v2,avx=off,avx2=off"), true);
         assert.deepEqual(argv.slice(argv.indexOf("-nic"), argv.indexOf("-nic") + 2), ["-nic", "none"]);
@@ -299,7 +305,7 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
             runOwned: async (_command, argv) => ({process, stdout: Buffer.from(argv.includes("--version") ?
                 "QEMU emulator version 8.2.2 (Debian 1:8.2.2+ds-0ubuntu1.18)\n" :
                 argv.includes("-cpu") ? "Westmere-v2\n" : argv.includes("-machine") ? "q35\n" :
-                    argv.includes("-device") ? "ich9-ahci ide-cd ide-hd isa-serial\n" :
+                    argv.includes("-device") ? "ich9-ahci ide-cd ide-hd isa-serial VGA qemu-xhci usb-kbd\n" :
                     argv.includes("i") ? `Libs:\n 0 : 23.01 : ${PORTABLE_ROOT}/usr/lib/7zip/7z.so\n\nFormats:\n 0  ED       m  Iso      iso img        CD001\n` : ""), stderr: Buffer.alloc(0)})
         }});
         const actualToolchain = await adapter.extractPortableTools({packageClosure: closure,
@@ -536,5 +542,126 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
         invalidRawInput.stage2.guestResult = invalidEvidence.identity;
         assert.throws(() => validateCompletedStage3Result({...result, stage2GuestEvidence: invalidEvidence},
             invalidRawInput, retainedStage2Bytes), /known-good|control/u);
+    });
+});
+
+describe("Windows CPU-floor Stage 3 boot policy", () => {
+    const windowsIso = () => ({path: `${STAGE2_ROOT}/windows.iso`, bytes: "8152356864", sha256: SHA("d")});
+    const argv = () => buildBaselineQemuArguments({paths: paths(), toolchain: toolchain(),
+        windowsIso: windowsIso()});
+
+    it("selects the boot device the way OVMF actually reads it and opens the QMP the launcher requires", () => {
+        const vector = argv();
+        assert.equal(vector.includes("-boot"), false);
+        assert.deepEqual(vector.slice(vector.indexOf("-qmp"), vector.indexOf("-qmp") + 2), ["-qmp", "stdio"]);
+        assert.equal(vector.includes("-monitor"), false);
+        assert.deepEqual(vector.slice(vector.indexOf("-L"), vector.indexOf("-L") + 2),
+            ["-L", toolchain().firmware.searchPath]);
+        assert.ok(vector.includes(`VGA,id=video0,romfile=${toolchain().firmware.vga.path}`));
+        assert.ok(vector.includes("qemu-xhci,id=usb0"));
+        assert.ok(vector.includes("usb-kbd,bus=usb0.0"));
+        assert.ok(vector.includes("ide-hd,drive=osdisk,bus=sata.1,bootindex=0"));
+        assert.ok(vector.includes("ide-cd,drive=install,bus=sata.2,bootindex=1"));
+        assert.equal(vector.filter(value => value.includes("bootindex=")).length, 2);
+        assert.deepEqual(vector.slice(vector.indexOf("-nic"), vector.indexOf("-nic") + 2), ["-nic", "none"]);
+    });
+
+    it("refuses a toolchain whose capability set cannot render the console it now opens", () => {
+        for (const missing of ["VGA", "qemu-xhci", "usb-kbd"]) {
+            const reduced = stage2Observation();
+            reduced.toolchain.capabilities.devices = reduced.toolchain.capabilities.devices
+                .filter(name => name !== missing);
+            const fixture = operations({async replayStage2(input) { return {identity: input.identity,
+                result: reduced, guestEvidence: stage2GuestEvidence()}; }});
+            assert.rejects(async () => {
+                const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+                if (result.status !== "observed") throw new TypeError(result.failure);
+            }, /QEMU capability set is invalid/u);
+        }
+    });
+
+    it("binds both early frames to its own root and carries them into the accepted result", async () => {
+        const fixture = operations();
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "observed", result.failure);
+        assert.equal(result.earlyBoot.kind, "qemu-early-boot-observation");
+        assert.equal(result.earlyBoot.inputSent, false);
+        assert.deepEqual(result.earlyBoot.screenshots.map(value => value.path),
+            [`${ROOT}/early-boot-1.png`, `${ROOT}/early-boot-2.png`]);
+        for (const screenshot of result.earlyBoot.screenshots) {
+            assert.equal(screenshot.sha256, PNG_HASH);
+            assert.equal(screenshot.bytes, String(PNG.length));
+        }
+    });
+
+    it("refuses early frames outside its own root, with foreign bytes, or with a forged digest", async () => {
+        const foreign = `${STAGE2_ROOT}/early-boot-1.png`;
+        const cases = [
+            value => { value.screenshots[0].path = foreign; },
+            value => { value.screenshots[0].bytesBase64 = Buffer.from("not-a-png").toString("base64"); },
+            value => { value.screenshots[1].sha256 = SHA("1"); },
+            value => { value.screenshots[1].bytes = "99"; },
+            value => { value.screenshots.pop(); }
+        ];
+        for (const mutate of cases) {
+            const fixture = operations({async launchBaselineGuest(input) {
+                const observation = earlyBootObservation();
+                mutate(observation);
+                return {argv: input.argv, process: processProof(), earlyBoot: observation,
+                    outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+            const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+            assert.equal(result.status, "failed");
+            assert.match(result.failure, /early-boot screenshot/u);
+        }
+    });
+
+    it("denies installer boot input by explicit statement, not by inheritance", async () => {
+        const stage2Confirmation = {kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true};
+        for (const inputSent of [stage2Confirmation, true, null, undefined]) {
+            const fixture = operations({async launchBaselineGuest(input) {
+                return {argv: input.argv, process: processProof(),
+                    earlyBoot: {...earlyBootObservation(), inputSent},
+                    outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+            const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+            assert.equal(result.status, "failed");
+        }
+    });
+
+    it("admits one acknowledged key only when the request itself binds a Stage 3 confirmation", async () => {
+        const authorized = request();
+        authorized.authorization.bootConfirmation = "single-enter-before-setup-v1";
+        const inputSent = {kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true};
+        const fixture = operations({async launchBaselineGuest(input) {
+            return {argv: input.argv, process: processProof(), earlyBoot: {...earlyBootObservation(), inputSent},
+                outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+        const result = await runWindowsCpuFloorStage3(authorized, fixture.value);
+        assert.equal(result.status, "observed", result.failure);
+        assert.deepEqual(result.earlyBoot.inputSent, inputSent);
+        const unauthorized = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(unauthorized.status, "failed");
+        const forged = request();
+        forged.authorization.bootConfirmation = "any-key-v9";
+        const refused = await runWindowsCpuFloorStage3(forged, fixture.value);
+        assert.equal(refused.status, "failed");
+    });
+
+    it("requires the early-boot member when replaying a completed Stage 3 result", async () => {
+        const retained = Buffer.from(JSON.stringify(stage2Observation()), "utf8");
+        const binding = request();
+        binding.stage2.result = {...binding.stage2.result, bytes: String(retained.length),
+            sha256: crypto.createHash("sha256").update(retained).digest("hex")};
+        const fixture = operations();
+        const result = await runWindowsCpuFloorStage3(binding, fixture.value);
+        assert.equal(result.status, "observed", result.failure);
+        assert.deepEqual(validateCompletedStage3Result(result, binding, retained).accepted, true);
+        const {earlyBoot: _removed, ...withoutEarlyBoot} = result;
+        assert.throws(() => validateCompletedStage3Result(withoutEarlyBoot, binding, retained),
+            /completed Stage 3 result keys are invalid/u);
+        const mutated = structuredClone(result);
+        mutated.earlyBoot.screenshots[0].path = `${STAGE2_ROOT}/early-boot-1.png`;
+        assert.throws(() => validateCompletedStage3Result(mutated, binding, retained),
+            /early-boot screenshot is invalid/u);
     });
 });

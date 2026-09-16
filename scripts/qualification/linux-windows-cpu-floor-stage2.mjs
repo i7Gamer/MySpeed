@@ -460,8 +460,30 @@ function validatePackageAcquisition(value, packageClosure, pathsValue) {
     return deepFreeze(structuredClone(value));
 }
 
-const PROBE_ROLES = Object.freeze(["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt",
-    "sse42"]);
+/*
+ * The one place the three probe names per role are written down. The release artifact spells two of
+ * them with an underscore, the guest collector below opens '<role>.exe', and the seed entry is what
+ * bridges them - so the table is an explicit literal rather than a transform, and a new role cannot
+ * silently acquire a wrong artifact name. A drift test pins it against the release preparation.
+ */
+export const PROBE_SEED_FILES = deepFreeze([
+    {role: "avx", artifactName: "avx.exe", seedName: "avx.exe"},
+    {role: "avx2", artifactName: "avx2.exe", seedName: "avx2.exe"},
+    {role: "cpuid", artifactName: "cpuid.exe", seedName: "cpuid.exe"},
+    {role: "illegal", artifactName: "illegal.exe", seedName: "illegal.exe"},
+    {role: "known-bad", artifactName: "known_bad.exe", seedName: "known-bad.exe"},
+    {role: "known-good", artifactName: "known_good.exe", seedName: "known-good.exe"},
+    {role: "popcnt", artifactName: "popcnt.exe", seedName: "popcnt.exe"},
+    {role: "sse42", artifactName: "sse42.exe", seedName: "sse42.exe"}
+]);
+const PROBE_ROLES = Object.freeze(PROBE_SEED_FILES.map(entry => entry.role));
+const PROBE_SEED_NAME_BY_ROLE = new Map(PROBE_SEED_FILES.map(entry => [entry.role, entry.seedName]));
+const PROBE_SEED_NAME_BY_ARTIFACT = new Map(PROBE_SEED_FILES.map(entry => [entry.artifactName, entry.seedName]));
+export function probeSeedName(artifactName) {
+    const seedName = PROBE_SEED_NAME_BY_ARTIFACT.get(artifactName);
+    if (seedName === undefined) throw new TypeError("probe artifact name is not a sealed probe");
+    return seedName;
+}
 
 function validateProbeArtifact(value, context) {
     assertKeys(value, ["archive", "artifactId", "artifactName", "files", "innerManifest", "repository", "runAttempt",
@@ -826,8 +848,8 @@ function buildSeedSpec(image, context, probes, activation) {
         ...Object.values(activation.files).map(file => ({name: path.win32.basename(file.path),
             kind: "activation-inline", bytes: String(file.bytes), sha256: file.sha256,
             bytesBase64: file.bytesBase64})),
-        ...probes.files.map(file => ({name: `${file.role}.exe`, kind: "owned-file", bytes: file.bytes, sha256: file.sha256,
-            sourcePath: file.path}))
+        ...probes.files.map(file => ({name: PROBE_SEED_NAME_BY_ROLE.get(file.role), kind: "owned-file",
+            bytes: file.bytes, sha256: file.sha256, sourcePath: file.path}))
     ];
     return deepFreeze({schemaVersion: SCHEMA_VERSION, format: "iso9660", volumeLabel: "MYSPEEDSEED", files,
         sha256: canonicalSha256(files)});

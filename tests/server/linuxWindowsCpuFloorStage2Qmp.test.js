@@ -14,7 +14,8 @@ import {
     runEarlyBootQmpSession,
     validateInstallerBootConfirmation,
     validateInstallerBootInput,
-    validateLateScreenshots
+    validateLateScreenshots,
+    validateScreenshots
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {runHostedOwnedProcess, runMonitoredQemu} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
@@ -577,3 +578,72 @@ describe("Stage 2 early-boot QMP session", () => {
     });
 });
 
+
+describe("Stage 3 early-boot QMP authority", () => {
+    const STAGE3_NONCE = "0123456789abcdef0123456789abcdef";
+    const STAGE3_ROOT = `/home/runner/work/_temp/myspeed-stage3-${STAGE3_NONCE}`;
+    const STAGE3_SCREENSHOTS = [`${STAGE3_ROOT}/early-boot-1.png`, `${STAGE3_ROOT}/early-boot-2.png`];
+    const greeting = {QMP: {version: {qemu: {major: 8, minor: 2, micro: 2}, package: ""}, capabilities: []}};
+
+    it("admits exactly the two paired Stage 3 early frames", () => {
+        assert.deepEqual(validateScreenshots(STAGE3_SCREENSHOTS), STAGE3_SCREENSHOTS);
+    });
+
+    it("refuses arbitrary roots, unpaired nonces and reordered Stage 3 early frames", () => {
+        const other = `/home/runner/work/_temp/myspeed-stage3-${"f".repeat(32)}`;
+        for (const paths of [
+            [`${STAGE3_ROOT}/early-boot-1.png`, `${other}/early-boot-2.png`],
+            [`${STAGE3_ROOT}/../early-boot-1.png`, `${STAGE3_ROOT}/../early-boot-2.png`],
+            [`/home/runner/work/_temp/myspeed-stage3-${STAGE3_NONCE}/nested/early-boot-1.png`,
+                `/home/runner/work/_temp/myspeed-stage3-${STAGE3_NONCE}/nested/early-boot-2.png`],
+            [`/tmp/myspeed-stage3-${STAGE3_NONCE}/early-boot-1.png`, `/tmp/myspeed-stage3-${STAGE3_NONCE}/early-boot-2.png`],
+            [`/home/runner/work/_temp/myspeed-stage3-${STAGE3_NONCE.toUpperCase()}/early-boot-1.png`,
+                `/home/runner/work/_temp/myspeed-stage3-${STAGE3_NONCE.toUpperCase()}/early-boot-2.png`],
+            [STAGE3_SCREENSHOTS[1], STAGE3_SCREENSHOTS[0]]
+        ]) assert.throws(() => validateScreenshots(paths), /QMP screenshot path (?:set )?is invalid/u);
+    });
+
+    it("keeps late capture closed for a Stage 3 root", () => {
+        assert.throws(() => validateLateScreenshots([`${STAGE3_ROOT}/late-boot-1.png`,
+            `${STAGE3_ROOT}/late-boot-2.png`]), /QMP late screenshot path is invalid/u);
+    });
+
+    it("captures both Stage 3 frames and sends no key when no confirmation is bound", async () => {
+        const writes = [];
+        const result = await runEarlyBootQmpSession({readable: stream([greeting,
+            {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+            {return: {}, id: "screenshot-1"}, {return: {}, id: "screenshot-2"}]),
+        writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))), screenshotPaths: STAGE3_SCREENSHOTS},
+        {wait: async () => undefined});
+        assert.deepEqual(writes.map(value => value.id),
+            ["capabilities", "status", "screenshot-1", "screenshot-2"]);
+        assert.deepEqual(result, {version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
+            screenshotPaths: STAGE3_SCREENSHOTS, inputSent: false});
+    });
+
+    it("sends one bounded acknowledged Enter when a Stage 3 confirmation is explicitly bound", async () => {
+        const writes = [];
+        let now = 0;
+        const result = await runEarlyBootQmpSession({readable: stream([greeting,
+            {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+            {return: {}, id: "installer-boot-confirmation"},
+            {return: {}, id: "screenshot-1"}, {return: {}, id: "screenshot-2"}]),
+        writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))), screenshotPaths: STAGE3_SCREENSHOTS,
+        bootConfirmation: INSTALLER_BOOT_CONFIRMATION},
+        {now: () => now, wait: async milliseconds => { now += milliseconds; }});
+        assert.deepEqual(writes.map(value => value.id),
+            ["capabilities", "status", "installer-boot-confirmation", "screenshot-1", "screenshot-2"]);
+        assert.equal(result.inputSent.kind, "installer-boot-confirmation");
+        assert.equal(result.inputSent.qcode, INSTALLER_BOOT_CONFIRMATION_QCODE);
+        assert.equal(result.inputSent.acknowledged, true);
+        assert.ok(result.inputSent.sentOffsetMilliseconds >= INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS);
+        assert.ok(result.inputSent.sentOffsetMilliseconds <= INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS);
+    });
+
+    it("refuses an unauthorized Stage 3 input record through the shared validator", () => {
+        for (const value of [true, null, {kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true}])
+            assert.throws(() => validateInstallerBootInput(value, undefined), /QMP installer boot input is invalid/u);
+        assert.equal(validateInstallerBootInput(false, undefined), false);
+    });
+});
