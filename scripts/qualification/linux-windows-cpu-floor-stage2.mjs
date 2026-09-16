@@ -947,12 +947,32 @@ function validateDiagnosticStream(value, name) {
         throw new TypeError(`QEMU ${name} diagnostic identity differs`);
 }
 
+function validateSerialDiagnostic(value) {
+    /* Legacy records predate capture status and retain their original complete-stream shape. */
+    if (value?.status === undefined) return validateDiagnosticStream(value, "serial log");
+    if (value.status === "unavailable") {
+        assertKeys(value, ["status"], "QEMU serial log diagnostic");
+        return;
+    }
+    assertKeys(value, ["bytes", "bytesBase64", "observedBytes", "sha256", "status", "truncated"],
+        "QEMU serial log diagnostic");
+    if (value.status !== "captured" || typeof value.truncated !== "boolean")
+        throw new TypeError("QEMU serial log diagnostic is invalid");
+    validateDiagnosticStream({bytes: value.bytes, bytesBase64: value.bytesBase64, sha256: value.sha256}, "serial log");
+    const capturedBytes = decimal(value.bytes, "QEMU serial log bytes");
+    const observedBytes = decimal(value.observedBytes, "QEMU serial log observed bytes");
+    const maximumCapturedBytes = BigInt(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES);
+    const expectedCapturedBytes = observedBytes > maximumCapturedBytes ? maximumCapturedBytes : observedBytes;
+    if (observedBytes > BigInt(Number.MAX_SAFE_INTEGER) || capturedBytes !== expectedCapturedBytes ||
+        value.truncated !== (observedBytes > capturedBytes))
+        throw new TypeError("QEMU serial log capture extent is invalid");
+}
+
 function validateQemuLaunchDiagnostic(value, process) {
     /*
-     * The serial console carries the whole UEFI console text - OVMF puts that UART in ConOut - so it
-     * is the only continuous record of what the firmware chose to boot, with none of the gaps the
-     * sampled screenshots leave. It is optional so that diagnostics retained before the capture
-     * existed still replay, and it is read only on this path, which the launch has already failed.
+     * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
+     * that no text was captured. The field stays optional so records retained before capture existed
+     * still replay, and it is read only after launch has already failed.
      */
     const diagnosticKeys = ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"];
     if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
@@ -993,7 +1013,7 @@ function validateQemuLaunchDiagnostic(value, process) {
         }
     }
     validateDiagnosticStream(value.stderr, "stderr");
-    if (value.serialLog !== undefined) validateDiagnosticStream(value.serialLog, "serial log");
+    if (value.serialLog !== undefined) validateSerialDiagnostic(value.serialLog);
     return deepFreeze(structuredClone(value));
 }
 

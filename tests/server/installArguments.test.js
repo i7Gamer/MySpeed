@@ -20,11 +20,16 @@ const parse = (t, args) => {
     const source = readSource("scripts/install.sh");
     const boundary = source.indexOf("if command -v systemctl");
     assert.ok(boundary > 0, "isolation boundary must exist");
+    // Git Bash may mount this Windows directory at /tmp rather than /c/Users/....
+    // Observe its working-directory spelling independently, before running the parser.
+    const shellRoot = spawnSync(bash, ["-c", "pwd -P"], {cwd: root, encoding: "utf8", timeout: TIMEOUT_MS});
+    assert.ifError(shellRoot.error);
+    assert.equal(shellRoot.status, 0, shellRoot.stderr);
     const script = path.join(root, "parse.sh");
     fs.writeFileSync(script, source.slice(0, boundary) + '\nprintf "PARSED=%s\\n" "$INSTALLATION_PATH"\n');
     const result = spawnSync(bash, [posix(script), ...args], {cwd: root, encoding: "utf8", timeout: TIMEOUT_MS});
     assert.ifError(result.error);
-    return {...result, root: posix(root), output: result.stdout + result.stderr};
+    return {...result, root: shellRoot.stdout.trim(), output: result.stdout + result.stderr};
 };
 
 for (const args of [["-p"], ["--unknown"], ["-d"], ["-d", ""], ["-d", "--help"], ["-d", "-bad"],

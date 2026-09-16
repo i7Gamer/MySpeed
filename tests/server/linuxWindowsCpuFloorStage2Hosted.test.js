@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {EventEmitter} from "node:events";
 import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {describe, it} from "node:test";
 import {PassThrough} from "node:stream";
 
@@ -17,6 +19,7 @@ import {
     createHostedCpuFloorCleanupOperations,
     createHostedStage2Operations,
     cpuFloorCleanupAuthorityPath,
+    defaultReadOwnedPrefixVerified,
     defaultValidateOutputDisk,
     parseInReleaseIndexes,
     parseGuestFailure,
@@ -38,6 +41,10 @@ import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivation
 const NONCE = "0123456789abcdef0123456789abcdef";
 const PIDFILE_IDENTITY = {path: paths().qemuPid, dev: "11", ino: "22", uid: "1001", gid: "1001", mode: "600"};
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const SERIAL_CAPTURE_BYTES = 65_536;
+const INVALID_SERIAL_CAPTURE_BYTES = 0;
+const SERIAL_AT_CAP_BYTE = 0x61;
+const SERIAL_OVER_CAP_BYTE = 0x62;
 const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
     "../fixtures/linux-windows-cpu-floor-stage2/probe-build-34834310907.json", import.meta.url), "utf8"));
 
@@ -103,6 +110,39 @@ const rootFileIdentity = target => ({path: target, bytes: "4096", sha256: "f".re
 const commandIdentity = target => ({...rootFileIdentity(target), invocationPath: target});
 
 describe("hosted Stage 2 native adapter preparation", () => {
+    it("reads a verified bounded serial prefix and reports unavailable files without leaking errors", t => {
+        const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-serial-"));
+        t.after(() => fs.rmSync(temporaryRoot, {recursive: true, force: true}));
+        const serialPath = path.join(temporaryRoot, "serial.log");
+
+        fs.writeFileSync(serialPath, Buffer.alloc(SERIAL_CAPTURE_BYTES, SERIAL_AT_CAP_BYTE));
+        const atCap = defaultReadOwnedPrefixVerified(serialPath, SERIAL_CAPTURE_BYTES, {allowEmpty: true});
+        assert.equal(atCap.bytes.length, SERIAL_CAPTURE_BYTES);
+        assert.equal(atCap.identity.observedBytes, String(SERIAL_CAPTURE_BYTES));
+        assert.equal(atCap.identity.truncated, false);
+
+        fs.writeFileSync(serialPath, Buffer.alloc(SERIAL_CAPTURE_BYTES + 1, SERIAL_OVER_CAP_BYTE));
+        const overCap = defaultReadOwnedPrefixVerified(serialPath, SERIAL_CAPTURE_BYTES, {allowEmpty: true});
+        assert.equal(overCap.bytes.length, SERIAL_CAPTURE_BYTES);
+        assert.equal(overCap.identity.observedBytes, String(SERIAL_CAPTURE_BYTES + 1));
+        assert.equal(overCap.identity.truncated, true);
+
+        fs.writeFileSync(serialPath, Buffer.alloc(0));
+        const empty = defaultReadOwnedPrefixVerified(serialPath, SERIAL_CAPTURE_BYTES, {allowEmpty: true});
+        assert.equal(empty.bytes.length, 0);
+        assert.equal(empty.identity.observedBytes, "0");
+        assert.equal(empty.identity.truncated, false);
+        assert.throws(() => defaultReadOwnedPrefixVerified(path.join(temporaryRoot, "missing.log"),
+            SERIAL_CAPTURE_BYTES, {allowEmpty: true}));
+        assert.throws(() => defaultReadOwnedPrefixVerified(temporaryRoot, SERIAL_CAPTURE_BYTES, {allowEmpty: true}));
+        assert.throws(() => defaultReadOwnedPrefixVerified(serialPath, INVALID_SERIAL_CAPTURE_BYTES,
+            {allowEmpty: true}));
+        const hardLinkPath = path.join(temporaryRoot, "serial-hard-link.log");
+        fs.writeFileSync(serialPath, Buffer.from("serial"));
+        fs.linkSync(serialPath, hardLinkPath);
+        assert.throws(() => defaultReadOwnedPrefixVerified(serialPath, SERIAL_CAPTURE_BYTES, {allowEmpty: true}));
+    });
+
     it("uses the bounded reviewed-sudo adapter for root-owned cleanup groups", async () => {
         const calls = [];
         const cleanup = createHostedCpuFloorCleanupOperations({
@@ -852,7 +892,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow},
                 monitorFailure: null,
                 stderr: {bytes: "0", sha256: crypto.createHash("sha256").update(Buffer.alloc(0)).digest("hex"),
-                    bytesBase64: ""}});
+                    bytesBase64: ""}, serialLog: {status: "unavailable"}});
             assert.deepEqual(processOnly.processFlags, {errorObserved: changedProcess.errorObserved,
                 stdoutOverflow: changedProcess.stdoutOverflow, stderrOverflow: changedProcess.stderrOverflow});
             const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies});
@@ -1579,6 +1619,11 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     const bytes = png(frameFor(target));
                     return {bytes, identity: {path: target, bytes: String(bytes.length),
                         sha256: sha256ForTest(bytes)}};
+                },
+                readOwnedPrefixVerified: target => {
+                    const bytes = png(frameFor(target));
+                    return {bytes, identity: {path: target, bytes: String(bytes.length),
+                        sha256: sha256ForTest(bytes), observedBytes: String(bytes.length), truncated: false}};
                 }
             }});
 
@@ -1609,17 +1654,17 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(undetermined.lateBoot.milestones.length, 1);
         assert.equal(undetermined.lateBoot.displayAdvanced, null);
 
-        // The serial console is the one continuous record of what the firmware did, so a failed
-        // launch retains it alongside the sampled frames. An unreadable log omits the key rather
-        // than failing the diagnostic that carries every other piece of failure evidence.
+        // Serial is bounded evidence only: it can be empty and never proves that firmware did not
+        // display a prompt. An unavailable capture remains explicit without failing the diagnostic.
         const serialBytes = png("frozen");
-        assert.deepEqual(frozen.failureDiagnostic.serialLog, {bytes: String(serialBytes.length),
-            sha256: sha256ForTest(serialBytes), bytesBase64: serialBytes.toString("base64")});
+        assert.deepEqual(frozen.failureDiagnostic.serialLog, {status: "captured", bytes: String(serialBytes.length),
+            sha256: sha256ForTest(serialBytes), bytesBase64: serialBytes.toString("base64"),
+            observedBytes: String(serialBytes.length), truncated: false});
         const withoutSerial = await makeAdapter(target => {
             if (target === paths().serialLog) throw new Error("owned file read bound is invalid");
             return "frozen";
         }).launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
-        assert.equal("serialLog" in withoutSerial.failureDiagnostic, false);
+        assert.deepEqual(withoutSerial.failureDiagnostic.serialLog, {status: "unavailable"});
         assert.equal(withoutSerial.lateBoot.displayAdvanced, false);
     });
 

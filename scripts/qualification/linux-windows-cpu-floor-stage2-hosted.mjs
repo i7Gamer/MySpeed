@@ -808,6 +808,47 @@ function defaultReadOwnedVerified(target, maximumBytes, options = {}) {
     } finally { fs.closeSync(descriptor); }
 }
 
+/*
+ * This is deliberately separate from defaultReadOwnedVerified: its only consumer is the failure
+ * diagnostic, where retaining a fixed prefix is preferable to losing all evidence. Other callers
+ * continue to require a complete, bounded file. The path is checked before opening and the same
+ * descriptor is checked afterwards, so an unsafe replacement cannot become diagnostic evidence.
+ */
+export function defaultReadOwnedPrefixVerified(target, maximumBytes, options = {}) {
+    if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1)
+        throw new TypeError("owned prefix maximum is invalid");
+    const lexical = fs.lstatSync(target);
+    if (!lexical.isFile()) throw new Error("owned prefix path is not an ordinary file");
+    const canonical = fs.realpathSync(target);
+    const resolved = fs.lstatSync(canonical);
+    if (!resolved.isFile() || lexical.dev !== resolved.dev || lexical.ino !== resolved.ino)
+        throw new Error("owned prefix path identity is invalid");
+    const descriptor = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        const before = fs.fstatSync(descriptor);
+        if (!before.isFile() || before.nlink !== 1 || (!options.allowEmpty && before.size < 1))
+            throw new Error("owned prefix read bound is invalid");
+        if (before.dev !== lexical.dev || before.ino !== lexical.ino || before.uid !== lexical.uid ||
+            before.gid !== lexical.gid || before.mode !== lexical.mode)
+            throw new Error("owned prefix descriptor identity is invalid");
+        const capturedBytes = Math.min(before.size, maximumBytes);
+        const bytes = Buffer.allocUnsafe(capturedBytes);
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+            if (count <= 0) throw new Error("owned prefix read was truncated");
+            offset += count;
+        }
+        const after = fs.fstatSync(descriptor);
+        if (after.dev !== before.dev || after.ino !== before.ino || after.size !== before.size ||
+            after.mtimeMs !== before.mtimeMs || after.uid !== before.uid || after.gid !== before.gid ||
+            after.mode !== before.mode || after.nlink !== before.nlink)
+            throw new Error("owned prefix changed while reading");
+        return {bytes, identity: {path: canonical, bytes: String(capturedBytes), sha256: sha256(bytes),
+            observedBytes: String(before.size), truncated: before.size > maximumBytes}};
+    } finally { fs.closeSync(descriptor); }
+}
+
 function parsePidBytes(bytes) {
     const text = new TextDecoder("utf-8", {fatal: true}).decode(bytes);
     if (!/^[1-9][0-9]{0,9}\n?$/u.test(text)) throw new Error("QEMU pidfile is invalid");
@@ -1191,20 +1232,19 @@ export async function runMonitoredQemu(io, request) {
 }
 
 /*
- * The vector already gives the guest a serial port that writes to a file, and OVMF puts that UART in
- * ConOut, so the file holds the whole UEFI console text - which boot option BDS chose, any loader
- * prompt, and whatever the guest printed afterwards - continuously, where the screenshots only
- * sample. Run 35016673141 could not say whether the installer was ever attempted because nothing
- * ever read this file back. It is read only once the launch has already failed, under the same bound
- * as the captured stderr, and an unreadable log yields no key rather than discarding the rest of the
- * diagnostic: the evidence it would sit next to matters more than the evidence it is.
+ * The vector gives the guest a serial port that writes to a file, and OVMF can put that UART in
+ * ConOut, so the file can carry UEFI console text such as the boot option BDS chose or a loader
+ * prompt. This records only a bounded prefix, so empty
+ * serial text is not proof that no boot prompt appeared. A failure to safely read it stays explicit
+ * without replacing the rest of the launch diagnostic or exposing an exception message.
  */
 function readSerialConsole(io, target) {
     try {
-        const observed = io.readOwnedVerified(target, QEMU_STREAM_BYTES, {allowEmpty: true});
-        return {serialLog: {bytes: observed.identity.bytes, sha256: observed.identity.sha256,
-            bytesBase64: observed.bytes.toString("base64")}};
-    } catch { return {}; }
+        const observed = io.readOwnedPrefixVerified(target, QEMU_STREAM_BYTES, {allowEmpty: true});
+        return {serialLog: {status: "captured", bytes: observed.identity.bytes, sha256: observed.identity.sha256,
+            bytesBase64: observed.bytes.toString("base64"), observedBytes: observed.identity.observedBytes,
+            truncated: observed.identity.truncated}};
+    } catch { return {serialLog: {status: "unavailable"}}; }
 }
 
 /*
@@ -1231,6 +1271,7 @@ function normalizeDependencies(value) {
         inspectOwned: value.inspectOwned ?? defaultInspectOwned,
         inspectDirectory: value.inspectDirectory ?? defaultInspectDirectory,
         readOwnedVerified: value.readOwnedVerified ?? defaultReadOwnedVerified,
+        readOwnedPrefixVerified: value.readOwnedPrefixVerified ?? defaultReadOwnedPrefixVerified,
         createOwnedPidFile: value.createOwnedPidFile ?? defaultCreateOwnedPidFile,
         readOwnedPidFile: value.readOwnedPidFile ?? defaultReadOwnedPidFile,
         removeOwnedPidFile: value.removeOwnedPidFile ?? defaultRemoveOwnedPidFile,

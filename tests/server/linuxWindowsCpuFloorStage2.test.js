@@ -42,6 +42,7 @@ const EXPECTED_GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
 const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
+const TRUNCATED_SERIAL_PREFIX_BYTE = 0x73;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 function context() {
@@ -686,21 +687,45 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             paths: paths(), probeArtifact: probeArtifact()}, missingEarlyBoot.op);
         assert.equal(missingEarlyBootResult.status, "failed");
         assert.deepEqual(missingEarlyBootResult.qemuLaunch, cleanDiagnostic);
-        /*
-         * The guest serial console is the only continuous record of what the firmware did, so a
-         * failure diagnostic may carry it. It is optional: diagnostics retained before the capture
-         * existed still replay, which is why the key is admitted rather than required.
-         */
+        // Serial capture is optional for legacy replay. New captures distinguish complete, bounded
+        // and unavailable evidence; empty serial text does not prove the firmware showed nothing.
         const serial = Buffer.from("BdsDxe: loading Boot0001 UEFI QEMU DVD-ROM\r\n");
-        const withSerial = {...structuredClone(diagnostic), serialLog: {bytes: String(serial.length),
-            sha256: HASH(serial), bytesBase64: serial.toString("base64")}};
+        const withSerial = {...structuredClone(diagnostic), serialLog: {status: "captured",
+            bytes: String(serial.length), sha256: HASH(serial), bytesBase64: serial.toString("base64"),
+            observedBytes: String(serial.length), truncated: false}};
         const serialFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
             earlyBoot: earlyBoot(), guest: null, failureDiagnostic: withSerial})});
         const serialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
             paths: paths(), probeArtifact: probeArtifact()}, serialFixture.op);
         assert.deepEqual(serialResult.qemuLaunch, withSerial);
+        const truncatedPrefix = Buffer.alloc(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES, TRUNCATED_SERIAL_PREFIX_BYTE);
+        const truncatedSerial = {...structuredClone(diagnostic), serialLog: {status: "captured",
+            bytes: String(truncatedPrefix.length), sha256: HASH(truncatedPrefix),
+            bytesBase64: truncatedPrefix.toString("base64"), observedBytes: String(truncatedPrefix.length + 1),
+            truncated: true}};
+        const truncatedSerialFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: truncatedSerial})});
+        const truncatedSerialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, truncatedSerialFixture.op);
+        assert.deepEqual(truncatedSerialResult.qemuLaunch, truncatedSerial);
+        const legacySerial = structuredClone(withSerial);
+        legacySerial.serialLog = {bytes: String(serial.length), sha256: HASH(serial),
+            bytesBase64: serial.toString("base64")};
+        const legacySerialFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: legacySerial})});
+        const legacySerialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, legacySerialFixture.op);
+        assert.deepEqual(legacySerialResult.qemuLaunch, legacySerial);
+        const unavailableSerial = {...structuredClone(diagnostic), serialLog: {status: "unavailable"}};
+        const unavailableSerialFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: unavailableSerial})});
+        const unavailableSerialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, unavailableSerialFixture.op);
+        assert.deepEqual(unavailableSerialResult.qemuLaunch, unavailableSerial);
         for (const broken of [{...withSerial.serialLog, sha256: "0".repeat(64)},
+            {...withSerial.serialLog, observedBytes: "0"}, {...withSerial.serialLog, truncated: true},
             {...withSerial.serialLog, bytesBase64: "A".repeat(MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS + 1)},
+            {status: "unavailable", bytes: String(serial.length)},
             {bytes: String(serial.length), sha256: HASH(serial)}]) {
             const rejectedSerial = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
                 earlyBoot: earlyBoot(), guest: null,
