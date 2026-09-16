@@ -3,6 +3,8 @@ import path from "node:path";
 
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
+import {validateInstallerBootConfirmation, validateInstallerBootInput} from
+    "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 
@@ -1017,12 +1019,13 @@ function validateQemuLaunchDiagnostic(value, process) {
     return deepFreeze(structuredClone(value));
 }
 
-export function validateEarlyBoot(value, pathsValue) {
+export function validateEarlyBoot(value, pathsValue, bootConfirmation) {
     assertKeys(value, ["inputSent", "kind", "running", "schemaVersion", "screenshots", "status", "version"],
         "QEMU early-boot observation");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-early-boot-observation" ||
-        value.inputSent !== false || value.running !== true || value.status !== "running")
+        value.running !== true || value.status !== "running")
         throw new TypeError("QEMU early-boot observation is invalid");
+    validateInstallerBootInput(value.inputSent, bootConfirmation);
     assertKeys(value.version, ["major", "micro", "minor"], "QEMU early-boot version");
     if (!Object.values(value.version).every(item => Number.isSafeInteger(item) && item >= 0))
         throw new TypeError("QEMU early-boot version is invalid");
@@ -1083,7 +1086,9 @@ export function validateLateBoot(value, pathsValue) {
     return deepFreeze(structuredClone(value));
 }
 
-export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact}, operations) {
+export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact,
+    bootConfirmation}, operations) {
+    validateInstallerBootConfirmation(bootConfirmation);
     const required = ["acquirePackages", "acquireProbeClosure", "acquireWindowsIso", "extractInstallWim", "extractPortableTools",
         "inspectInstallWim", "launchOwnedQemu", "prepareOfflineMedia", "resolveSignedPackageClosure"];
     if (!operations || typeof operations !== "object" || required.some(name => typeof operations[name] !== "function"))
@@ -1131,7 +1136,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         const argv = buildQemuArguments({paths: checkedPaths, toolchain});
         stage = "qemu-launch";
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
-            argv, selectedImage, privilegeMode, deadlines: STAGE2_DIAGNOSTIC_DEADLINES});
+            argv, selectedImage, privilegeMode, deadlines: STAGE2_DIAGNOSTIC_DEADLINES,
+            ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
         const allowedObservationKeys = ["argv", "earlyBoot", "process"];
         if (launchObservation?.guest !== undefined) allowedObservationKeys.push("guest");
         if (launchObservation?.guestFailure !== undefined) allowedObservationKeys.push("guestFailure");
@@ -1143,7 +1149,7 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         assertKeys(launchObservation, allowedObservationKeys, "QEMU observation");
         if (!same(launchObservation.argv, argv)) throw new TypeError("QEMU observed argv mismatch");
         const earlyBoot = launchObservation.earlyBoot === null ? null : validateEarlyBoot(launchObservation.earlyBoot,
-            checkedPaths);
+            checkedPaths, bootConfirmation);
         const lateBoot = launchObservation.lateBoot ? validateLateBoot(launchObservation.lateBoot, checkedPaths) : null;
         let guestFailure = null;
         if (launchObservation.guestFailure) {
@@ -1177,7 +1183,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             cpuCalibrationAccepted: true, cleanupProven: true, privilegeMode, context: structuredClone(context),
             packageClosure, probeArtifact: checkedProbeArtifact, probes, iso, installWim,
             installWimRemoval: structuredClone(wimInspection.removal), selectedImage, toolchain,
-            media, argv, qemuProcess: structuredClone(launchObservation.process), earlyBoot, guest});
+            media, argv, qemuProcess: structuredClone(launchObservation.process), earlyBoot, guest,
+            ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
     } catch (error) {
         const cleanup = stage === "qemu-launch" && launchObservation?.process?.cleanupProven === true &&
             launchObservation?.process?.treeGone === true;

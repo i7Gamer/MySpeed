@@ -4,6 +4,8 @@ const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
 const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
+const INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN =
+    /^\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32}$/u;
 /*
  * The containment preflight boots one disposable overlay under its own fixed child of the MSI
  * task root - not a row, and never a descendant of one. It is admitted for the two early frames
@@ -15,6 +17,11 @@ const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-windows-
 
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
+export const INSTALLER_BOOT_CONFIRMATION = "single-enter-before-setup-v1";
+export const INSTALLER_BOOT_CONFIRMATION_QCODE = "ret";
+export const INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS = 100;
+export const INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS = 2_000;
+export const INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS = 3_000;
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
@@ -40,6 +47,29 @@ export function validateLateScreenshots(paths) {
     return [...paths];
 }
 
+export function validateInstallerBootConfirmation(value) {
+    if (value === undefined || value === INSTALLER_BOOT_CONFIRMATION) return value;
+    throw new TypeError("QMP installer boot confirmation is invalid");
+}
+
+export function validateInstallerBootInput(value, policy) {
+    validateInstallerBootConfirmation(policy);
+    if (policy === undefined) {
+        if (value === false) return false;
+        throw new TypeError("QMP installer boot input is invalid");
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        value.kind !== "installer-boot-confirmation" || value.qcode !== INSTALLER_BOOT_CONFIRMATION_QCODE ||
+        value.holdMilliseconds !== INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS ||
+        value.requestedOffsetMilliseconds !== INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
+        !Number.isFinite(value.sentOffsetMilliseconds) ||
+        value.sentOffsetMilliseconds < INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
+        value.sentOffsetMilliseconds > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS ||
+        value.acknowledged !== true || Object.keys(value).length !== 6)
+        throw new TypeError("QMP installer boot input is invalid");
+    return Object.freeze({...value});
+}
+
 function cancellableDelay(milliseconds, dependencies, session) {
     if (session.cancelled || session.expired || milliseconds <= 0) return Promise.resolve();
     if (dependencies.setTimer) {
@@ -58,7 +88,23 @@ function cancellableDelay(milliseconds, dependencies, session) {
         });
     }
     if (dependencies.wait) {
-        return Promise.resolve(dependencies.wait(milliseconds));
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            const done = () => {
+                if (settled) return;
+                settled = true;
+                session.onCancel = null;
+                resolve();
+            };
+            const fail = error => {
+                if (settled) return;
+                settled = true;
+                session.onCancel = null;
+                reject(error);
+            };
+            session.onCancel = done;
+            Promise.resolve(dependencies.wait(milliseconds)).then(done, fail);
+        });
     }
     const clearTimer = dependencies.clearTimer ?? clearTimeout;
     const setTimer = dependencies.setTimer ?? setTimeout;
@@ -135,6 +181,10 @@ async function runSession(input, dependencies, session) {
     const screenshotPaths = validateScreenshots(input?.screenshotPaths);
     const lateScreenshotPaths = input?.lateScreenshotPaths !== undefined ?
         validateLateScreenshots(input.lateScreenshotPaths) : null;
+    const bootConfirmation = validateInstallerBootConfirmation(input?.bootConfirmation);
+    const screenshotRoot = screenshotPaths[0].slice(0, -"/early-boot-1.png".length);
+    if (bootConfirmation !== undefined && !INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN.test(screenshotRoot))
+        throw new TypeError("QMP installer boot confirmation root is invalid");
     if (typeof input.writeBytes !== "function") throw new TypeError("QMP writer is invalid");
 
     const cancelSession = () => {
@@ -151,7 +201,7 @@ async function runSession(input, dependencies, session) {
     input.onSession?.({cancel: cancelSession});
 
     const readMessage = createMessageReader(input.readable, dependencies);
-    const getTime = dependencies.now ?? (() => Date.now());
+    const getTime = dependencies.now ?? (() => performance.now());
     const sessionStartTime = getTime();
     const greeting = await readMessage();
     const version = greeting?.QMP?.version?.qemu;
@@ -159,10 +209,11 @@ async function runSession(input, dependencies, session) {
         !Array.isArray(greeting?.QMP?.capabilities) ||
         !greeting.QMP.capabilities.every(value => typeof value === "string"))
         throw new Error("QMP greeting is invalid");
-    const write = value => {
+    const write = (value, beforeWrite = () => undefined) => {
         if (session.expired || session.cancelled) return Promise.reject(new Error("QMP session deadline exceeded"));
         return withDeadline(Promise.resolve().then(() => {
             if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
+            beforeWrite();
             return input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
         }), dependencies);
     };
@@ -172,8 +223,37 @@ async function runSession(input, dependencies, session) {
     const status = await expectResponse(readMessage, "status");
     if (typeof status.running !== "boolean" || typeof status.status !== "string" || status.status.length < 1)
         throw new Error("QMP status response is invalid");
+    let inputSent = false;
+    if (bootConfirmation !== undefined) {
+        if (status.running !== true || status.status !== "running")
+            throw new Error("QMP installer boot confirmation requires a running guest");
+        const elapsed = getTime() - sessionStartTime;
+        if (elapsed > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS)
+            throw new Error("QMP installer boot confirmation window elapsed");
+        await cancellableDelay(Math.max(0, INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS - elapsed),
+            dependencies, session);
+        if (session.cancelled || session.expired)
+            throw new Error("QMP installer boot confirmation cancelled");
+        let sentOffsetMilliseconds = null;
+        await write({execute: "send-key", arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
+            "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id: "installer-boot-confirmation"}, () => {
+            sentOffsetMilliseconds = getTime() - sessionStartTime;
+            if (!Number.isFinite(sentOffsetMilliseconds) ||
+                sentOffsetMilliseconds < INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
+                sentOffsetMilliseconds > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS)
+                throw new Error("QMP installer boot confirmation window elapsed");
+        });
+        await expectResponse(readMessage, "installer-boot-confirmation");
+        // A QMP acknowledgement proves only monitor acceptance, never guest-side receipt.
+        inputSent = validateInstallerBootInput({kind: "installer-boot-confirmation",
+            qcode: INSTALLER_BOOT_CONFIRMATION_QCODE, holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
+            requestedOffsetMilliseconds: INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS,
+            sentOffsetMilliseconds, acknowledged: true}, bootConfirmation);
+    }
     const wait = dependencies.wait ?? delay;
-    for (const [index, milliseconds] of [FIRST_SCREENSHOT_DELAY_MILLISECONDS,
+    const firstScreenshotDelay = bootConfirmation === undefined ? FIRST_SCREENSHOT_DELAY_MILLISECONDS :
+        Math.max(0, FIRST_SCREENSHOT_DELAY_MILLISECONDS - (getTime() - sessionStartTime));
+    for (const [index, milliseconds] of [firstScreenshotDelay,
         SECOND_SCREENSHOT_DELAY_MILLISECONDS].entries()) {
         await wait(milliseconds);
         const id = `screenshot-${index + 1}`;
@@ -181,7 +261,7 @@ async function runSession(input, dependencies, session) {
         await expectResponse(readMessage, id);
     }
     const earlyResult = Object.freeze({version: Object.freeze({...version}), status: status.status, running: status.running,
-        screenshotPaths: Object.freeze(screenshotPaths), inputSent: false});
+        screenshotPaths: Object.freeze(screenshotPaths), inputSent});
 
     if (lateScreenshotPaths !== null) {
         const runLateMilestones = async () => {

@@ -5,6 +5,7 @@ import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
 import {validateCompletedStage3Result, STAGE3_CONSTANTS}
     from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
+import {INSTALLER_BOOT_CONFIRMATION} from "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildV161WindowsExeAcquisitionPlan} from "./post-release-target.mjs";
 
 const SCHEMA_VERSION = 1;
@@ -252,11 +253,14 @@ export function acquireV161PostReleaseCpuFloorBaselineSummary(binding, acquisiti
 
 export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact, identity) {
     requireIdentityBinding(binding, "Stage 2 request");
-    return buildWindowsMsiStage2Request({
+    const request = buildWindowsMsiStage2Request({
         context: structuredClone(binding.hostedContext),
         probe: probeArtifact,
         identity
     });
+    // Only the installer preparation opts in. MSI rows and the installed Stage 3 guest remain no-input.
+    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+    return request;
 }
 
 export function buildV161PostReleaseCpuFloorStage3Template(binding) {

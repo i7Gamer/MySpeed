@@ -17,6 +17,7 @@ import {
     buildQemuArguments,
     renderGuestBootstrap,
     runWindowsCpuFloorStage2,
+    validateEarlyBoot,
     validateGuestFailure,
     validateLateBoot,
     validatePackageClosure,
@@ -44,6 +45,9 @@ const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
 const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
 const TRUNCATED_SERIAL_PREFIX_BYTE = 0x73;
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const BOOT_CONFIRMATION = "single-enter-before-setup-v1";
+const bootInput = () => ({kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+    requestedOffsetMilliseconds: 2000, sentOffsetMilliseconds: 2001, acknowledged: true});
 
 function context() {
     return {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "b".repeat(40),
@@ -212,6 +216,38 @@ function operations(overrides = {}) {
 }
 
 describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
+    it("requires request-bound permission for installer input and preserves the no-input default", () => {
+        assert.deepEqual(validateEarlyBoot(earlyBoot(), paths()), earlyBoot());
+        const entered = {...earlyBoot(), inputSent: bootInput()};
+        assert.throws(() => validateEarlyBoot(entered, paths()), /input|confirmation/iu);
+        assert.deepEqual(validateEarlyBoot(entered, paths(), BOOT_CONFIRMATION), entered);
+        assert.throws(() => validateEarlyBoot(earlyBoot(), paths(), BOOT_CONFIRMATION), /input|confirmation/iu);
+        assert.throws(() => validateEarlyBoot(entered, paths(), true), /input|confirmation/iu);
+    });
+
+    it("passes the installer policy to launch and retains it with accepted Stage 2 evidence", async () => {
+        const fixture = operations();
+        const originalLaunch = fixture.op.launchOwnedQemu;
+        fixture.op.launchOwnedQemu = async input => {
+            assert.equal(input.bootConfirmation, BOOT_CONFIRMATION);
+            const observation = await originalLaunch(input);
+            observation.earlyBoot.inputSent = bootInput();
+            return observation;
+        };
+        const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact(), bootConfirmation: BOOT_CONFIRMATION}, fixture.op);
+        assert.equal(result.status, "observed", result.failure?.message);
+        assert.equal(result.bootConfirmation, BOOT_CONFIRMATION);
+        assert.deepEqual(result.earlyBoot.inputSent, bootInput());
+    });
+
+    it("rejects a malformed installer policy before any Stage 2 operations", async () => {
+        const fixture = operations();
+        await assert.rejects(runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact(), bootConfirmation: true}, fixture.op), /confirmation/iu);
+        assert.deepEqual(fixture.calls, []);
+    });
+
     it("pins official sources, snapshot and complete root package set", () => {
         assert.deepEqual(PACKAGE_ROOTS, ["7zip", "genisoimage", "mtools", "ovmf", "qemu-system-x86",
             "qemu-utils", "wimtools"]);

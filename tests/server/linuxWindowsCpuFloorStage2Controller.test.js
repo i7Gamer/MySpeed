@@ -87,6 +87,24 @@ function fixture() {
 }
 
 describe("hosted Stage 2 controller", () => {
+    it("forwards only the exact optional installer confirmation authorization", async () => {
+        const {request, contents} = fixture();
+        request.authorization.bootConfirmation = "single-enter-before-setup-v1";
+        let forwarded;
+        await runHostedStage2Controller(request, {
+            readVerified: target => ({bytes: contents.get(target), path: target, sha256: digest(contents.get(target))}),
+            collectAdmission: async () => observations(), mkdirExclusive: () => undefined,
+            copyExclusive: (source, target) => contents.set(target, contents.get(source)), operations: {},
+            runStage2: async input => { forwarded = input; return {status: "observed"}; }
+        });
+        assert.equal(forwarded.bootConfirmation, request.authorization.bootConfirmation);
+        for (const bad of [true, false, null, "enter", {}, undefined]) {
+            const changed = fixture().request;
+            changed.authorization.bootConfirmation = bad;
+            await assert.rejects(runHostedStage2Controller(changed), /confirmation/iu);
+        }
+    });
+
     it("replays KVM evidence, admits resources, seals probe inputs, then invokes Stage 2", async () => {
         const {request, contents} = fixture();
         const events = [];

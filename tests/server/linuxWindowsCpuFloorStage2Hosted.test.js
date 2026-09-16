@@ -43,6 +43,9 @@ const PIDFILE_IDENTITY = {path: paths().qemuPid, dev: "11", ino: "22", uid: "100
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const SERIAL_CAPTURE_BYTES = 65_536;
 const INVALID_SERIAL_CAPTURE_BYTES = 0;
+const BOOT_CONFIRMATION = "single-enter-before-setup-v1";
+const bootInput = () => ({kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+    requestedOffsetMilliseconds: 2000, sentOffsetMilliseconds: 2001, acknowledged: true});
 const SERIAL_AT_CAP_BYTE = 0x61;
 const SERIAL_OVER_CAP_BYTE = 0x62;
 const CAPTURED_PROBE_BUILD = JSON.parse(fs.readFileSync(new URL(
@@ -860,6 +863,35 @@ describe("hosted Stage 2 native adapter preparation", () => {
         await assert.rejects(() => launcher({paths: paths(), toolchain,
             privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"]}), /kvmvapic firmware identity changed/u);
         assert.equal(launched, false);
+    });
+
+    it("binds installer input to the requested policy rather than trusting a QMP action record", async () => {
+        const loader = `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`;
+        const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(loader),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+        qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`)};
+        for (const [policy, observed, expected] of [[undefined, false, true],
+            [undefined, bootInput(), false], [BOOT_CONFIRMATION, false, false],
+            [BOOT_CONFIRMATION, bootInput(), true],
+            [BOOT_CONFIRMATION, {...bootInput(), qcode: "esc"}, false]]) {
+            let qmpRequest;
+            const launcher = createHostedQemuProcessLauncher({context: context(), dependencies: {
+                inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                pathExists: () => false, readOwnedVerified: screenshotRead,
+                runMonitoredQemu: async request => {
+                    qmpRequest = request.qmp;
+                    return {observation: {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                        identity: {pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: loader},
+                        qmp: {...qmpObservation(), inputSent: observed}, absentAfter: true,
+                        processGroupGone: true, terminationReason: null};
+                }
+            }});
+            const result = await launcher({paths: paths(), toolchain, privilegeMode: "reviewed-sudo-kvm",
+                argv: ["-nic", "none"], ...(policy === undefined ? {} : {bootConfirmation: policy})});
+            assert.equal(qmpRequest.bootConfirmation, policy);
+            assert.equal(result.executionSucceeded, expected);
+            assert.deepEqual(result.earlyBoot?.inputSent ?? null, expected ? observed : null);
+        }
     });
 
     it("keeps stream, process, cleanup, and privilege failures out of both parser and generic success", async () => {

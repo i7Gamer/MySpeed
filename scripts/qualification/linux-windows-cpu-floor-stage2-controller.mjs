@@ -6,6 +6,7 @@ import {fileURLToPath} from "node:url";
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {assessWindowsCpuFloorAdmission} from "./linux-windows-cpu-floor-admission.mjs";
 import {runWindowsCpuFloorStage2, validateStage2Paths} from "./linux-windows-cpu-floor-stage2.mjs";
+import {INSTALLER_BOOT_CONFIRMATION} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {collectHostedAdmissionObservations, createHostedStage2Operations} from
     "./linux-windows-cpu-floor-stage2-hosted.mjs";
 
@@ -68,7 +69,13 @@ function validateRequest(request) {
     if (request.schemaVersion !== SCHEMA_VERSION) throw new TypeError("request schema is invalid");
     const context = validateHostedContext(request.context);
     request.paths = validateStage2Paths(request.paths, context);
-    assertKeys(request.authorization, ["confirmation", "media", "qemu", "scope"], "Stage 2 authorization");
+    const authorizationKeys = ["confirmation", "media", "qemu", "scope"];
+    if (Object.hasOwn(request.authorization ?? {}, "bootConfirmation")) {
+        authorizationKeys.push("bootConfirmation");
+        if (request.authorization.bootConfirmation !== INSTALLER_BOOT_CONFIRMATION)
+            throw new TypeError("Stage 2 boot confirmation is not authorized");
+    }
+    assertKeys(request.authorization, authorizationKeys, "Stage 2 authorization");
     if (request.authorization.confirmation !== CONFIRMATION || request.authorization.media !== true ||
         request.authorization.qemu !== true || request.authorization.scope !== "candidate-neutral-cpu-calibration")
         throw new TypeError("Stage 2 execution is not authorized");
@@ -170,7 +177,9 @@ export async function runHostedStage2Controller(requestValue, dependencies = {})
     const operations = dependencies.operations ?? createHostedStage2Operations({context, paths: request.paths,
         dependencies: dependencies.native});
     const run = dependencies.runStage2 ?? runWindowsCpuFloorStage2;
-    return await run({context, admission, paths: request.paths, probeArtifact: request.probeArtifact}, operations);
+    return await run({context, admission, paths: request.paths, probeArtifact: request.probeArtifact,
+        ...(request.authorization.bootConfirmation === undefined ? {} :
+            {bootConfirmation: request.authorization.bootConfirmation})}, operations);
 }
 
 function writeExclusive(target, value) {

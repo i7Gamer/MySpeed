@@ -209,6 +209,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
     describe("request builders", () => {
         it("builds a Stage 2 request the real controller admits", async () => {
             const request = buildV161PostReleaseCpuFloorStage2Request(binding(), probeArtifact(), identityOf);
+            assert.equal(request.authorization.bootConfirmation, "single-enter-before-setup-v1");
             assert.equal(request.context.sourceSha, HARNESS_SHA);
             assert.equal(request.context.eventSha, HARNESS_SHA);
             assert.notEqual(request.context.sourceSha, CANDIDATE_SHA);

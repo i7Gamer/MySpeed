@@ -7,7 +7,8 @@ import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, validateWindowsSystemTools} from
     "./linux-windows-cpu-floor-stage2.mjs";
-import {runEarlyBootQmpSession} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
+import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput} from
+    "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const APT_GET = "/usr/bin/apt-get";
 const APT_CACHE = "/usr/bin/apt-cache";
@@ -178,6 +179,8 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 readable: child.stdout,
                 writeBytes,
                 screenshotPaths: options.qmp.screenshotPaths,
+                ...(options.qmp.bootConfirmation === undefined ? {} :
+                    {bootConfirmation: options.qmp.bootConfirmation}),
                 ...(options.qmp.lateScreenshotPaths ? {lateScreenshotPaths: options.qmp.lateScreenshotPaths} : {}),
                 onSession: handle => {
                     qmpCancelHandle = handle;
@@ -1439,6 +1442,7 @@ function assertPortableAncestry(io, portableRoot, fileTargets, directoryTargets 
 }
 
 async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
+    validateInstallerBootConfirmation(input.bootConfirmation);
     if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
         throw new TypeError("QEMU privilege mode is invalid");
     assertPortableAncestry(io, input.paths.portableRoot,
@@ -1521,7 +1525,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
-        qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {})}});
+        qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
+            ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation})}});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
         monitored.absentAfter === true && monitored.processGroupGone === true;
@@ -1531,9 +1536,10 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         processGroupId: monitored.identity?.processGroupId ?? null,
         qemuPidAbsentAfter: monitored.absentAfter, terminationReason: monitored.terminationReason ?? null};
     let earlyBoot = null;
-    if (monitored.qmp?.inputSent === false && monitored.qmp.running === true && monitored.qmp.status === "running" &&
+    if (monitored.qmp?.running === true && monitored.qmp.status === "running" &&
         JSON.stringify(monitored.qmp.screenshotPaths) === JSON.stringify(screenshotPaths)) {
         try {
+            validateInstallerBootInput(monitored.qmp.inputSent, input.bootConfirmation);
             const screenshots = screenshotPaths.map(target => {
                 const observed = io.readOwnedVerified(target, MAX_EARLY_BOOT_SCREENSHOT_BYTES);
                 if (observed.identity.path !== target || observed.bytes.length < PNG_SIGNATURE.length ||
@@ -1541,7 +1547,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
                     throw new Error("early-boot screenshot is invalid");
                 return {...observed.identity, bytesBase64: observed.bytes.toString("base64")};
             });
-            earlyBoot = {schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+            earlyBoot = {schemaVersion: 1, kind: "qemu-early-boot-observation",
+                inputSent: structuredClone(monitored.qmp.inputSent),
                 version: structuredClone(monitored.qmp.version), status: monitored.qmp.status, running: true, screenshots};
         } catch { /* a missing or changed screenshot keeps the launch non-acceptable */ }
     }
