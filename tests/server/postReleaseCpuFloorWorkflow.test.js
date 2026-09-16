@@ -160,13 +160,14 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
             "sequence requires an empty fresh transport root, not precreated log files");
     });
 
-    it("offers exactly the two supported Stage 3 installer policies and defaults to no input", () => {
+    it("offers exactly the three supported Stage 3 installer policies and defaults to no input", () => {
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
         const input = workflow.on.workflow_dispatch.inputs.stage3_installer_confirmation;
         assert.equal(input.required, true);
         assert.equal(input.type, "choice");
         assert.equal(input.default, POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_NO_INPUT);
         assert.deepEqual(input.options, [...POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_INSTALLER_CONFIRMATIONS]);
+        assert.ok(input.options.includes("single-enter-after-first-frame-v2"));
         const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
         assert.match(runSeqStep.run,
             /installerConfirmation: process\.env\.STAGE3_INSTALLER_CONFIRMATION/u);

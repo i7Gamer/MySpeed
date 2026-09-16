@@ -5,7 +5,8 @@ import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
 import {validateCompletedStage3Result, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS}
     from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
-import {INSTALLER_BOOT_CONFIRMATION} from "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+    "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildV161WindowsExeAcquisitionPlan} from "./post-release-target.mjs";
 
 const SCHEMA_VERSION = 1;
@@ -51,7 +52,8 @@ const UTC_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u;
  * anything else is refused rather than passed through to the shared QMP authority.
  */
 const STAGE3_NO_INPUT = "no-input";
-const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION]);
+const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION,
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]);
 const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
 
 const ACQUISITION_KEYS = ["artifact", "observedAt", "summaryBytes"];
@@ -271,7 +273,7 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
     });
     // Only the installer preparation opts in. MSI rows stay no-input, and Stage 3 - which installs
     // its own Windows rather than booting an installed one - makes its own separately explicit choice.
-    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
     return request;
 }
 
@@ -283,7 +285,7 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
 function validateStage3ExecutionPlan(value) {
     exactKeys(value, STAGE3_PLAN_KEYS, "Stage 3 execution plan");
     if (!STAGE3_INSTALLER_CONFIRMATIONS.includes(value.installerConfirmation)) {
-        fail("Stage 3 installer confirmation must be one of the two supported policies");
+        fail("Stage 3 installer confirmation must be one of the supported policies");
     }
     if (!Number.isSafeInteger(value.wallDeadlineUnixMilliseconds) || value.wallDeadlineUnixMilliseconds < 1) {
         fail("Stage 3 wall deadline must be a positive whole millisecond timestamp");

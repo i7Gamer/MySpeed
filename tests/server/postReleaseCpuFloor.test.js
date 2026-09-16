@@ -13,7 +13,8 @@ import {
     inspectV161PostReleaseCpuFloorEvidence
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {WINDOWS_MSI_STAGE2_CLOSURE} from "../../scripts/qualification/windows-msi-stage2-request.mjs";
-import {INSTALLER_BOOT_CONFIRMATION} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {admitStage3Reservation, validateRequest, STAGE3_BUDGET_CONSTANTS} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {runHostedStage2Controller}
@@ -213,7 +214,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
     describe("request builders", () => {
         it("builds a Stage 2 request the real controller admits", async () => {
             const request = buildV161PostReleaseCpuFloorStage2Request(binding(), probeArtifact(), identityOf);
-            assert.equal(request.authorization.bootConfirmation, "single-enter-before-setup-v1");
+            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
             assert.equal(request.context.sourceSha, HARNESS_SHA);
             assert.equal(request.context.eventSha, HARNESS_SHA);
             assert.notEqual(request.context.sourceSha, CANDIDATE_SHA);
@@ -276,7 +277,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
                 stage3ExecutionPlan());
             assert.equal(Object.hasOwn(request.authorization, "bootConfirmation"), false);
             const stage2Request = buildV161PostReleaseCpuFloorStage2Request(acquired(), probeArtifact(), identityOf);
-            assert.equal(stage2Request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION);
+            assert.equal(stage2Request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
             assert.equal(validateRequest(request).bootConfirmation, undefined);
         });
 
@@ -287,7 +288,17 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
             assert.equal(validateRequest(request).bootConfirmation, INSTALLER_BOOT_CONFIRMATION);
         });
 
-        it("rejects an installer confirmation that is not one of the two supported policies", () => {
+        it("admits the explicit after-first-frame Stage 3 policy while retaining no-input by default", () => {
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                stage3ExecutionPlan({installerConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME}));
+            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
+            assert.equal(validateRequest(request).bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
+            const noInput = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                stage3ExecutionPlan());
+            assert.equal(Object.hasOwn(noInput.authorization, "bootConfirmation"), false);
+        });
+
+        it("rejects an installer confirmation that is not one of the supported policies", () => {
             for (const installerConfirmation of ["press-any-key", "", "single-enter-before-setup-v2", null, true,
                 undefined, ["no-input"]]) {
                 assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(),

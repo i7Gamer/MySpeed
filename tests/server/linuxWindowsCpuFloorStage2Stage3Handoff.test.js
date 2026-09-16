@@ -29,6 +29,9 @@ const RUN_ATTEMPT = "1";
 const SHA = character => character.repeat(64);
 const HASH = value => crypto.createHash("sha256").update(value).digest("hex");
 const BOOT_CONFIRMATION = "single-enter-before-setup-v1";
+const AFTER_FRAME_BOOT_CONFIRMATION = "single-enter-after-first-frame-v2";
+const AFTER_FRAME_REQUESTED_MILLISECONDS = 5_000;
+const AFTER_FRAME_SENT_MILLISECONDS = 5_001;
 const bootInput = () => ({
     kind: "installer-boot-confirmation",
     qcode: "ret",
@@ -364,6 +367,9 @@ function stage2InertOperations(rawGuest, overrides = {}) {
             const eb = earlyBoot();
             if (input.bootConfirmation === BOOT_CONFIRMATION) {
                 eb.inputSent = bootInput();
+            } else if (input.bootConfirmation === AFTER_FRAME_BOOT_CONFIRMATION) {
+                eb.inputSent = {...bootInput(), requestedOffsetMilliseconds: AFTER_FRAME_REQUESTED_MILLISECONDS,
+                    sentOffsetMilliseconds: AFTER_FRAME_SENT_MILLISECONDS, afterFirstScreenshotAck: true};
             }
             return {
                 process: {
@@ -626,6 +632,20 @@ async function runHandoffPipeline({
 }
 
 describe("Stage 2 → Stage 3 real producer handoff and hosted replay", () => {
+    it("replays after-first-frame Stage 2 evidence without inheriting input authorization into Stage 3", async () => {
+        const {stage2Result, stage3Result, stage3Request, stage2Bytes} = await runHandoffPipeline({
+            bootConfirmation: AFTER_FRAME_BOOT_CONFIRMATION
+        });
+        assert.equal(stage2Result.status, "observed", stage2Result.failure);
+        assert.equal(stage2Result.bootConfirmation, AFTER_FRAME_BOOT_CONFIRMATION);
+        assert.equal(stage2Result.earlyBoot.inputSent.afterFirstScreenshotAck, true);
+        assert.equal(stage2Result.earlyBoot.inputSent.requestedOffsetMilliseconds, AFTER_FRAME_REQUESTED_MILLISECONDS);
+        assert.equal(stage3Request.authorization.bootConfirmation, undefined);
+        assert.equal(stage3Result.status, "observed", stage3Result.failure);
+        assert.equal(stage3Result.earlyBoot.inputSent, false);
+        assert.equal(validateCompletedStage3Result(stage3Result, stage3Request, stage2Bytes).accepted, true);
+    });
+
     it("feeds real Stage 2 result and raw guest bytes through real Stage 3 hosted replay and completed consumer (default no-input)", async () => {
         const {stage2Result, stage3Result, stage3Request, stage2Bytes, capturedLaunchArgv} = await runHandoffPipeline();
         assert.equal(stage2Result.status, "observed", JSON.stringify(stage2Result.failure));

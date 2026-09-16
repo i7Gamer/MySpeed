@@ -27,10 +27,13 @@ const isEarlyOnlyRoot = root => root.endsWith(EARLY_ONLY_ROOT_SUFFIX) || STAGE3_
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
 export const INSTALLER_BOOT_CONFIRMATION = "single-enter-before-setup-v1";
+export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME = "single-enter-after-first-frame-v2";
 export const INSTALLER_BOOT_CONFIRMATION_QCODE = "ret";
 export const INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS = 100;
 export const INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS = 2_000;
 export const INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS = 3_000;
+export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS = 5_000;
+export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS = 6_000;
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
@@ -57,7 +60,8 @@ export function validateLateScreenshots(paths) {
 }
 
 export function validateInstallerBootConfirmation(value) {
-    if (value === undefined || value === INSTALLER_BOOT_CONFIRMATION) return value;
+    if (value === undefined || value === INSTALLER_BOOT_CONFIRMATION ||
+        value === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME) return value;
     throw new TypeError("QMP installer boot confirmation is invalid");
 }
 
@@ -67,14 +71,22 @@ export function validateInstallerBootInput(value, policy) {
         if (value === false) return false;
         throw new TypeError("QMP installer boot input is invalid");
     }
+    const afterFirstScreenshotAck = policy === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
+    const requestedOffsetMilliseconds = afterFirstScreenshotAck ?
+        INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS :
+        INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS;
+    const latestOffsetMilliseconds = afterFirstScreenshotAck ?
+        INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS :
+        INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS;
     if (!value || typeof value !== "object" || Array.isArray(value) ||
         value.kind !== "installer-boot-confirmation" || value.qcode !== INSTALLER_BOOT_CONFIRMATION_QCODE ||
         value.holdMilliseconds !== INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS ||
-        value.requestedOffsetMilliseconds !== INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
+        value.requestedOffsetMilliseconds !== requestedOffsetMilliseconds ||
         !Number.isFinite(value.sentOffsetMilliseconds) ||
-        value.sentOffsetMilliseconds < INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
-        value.sentOffsetMilliseconds > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS ||
-        value.acknowledged !== true || Object.keys(value).length !== 6)
+        value.sentOffsetMilliseconds < requestedOffsetMilliseconds ||
+        value.sentOffsetMilliseconds > latestOffsetMilliseconds || value.acknowledged !== true ||
+        (afterFirstScreenshotAck ? value.afterFirstScreenshotAck !== true || Object.keys(value).length !== 7 :
+            Object.hasOwn(value, "afterFirstScreenshotAck") || Object.keys(value).length !== 6))
         throw new TypeError("QMP installer boot input is invalid");
     return Object.freeze({...value});
 }
@@ -236,11 +248,20 @@ async function runSession(input, dependencies, session) {
     if (bootConfirmation !== undefined) {
         if (status.running !== true || status.status !== "running")
             throw new Error("QMP installer boot confirmation requires a running guest");
+    }
+    const sendInstallerBootConfirmation = async () => {
+        const afterFirstScreenshotAck = bootConfirmation === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
+        const requestedOffsetMilliseconds = afterFirstScreenshotAck ?
+            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS :
+            INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS;
+        const latestOffsetMilliseconds = afterFirstScreenshotAck ?
+            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS :
+            INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS;
         const elapsed = getTime() - sessionStartTime;
-        if (elapsed > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS)
+        if (elapsed > latestOffsetMilliseconds)
             throw new Error("QMP installer boot confirmation window elapsed");
-        await cancellableDelay(Math.max(0, INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS - elapsed),
-            dependencies, session);
+        if (!afterFirstScreenshotAck)
+            await cancellableDelay(Math.max(0, requestedOffsetMilliseconds - elapsed), dependencies, session);
         if (session.cancelled || session.expired)
             throw new Error("QMP installer boot confirmation cancelled");
         let sentOffsetMilliseconds = null;
@@ -248,17 +269,18 @@ async function runSession(input, dependencies, session) {
             "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id: "installer-boot-confirmation"}, () => {
             sentOffsetMilliseconds = getTime() - sessionStartTime;
             if (!Number.isFinite(sentOffsetMilliseconds) ||
-                sentOffsetMilliseconds < INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS ||
-                sentOffsetMilliseconds > INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS)
+                sentOffsetMilliseconds < requestedOffsetMilliseconds || sentOffsetMilliseconds > latestOffsetMilliseconds)
                 throw new Error("QMP installer boot confirmation window elapsed");
         });
         await expectResponse(readMessage, "installer-boot-confirmation");
         // A QMP acknowledgement proves only monitor acceptance, never guest-side receipt.
-        inputSent = validateInstallerBootInput({kind: "installer-boot-confirmation",
+        return validateInstallerBootInput({kind: "installer-boot-confirmation",
             qcode: INSTALLER_BOOT_CONFIRMATION_QCODE, holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
-            requestedOffsetMilliseconds: INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS,
-            sentOffsetMilliseconds, acknowledged: true}, bootConfirmation);
-    }
+            requestedOffsetMilliseconds, sentOffsetMilliseconds, acknowledged: true,
+            ...(afterFirstScreenshotAck ? {afterFirstScreenshotAck: true} : {})}, bootConfirmation);
+    };
+    if (bootConfirmation === INSTALLER_BOOT_CONFIRMATION)
+        inputSent = await sendInstallerBootConfirmation();
     const wait = dependencies.wait ?? delay;
     const firstScreenshotDelay = bootConfirmation === undefined ? FIRST_SCREENSHOT_DELAY_MILLISECONDS :
         Math.max(0, FIRST_SCREENSHOT_DELAY_MILLISECONDS - (getTime() - sessionStartTime));
@@ -268,6 +290,8 @@ async function runSession(input, dependencies, session) {
         const id = `screenshot-${index + 1}`;
         await write({execute: "screendump", arguments: {filename: screenshotPaths[index], format: "png"}, id});
         await expectResponse(readMessage, id);
+        if (index === 0 && bootConfirmation === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME)
+            inputSent = await sendInstallerBootConfirmation();
     }
     const earlyResult = Object.freeze({version: Object.freeze({...version}), status: status.status, running: status.running,
         screenshotPaths: Object.freeze(screenshotPaths), inputSent});

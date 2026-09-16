@@ -366,6 +366,27 @@ describe("same-job installed Stage 2 base sealing", () => {
         }
     });
 
+    it("seals after-frame installer evidence and rejects a missing first-frame acknowledgement", async () => {
+        const requestedMilliseconds = 5_000;
+        const sentMilliseconds = 5_001;
+        const evidence = stage2Result();
+        evidence.bootConfirmation = "single-enter-after-first-frame-v2";
+        evidence.earlyBoot.inputSent = {kind: "installer-boot-confirmation", qcode: "ret",
+            holdMilliseconds: 100, requestedOffsetMilliseconds: requestedMilliseconds,
+            sentOffsetMilliseconds: sentMilliseconds, acknowledged: true, afterFirstScreenshotAck: true};
+        const io = operations();
+        const sealed = await sealSameJobInstalledBase({expectedContext: context(), paths: paths(),
+            stage2Result: evidence}, io.value);
+        assert.equal(sealed.status, "sealed");
+        assert.equal(validateSameJobInstalledBaseSeal(sealed, context()).status, "sealed");
+
+        delete evidence.earlyBoot.inputSent.afterFirstScreenshotAck;
+        const rejectedIo = operations();
+        await assert.rejects(() => sealSameJobInstalledBase({expectedContext: context(), paths: paths(),
+            stage2Result: evidence}, rejectedIo.value), /boot input/u);
+        assert.equal(rejectedIo.calls.length, 0);
+    });
+
     it("accepts and validates optional Stage 2 installer-confirmation evidence and rejects malformed evidence before seal mutation", async () => {
         const validConfirmationInput = Object.freeze({
             kind: "installer-boot-confirmation",

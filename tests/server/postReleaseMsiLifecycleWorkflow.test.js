@@ -136,6 +136,8 @@ describe("post-release v1.6.1 MSI lifecycle workflow", () => {
         assert.match(stage2, /myspeed-stage2-closure-\$EXPECTED_NONCE/u);
         assert.match(stage2, /myspeed-stage2-input-\$EXPECTED_NONCE/u);
         assert.match(stage2, /buildWindowsMsiStage2Request/u);
+        assert.match(stage2, /INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME/u);
+        assert.match(stage2, /bootConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME/u);
         assert.match(stage2, /EXPECTED_STAGE2_SHA256/u);
         assert.match(stage2, /sealed Stage 2 closure carries source nobody bound a hash to/u);
         /* The Stage 2 controller that runs is the copy inside the Stage 2 tree, not the MSI one. */

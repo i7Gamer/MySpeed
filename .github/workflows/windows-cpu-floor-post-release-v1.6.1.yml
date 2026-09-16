@@ -39,6 +39,7 @@ on:
         options:
           - no-input
           - single-enter-before-setup-v1
+          - single-enter-after-first-frame-v2
 
 permissions:
   actions: read

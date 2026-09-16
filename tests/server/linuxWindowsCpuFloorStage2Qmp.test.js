@@ -5,6 +5,9 @@ import {PassThrough} from "node:stream";
 
 import {
     INSTALLER_BOOT_CONFIRMATION,
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS,
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_QCODE,
@@ -96,6 +99,68 @@ describe("Stage 2 early-boot QMP session", () => {
         assert.deepEqual(result.inputSent, {kind: "installer-boot-confirmation", qcode: "ret",
             holdMilliseconds: 100, requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_000,
             acknowledged: true});
+    });
+
+    it("sends v2 Enter exactly once only after the first screenshot acknowledgement", async () => {
+        const writes = [];
+        let now = 0;
+        const result = await runEarlyBootQmpSession({readable: stream([
+            {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+            {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+            {return: {}, id: "screenshot-1"}, {return: {}, id: "installer-boot-confirmation"},
+            {return: {}, id: "screenshot-2"}
+        ]), writeBytes: bytes => writes.push({value: JSON.parse(bytes.toString("utf8")), time: now}),
+        screenshotPaths: SCREENSHOTS, bootConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME}, {
+            now: () => now, wait: async milliseconds => { now += milliseconds; }
+        });
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, "single-enter-after-first-frame-v2");
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS, 5_000);
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS, 6_000);
+        assert.deepEqual(writes.map(({value}) => value.id), ["capabilities", "status", "screenshot-1",
+            "installer-boot-confirmation", "screenshot-2"]);
+        assert.deepEqual(writes.slice(2).map(({time}) => time), [5_000, 5_000, 35_000]);
+        assert.deepEqual(writes[3].value, {execute: "send-key", arguments: {keys: [{type: "qcode", data: "ret"}],
+            "hold-time": 100}, id: "installer-boot-confirmation"});
+        assert.equal(writes.filter(({value}) => value.execute === "send-key").length, 1);
+        assert.deepEqual(result.inputSent, {kind: "installer-boot-confirmation", qcode: "ret",
+            holdMilliseconds: 100, requestedOffsetMilliseconds: 5_000, sentOffsetMilliseconds: 5_000,
+            acknowledged: true, afterFirstScreenshotAck: true});
+    });
+
+    it("fails closed for v2 replay, missing or late first-frame acknowledgement, and cancellation without input", async () => {
+        const v1Record = {kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_000, acknowledged: true};
+        const v2Record = {...v1Record, requestedOffsetMilliseconds: 5_000, sentOffsetMilliseconds: 5_000,
+            afterFirstScreenshotAck: true};
+        assert.throws(() => validateInstallerBootInput(v1Record, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME), /input/u);
+        assert.throws(() => validateInstallerBootInput(v2Record, INSTALLER_BOOT_CONFIRMATION), /input/u);
+
+        const transcript = response => stream([
+            {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+            {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"}, response
+        ]);
+        for (const response of [{error: {class: "CommandFailed"}, id: "screenshot-1"},
+            {return: {}, id: "screenshot-1"}]) {
+            let now = 0;
+            const writes = [];
+            await assert.rejects(runEarlyBootQmpSession({readable: transcript(response),
+                writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))), screenshotPaths: SCREENSHOTS,
+                bootConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME}, {
+                now: () => now, wait: async milliseconds => { now += milliseconds + (response.error ? 0 : 1_001); }
+            }), /(?:response|window)/u);
+            assert.deepEqual(writes.map(value => value.id), ["capabilities", "status", "screenshot-1"]);
+        }
+        let control = null, release;
+        const writes = [];
+        const pending = runEarlyBootQmpSession({readable: transcript({return: {}, id: "screenshot-1"}),
+            writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))), screenshotPaths: SCREENSHOTS,
+            bootConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, onSession: value => { control = value; }}, {
+            now: () => 0, wait: () => new Promise(resolve => { release = resolve; })
+        });
+        while (control === null || release === undefined) await new Promise(resolve => setImmediate(resolve));
+        control.cancel(); release();
+        await assert.rejects(pending, /deadline/u);
+        assert.deepEqual(writes.map(value => value.id), ["capabilities", "status"]);
     });
 
     it("rejects untrusted confirmation policy, non-root paths, stale handshakes, non-running guests, and late dispatch", async () => {

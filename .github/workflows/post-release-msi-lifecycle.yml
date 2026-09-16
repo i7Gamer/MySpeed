@@ -567,7 +567,7 @@ jobs:
           import {pathToFileURL} from "node:url";
           const [closureRoot, stage2Root, inputRoot, output] = process.argv.slice(2);
           const {buildWindowsMsiStage2Request, WINDOWS_MSI_STAGE2_CLOSURE, WINDOWS_MSI_STAGE2_PROBE_ROLES,
-            WINDOWS_MSI_STAGE2_ROOTS, INSTALLER_BOOT_CONFIRMATION} = await import(pathToFileURL(path.join(closureRoot,
+            WINDOWS_MSI_STAGE2_ROOTS, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} = await import(pathToFileURL(path.join(closureRoot,
             "scripts/qualification/windows-msi-stage2-request.mjs")).href);
           const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
           const identity = target => { const bytes = fs.readFileSync(target);
@@ -609,7 +609,7 @@ jobs:
               inputRoot !== WINDOWS_MSI_STAGE2_ROOTS.inputPrefix + context.nonce)
             throw new Error("Stage 2 roots differ from the roots its validator names");
           const request = buildWindowsMsiStage2Request({context, identity,
-            bootConfirmation: INSTALLER_BOOT_CONFIRMATION,
+            bootConfirmation: INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
             probe: {
             artifactId: process.env.PROBE_ARTIFACT_ID, runId: process.env.PROBE_RUN_ID,
             runAttempt: process.env.PROBE_RUN_ATTEMPT, sourceSha: process.env.PROBE_SOURCE_SHA,

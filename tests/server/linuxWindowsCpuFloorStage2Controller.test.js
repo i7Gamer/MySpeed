@@ -7,6 +7,8 @@ import {fileURLToPath} from "node:url";
 
 import {deriveActualHostedContext, runHostedStage2Controller} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const EVIDENCE_ROOT = path.join(HERE, "..", "fixtures", "linux-kvm-privileged-capability-evidence");
@@ -87,17 +89,20 @@ function fixture() {
 }
 
 describe("hosted Stage 2 controller", () => {
-    it("forwards only the exact optional installer confirmation authorization", async () => {
-        const {request, contents} = fixture();
-        request.authorization.bootConfirmation = "single-enter-before-setup-v1";
-        let forwarded;
-        await runHostedStage2Controller(request, {
-            readVerified: target => ({bytes: contents.get(target), path: target, sha256: digest(contents.get(target))}),
-            collectAdmission: async () => observations(), mkdirExclusive: () => undefined,
-            copyExclusive: (source, target) => contents.set(target, contents.get(source)), operations: {},
-            runStage2: async input => { forwarded = input; return {status: "observed"}; }
-        });
-        assert.equal(forwarded.bootConfirmation, request.authorization.bootConfirmation);
+    it("forwards only the two exact optional installer confirmation authorizations", async () => {
+        for (const bootConfirmation of [INSTALLER_BOOT_CONFIRMATION,
+            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]) {
+            const {request, contents} = fixture();
+            request.authorization.bootConfirmation = bootConfirmation;
+            let forwarded;
+            await runHostedStage2Controller(request, {
+                readVerified: target => ({bytes: contents.get(target), path: target, sha256: digest(contents.get(target))}),
+                collectAdmission: async () => observations(), mkdirExclusive: () => undefined,
+                copyExclusive: (source, target) => contents.set(target, contents.get(source)), operations: {},
+                runStage2: async input => { forwarded = input; return {status: "observed"}; }
+            });
+            assert.equal(forwarded.bootConfirmation, bootConfirmation);
+        }
         for (const bad of [true, false, null, "enter", {}, undefined]) {
             const changed = fixture().request;
             changed.authorization.bootConfirmation = bad;
