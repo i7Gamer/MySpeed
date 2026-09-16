@@ -25,6 +25,10 @@ import {
     cleanupTaskOwnedCpuProcesses,
     CPU_FLOOR_CLEANUP_CONSTANTS
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs";
+import {verifyWinpeDiagnosticCleanup} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
+import {INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {WINPE_DIAGNOSTIC_CLASSIFICATION} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 
@@ -76,8 +80,8 @@ describe("WinPE answer-file diagnostic workflow", () => {
     it("authorizes the diagnostic explicitly and binds it to this run's nonce", () => {
         const build = step("Build the diagnostic request and execute it");
         assert.match(build.run, /winpeDiagnostic: \{confirmation: "winpe-answer-file-diagnostic-v1",\s*nonce: context\.nonce\}/u);
-        /* The boot-input policies are a separate authorization and this workflow requests none. */
-        assert.equal(build.run.includes("bootConfirmation"), false);
+        /* The diagnostic and one specific boot acknowledgement are independently authorized. */
+        assert.match(build.run, new RegExp(`bootConfirmation: "${INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME}"`, "u"));
     });
 
     it("distinguishes capture-complete, inconclusive and unsafe, and fails on unsafe", () => {
@@ -128,6 +132,18 @@ describe("WinPE answer-file diagnostic workflow", () => {
             "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2-qmp.mjs",
             "linux-windows-cpu-floor-stage2.mjs", "linux-windows-cpu-floor-stage3-cleanup.mjs",
             "windows-msi-post-setup-activation.mjs"]);
+        const manifestBlock = seal.run.slice(seal.run.indexOf("const names ="), seal.run.indexOf("const files ="));
+        const manifestNames = [...manifestBlock.matchAll(/"([^"]+\.mjs)"/gu)].map(match => match[1]);
+        assert.deepEqual(manifestNames, [
+            "scripts/qualification/linux-windows-cpu-floor-admission.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs",
+            "scripts/qualification/linux-kvm-capability.mjs",
+            "scripts/qualification/linux-kvm-privileged-capability.mjs",
+            "scripts/qualification/windows-msi-post-setup-activation.mjs"]);
     });
 
     it("derives controller outer timeout bounds and charges kill grace inside the limit", () => {
@@ -148,11 +164,8 @@ describe("WinPE answer-file diagnostic workflow", () => {
         const cleanup = step("Verify task-owned process cleanup");
         assert.ok(cleanup, "cleanup step is required");
         assert.equal(cleanup.if, "${{ always() && steps.execute_diagnostic.outcome != 'skipped' }}");
-        assert.match(cleanup.run, /readCpuFloorCleanupAuthorityReceipt/u);
-        assert.match(cleanup.run, /cleanupTaskOwnedCpuProcesses/u);
-        assert.match(cleanup.run, /createHostedCpuFloorCleanupOperations/u);
         assert.match(cleanup.run, /proof\.cleanupProven !== true/u);
-        assert.match(cleanup.run, /QEMU cleanup authority is absent; refusing PID-only signalling/u);
+        assert.match(cleanup.run, /verifyWinpeDiagnosticCleanup/u);
 
         const gate = step("Require a safe, bounded diagnostic record");
         assert.match(gate.run, /test "\$\{\{ steps\.cleanup\.outcome \}\}" = "success"/u,
@@ -250,22 +263,34 @@ describe("WinPE answer-file diagnostic budget and cleanup behavioral tests", () 
         assert.equal(/^(0|[1-9][0-9]{0,2})$/u.test("unknown"), false);
     });
 
-    it("distinguishes no-launch from missing authority after possible launch, and proves cleanup", async () => {
+    it("uses the production cleanup proof to distinguish a known no-launch from an uncertain launch", async () => {
         assert.throws(() => readCpuFloorCleanupAuthorityReceipt("missing-file"), /path is invalid/u);
         const defaultOps = createHostedCpuFloorCleanupOperations();
         assert.equal(typeof defaultOps.isProcessGroupAlive, "function");
-
-        function evaluateCleanupStep(receipt, launched) {
-            if (receipt === null) {
-                if (launched === "true") return { exitCode: 1, reason: "missing-authority-after-launch" };
-                return { exitCode: 0, reason: "not-launched" };
-            }
-            return { exitCode: 0, reason: "cleanup-needed" };
-        }
-
-        assert.deepEqual(evaluateCleanupStep(null, "false"), { exitCode: 0, reason: "not-launched" });
-        assert.deepEqual(evaluateCleanupStep(null, "true"), { exitCode: 1, reason: "missing-authority-after-launch" });
-        assert.deepEqual(evaluateCleanupStep({ authorities: [] }, "true"), { exitCode: 0, reason: "cleanup-needed" });
+        const cleanupNonce = "0123456789abcdef0123456789abcdef";
+        const cleanupRoot = `/home/runner/work/_temp/myspeed-windows-cpu-floor-${cleanupNonce}`;
+        const cleanupPaths = {root: cleanupRoot, nonce: cleanupNonce, qemuPid: `${cleanupRoot}/qemu.pid`,
+            controllerResult: `/home/runner/work/_temp/myspeed-winpe-diagnostic-transport-${cleanupNonce}/diagnostic-result.json`};
+        const knownNoLaunch = await verifyWinpeDiagnosticCleanup(cleanupPaths, {
+            readLifecycleMarker: target => target.endsWith("controller-started") ? "controller-started" : null,
+            pathExists: () => false
+        });
+        assert.deepEqual(knownNoLaunch, {cleanupProven: true, status: "known-no-launch"});
+        const rejectedBeforeLaunch = await verifyWinpeDiagnosticCleanup(cleanupPaths, {
+            readLifecycleMarker: () => null,
+            pathExists: () => false,
+            readRejectedBeforeLaunchResult: (target, nonce) => target === cleanupPaths.controllerResult &&
+                nonce === cleanupNonce
+        });
+        assert.deepEqual(rejectedBeforeLaunch, {cleanupProven: true, status: "known-no-launch"});
+        await assert.rejects(verifyWinpeDiagnosticCleanup(cleanupPaths, {
+            readLifecycleMarker: () => "launch-attempted",
+            pathExists: () => false
+        }), /authority is absent after a possible launch/u);
+        await assert.rejects(verifyWinpeDiagnosticCleanup(cleanupPaths, {
+            readLifecycleMarker: () => null,
+            pathExists: () => false
+        }), /no-launch proof is absent/u);
 
         const authority = {
             pid: 1001, processGroupId: 1001, startTicks: "12345", executablePath: "/usr/bin/qemu-system-x86_64"

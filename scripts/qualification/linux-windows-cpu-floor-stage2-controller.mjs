@@ -9,7 +9,7 @@ import {runWindowsCpuFloorStage2, validateStage2Paths} from "./linux-windows-cpu
 import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     validateWinpeDiagnosticAuthorization} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {WINPE_DIAGNOSTIC_RESERVATION_LABEL, admitWinpeDiagnosticReservation,
-    collectHostedAdmissionObservations, createHostedStage2Operations} from
+    collectHostedAdmissionObservations, createHostedCpuFloorCleanupOperations, createHostedStage2Operations} from
     "./linux-windows-cpu-floor-stage2-hosted.mjs";
 
 const SCHEMA_VERSION = 1;
@@ -19,6 +19,12 @@ const MAX_KVM_BYTES = 262_144;
 const MAX_PROBE_ARCHIVE_BYTES = 268_435_456;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const CONFIRMATION = "RUN-CANDIDATE-NEUTRAL-STAGE2";
+const CONTROLLER_STARTED_MARKER = "controller-started";
+const LAUNCH_ATTEMPT_MARKER = "launch-attempted";
+const CLEANUP_AUTHORITY_FILENAME = "cleanup-authority.json";
+const HOSTED_TEMP_ROOT = "/home/runner/work/_temp";
+const NONCE_PATTERN = /^[a-f0-9]{32}$/u;
+const STAGE2_MODULE = "scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 
 function sha256(bytes) { return crypto.createHash("sha256").update(bytes).digest("hex"); }
 
@@ -63,6 +69,118 @@ function verifyInput(record, maximumBytes, read) {
 function requireDirectInput(record, inputRoot, name) {
     assertKeys(record, ["bytes", "path", "sha256"], "staged input identity");
     if (record.path !== `${inputRoot}/${name}`) throw new TypeError("staged input path is invalid");
+}
+
+function lifecycleMarkerPath(root, marker) {
+    if (typeof root !== "string" || !path.posix.isAbsolute(root) || path.posix.normalize(root) !== root)
+        throw new TypeError("diagnostic cleanup root is invalid");
+    return path.posix.join(root, marker);
+}
+
+function writeLifecycleMarker(root, marker) {
+    fs.writeFileSync(lifecycleMarkerPath(root, marker), `${marker}\n`, {flag: "wx", mode: 0o600});
+}
+
+function defaultReadLifecycleMarker(target, marker) {
+    let descriptor;
+    try {
+        descriptor = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+        const before = fs.fstatSync(descriptor, {bigint: true});
+        if (!before.isFile() || before.nlink !== 1n || before.uid !== BigInt(process.getuid?.() ?? -1) ||
+            (before.mode & 0o077n) !== 0n || before.size !== BigInt(Buffer.byteLength(`${marker}\n`)))
+            throw new TypeError("diagnostic lifecycle marker is unsafe");
+        const bytes = Buffer.alloc(Number(before.size));
+        if (fs.readSync(descriptor, bytes, 0, bytes.length, 0) !== bytes.length)
+            throw new TypeError("diagnostic lifecycle marker was truncated");
+        const after = fs.fstatSync(descriptor, {bigint: true});
+        if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeNs !== after.mtimeNs ||
+            !bytes.equals(Buffer.from(`${marker}\n`))) throw new TypeError("diagnostic lifecycle marker differs");
+        return marker;
+    } catch (error) {
+        if (error?.code === "ENOENT") return null;
+        throw error;
+    } finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+}
+
+function defaultPathExists(target) {
+    try { fs.lstatSync(target); return true; }
+    catch (error) { if (error?.code === "ENOENT") return false; throw error; }
+}
+
+function defaultReadRejectedBeforeLaunchResult(target, nonce) {
+    let descriptor;
+    try {
+        descriptor = fs.openSync(target, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+        const before = fs.fstatSync(descriptor, {bigint: true});
+        if (!before.isFile() || before.nlink !== 1n || before.uid !== BigInt(process.getuid?.() ?? -1) ||
+            (before.mode & 0o077n) !== 0n || before.size < 3n || before.size > BigInt(MAX_EVIDENCE_BYTES))
+            throw new TypeError("diagnostic result proof is unsafe");
+        const bytes = Buffer.alloc(Number(before.size));
+        if (fs.readSync(descriptor, bytes, 0, bytes.length, 0) !== bytes.length)
+            throw new TypeError("diagnostic result proof was truncated");
+        const after = fs.fstatSync(descriptor, {bigint: true});
+        if (before.dev !== after.dev || before.ino !== after.ino || before.mtimeNs !== after.mtimeNs)
+            throw new TypeError("diagnostic result proof changed while reading");
+        const value = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes));
+        if (!bytes.equals(Buffer.from(`${JSON.stringify(value)}\n`))) return false;
+        assertKeys(value, ["admission", "qualifying", "releaseGateCleared", "schemaVersion", "status"],
+            "diagnostic no-launch result");
+        const admission = value.admission;
+        return value.schemaVersion === SCHEMA_VERSION && value.status === "rejected" && value.qualifying === false &&
+            value.releaseGateCleared === false && admission?.schemaVersion === SCHEMA_VERSION &&
+            admission.status === "rejected" && admission.admitted === false &&
+            admission.qemuLaunchAuthorized === false && admission.context?.nonce === nonce;
+    } catch (error) {
+        if (error?.code === "ENOENT") return false;
+        if (error instanceof SyntaxError) return false;
+        throw error;
+    } finally { if (descriptor !== undefined) fs.closeSync(descriptor); }
+}
+
+/*
+ * The independent workflow cleanup has two safe success cases. An authenticated cleanup receipt
+ * can prove a spawned QEMU process was gone; a sealed controller marker can prove that it never
+ * reached the only call site capable of launching Stage 2. Missing state is deliberately neither.
+ */
+export async function verifyWinpeDiagnosticCleanup(pathsValue, dependencies = {}) {
+    assertKeys(pathsValue, ["controllerResult", "nonce", "qemuPid", "root"], "diagnostic cleanup paths");
+    const root = pathsValue.root;
+    if (typeof pathsValue.nonce !== "string" || !NONCE_PATTERN.test(pathsValue.nonce) ||
+        root !== `${HOSTED_TEMP_ROOT}/myspeed-windows-cpu-floor-${pathsValue.nonce}` ||
+        pathsValue.controllerResult !== `${HOSTED_TEMP_ROOT}/myspeed-winpe-diagnostic-transport-${pathsValue.nonce}/diagnostic-result.json`)
+        throw new TypeError("diagnostic cleanup paths are invalid");
+    const startedPath = lifecycleMarkerPath(root, CONTROLLER_STARTED_MARKER);
+    const attemptedPath = lifecycleMarkerPath(root, LAUNCH_ATTEMPT_MARKER);
+    const receiptPath = path.posix.join(root, CLEANUP_AUTHORITY_FILENAME);
+    const expectedPidPath = path.posix.join(root, "qemu.pid");
+    if (pathsValue.qemuPid !== expectedPidPath)
+        throw new TypeError("diagnostic cleanup paths are invalid");
+    const pathExists = dependencies.pathExists ?? defaultPathExists;
+    const readLifecycleMarker = dependencies.readLifecycleMarker ?? defaultReadLifecycleMarker;
+    const started = readLifecycleMarker(startedPath, CONTROLLER_STARTED_MARKER) === CONTROLLER_STARTED_MARKER;
+    const attempted = readLifecycleMarker(attemptedPath, LAUNCH_ATTEMPT_MARKER) === LAUNCH_ATTEMPT_MARKER;
+    const receiptExists = pathExists(receiptPath);
+    const pidExists = pathExists(pathsValue.qemuPid);
+    if (!receiptExists) {
+        if (started && !attempted && !pidExists)
+            return Object.freeze({cleanupProven: true, status: "known-no-launch"});
+        if (!started && !attempted && !pidExists &&
+            (dependencies.readRejectedBeforeLaunchResult ?? defaultReadRejectedBeforeLaunchResult)(
+                pathsValue.controllerResult, pathsValue.nonce) === true)
+            return Object.freeze({cleanupProven: true, status: "known-no-launch"});
+        if (attempted || pidExists) throw new Error("QEMU cleanup authority is absent after a possible launch");
+        throw new Error("QEMU cleanup no-launch proof is absent");
+    }
+    const cleanupModule = await import("./linux-windows-cpu-floor-stage3-cleanup.mjs");
+    const receipt = (dependencies.readCleanupAuthorityReceipt ?? cleanupModule.readCpuFloorCleanupAuthorityReceipt)(receiptPath);
+    if (!Array.isArray(receipt.authorities) || receipt.authorities.length < 1)
+        throw new Error("QEMU cleanup authority is empty");
+    const proof = await (dependencies.cleanupTaskOwnedCpuProcesses ?? cleanupModule.cleanupTaskOwnedCpuProcesses)({
+        authorities: receipt.authorities,
+        deadlineMilliseconds: cleanupModule.CPU_FLOOR_CLEANUP_CONSTANTS.DEFAULT_CLEANUP_MILLISECONDS
+    }, dependencies.cleanupOperations ?? createHostedCpuFloorCleanupOperations());
+    if (proof.cleanupProven !== true) throw new Error("QEMU cleanup was not proven");
+    return proof;
 }
 
 function validateRequest(request) {
@@ -119,12 +237,15 @@ function validateRequest(request) {
         "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
-        "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+        STAGE2_MODULE,
         "scripts/qualification/linux-kvm-capability.mjs",
         "scripts/qualification/linux-kvm-privileged-capability.mjs",
         "scripts/qualification/windows-msi-post-setup-activation.mjs"];
-    const diagnosticClosureNames = [...baseClosureNames,
-        "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs"];
+    const stage2ModuleIndex = baseClosureNames.indexOf(STAGE2_MODULE);
+    if (stage2ModuleIndex < 0) throw new Error("Stage 2 closure member is absent");
+    const diagnosticClosureNames = [...baseClosureNames.slice(0, stage2ModuleIndex + 1),
+        "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs",
+        ...baseClosureNames.slice(stage2ModuleIndex + 1)];
     const closureNames = request.closure?.files?.length === diagnosticClosureNames.length
         ? diagnosticClosureNames
         : baseClosureNames;
@@ -191,6 +312,8 @@ export async function runHostedStage2Controller(requestValue, dependencies = {})
         fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL));
     mkdir(request.paths.root);
     mkdir(request.paths.probeRoot);
+    if (request.authorization.winpeDiagnostic !== undefined)
+        (dependencies.markControllerStarted ?? (target => writeLifecycleMarker(target, CONTROLLER_STARTED_MARKER)))(request.paths.root);
     const staged = [request.probeStage.archive, request.probeStage.result, ...request.probeStage.files];
     for (const record of staged) {
         const maximumBytes = record === request.probeStage.archive ? MAX_PROBE_ARCHIVE_BYTES : MAX_EVIDENCE_BYTES;
@@ -222,6 +345,8 @@ export async function runHostedStage2Controller(requestValue, dependencies = {})
         admit();
         return {winpeDiagnostic: request.authorization.winpeDiagnostic, admitWinpeDiagnostic: admit};
     })();
+    if (request.authorization.winpeDiagnostic !== undefined)
+        (dependencies.markLaunchAttempt ?? (target => writeLifecycleMarker(target, LAUNCH_ATTEMPT_MARKER)))(request.paths.root);
     return await run({context, admission, paths: request.paths, probeArtifact: request.probeArtifact,
         ...(request.authorization.bootConfirmation === undefined ? {} :
             {bootConfirmation: request.authorization.bootConfirmation}), ...diagnostic}, operations);

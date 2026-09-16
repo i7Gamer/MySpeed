@@ -200,7 +200,8 @@ function operations(overrides = {}) {
             sourceIsoSha256: "4".repeat(64), bytes: "5000000000", sha256: "5".repeat(64)}; },
         async inspectInstallWim(input) { calls.push("inspect-wim"); return {images: imageInventory(),
             removal: {path: input.installWim.path, sha256: input.installWim.sha256, removed: true}}; },
-        async prepareOfflineMedia(input) { calls.push("prepare-media"); seen.seedSpec = input.seedSpec; return {seedIso: {path: input.paths.seedIso,
+        async prepareOfflineMedia(input) { calls.push("prepare-media"); seen.seedSpec = input.seedSpec;
+            seen.media = input; return {seedIso: {path: input.paths.seedIso,
             bytes: "1048576", sha256: "8".repeat(64), sourceManifestSha256: input.seedSpec.sha256,
             format: "iso9660", volumeLabel: "MYSPEEDSEED"}, outputDisk: {path: input.paths.outputDisk,
             bytes: "67108864", sha256: "0".repeat(64), format: "raw-fat", volumeLabel: "MYSPEEDOUT"}, systemDisk: {path: input.paths.systemDisk,
@@ -1255,6 +1256,7 @@ describe("hosted Windows CPU-floor Stage 2 WinPE answer-file diagnostic", () => 
         const plainNames = plain.seen.seedSpec.files.map(file => file.name);
         assert.equal(plainNames.includes("seed.tag"), false);
         assert.equal(plainNames.some(name => /^[a-f0-9]{8}\.cmd$/u.test(name)), false);
+        assert.equal(plain.seen.media.winpeDiagnostic, undefined);
 
         const fixture = diagnosticOperations();
         await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
@@ -1263,6 +1265,7 @@ describe("hosted Windows CPU-floor Stage 2 WinPE answer-file diagnostic", () => 
         const names = fixture.seen.seedSpec.files.map(file => file.name);
         assert.equal(names.includes("seed.tag"), true);
         assert.equal(names.filter(name => /^[a-f0-9]{8}\.cmd$/u.test(name)).length, 1);
+        assert.deepEqual(fixture.seen.media.winpeDiagnostic, DIAGNOSTIC_AUTHORIZATION);
         /* Everything the ordinary seed carried is still there, in the same order. */
         assert.deepEqual(names.slice(0, plainNames.length), plainNames);
         const script = fixture.seen.seedSpec.files.find(file => /^[a-f0-9]{8}\.cmd$/u.test(file.name));

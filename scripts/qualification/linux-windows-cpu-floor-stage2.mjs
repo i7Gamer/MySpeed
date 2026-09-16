@@ -1514,8 +1514,9 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         const activation = buildPostSetupActivation(context);
         const seedSpec = buildSeedSpec(selectedImage, context, probes, activation, diagnosticAuthorization);
         const media = validatePreparedMedia(await operations.prepareOfflineMedia({context, paths: checkedPaths,
-            toolchain, probes, selectedImage, seedSpec, transfer: STAGE2_PROVENANCE.transfer}), checkedPaths,
-        seedSpec, toolchain);
+            toolchain, probes, selectedImage, seedSpec, transfer: STAGE2_PROVENANCE.transfer,
+            ...(diagnosticAuthorization === undefined ? {} : {winpeDiagnostic: diagnosticAuthorization})}),
+        checkedPaths, seedSpec, toolchain);
         const argv = buildQemuArguments({paths: checkedPaths, toolchain});
         stage = "qemu-launch";
         /*

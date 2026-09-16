@@ -6,7 +6,8 @@ import path from "node:path";
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
-    validateWindowsSystemTools} from "./linux-windows-cpu-floor-stage2.mjs";
+    WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
+    winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
@@ -2227,6 +2228,9 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 removed: true}};
         },
         async prepareOfflineMedia(input) {
+            const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input.winpeDiagnostic);
+            if (winpeDiagnostic !== undefined && winpeDiagnostic.nonce !== context.nonce)
+                throw new TypeError("WinPE diagnostic media authorization is not bound to this run");
             const seedRoot = directChild(input.paths.root, `${input.paths.root}/seed-files`, "seed-files");
             io.mkdirExclusive(seedRoot);
             for (const file of input.seedSpec.files) {
@@ -2265,6 +2269,23 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 ["-i", input.paths.outputDisk, "-v", "MYSPEEDOUT", "::"]);
             assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
                 {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest output FAT creation");
+            if (winpeDiagnostic !== undefined) {
+                const marker = Buffer.from(`${winpeDiagnosticOutputMarker(winpeDiagnostic.nonce)}\r\n`, "ascii");
+                const markerPath = directChild(input.paths.root,
+                    `${input.paths.root}/winpe-output-marker`, "winpe-output-marker");
+                io.writeExclusive(markerPath, marker);
+                invocation = portableInvocation(input.toolchain, input.toolchain.mcopy,
+                    ["-i", input.paths.outputDisk, markerPath, `::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`]);
+                assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
+                    {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "WinPE output marker creation");
+                invocation = portableInvocation(input.toolchain, input.toolchain.mcopy,
+                    ["-i", input.paths.outputDisk, `::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`, "-"]);
+                const verified = assertSuccessful(await io.runOwned(invocation.command, invocation.argv,
+                    {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS, maxStreamBytes: marker.length}),
+                "WinPE output marker verification");
+                if (!verified.stdout.equals(marker) || verified.stderr.length !== 0)
+                    throw new Error("WinPE output marker identity differs");
+            }
             invocation = portableInvocation(input.toolchain, input.toolchain.qemuImg,
                 ["create", "-f", "qcow2", input.paths.systemDisk, "48G"]);
             assertSuccessful(await io.runOwned(invocation.command, invocation.argv,

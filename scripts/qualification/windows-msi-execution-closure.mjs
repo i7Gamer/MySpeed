@@ -60,6 +60,7 @@ export const WINDOWS_MSI_CONTROLLER_IMPORT_CLOSURE = Object.freeze([
     "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
     "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
     "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+    "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs",
     "scripts/qualification/linux-windows-msi-lifecycle-host.mjs",
     "scripts/qualification/windows-baseline-guest-fixture-bundle.mjs",
     "scripts/qualification/windows-baseline-guest-runtime-bundle.mjs",

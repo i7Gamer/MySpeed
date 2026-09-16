@@ -71,6 +71,17 @@ jobs:
         shell: bash
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Install and verify the required real FAT tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          /usr/bin/timeout --signal=TERM --kill-after=10s 120s sudo /usr/bin/apt-get update
+          /usr/bin/timeout --signal=TERM --kill-after=10s 120s sudo /usr/bin/apt-get install --yes --no-install-recommends mtools
+          mformat="$('/usr/bin/readlink' -f -- /usr/bin/mformat)"
+          mcopy="$('/usr/bin/readlink' -f -- /usr/bin/mcopy)"
+          test -x "$mformat"
+          test -x "$mcopy"
+
       - name: Run pure and injected closure tests
         shell: bash
         run: |
@@ -402,6 +413,7 @@ jobs:
           const request = {schemaVersion: 1, context, closure: {root: closureRoot, files}, authorization: {
             confirmation: "RUN-CANDIDATE-NEUTRAL-STAGE2", media: true, qemu: true,
             scope: "candidate-neutral-cpu-calibration",
+            bootConfirmation: "single-enter-after-first-frame-v2",
             winpeDiagnostic: {confirmation: "winpe-answer-file-diagnostic-v1", nonce: context.nonce}},
             winpeDiagnosticBudget: {label: "winpe-answer-file-diagnostic",
               wallDeadlineUnixMilliseconds: Number(process.env.WINPE_WALL_DEADLINE_MILLISECONDS)},
@@ -443,26 +455,16 @@ jobs:
         run: |
           set -euo pipefail
           node --input-type=module <<'NODE'
-          import fs from "node:fs";
           import path from "node:path";
           import {pathToFileURL} from "node:url";
           const nonce = process.env.EXPECTED_NONCE;
           const closureRoot = path.join(process.env.RUNNER_TEMP, `myspeed-stage2-closure-${nonce}`);
-          const {readCpuFloorCleanupAuthorityReceipt, cleanupTaskOwnedCpuProcesses, CPU_FLOOR_CLEANUP_CONSTANTS} =
-            await import(pathToFileURL(path.join(closureRoot, "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs")));
-          const {createHostedCpuFloorCleanupOperations} = await import(pathToFileURL(path.join(closureRoot,
-            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs")));
+          const {verifyWinpeDiagnosticCleanup} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs")));
           const taskRoot = path.join(process.env.RUNNER_TEMP, `myspeed-windows-cpu-floor-${nonce}`);
-          const receipt = path.join(taskRoot, "cleanup-authority.json");
-          const authorities = [];
-          if (fs.existsSync(receipt)) {
-            authorities.push(...readCpuFloorCleanupAuthorityReceipt(receipt).authorities);
-          } else if (fs.existsSync(path.join(taskRoot, "qemu.pid"))) {
-            throw new Error("QEMU cleanup authority is absent; refusing PID-only signalling");
-          }
-          const proof = await cleanupTaskOwnedCpuProcesses({authorities,
-            deadlineMilliseconds: CPU_FLOOR_CLEANUP_CONSTANTS.DEFAULT_CLEANUP_MILLISECONDS},
-            createHostedCpuFloorCleanupOperations());
+          const transportRoot = path.join(process.env.RUNNER_TEMP, `myspeed-winpe-diagnostic-transport-${nonce}`);
+          const proof = await verifyWinpeDiagnosticCleanup({root: taskRoot, nonce, qemuPid: path.join(taskRoot, "qemu.pid"),
+            controllerResult: path.join(transportRoot, "diagnostic-result.json")});
           if (proof.cleanupProven !== true) throw new Error("QEMU cleanup was not proven");
           NODE
 

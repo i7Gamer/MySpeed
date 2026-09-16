@@ -33,8 +33,11 @@ import {
     runHostedOwnedProcess,
     runMonitoredQemu
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
-import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS} from
+import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS,
+    WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, winpeDiagnosticOutputMarker} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {WINPE_DIAGNOSTIC_CONFIRMATION} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
     "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
@@ -1193,6 +1196,100 @@ describe("hosted Stage 2 native adapter preparation", () => {
             assert.ok(calls.some(([, argv]) => argv[0] === "--argv0" &&
                 argv[1] === `${paths().portableRoot}/usr/bin/${role}` && argv.includes(toolchain[role].path)));
         }
+        assert.equal(calls.some(([, argv]) => argv.includes(`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`)), false,
+            "ordinary media creation must not write the diagnostic-only output marker");
+    });
+
+    it("places and verifies the nonce-bound WinPE output marker on the production FAT disk", async () => {
+        const marker = Buffer.from(`${winpeDiagnosticOutputMarker(NONCE)}\r\n`, "ascii");
+        const calls = [], writes = new Map();
+        const tool = name => commandIdentity(`${paths().portableRoot}/usr/bin/${name}`);
+        const toolchain = {runtime: {loader: rootFileIdentity(
+            `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+        libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]}, genisoimage: tool("genisoimage"),
+        sevenZip: commandIdentity(`${paths().portableRoot}/usr/lib/7zip/7z`), mformat: tool("mformat"),
+        mcopy: tool("mcopy"), qemuImg: tool("qemu-img"),
+        ovmfVarsTemplate: rootFileIdentity(`${paths().portableRoot}/usr/share/OVMF/OVMF_VARS_4M.fd`)};
+        const identity = target => ({path: target, bytes: target.endsWith("output.img") ? "67108864" :
+            target.endsWith("bootstrap.ps1") ? "1" : "4096", sha256: target.endsWith("bootstrap.ps1") ?
+            crypto.createHash("sha256").update("x").digest("hex") : "a".repeat(64),
+            ownership: {uid: "0", gid: "0", mode: "555",
+                ordinaryUserWritable: false}});
+        const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+            mkdirExclusive: () => undefined, makeSizedFile: () => undefined, copyExclusive: () => undefined,
+            writeExclusive: (target, bytes) => { writes.set(target, Buffer.from(bytes)); },
+            inspectOwned: identity, inspectDirectory: directoryIdentity, pathExists: () => false,
+            runOwned: async (command, argv, options) => {
+                calls.push({command, argv, options});
+                const stdout = argv.includes("info") ? Buffer.from(JSON.stringify({format: "qcow2",
+                    "virtual-size": 51_539_607_552})) :
+                    argv.includes(`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`) && argv.at(-1) === "-" ?
+                        marker : Buffer.alloc(0);
+                return {process: okProcess, stdout, stderr: Buffer.alloc(0)};
+            }
+        }});
+        const inline = Buffer.from("x");
+        await adapter.prepareOfflineMedia({paths: paths(), toolchain, winpeDiagnostic: {
+            confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: NONCE}, seedSpec: {sha256: "b".repeat(64), files: [{
+            name: "bootstrap.ps1", kind: "activation-installer", bytes: "1",
+            sha256: crypto.createHash("sha256").update(inline).digest("hex"),
+            bytesBase64: inline.toString("base64")}]}});
+        const markerFile = [...writes.entries()].find(([, bytes]) => bytes.equals(marker));
+        assert.ok(markerFile, "the exact marker must be staged before mcopy");
+        const markerWrites = calls.filter(call => call.argv.includes(`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`));
+        assert.equal(markerWrites.length, 2, "mcopy must write and then read back the sole allowed marker");
+        assert.deepEqual(markerWrites[0].argv.slice(-2), [markerFile[0], `::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`]);
+        assert.deepEqual(markerWrites[1].argv.slice(-2), [`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`, "-"]);
+        assert.equal(markerWrites[1].options.maxStreamBytes, marker.length);
+    });
+
+    it("rejects unbound, unwritable, and mismatched diagnostic output markers before QEMU media exists", async () => {
+        const marker = Buffer.from(`${winpeDiagnosticOutputMarker(NONCE)}\r\n`, "ascii");
+        const tool = name => commandIdentity(`${paths().portableRoot}/usr/bin/${name}`);
+        const toolchain = {runtime: {loader: rootFileIdentity(
+            `${paths().portableRoot}/usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+        libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]}, genisoimage: tool("genisoimage"),
+        sevenZip: commandIdentity(`${paths().portableRoot}/usr/lib/7zip/7z`), mformat: tool("mformat"),
+        mcopy: tool("mcopy"), qemuImg: tool("qemu-img"),
+        ovmfVarsTemplate: rootFileIdentity(`${paths().portableRoot}/usr/share/OVMF/OVMF_VARS_4M.fd`)};
+        const inline = Buffer.from("x");
+        const seedSpec = {sha256: "b".repeat(64), files: [{name: "bootstrap.ps1",
+            kind: "activation-installer", bytes: "1", sha256: crypto.createHash("sha256").update(inline).digest("hex"),
+            bytesBase64: inline.toString("base64")}]};
+        const run = async ({authorization = {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: NONCE},
+            readback = marker, writeProcess = okProcess} = {}) => {
+            const calls = [];
+            const identity = target => ({path: target, bytes: target.endsWith("output.img") ? "67108864" :
+                target.endsWith("bootstrap.ps1") ? "1" : "4096", sha256: target.endsWith("bootstrap.ps1") ?
+                crypto.createHash("sha256").update("x").digest("hex") : "a".repeat(64),
+                ownership: {uid: "0", gid: "0", mode: "555", ordinaryUserWritable: false}});
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                mkdirExclusive: () => undefined, makeSizedFile: () => undefined, copyExclusive: () => undefined,
+                writeExclusive: () => undefined, inspectOwned: identity, inspectDirectory: directoryIdentity,
+                pathExists: () => false, runOwned: async (command, argv, options) => {
+                    calls.push({command, argv, options});
+                    const markerRead = argv.includes(`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`) && argv.at(-1) === "-";
+                    const markerWrite = argv.includes(`::${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}`) && !markerRead;
+                    return {process: markerWrite ? writeProcess : okProcess,
+                        stdout: markerRead ? readback : argv.includes("info") ? Buffer.from(JSON.stringify({format: "qcow2",
+                            "virtual-size": 51_539_607_552})) : Buffer.alloc(0), stderr: Buffer.alloc(0)};
+                }
+            }});
+            const preparation = adapter.prepareOfflineMedia({paths: paths(), toolchain, winpeDiagnostic: authorization, seedSpec});
+            return {calls, preparation};
+        };
+        const foreign = await run({authorization: {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: "f".repeat(32)}});
+        await assert.rejects(foreign.preparation, /not bound/u);
+        assert.deepEqual(foreign.calls, []);
+        for (const readback of [Buffer.from("changed\r\n", "ascii"), marker.subarray(0, marker.length - 1),
+            Buffer.concat([marker, Buffer.from("extra", "ascii")])]) {
+            const attempt = await run({readback});
+            await assert.rejects(attempt.preparation, /marker identity differs/u);
+            assert.equal(attempt.calls.some(call => call.argv.includes("create") && call.argv.includes("qcow2")), false);
+        }
+        const failedWrite = await run({writeProcess: {...okProcess, exitCode: 1}});
+        await assert.rejects(failedWrite.preparation, /marker creation did not complete safely/u);
+        assert.equal(failedWrite.calls.some(call => call.argv.includes("create") && call.argv.includes("qcow2")), false);
     });
 
     it("validates output disk with lexical lstat and descriptor fstat O_NOFOLLOW binding pre-launch identity", () => {

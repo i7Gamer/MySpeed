@@ -188,14 +188,29 @@ describe("hosted Stage 2 controller", () => {
             {platform: "win32", architecture: "x64"}), /actual hosted runtime/u);
     });
 
-    it("accepts the sealed nine-module diagnostic closure including stage3 cleanup", async () => {
+    it("accepts the workflow-sealed nine-module diagnostic closure in its real manifest order", async () => {
         const {request, contents} = fixture();
         const closureRoot = `/home/runner/work/_temp/myspeed-stage2-closure-${context.nonce}`;
-        const cleanupModule = "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs";
-        contents.set(`${closureRoot}/${cleanupModule}`, Buffer.from("closure-cleanup"));
-        request.closure.files.push(identity(`${closureRoot}/${cleanupModule}`, Buffer.from("closure-cleanup")));
+        const diagnosticClosureNames = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs",
+            "scripts/qualification/linux-kvm-capability.mjs",
+            "scripts/qualification/linux-kvm-privileged-capability.mjs",
+            "scripts/qualification/windows-msi-post-setup-activation.mjs"];
+        for (const name of diagnosticClosureNames) {
+            const target = `${closureRoot}/${name}`;
+            if (!contents.has(target)) contents.set(target, Buffer.from(`closure-${name}`));
+        }
+        request.authorization.winpeDiagnostic = {confirmation: "winpe-answer-file-diagnostic-v1", nonce: context.nonce};
+        request.winpeDiagnosticBudget = {label: "winpe-answer-file-diagnostic",
+            wallDeadlineUnixMilliseconds: Date.now() + 2_000_000};
+        request.closure.files = diagnosticClosureNames.map(name =>
+            identity(`${closureRoot}/${name}`, contents.get(`${closureRoot}/${name}`)));
         const changed = observations();
-        let executed = false;
+        const events = [];
         const result = await runHostedStage2Controller(request, {
             readVerified: target => {
                 const bytes = contents.get(target);
@@ -205,13 +220,14 @@ describe("hosted Stage 2 controller", () => {
             mkdirExclusive: () => {},
             copyExclusive: (source, target) => { contents.set(target, contents.get(source)); },
             operations: {},
+            markControllerStarted: () => events.push("controller-started"),
+            markLaunchAttempt: () => events.push("launch-attempt"),
             runStage2: async () => {
-                executed = true;
+                events.push("run-stage2");
                 return {status: "observed"};
             }
         });
-        assert.equal(executed, true);
+        assert.deepEqual(events, ["controller-started", "launch-attempt", "run-stage2"]);
         assert.equal(result.status, "observed");
     });
 });
-
