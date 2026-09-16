@@ -17,6 +17,10 @@
  * through an injected `identity`, which is what the workflow's own bounded reader supplies.
  */
 
+import {INSTALLER_BOOT_CONFIRMATION} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
+
+export {INSTALLER_BOOT_CONFIRMATION};
+
 /* Pinned by `validateStage2Paths`, which requires exactly this hosted temp root. */
 const RUNNER_TEMP = "/home/runner/work/_temp";
 const CLOSURE_PREFIX = `${RUNNER_TEMP}/myspeed-stage2-closure-`;
@@ -77,7 +81,7 @@ export const windowsMsiStage2Paths = nonce => {
         qemuPid: `${root}/qemu.pid`};
 };
 
-export const buildWindowsMsiStage2Request = ({context, probe, identity}) => {
+export const buildWindowsMsiStage2Request = ({context, probe, identity, bootConfirmation}) => {
     if (!isObject(context)) throw new TypeError("Stage 2 request context differs");
     if (typeof identity !== "function") throw new TypeError("Stage 2 request needs a file identity");
     if (!isObject(probe)) throw new TypeError("Stage 2 request probe artifact differs");
@@ -92,7 +96,8 @@ export const buildWindowsMsiStage2Request = ({context, probe, identity}) => {
     return {schemaVersion: SCHEMA_VERSION, context: structuredClone(context),
         closure: {root: closureRoot,
             files: WINDOWS_MSI_STAGE2_CLOSURE.map(name => identity(`${closureRoot}/${name}`))},
-        authorization: {confirmation: CONFIRMATION, media: true, qemu: true, scope: SCOPE},
+        authorization: {confirmation: CONFIRMATION, media: true, qemu: true, scope: SCOPE,
+            ...(bootConfirmation === undefined ? {} : {bootConfirmation})},
         paths: windowsMsiStage2Paths(context.nonce),
         kvm: {ordinary: identity(`${inputRoot}/ordinary.json`),
             combined: identity(`${inputRoot}/combined.json`)},

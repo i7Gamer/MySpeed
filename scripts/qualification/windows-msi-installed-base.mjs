@@ -3,6 +3,7 @@ import path from "node:path";
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {buildQemuArguments, validateEarlyBoot, validateStage2Paths, validateWindowsSystemTools} from
     "./linux-windows-cpu-floor-stage2.mjs";
+import {validateInstallerBootConfirmation} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
     "./windows-msi-post-setup-activation.mjs";
 
@@ -14,10 +15,10 @@ const STAGE2_CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibratio
 const STAGE2_SYSTEM_VIRTUAL_BYTES = "51539607552";
 const MAX_PROCESS_ID = 0x7fff_ffff;
 const MAX_START_TICKS_DIGITS = 24;
-const STAGE2_KEYS = ["argv", "classification", "cleanupProven", "context", "cpuCalibrationAccepted", "earlyBoot",
+const STAGE2_BASE_KEYS = Object.freeze(["argv", "classification", "cleanupProven", "context", "cpuCalibrationAccepted", "earlyBoot",
     "guest", "installWim", "installWimRemoval", "iso", "media", "packageClosure", "privilegeMode", "probeArtifact", "probes",
     "qemuProcess", "qualifying", "releaseGateCleared", "schemaVersion", "selectedImage", "stage", "status",
-    "toolchain"];
+    "toolchain"]);
 const QEMU_PROCESS_KEYS = ["cleanupProven", "exitCode", "launcherExecutablePath", "processGroupId", "qemuPid",
     "qemuPidAbsentAfter", "qemuStartTicks", "signal", "terminationReason", "timedOut", "treeGone"];
 const FILE_WRITE_BITS = 0o222;
@@ -116,7 +117,14 @@ function validateProcessIdentity(processGroupId, qemuPid, qemuStartTicks, label)
 }
 
 function validateStage2Evidence(value, expectedContext, checkedPaths) {
-    exactKeys(value, STAGE2_KEYS, "Stage 2 result");
+    const expectedKeys = [...STAGE2_BASE_KEYS];
+    if (Object.hasOwn(value ?? {}, "bootConfirmation")) {
+        validateInstallerBootConfirmation(value.bootConfirmation);
+        if (value.bootConfirmation === undefined)
+            throw new TypeError("Stage 2 boot confirmation is invalid");
+        expectedKeys.push("bootConfirmation");
+    }
+    exactKeys(value, expectedKeys, "Stage 2 result");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.stage !== "complete" ||
         value.classification !== STAGE2_CLASSIFICATION || value.qualifying !== false ||
         value.releaseGateCleared !== false || value.cpuCalibrationAccepted !== true || value.cleanupProven !== true ||
@@ -141,7 +149,7 @@ function validateStage2Evidence(value, expectedContext, checkedPaths) {
     exactString(value.media.systemDisk.bytes, POSITIVE_DECIMAL, "Stage 2 prepared system disk bytes");
     exactString(value.media.systemDisk.sha256, SHA256, "Stage 2 prepared system disk SHA-256");
     validateQemuProcess(value.qemuProcess, value.toolchain.runtime.loader.path);
-    validateEarlyBoot(value.earlyBoot, checkedPaths);
+    validateEarlyBoot(value.earlyBoot, checkedPaths, value.bootConfirmation);
     validateGuest(value.guest, checkedPaths.outputDisk, expectedContext);
     return value;
 }

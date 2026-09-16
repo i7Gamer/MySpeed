@@ -3,10 +3,13 @@ import crypto from "node:crypto";
 import {describe, it} from "node:test";
 
 import {
+    admitStage3Reservation,
+    anchorStage3JobBudget,
     buildBaselineQemuArguments,
     runWindowsCpuFloorStage3,
     validateBaselineGuestResult,
-    validateCompletedStage3Result
+    validateCompletedStage3Result,
+    STAGE3_BUDGET_CONSTANTS
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {PACKAGE_ROOTS, STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS,
     buildQemuArguments as buildStage2QemuArguments,
@@ -181,9 +184,16 @@ const stage2Paths = () => ({root: STAGE2_ROOT, packageRoot: `${STAGE2_ROOT}/pack
     serialLog: `${STAGE2_ROOT}/serial.log`, probeRoot: `${STAGE2_ROOT}/probes`,
     qemuPid: `${STAGE2_ROOT}/qemu.pid`});
 
+const WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
+const budget = () => ({label: "cpu-floor-stage3-baseline",
+    wallDeadlineUnixMilliseconds: WALL_DEADLINE_MILLISECONDS});
+const reservationProof = () => ({label: "cpu-floor-stage3-baseline",
+    executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000});
+
 const request = () => ({schemaVersion: 1, context: context(), profile: "baseline-cpu",
     authorization: {scope: "windows-baseline-cpu-floor-full-runtime", qemu: true, candidate: true,
-        confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"}, stage2: stage2(), candidate: candidate(), paths: paths()});
+        confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"}, budget: budget(), stage2: stage2(),
+    candidate: candidate(), paths: paths()});
 
 const fullSummary = () => ({status: "passed", exit: 0, mode: "full", sourceSha: CANDIDATE_SOURCE_SHA,
     artifactSha256: SHA("d"), platform: "win32", architecture: "x64",
@@ -259,7 +269,7 @@ function operations(overrides = {}) {
             systemDisk: {...identity("stage3.qcow2", "a", 8_388_608), virtualBytes: "51539607552"},
             ovmfVars: identity("OVMF_VARS.fd", "b")}; },
         async launchBaselineGuest(input) { calls.push("launch"); return {argv: input.argv,
-            process: processProof(), earlyBoot: earlyBootObservation(),
+            process: processProof(), earlyBoot: earlyBootObservation(), reservation: reservationProof(),
             outputDisk: identity("baseline-output.img", "0", 67_108_864)}; },
         async collectBaselineGuestResult() { calls.push("collect"); return collectedGuestResult(); },
         ...overrides
@@ -608,6 +618,7 @@ describe("Windows CPU-floor Stage 3 boot policy", () => {
                 const observation = earlyBootObservation();
                 mutate(observation);
                 return {argv: input.argv, process: processProof(), earlyBoot: observation,
+                    reservation: reservationProof(),
                     outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
             const result = await runWindowsCpuFloorStage3(request(), fixture.value);
             assert.equal(result.status, "failed");
@@ -620,7 +631,7 @@ describe("Windows CPU-floor Stage 3 boot policy", () => {
             requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true};
         for (const inputSent of [stage2Confirmation, true, null, undefined]) {
             const fixture = operations({async launchBaselineGuest(input) {
-                return {argv: input.argv, process: processProof(),
+                return {argv: input.argv, process: processProof(), reservation: reservationProof(),
                     earlyBoot: {...earlyBootObservation(), inputSent},
                     outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
             const result = await runWindowsCpuFloorStage3(request(), fixture.value);
@@ -635,6 +646,7 @@ describe("Windows CPU-floor Stage 3 boot policy", () => {
             requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true};
         const fixture = operations({async launchBaselineGuest(input) {
             return {argv: input.argv, process: processProof(), earlyBoot: {...earlyBootObservation(), inputSent},
+                reservation: reservationProof(),
                 outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
         const result = await runWindowsCpuFloorStage3(authorized, fixture.value);
         assert.equal(result.status, "observed", result.failure);
@@ -663,5 +675,238 @@ describe("Windows CPU-floor Stage 3 boot policy", () => {
         mutated.earlyBoot.screenshots[0].path = `${STAGE2_ROOT}/early-boot-1.png`;
         assert.throws(() => validateCompletedStage3Result(mutated, binding, retained),
             /early-boot screenshot is invalid/u);
+    });
+});
+
+/*
+ * The job anchor. The workflow's own first shell step cannot say when the job started - runner and
+ * job setup happen before it - so the ceiling is anchored to the authenticated start of this job,
+ * and a delayed start is charged rather than refunded.
+ */
+describe("Windows CPU-floor Stage 3 job budget anchor", () => {
+    const MINUTE = 60_000;
+    const START = Date.parse("2026-09-16T12:00:00Z");
+    const clock = value => () => value;
+    const job = (overrides = {}) => ({name: "Execute Stage 3 sequence under KVM", run_id: 42, run_attempt: 3,
+        runner_name: "GitHub Actions 7", status: "in_progress", started_at: "2026-09-16T12:00:00Z", ...overrides});
+    const request = (overrides = {}) => ({jobs: [job()], totalCount: 1,
+        jobName: "Execute Stage 3 sequence under KVM", runId: "42", runAttempt: "3",
+        runnerName: "GitHub Actions 7", ...overrides});
+
+    it("anchors the ceiling to the authenticated job start rather than to the step that reads it", () => {
+        const delayed = START + 9 * MINUTE;
+        const anchor = anchorStage3JobBudget(request(), clock(delayed));
+
+        assert.equal(anchor.startedAtUnixMilliseconds, START);
+        assert.equal(anchor.hardStopUnixMilliseconds,
+            START + STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS);
+        // A fresh clock would have handed the sequence those nine minutes back.
+        assert.equal(anchor.remainingMilliseconds,
+            anchor.wallDeadlineUnixMilliseconds - delayed);
+        assert.ok(anchor.remainingMilliseconds < STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS);
+    });
+
+    it("leaves the kill grace inside the deadline so escalation ends before the retention reserve", () => {
+        const anchor = anchorStage3JobBudget(request(), clock(START));
+
+        assert.equal(anchor.hardStopUnixMilliseconds - anchor.wallDeadlineUnixMilliseconds,
+            STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS);
+        // TERM at the wall deadline, KILL one grace later, and the full retention reserve still
+        // stands between that hard stop and the ceiling GitHub cancels the job at.
+        assert.equal(START + STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - anchor.hardStopUnixMilliseconds, STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS);
+        assert.equal(anchor.wallDeadlineUnixMilliseconds, START
+            + STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS);
+    });
+
+    it("admits exactly down to the minimum a sequence needs and refuses the millisecond below it", () => {
+        const deadline = START + STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS;
+        const latest = deadline - STAGE3_BUDGET_CONSTANTS.MINIMUM_SEQUENCE_MILLISECONDS;
+
+        assert.equal(anchorStage3JobBudget(request(), clock(latest)).remainingMilliseconds,
+            STAGE3_BUDGET_CONSTANTS.MINIMUM_SEQUENCE_MILLISECONDS);
+        assert.throws(() => anchorStage3JobBudget(request(), clock(latest + 1)),
+            /Stage 3 job budget leaves/u);
+    });
+
+    it("refuses an expired anchor rather than opening a budget the job cannot hold", () => {
+        for (const spent of [STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS, 80 * MINUTE]) {
+            assert.throws(() => anchorStage3JobBudget(request(), clock(START + spent)),
+                /Stage 3 job budget leaves/u);
+        }
+    });
+
+    it("refuses metadata that is not unambiguously this job, this run and this attempt", () => {
+        for (const [broken, pattern] of [
+            [{jobs: [], totalCount: 0}, /ambiguous or absent/u],
+            [{jobs: [job(), job()], totalCount: 2}, /ambiguous or absent/u],
+            [{jobs: [job({name: "Prepare exact Windows inputs in this run"})]}, /ambiguous or absent/u],
+            [{jobs: [job({run_id: 43})]}, /ambiguous or absent/u],
+            [{jobs: [job({run_attempt: 2})]}, /ambiguous or absent/u],
+            [{jobs: [job({runner_name: "GitHub Actions 8"})]}, /ambiguous or absent/u],
+            [{jobs: [job({status: "completed"})]}, /ambiguous or absent/u],
+            [{jobs: [job(), null], totalCount: 2}, /job metadata is invalid/u],
+            [{totalCount: 2}, /job metadata is incomplete/u],
+            [{jobs: {}}, /job metadata is invalid/u],
+            [{jobs: new Array(101).fill(job()), totalCount: 101}, /job metadata is invalid/u],
+            [{runnerName: ""}, /job anchor request is invalid/u],
+            [{runId: "042"}, /job anchor request is invalid/u],
+            [{runAttempt: 3}, /job anchor request is invalid/u],
+            [{extra: true}, /job anchor request keys are invalid/u]]) {
+            assert.throws(() => anchorStage3JobBudget({...request(), ...broken}, clock(START + MINUTE)), pattern,
+                JSON.stringify(Object.keys(broken)));
+        }
+    });
+
+    it("refuses an unusable start timestamp instead of substituting a fresh clock", () => {
+        for (const started_at of [undefined, null, 17, "", "not-a-timestamp",
+            "2026-09-16T12:02:00Z", "2026-09-16T10:00:00Z"]) {
+            assert.throws(() => anchorStage3JobBudget({...request(), jobs: [job({started_at})]},
+                clock(START + MINUTE)), /Stage 3 job start is invalid/u);
+        }
+        for (const broken of [Number.NaN, -1, 1.5, "now"]) {
+            assert.throws(() => anchorStage3JobBudget(request(), clock(broken)),
+                /Stage 3 budget clock is invalid/u);
+        }
+    });
+
+    it("hands the sequence a deadline the launch admission can still tighten but never widen", () => {
+        const anchor = anchorStage3JobBudget(request(), clock(START + MINUTE));
+        const reservation = admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: anchor.wallDeadlineUnixMilliseconds}, clock(START + 10 * MINUTE));
+
+        assert.equal(reservation.executionMilliseconds,
+            STAGE3_BUDGET_CONSTANTS.EXECUTION_CEILING_MILLISECONDS);
+        assert.ok(START + 10 * MINUTE + reservation.executionMilliseconds + reservation.cleanupMilliseconds
+            < anchor.wallDeadlineUnixMilliseconds);
+        assert.ok(anchor.hardStopUnixMilliseconds
+            < START + STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS);
+    });
+});
+
+describe("Windows CPU-floor Stage 3 execution budget", () => {
+    const MINUTE = 60_000;
+    const clock = value => () => value;
+
+    it("sizes one bounded reservation from the wall deadline instead of the generic launcher allowance", () => {
+        const now = Date.parse("2026-09-16T12:00:00Z");
+        const admitted = admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + 80 * MINUTE}, clock(now));
+        assert.equal(admitted.label, STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL);
+        assert.equal(admitted.executionMilliseconds, STAGE3_BUDGET_CONSTANTS.EXECUTION_CEILING_MILLISECONDS);
+        assert.equal(admitted.cleanupMilliseconds, STAGE3_BUDGET_CONSTANTS.LAUNCH_CLEANUP_MILLISECONDS);
+        assert.ok(admitted.executionMilliseconds < 16_200_000);
+    });
+
+    it("charges the time already spent and keeps cleanup and collection out of the execution bound", () => {
+        const now = Date.parse("2026-09-16T12:00:00Z");
+        const remaining = 40 * MINUTE;
+        const admitted = admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + remaining}, clock(now));
+        assert.equal(admitted.executionMilliseconds, remaining
+            - STAGE3_BUDGET_CONSTANTS.LAUNCH_CLEANUP_MILLISECONDS
+            - STAGE3_BUDGET_CONSTANTS.COLLECTION_RESERVE_MILLISECONDS);
+        const later = admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + remaining}, clock(now + 10 * MINUTE));
+        assert.equal(later.executionMilliseconds, admitted.executionMilliseconds - 10 * MINUTE);
+    });
+
+    it("refuses to start a guest that cannot finish instead of launching one the deadline will kill", () => {
+        const now = Date.parse("2026-09-16T12:00:00Z");
+        const short = STAGE3_BUDGET_CONSTANTS.MINIMUM_EXECUTION_MILLISECONDS
+            + STAGE3_BUDGET_CONSTANTS.LAUNCH_CLEANUP_MILLISECONDS
+            + STAGE3_BUDGET_CONSTANTS.COLLECTION_RESERVE_MILLISECONDS;
+        assert.doesNotThrow(() => admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + short}, clock(now)));
+        assert.throws(() => admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + short - 1}, clock(now)), /Stage 3 execution budget/u);
+        assert.throws(() => admitStage3Reservation({label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now - 1}, clock(now)), /Stage 3 execution budget/u);
+    });
+
+    it("refuses a budget or a clock that could hand back time that was already spent", () => {
+        const now = Date.parse("2026-09-16T12:00:00Z");
+        const valid = {label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: now + 80 * MINUTE};
+        assert.throws(() => admitStage3Reservation({...valid, label: "generic"}, clock(now)),
+            /Stage 3 budget is invalid/u);
+        assert.throws(() => admitStage3Reservation({...valid, extra: 1}, clock(now)),
+            /Stage 3 budget keys are invalid/u);
+        assert.throws(() => admitStage3Reservation({...valid, wallDeadlineUnixMilliseconds: "later"}, clock(now)),
+            /Stage 3 budget is invalid/u);
+        assert.throws(() => admitStage3Reservation({...valid, wallDeadlineUnixMilliseconds: 0}, clock(now)),
+            /Stage 3 budget is invalid/u);
+        for (const broken of [Number.NaN, -1, 1.5, "now"]) {
+            assert.throws(() => admitStage3Reservation(valid, clock(broken)), /Stage 3 budget clock is invalid/u);
+        }
+    });
+
+    it("hands the request budget to the launch and records what the launcher was actually given", async () => {
+        const observed = [];
+        const fixture = operations({async launchBaselineGuest(input) {
+            observed.push(input.budget);
+            return {argv: input.argv, process: processProof(), earlyBoot: earlyBootObservation(),
+                reservation: reservationProof(), outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "observed", result.failure);
+        assert.deepEqual(observed, [budget()]);
+        assert.deepEqual(result.reservation, reservationProof());
+    });
+
+    it("refuses a launch that ignored the bound and took a wider allowance than Stage 3 may spend", async () => {
+        const cases = [
+            {...reservationProof(), executionMilliseconds: 16_200_000},
+            {...reservationProof(),
+                executionMilliseconds: STAGE3_BUDGET_CONSTANTS.EXECUTION_CEILING_MILLISECONDS + 1},
+            {...reservationProof(),
+                executionMilliseconds: STAGE3_BUDGET_CONSTANTS.MINIMUM_EXECUTION_MILLISECONDS - 1},
+            {...reservationProof(), cleanupMilliseconds: 40 * MINUTE},
+            {...reservationProof(), label: "generic"},
+            {...reservationProof(), extra: true},
+            undefined
+        ];
+        for (const reservation of cases) {
+            const fixture = operations({async launchBaselineGuest(input) {
+                return {argv: input.argv, process: processProof(), earlyBoot: earlyBootObservation(),
+                    reservation, outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+            const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+            assert.equal(result.status, "failed");
+            assert.match(result.failure, /Stage 3 (?:reservation|launch observation)/u);
+        }
+    });
+
+    it("refuses a Stage 3 request that declares no budget at all", async () => {
+        const {budget: _removed, ...unbounded} = request();
+        const fixture = operations();
+        const result = await runWindowsCpuFloorStage3(unbounded, fixture.value);
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /Stage 3 request keys are invalid/u);
+    });
+
+    it("revalidates the reservation when replaying a completed Stage 3 result", async () => {
+        const retained = Buffer.from(JSON.stringify(stage2Observation()), "utf8");
+        const binding = request();
+        binding.stage2.result = {...binding.stage2.result, bytes: String(retained.length),
+            sha256: crypto.createHash("sha256").update(retained).digest("hex")};
+        const fixture = operations({async launchBaselineGuest(input) {
+            return {argv: input.argv, process: processProof(), earlyBoot: earlyBootObservation(),
+                reservation: reservationProof(), outputDisk: identity("baseline-output.img", "0", 67_108_864)}; }});
+        const result = await runWindowsCpuFloorStage3(binding, fixture.value);
+        assert.equal(result.status, "observed", result.failure);
+        assert.equal(validateCompletedStage3Result(result, binding, retained).accepted, true);
+        const {reservation: _dropped, ...without} = result;
+        assert.throws(() => validateCompletedStage3Result(without, binding, retained),
+            /completed Stage 3 result keys are invalid/u);
+        assert.throws(() => validateCompletedStage3Result({...result,
+            reservation: {...reservationProof(), executionMilliseconds: 16_200_000}}, binding, retained),
+        /Stage 3 reservation is invalid/u);
     });
 });

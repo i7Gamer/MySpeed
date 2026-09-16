@@ -64,10 +64,10 @@ const baselineIdentity = (root, file, expectedRelativePath, harnessSourceSha) =>
 
 export async function runV161PostReleaseCpuFloorHostedInputs(input, dependencies = {}) {
     exactKeys(input, ["artifactRoot", "baselineArtifact", "baselineSummaryBytes", "closureRecords",
-        "hostedContext", "observedAt", "observedMsiPreparation", "probeArtifact", "probes", "roots"],
-    "hosted CPU-floor input");
+        "hostedContext", "observedAt", "observedMsiPreparation", "probeArtifact", "probes", "roots",
+        "stage3Plan"], "hosted CPU-floor input");
     const {observedMsiPreparation: observed, hostedContext, artifactRoot, baselineArtifact,
-        baselineSummaryBytes, observedAt, probeArtifact, probes, roots, closureRecords} = input;
+        baselineSummaryBytes, observedAt, probeArtifact, probes, roots, closureRecords, stage3Plan} = input;
     validateHostedContext(hostedContext);
     if (!observed?.target || observed.execution?.root !== artifactRoot || !path.isAbsolute(artifactRoot) ||
         observed.target.harness.sourceSha !== hostedContext.sourceSha)
@@ -126,9 +126,14 @@ export async function runV161PostReleaseCpuFloorHostedInputs(input, dependencies
     const makeStage2Closure = dependencies.makeStage2Closure ?? stage2ClosureFromStage3Closure;
     makeStage2Closure(roots.closure, roots.stage2Closure);
     const launch = dependencies.launch ?? executeStage3Launcher;
+    /*
+     * The run's own two decisions, carried unchanged: the launcher hands the same plan to the request
+     * it dispatches and to the one it re-derives for the consumer. The builder is the only thing that
+     * judges it, so an unknown policy is refused there rather than silently defaulted here.
+     */
     const result = await launch({closureRoot: roots.closure, closureRecords, transportRoot: roots.transport,
-        envelopeRoot: roots.envelope, binding, acquired, probeArtifact, guestFiles: preparedGuest.files},
-    dependencies.launchDependencies);
+        envelopeRoot: roots.envelope, binding, acquired, plan: stage3Plan, probeArtifact,
+        guestFiles: preparedGuest.files}, dependencies.launchDependencies);
     if (result?.accepted !== true) throw new Error("Stage 3 consumer did not accept the execution");
     return result;
 }

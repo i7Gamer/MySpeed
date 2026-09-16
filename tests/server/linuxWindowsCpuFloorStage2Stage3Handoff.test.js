@@ -42,6 +42,9 @@ const ROOT_STAGE2 = `/home/runner/work/_temp/myspeed-windows-cpu-floor-${NONCE}`
 const ROOT_STAGE3 = `/home/runner/work/_temp/myspeed-stage3-${NONCE}`;
 const PORTABLE_ROOT = `/tmp/myspeed-windows-cpu-floor-tools-${NONCE}`;
 const TRANSPORT_ROOT = `/home/runner/work/_temp/myspeed-stage2-transport-${NONCE}`;
+const STAGE3_WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
+const STAGE3_RESERVATION = Object.freeze({label: "cpu-floor-stage3-baseline",
+    executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000});
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 
 function context() {
@@ -509,6 +512,8 @@ async function runHandoffPipeline({
             candidate: true,
             confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"
         },
+        budget: {label: STAGE3_RESERVATION.label,
+            wallDeadlineUnixMilliseconds: STAGE3_WALL_DEADLINE_MILLISECONDS},
         stage2: {
             result: stage2Identity,
             guestResult: stage2GuestIdentity
@@ -592,6 +597,7 @@ async function runHandoffPipeline({
                     screenshots: [1, 2].map(index => ({path: `${s3Paths.root}/early-boot-${index}.png`,
                         bytes: String(PNG.length), sha256: HASH(PNG), bytesBase64: PNG.toString("base64")}))
                 },
+                reservation: {...STAGE3_RESERVATION},
                 outputDisk: {path: `${s3Paths.root}/baseline-output.img`, bytes: "67108864", sha256: SHA("0")}
             };
         },

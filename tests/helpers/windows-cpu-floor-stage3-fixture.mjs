@@ -12,6 +12,9 @@ const DEFAULT_CANDIDATE_SOURCE_SHA = "4".repeat(40);
 const DEFAULT_EVENT_SHA = "3".repeat(40);
 const DEFAULT_NONCE = "2".repeat(32);
 const OUTPUT_DISK_BYTES = 67_108_864;
+const DEFAULT_WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
+const DEFAULT_EXECUTION_MILLISECONDS = 55 * 60_000;
+const DEFAULT_CLEANUP_MILLISECONDS = 2 * 60_000;
 const SHA = character => character.repeat(64);
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
 const PNG_HASH = crypto.createHash("sha256").update(PNG).digest("hex");
@@ -170,10 +173,15 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
         file: {name: "MySpeed.exe", bytes: "524288", sha256: SHA("d")},
         qualificationSummary: {name: "qualification-summary.json", bytes: "8192", sha256: SHA("e")},
         manifest: {name: "qualification-manifest.json", bytes: "65536", sha256: SHA("f")}});
+    const budget = structuredClone(overrides.budget ?? {label: "cpu-floor-stage3-baseline",
+        wallDeadlineUnixMilliseconds: DEFAULT_WALL_DEADLINE_MILLISECONDS});
+    const reservation = {label: budget.label, executionMilliseconds: DEFAULT_EXECUTION_MILLISECONDS,
+        cleanupMilliseconds: DEFAULT_CLEANUP_MILLISECONDS};
     const request = {schemaVersion: 1, context, profile: "baseline-cpu",
         authorization: {scope: "windows-baseline-cpu-floor-full-runtime", qemu: true, candidate: true,
-            confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR"},
-        stage2: {result: stage2Identity, guestResult: stage2GuestIdentity}, candidate, paths: stage3Paths};
+            confirmation: "RUN-WINDOWS-BASELINE-CPU-FLOOR",
+            ...(overrides.bootConfirmation === undefined ? {} : {bootConfirmation: overrides.bootConfirmation})},
+        budget, stage2: {result: stage2Identity, guestResult: stage2GuestIdentity}, candidate, paths: stage3Paths};
     const expected = {ping: "123.456", resultId: "qualification-seed-row", passwordValueSha256: SHA("6")};
     const summary = {status: "passed", exit: 0, mode: "full", sourceSha: candidate.sourceSha,
         artifactSha256: candidate.file.sha256, platform: "win32", architecture: "x64",
@@ -202,7 +210,10 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
     const guestEvidence = {identity: {path: `${root}/baseline-result.json`, bytes: String(guestEncoding.bytes.length),
         sha256: guestEncoding.sha256}, bytesBase64: guestEncoding.bytesBase64, result: guest,
         sourceOutputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("0")}};
-    const stage3EarlyBoot = () => ({schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent: false,
+    const inputSent = overrides.bootConfirmation === undefined ? false
+        : {kind: "installer-boot-confirmation", qcode: "ret", holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true};
+    const stage3EarlyBoot = () => ({schemaVersion: 1, kind: "qemu-early-boot-observation", inputSent,
         version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
         screenshots: [1, 2].map(index => ({path: `${root}/early-boot-${index}.png`, bytes: String(PNG.length),
             sha256: PNG_HASH, bytesBase64: PNG.toString("base64")}))});
@@ -220,6 +231,7 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
         systemDisk: {path: stage3Paths.systemDisk, bytes: "8388608", sha256: SHA("a"),
             virtualBytes: "51539607552"}, ovmfVars: {path: stage3Paths.ovmfVars, bytes: "4096", sha256: SHA("b")}}; },
     async launchBaselineGuest(input) { return {argv: input.argv, process, earlyBoot: stage3EarlyBoot(),
+        reservation: structuredClone(reservation),
         outputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("0")}}; },
     async collectBaselineGuestResult() { return guestEvidence; }};
     const completedResult = await runWindowsCpuFloorStage3(request, operations);

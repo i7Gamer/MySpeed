@@ -28,6 +28,7 @@ import {WINDOWS_MSI_STAGE2_CLOSURE, WINDOWS_MSI_STAGE2_INPUT_NAMES,
     WINDOWS_MSI_STAGE2_PROBE_ROLES, windowsMsiStage2Roots} from
     "../../scripts/qualification/windows-msi-stage2-request.mjs";
 import {
+    stage3ExecutionPlan,
     targetInput,
     hostedContext,
     authenticBaselineSummaryBytes,
@@ -175,7 +176,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             assert.equal(stage2Request.schemaVersion, 1);
             assert.equal(stage2Request.authorization.confirmation, "RUN-CANDIDATE-NEUTRAL-STAGE2");
 
-            const stage3Template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+            const stage3Template = buildV161PostReleaseCpuFloorStage3Template(acquired, stage3ExecutionPlan());
             assert.equal(Object.hasOwn(stage3Template, "stage2"), false);
             assert.equal(stage3Template.profile, "baseline-cpu");
             assert.equal(stage3Template.authorization.scope, "windows-baseline-cpu-floor-full-runtime");
@@ -220,7 +221,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             t.mock.method(fs, "readFileSync", (target, ...args) =>
                 contents.has(target) ? Buffer.from(contents.get(target)) : originalRead(target, ...args));
             await assert.rejects(() => executeStage3Launcher({closureRoot, closureRecords: records,
-                transportRoot, envelopeRoot, binding, acquired, probeArtifact}, {
+                transportRoot, envelopeRoot, binding, acquired, plan: stage3ExecutionPlan(), probeArtifact}, {
                 runSequence: request => {
                     stage2Request = request.stage2Request;
                     return runHostedStage2Controller(stage2Request, {
@@ -310,14 +311,72 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
 
     it("passes actual producer output across the sequence boundary into the real consumer", async () => {
         const {binding, acquired} = buildBinding();
-        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired, stage3ExecutionPlan());
         const fixture = await buildPostReleaseStage3Fixture(template.candidate);
-        const inspection = inspectCompletedStage3Sequence({binding, acquired,
+        const inspection = inspectCompletedStage3Sequence({binding, acquired, plan: stage3ExecutionPlan(),
             sequenceResult: fixture.completedResult, sameExecutionStage2: fixture.request.stage2,
             stage2ResultBytes: fixture.retainedStage2Bytes});
         assert.equal(inspection.accepted, true);
         assert.equal(inspection.candidate.sourceSha, CANDIDATE_SHA);
         assert.equal(inspection.stage2.status, "observed");
+    });
+
+    it("carries one declared execution plan into the dispatched template and the re-derived request", async () => {
+        const {binding, acquired} = buildBinding();
+        const plan = stage3ExecutionPlan({installerConfirmation: "single-enter-before-setup-v1"});
+        const tempRoot = makeTempDir("myspeed-stage3-launcher-plan-");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        fs.writeFileSync(path.join(transportRoot, "stage2-result.json"), "stage2\n");
+        fs.writeFileSync(path.join(transportRoot, "guest-result.json"), "guest\n");
+        let dispatched = null;
+        let rebuiltPlan = null;
+        try {
+            await executeStage3Launcher({closureRoot: tempRoot, closureRecords: [], transportRoot, envelopeRoot,
+                binding, acquired, plan, probeArtifact: {}}, {
+                verifyClosure: () => ({valid: true}),
+                buildStage2Request: () => ({}),
+                buildSequenceRequest: ({stage3Request}) => { dispatched = stage3Request; return {}; },
+                buildStage3Request: (value, receipts, declared) => { rebuiltPlan = declared; return {}; },
+                runSequence: async () => ({status: "observed"}),
+                inspectEvidence: () => ({accepted: true})
+            });
+            assert.equal(dispatched.authorization.bootConfirmation, "single-enter-before-setup-v1");
+            assert.deepEqual(dispatched.budget, {label: "cpu-floor-stage3-baseline",
+                wallDeadlineUnixMilliseconds: plan.wallDeadlineUnixMilliseconds});
+            assert.deepEqual(rebuiltPlan, plan);
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
+    });
+
+    it("retains the refused sequence result so the stage that failed survives the run", async () => {
+        const tempRoot = makeTempDir("myspeed-stage3-launcher-refused-");
+        const envelopeRoot = path.join(tempRoot, "envelope");
+        const transportRoot = path.join(tempRoot, "transport");
+        fs.mkdirSync(envelopeRoot);
+        fs.mkdirSync(transportRoot);
+        const refused = {schemaVersion: 1, status: "failed", stage: "qemu-launch", qualifying: false,
+            cleanupProven: false, failure: "baseline QEMU cleanup was not proven"};
+        try {
+            await assert.rejects(() => executeStage3Launcher({closureRoot: tempRoot, closureRecords: [],
+                transportRoot, envelopeRoot, binding: {hostedContext: {}}, acquired: {}, probeArtifact: {}}, {
+                verifyClosure: () => ({valid: true}), buildStage2Request: () => ({}),
+                buildStage3Template: () => ({}), buildStage3Request: () => ({}),
+                buildSequenceRequest: () => ({}), runSequence: async () => refused
+            }), /Stage 3 sequence did not produce an observed result/u);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.STAGE3_RESULT_FILE), "utf8")), refused);
+            const manifest = JSON.parse(fs.readFileSync(path.join(transportRoot,
+                "evidence-manifest.json"), "utf8"));
+            assert.equal(manifest.accepted, false);
+            assert.equal(fs.existsSync(path.join(transportRoot,
+                STAGE3_LAUNCHER_CONSTANTS.ACCEPTED_INSPECTION_FILE)), false);
+        } finally {
+            fs.rmSync(tempRoot, {recursive: true, force: true});
+        }
     });
 
     it("reads retained evidence through a bounded stable regular-file descriptor", () => {
@@ -444,7 +503,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
 
     it("refuses acceptance and writes failure evidence when transport root path does not match canonical hosted transport contract", async () => {
         const {binding, acquired} = buildBinding();
-        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired, stage3ExecutionPlan());
         const fixture = await buildPostReleaseStage3Fixture(template.candidate);
         const tempRoot = makeTempDir("myspeed-stage3-launcher-transport-mismatch-");
         const closureRoot = path.join(tempRoot, "closure");
@@ -490,6 +549,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
                     envelopeRoot,
                     binding,
                     acquired,
+                    plan: stage3ExecutionPlan(),
                     probeArtifact,
                     guestFiles: []
                 }, {
@@ -517,12 +577,13 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
 
     it("refuses acceptance in real consumer when retained Stage 2 evidence bytes are corrupted", async () => {
         const {binding, acquired} = buildBinding();
-        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired, stage3ExecutionPlan());
         const fixture = await buildPostReleaseStage3Fixture(template.candidate);
         assert.throws(
             () => inspectCompletedStage3Sequence({
                 binding,
                 acquired,
+                plan: stage3ExecutionPlan(),
                 sequenceResult: fixture.completedResult,
                 sameExecutionStage2: fixture.request.stage2,
                 stage2ResultBytes: Buffer.from("{\"corrupted\":\"evidence\"}\n")
@@ -533,7 +594,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
 
     it("refuses acceptance in real consumer when candidate source SHA in sequence result does not match binding", async () => {
         const {binding, acquired} = buildBinding();
-        const template = buildV161PostReleaseCpuFloorStage3Template(acquired);
+        const template = buildV161PostReleaseCpuFloorStage3Template(acquired, stage3ExecutionPlan());
         const fixture = await buildPostReleaseStage3Fixture(template.candidate);
         const tamperedResult = {
             ...fixture.completedResult,
@@ -549,6 +610,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
             () => inspectCompletedStage3Sequence({
                 binding,
                 acquired,
+                plan: stage3ExecutionPlan(),
                 sequenceResult: tamperedResult,
                 sameExecutionStage2: fixture.request.stage2,
                 stage2ResultBytes: fixture.retainedStage2Bytes

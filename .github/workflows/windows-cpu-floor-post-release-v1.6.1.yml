@@ -28,6 +28,17 @@ on:
       probe_archive_sha256:
         required: true
         type: string
+      stage3_installer_confirmation:
+        description: >-
+          Stage 3 installer boot policy. no-input sends nothing and is the default; the single bounded
+          Enter is a separate explicit choice from the installer preparation Stage 2 performs, and it
+          does not guarantee that the firmware boots.
+        required: true
+        default: no-input
+        type: choice
+        options:
+          - no-input
+          - single-enter-before-setup-v1
 
 permissions:
   actions: read
@@ -45,6 +56,15 @@ env:
   QUALIFICATION_RUN_ID: 34829932391
   QUALIFICATION_RUN_ATTEMPT: 1
   WORKFLOW_CONFIRMATION: RUN-WINDOWS-BASELINE-CPU-FLOOR
+  # The execute job's own timeout-minutes, restated so the budget is derived from the same ceiling
+  # rather than from a second number that could drift away from it.
+  EXECUTE_JOB_CEILING_SECONDS: '5400'
+  # Held back for the cleanup proof and the two evidence uploads. A job that GitHub cancels at its
+  # ceiling cancels those steps with it, so the sequence has to be entirely stopped before that, not
+  # at it - including the outer timeout's own escalation from TERM to KILL.
+  EVIDENCE_RETENTION_RESERVE_SECONDS: '360'
+  # Refuse to start a sequence that cannot even reach a Stage 3 launch admission.
+  MINIMUM_SEQUENCE_SECONDS: '1500'
 
 jobs:
   prepare:
@@ -109,6 +129,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorStage3Closure.test.js \
             tests/server/linuxWindowsCpuFloorStage2Closure.test.js \
             tests/server/linuxWindowsCpuFloorStage3Launcher.test.js \
+            tests/server/linuxWindowsCpuFloorStage3NativeContract.test.js \
             tests/server/linuxWindowsCpuFloorStage3Sequence.test.js \
             tests/server/postReleaseCpuFloor.test.js \
             tests/server/postReleaseCpuFloorGuestPreparation.test.js \
@@ -160,6 +181,7 @@ jobs:
       PROBE_SOURCE_SHA: ${{ inputs.probe_source_sha }}
       PROBE_ARCHIVE_BYTES: ${{ inputs.probe_archive_bytes }}
       PROBE_ARCHIVE_SHA256: ${{ inputs.probe_archive_sha256 }}
+      STAGE3_INSTALLER_CONFIRMATION: ${{ inputs.stage3_installer_confirmation }}
     steps:
       - name: Set up pinned Node runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
@@ -251,6 +273,36 @@ jobs:
             context: {repository: process.env.GITHUB_REPOSITORY, sourceSha: process.env.GITHUB_SHA,
               runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, nonce}});
           NODE
+
+      # The job's timeout-minutes is charged from when GitHub started this job, not from when this
+      # step runs, so the budget is anchored to the authenticated start of this job in this attempt.
+      # Nothing here falls back to a local clock: an unavailable or ambiguous anchor fails the run.
+      - name: Anchor the job execution budget to authenticated job metadata
+        id: budget
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          EXECUTE_JOB_NAME: Execute Stage 3 sequence under KVM
+        with:
+          script: |
+            const path = require('node:path');
+            const {pathToFileURL} = require('node:url');
+            const nonce = process.env.EXPECTED_NONCE;
+            if (!/^[a-f0-9]{32}$/.test(nonce)) throw new Error('Invalid closure seal');
+            const {anchorStage3JobBudget} = await import(pathToFileURL(path.join(process.env.RUNNER_TEMP,
+              `myspeed-stage3-closure-${nonce}`,
+              'scripts/qualification/linux-windows-cpu-floor-stage3.mjs')).href);
+            const {data} = await github.rest.actions.listJobsForWorkflowRunAttempt({...context.repo,
+              run_id: Number(process.env.GITHUB_RUN_ID),
+              attempt_number: Number(process.env.GITHUB_RUN_ATTEMPT), per_page: 100,
+              request: {signal: AbortSignal.timeout(20000), retries: 1}});
+            const anchor = anchorStage3JobBudget({jobs: data.jobs, totalCount: data.total_count,
+              jobName: process.env.EXECUTE_JOB_NAME, runId: process.env.GITHUB_RUN_ID,
+              runAttempt: process.env.GITHUB_RUN_ATTEMPT, runnerName: process.env.RUNNER_NAME}, Date.now);
+            core.setOutput('started_ms', String(anchor.startedAtUnixMilliseconds));
+            core.setOutput('deadline_ms', String(anchor.wallDeadlineUnixMilliseconds));
+            core.setOutput('hard_stop_ms', String(anchor.hardStopUnixMilliseconds));
+            core.info(`job started at ${new Date(anchor.startedAtUnixMilliseconds).toISOString()}, `
+              + `${anchor.remainingMilliseconds}ms left of the ceiling for the sequence`);
 
       - name: Stage and observe the verified KVM capability pair
         shell: bash
@@ -370,7 +422,8 @@ jobs:
         id: run-sequence
         shell: bash
         env:
-          SEQUENCE_TIMEOUT_SECONDS: '4800'
+          SEQUENCE_DEADLINE_MILLISECONDS: ${{ steps.budget.outputs.deadline_ms }}
+          SEQUENCE_HARD_STOP_MILLISECONDS: ${{ steps.budget.outputs.hard_stop_ms }}
           SEQUENCE_KILL_GRACE_SECONDS: '30'
           PREPARATION_BYTES: ${{ steps.preparation-metadata.outputs.bytes }}
           PREPARATION_DIGEST: ${{ steps.preparation-metadata.outputs.digest }}
@@ -378,6 +431,24 @@ jobs:
           BASELINE_OBSERVED_AT: ${{ steps.baseline-metadata.outputs.observed_at }}
         run: |
           set -euo pipefail
+          # The deadline is when TERM is sent; the hard stop is one kill grace later, and the anchor
+          # held the retention reserve back from that hard stop rather than from this deadline. If the
+          # two ever stop differing by exactly the grace, the escalation would be spending the reserve.
+          grace_ms=$(( SEQUENCE_HARD_STOP_MILLISECONDS - SEQUENCE_DEADLINE_MILLISECONDS ))
+          if [ "$grace_ms" -ne "$(( SEQUENCE_KILL_GRACE_SECONDS * 1000 ))" ]; then
+            printf 'declared kill grace %sms does not match the %ss the outer timeout uses\n' \
+              "$grace_ms" "$SEQUENCE_KILL_GRACE_SECONDS" >&2
+            exit 1
+          fi
+          # What is actually left of the job ceiling, charged for everything already spent above. It
+          # can only tighten: there is no second clock and no way to hand back time.
+          now_ms=$(( $(date -u +%s) * 1000 ))
+          remaining_seconds=$(( (SEQUENCE_DEADLINE_MILLISECONDS - now_ms) / 1000 ))
+          if [ "$remaining_seconds" -lt "$MINIMUM_SEQUENCE_SECONDS" ]; then
+            printf 'job budget leaves %ss, below the %ss a sequence requires\n' \
+              "$remaining_seconds" "$MINIMUM_SEQUENCE_SECONDS" >&2
+            exit 1
+          fi
           nonce="${{ needs.seal.outputs.nonce }}"
           closure_root="${{ runner.temp }}/myspeed-stage3-closure-$nonce"
           transport_root="${{ runner.temp }}/myspeed-stage2-transport-$nonce"
@@ -387,7 +458,7 @@ jobs:
           install -d -m 700 "$envelope_root"
           install -d -m 700 "$log_root"
           set +e
-          /usr/bin/timeout --signal=TERM --kill-after="${SEQUENCE_KILL_GRACE_SECONDS}s" "${SEQUENCE_TIMEOUT_SECONDS}s" \
+          /usr/bin/timeout --signal=TERM --kill-after="${SEQUENCE_KILL_GRACE_SECONDS}s" "${remaining_seconds}s" \
             node --input-type=module - "$closure_root" "$transport_root" "$envelope_root" \
             > "$log_root/controller.stdout" 2> "$log_root/controller.stderr" <<'NODE'
           import crypto from "node:crypto"; import fs from "node:fs"; import path from "node:path";
@@ -437,6 +508,8 @@ jobs:
             baselineSummaryBytes: fs.readFileSync(path.join(closureRoot,
               "tests/fixtures/post-release-native-v1.6.1/baseline-qualification-summary.json")),
             observedAt: process.env.BASELINE_OBSERVED_AT, probeArtifact, probes,
+            stage3Plan: {installerConfirmation: process.env.STAGE3_INSTALLER_CONFIRMATION,
+              wallDeadlineUnixMilliseconds: Number(process.env.SEQUENCE_DEADLINE_MILLISECONDS)},
             roots: {stage3: `${process.env.RUNNER_TEMP}/myspeed-stage3-${nonce}`,
               candidate: `${process.env.RUNNER_TEMP}/myspeed-stage3-${nonce}/candidate`, closure: closureRoot,
               stage2Closure: `${process.env.RUNNER_TEMP}/myspeed-stage2-closure-${nonce}`,

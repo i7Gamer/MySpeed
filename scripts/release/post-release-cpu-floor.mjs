@@ -2,7 +2,7 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 
 import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
-import {validateCompletedStage3Result, STAGE3_CONSTANTS}
+import {validateCompletedStage3Result, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS}
     from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
 import {INSTALLER_BOOT_CONFIRMATION} from "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
@@ -44,6 +44,16 @@ const DIGEST_PREFIX = "sha256:";
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const UTC_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u;
 
+/*
+ * Stage 3 installs Windows from scratch, so whether its firmware raises a "press any key" prompt is
+ * a separate question from the installer preparation Stage 2 runs, and it is answered separately.
+ * No-input is the generic default; the one bounded Enter is opted into by naming it here, and
+ * anything else is refused rather than passed through to the shared QMP authority.
+ */
+const STAGE3_NO_INPUT = "no-input";
+const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION]);
+const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
+
 const ACQUISITION_KEYS = ["artifact", "observedAt", "summaryBytes"];
 const ARTIFACT_KEYS = ["archiveDigest", "archiveSize", "expired", "expiresAt", "headSha", "id",
     "name", "runAttempt", "runId"];
@@ -59,7 +69,8 @@ const ACQUIRED_BRAND = Symbol("v1.6.1-post-release-cpu-floor-acquired-binding");
 export const POST_RELEASE_CPU_FLOOR_CONSTANTS = Object.freeze({
     BASELINE_ARCHIVE_DIGEST, BASELINE_ARCHIVE_SIZE, BASELINE_ARTIFACT_ID, BASELINE_ARTIFACT_NAME,
     CANDIDATE_SOURCE_SHA, KIND, MANIFEST_FILE_NAME, MAXIMUM_SUMMARY_BYTES,
-    QUALIFICATION_RUN_ATTEMPT, QUALIFICATION_RUN_ID, REPOSITORY, SCHEMA_VERSION, SUMMARY_FILE_NAME
+    QUALIFICATION_RUN_ATTEMPT, QUALIFICATION_RUN_ID, REPOSITORY, SCHEMA_VERSION, SUMMARY_FILE_NAME,
+    STAGE3_INSTALLER_CONFIRMATIONS, STAGE3_NO_INPUT
 });
 
 function fail(message) {
@@ -258,13 +269,31 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
         probe: probeArtifact,
         identity
     });
-    // Only the installer preparation opts in. MSI rows and the installed Stage 3 guest remain no-input.
+    // Only the installer preparation opts in. MSI rows stay no-input, and Stage 3 - which installs
+    // its own Windows rather than booting an installed one - makes its own separately explicit choice.
     request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
     return request;
 }
 
-export function buildV161PostReleaseCpuFloorStage3Template(binding) {
+/**
+ * The two decisions the dispatching run makes for itself: which installer-confirmation policy Stage 3
+ * binds, and the wall-clock moment its sequence process has to be finished by. Neither is defaulted
+ * and neither is read out of a Stage 2 result.
+ */
+function validateStage3ExecutionPlan(value) {
+    exactKeys(value, STAGE3_PLAN_KEYS, "Stage 3 execution plan");
+    if (!STAGE3_INSTALLER_CONFIRMATIONS.includes(value.installerConfirmation)) {
+        fail("Stage 3 installer confirmation must be one of the two supported policies");
+    }
+    if (!Number.isSafeInteger(value.wallDeadlineUnixMilliseconds) || value.wallDeadlineUnixMilliseconds < 1) {
+        fail("Stage 3 wall deadline must be a positive whole millisecond timestamp");
+    }
+    return {...value};
+}
+
+export function buildV161PostReleaseCpuFloorStage3Template(binding, plan) {
     requireAcquiredBinding(binding, "Stage 3 template");
+    const executionPlan = validateStage3ExecutionPlan(plan);
     const root = `${STAGE3_ROOT_PREFIX}${binding.hostedContext.nonce}`;
     return deepFreeze({
         schemaVersion: SCHEMA_VERSION,
@@ -274,7 +303,13 @@ export function buildV161PostReleaseCpuFloorStage3Template(binding) {
             candidate: true,
             confirmation: STAGE3_CONSTANTS.CONFIRMATION,
             qemu: true,
-            scope: STAGE3_CONSTANTS.AUTHORIZATION_SCOPE
+            scope: STAGE3_CONSTANTS.AUTHORIZATION_SCOPE,
+            ...(executionPlan.installerConfirmation === STAGE3_NO_INPUT
+                ? {} : {bootConfirmation: executionPlan.installerConfirmation})
+        },
+        budget: {
+            label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: executionPlan.wallDeadlineUnixMilliseconds
         },
         paths: {
             root,
@@ -317,8 +352,8 @@ export function buildV161PostReleaseCpuFloorStage3Template(binding) {
     });
 }
 
-export function buildV161PostReleaseCpuFloorStage3Request(binding, sameExecutionStage2) {
-    const template = buildV161PostReleaseCpuFloorStage3Template(binding);
+export function buildV161PostReleaseCpuFloorStage3Request(binding, sameExecutionStage2, plan) {
+    const template = buildV161PostReleaseCpuFloorStage3Template(binding, plan);
     exactKeys(sameExecutionStage2, STAGE2_RECEIPT_KEYS, "same-execution Stage 2 receipts");
     for (const key of STAGE2_RECEIPT_KEYS) {
         exactKeys(sameExecutionStage2[key], IDENTITY_KEYS, `same-execution Stage 2 ${key} identity`);

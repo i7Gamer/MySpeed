@@ -459,14 +459,74 @@ describe("Windows MSI Scenario 0 calibration seed paths and cleanup preflight", 
     });
 
     it("refuses a seed file that collides with a document the host itself generates", async () => {
-        for (const name of ["seed.json", "bootstrap.ps1", "activation-handoff.json",
+        for (const name of ["seed-manifest.json", "bootstrap.ps1", "myspeed-msi-handoff.json",
             "row-request.json", "execution-manifest.json", "matrix-envelope.json", "launch-request.json",
-            "seed.json/nested.txt"]) {
+            "seed-manifest.json/nested.txt", "myspeed-msi-handoff.json/nested.txt"]) {
             const fixture = await createWindowsMsiScenario0CalibrationFixture({compose: false,
                 extraSeedFiles: [seedFile(name)]});
             assert.throws(() => validateWindowsMsiScenario0CalibrationRequest(fixture.request),
                 /seed file is reserved/u, name);
         }
+    });
+
+    it("prepares seed media with canonical seed-manifest.json and myspeed-msi-handoff.json matching guest contract", async () => {
+        const fixture = await createWindowsMsiScenario0CalibrationFixture({publishedProvenance: true, run: false});
+        const row = fixture.request.row;
+        await fixture.operations.createOverlay({row});
+        await fixture.operations.prepareMedia({row});
+
+        // Canonical names must exist; legacy/reverted names must NOT exist
+        assert.equal(fixture.disk.entries.has(`${row.seedRoot}/seed-manifest.json`), true);
+        assert.equal(fixture.disk.entries.has(`${row.seedRoot}/seed.json`), false);
+        assert.equal(fixture.disk.entries.has(`${row.seedRoot}/myspeed-msi-handoff.json`), true);
+        assert.equal(fixture.disk.entries.has(`${row.seedRoot}/activation-handoff.json`), false);
+        assert.equal(fixture.disk.entries.has(`${row.seedRoot}/bootstrap.ps1`), true);
+
+        // Manifest content and binding
+        const manifestRecord = fixture.disk.entries.get(`${row.seedRoot}/seed-manifest.json`);
+        const manifest = JSON.parse(manifestRecord.content.toString("utf8"));
+        assert.equal(manifest.sourceSha, fixture.request.sourceSha);
+        assert.equal(manifest.hostNonce, fixture.request.nonce);
+        assert.equal(manifest.rowNonce, row.nonce);
+        assert.equal(manifest.scenarioIndex, 0);
+        assert.equal(manifest.scenarioId, "clean-default");
+
+        // Bootstrap script must bind seed-manifest.json hash
+        const bootstrapRecord = fixture.disk.entries.get(`${row.seedRoot}/bootstrap.ps1`);
+        const bootstrapText = bootstrapRecord.content.toString("utf8");
+        const manifestSha256 = sha256(manifestRecord.content);
+        assert.ok(bootstrapText.includes(manifestSha256), "bootstrap must bind seed-manifest sha256");
+        assert.ok(bootstrapText.includes("seed-manifest.json"), "bootstrap must target seed-manifest.json");
+        assert.ok(!bootstrapText.includes("'seed.json'"), "bootstrap must not target seed.json");
+
+        // Published handoff content and dispatcher compatibility
+        const handoffRecord = fixture.disk.entries.get(`${row.seedRoot}/myspeed-msi-handoff.json`);
+        const handoff = JSON.parse(handoffRecord.content.toString("utf8"));
+        assert.equal(handoff.schemaVersion, 1);
+        assert.equal(handoff.kind, "myspeed-windows-msi-setupcomplete-handoff");
+        assert.equal(handoff.bootstrap.name, "bootstrap.ps1");
+        assert.equal(handoff.bootstrap.sha256, sha256(bootstrapRecord.content));
+        assert.equal(handoff.row.scenarioIndex, 0);
+        assert.equal(handoff.row.scenarioId, "clean-default");
+
+        // Guest SetupComplete dispatcher candidate filenames check
+        const guestCandidateFilenames = [
+            "myspeed-base-calibration-handoff.json",
+            "myspeed-msi-handoff.json",
+            "myspeed-baseline-cpu-handoff.json"
+        ];
+        const matchingHandoffs = guestCandidateFilenames.filter(name =>
+            fixture.disk.entries.has(`${row.seedRoot}/${name}`));
+        assert.equal(matchingHandoffs.length, 1);
+        assert.equal(matchingHandoffs[0], "myspeed-msi-handoff.json");
+
+        // Prove reverted names fail the guest contract
+        const revertedBootstrapTarget = "seed.json";
+        assert.ok(!bootstrapText.includes(revertedBootstrapTarget), "reverted seed.json must not be targeted");
+        const revertedHandoffNames = ["activation-handoff.json"];
+        const revertedMatches = revertedHandoffNames.filter(name =>
+            guestCandidateFilenames.includes(name));
+        assert.equal(revertedMatches.length, 0, "reverted activation-handoff.json is not recognized by guest dispatcher");
     });
 
     /*

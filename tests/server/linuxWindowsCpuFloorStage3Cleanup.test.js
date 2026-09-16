@@ -76,6 +76,35 @@ describe("Stage 3 task-owned CPU cleanup", () => {
         assert.equal(result.cleanupProven, true);
     });
 
+    it("proves cleanup of a still-running guest from its retained receipt after an outer stop", async () => {
+        // The normal outer-timeout recovery: the sequence process is gone, QEMU's own group is not,
+        // and the retained receipt is the only authority the cleanup step will act on.
+        const bytes = receipt();
+        const owned = {state: "present", ...authority()};
+        const read = readCpuFloorCleanupAuthorityReceipt("/owned/cleanup-authority.json", {
+            realpathParent: () => "/owned", open: () => 5, read: () => bytes, close: () => {},
+            fstat: () => ({isFile: () => true, isSymbolicLink: () => false, nlink: 1n,
+                uid: BigInt(process.getuid?.() ?? -1), mode: 0o100600n, size: BigInt(bytes.length),
+                dev: 1n, ino: 2n, mtimeNs: 3n})});
+
+        let alive = true;
+        const signals = [];
+        const proof = await cleanupTaskOwnedCpuProcesses({authorities: [...read.authorities],
+            deadlineMilliseconds: 200}, {
+            readProcessIdentity: async () => alive ? owned : {state: "absent"},
+            signalProcessGroup: async (group, signal) => {
+                signals.push([group, signal]);
+                if (signal === "SIGKILL") alive = false;
+            },
+            isProcessGroupAlive: async () => alive,
+            monotonicMilliseconds: (() => { let now = 0; return () => (now += 50); })(),
+            wait: async () => {}});
+
+        assert.deepEqual(signals, [[91, "SIGTERM"], [91, "SIGKILL"]]);
+        assert.equal(proof.cleanupProven, true);
+        assert.equal(proof.results[0].status, "kill-sent");
+    });
+
     it("rejects shared-group and expired authority without signalling", async () => {
         for (const input of [request([]), request([{...authority(), pid: 92}]),
             {authorities: [authority()], deadlineMilliseconds: 0}]) {

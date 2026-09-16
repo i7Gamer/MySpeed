@@ -52,9 +52,9 @@ const MAXIMUM_WALL_DEADLINE = 100_000_000_000_000;
 const MAX_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_AGGREGATED_FAILURES = 8;
 const PUBLISHED_PROVENANCE_KIND = "myspeed-v1.6.1-published-msi-host-provenance";
-const SEED_MANIFEST_NAME = "seed.json";
+const SEED_MANIFEST_NAME = "seed-manifest.json";
 const BOOTSTRAP_NAME = "bootstrap.ps1";
-const ACTIVATION_HANDOFF_NAME = "activation-handoff.json";
+const ACTIVATION_HANDOFF_NAME = "myspeed-msi-handoff.json";
 const EMPTY_WAL_NAME = "myspeed.empty.wal";
 const EMPTY_SHA256 = createHash("sha256").update(Buffer.alloc(0)).digest("hex");
 

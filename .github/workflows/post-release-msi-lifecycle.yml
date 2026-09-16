@@ -60,23 +60,23 @@ on:
         type: string
       rollback_artifact_id:
         description: Artifact id of an accepted sacrificial rollback calibration run
-        required: true
+        required: false
         type: string
       rollback_run_id:
-        required: true
+        required: false
         type: string
       rollback_run_attempt:
-        required: true
+        required: false
         type: string
       rollback_source_sha:
         description: Head SHA of the calibration run, which is its source SHA
-        required: true
+        required: false
         type: string
       rollback_archive_bytes:
-        required: true
+        required: false
         type: string
       rollback_archive_sha256:
-        required: true
+        required: false
         type: string
       calibration_mode:
         description: Run bounded Scenario 0 calibration instead of the 14-row matrix
@@ -362,6 +362,22 @@ jobs:
               throw new Error("scenario0 calibration job budget exceeds ceiling");
             if (minutes(process.env.ROW_ALLOWANCE_MINUTES, "row allowance") > maxExecAllowance)
               throw new Error("scenario0 calibration execution allowance exceeds ceiling");
+          } else if (process.env.CALIBRATION_MODE === "false") {
+            const maximumRollbackArchiveBytes = 64 * 1024 * 1024;
+            const exactPattern = (value, pattern, name) => {
+              if (typeof value !== "string" || !pattern.test(value))
+                throw new Error(`${name} is invalid`);
+            };
+            exactPattern(process.env.ROLLBACK_ARTIFACT_ID, /^[1-9][0-9]{0,19}$/u, "rollback artifact id");
+            exactPattern(process.env.ROLLBACK_RUN_ID, /^[1-9][0-9]{0,19}$/u, "rollback run id");
+            exactPattern(process.env.ROLLBACK_RUN_ATTEMPT, /^[1-9][0-9]{0,9}$/u, "rollback run attempt");
+            exactPattern(process.env.ROLLBACK_SOURCE_SHA, /^[a-f0-9]{40}$/u, "rollback source SHA");
+            exactPattern(process.env.ROLLBACK_ARCHIVE_BYTES, /^[1-9][0-9]{0,8}$/u, "rollback archive bytes");
+            exactPattern(process.env.ROLLBACK_ARCHIVE_SHA256, /^[a-f0-9]{64}$/u, "rollback archive SHA-256");
+            if (Number(process.env.ROLLBACK_ARCHIVE_BYTES) > maximumRollbackArchiveBytes)
+              throw new Error("rollback archive size bound is invalid");
+          } else {
+            throw new Error("calibration mode is invalid");
           }
           NODE
 
@@ -551,7 +567,7 @@ jobs:
           import {pathToFileURL} from "node:url";
           const [closureRoot, stage2Root, inputRoot, output] = process.argv.slice(2);
           const {buildWindowsMsiStage2Request, WINDOWS_MSI_STAGE2_CLOSURE, WINDOWS_MSI_STAGE2_PROBE_ROLES,
-            WINDOWS_MSI_STAGE2_ROOTS} = await import(pathToFileURL(path.join(closureRoot,
+            WINDOWS_MSI_STAGE2_ROOTS, INSTALLER_BOOT_CONFIRMATION} = await import(pathToFileURL(path.join(closureRoot,
             "scripts/qualification/windows-msi-stage2-request.mjs")).href);
           const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
           const identity = target => { const bytes = fs.readFileSync(target);
@@ -592,7 +608,9 @@ jobs:
           if (stage2Root !== WINDOWS_MSI_STAGE2_ROOTS.closurePrefix + context.nonce ||
               inputRoot !== WINDOWS_MSI_STAGE2_ROOTS.inputPrefix + context.nonce)
             throw new Error("Stage 2 roots differ from the roots its validator names");
-          const request = buildWindowsMsiStage2Request({context, identity, probe: {
+          const request = buildWindowsMsiStage2Request({context, identity,
+            bootConfirmation: INSTALLER_BOOT_CONFIRMATION,
+            probe: {
             artifactId: process.env.PROBE_ARTIFACT_ID, runId: process.env.PROBE_RUN_ID,
             runAttempt: process.env.PROBE_RUN_ATTEMPT, sourceSha: process.env.PROBE_SOURCE_SHA,
             archiveBytes: process.env.PROBE_ARCHIVE_BYTES,
@@ -639,6 +657,7 @@ jobs:
       # document. The SHA-256 of the helper that would perform the calibration is code provenance
       # and proves no execution, so it is not accepted in its place.
       - name: Acquire the accepted rollback calibration evidence
+        if: inputs.calibration_mode != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TARGET_ARTIFACT_ID: ${{ inputs.rollback_artifact_id }}
@@ -816,6 +835,7 @@ jobs:
       # just sealed and binds the record that produced. Demanding it here, before invoking the thing
       # that creates it, is what used to stop every run.
       - name: Assemble the typed prerequisite evidence
+        if: inputs.calibration_mode != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -933,7 +953,7 @@ jobs:
           stage2Result, installedBaseHelperSource: (() => { const observed = identity(path.join(closureRoot,
             "scripts/qualification/windows-msi-installed-base-seal-helper.mjs"));
           return {path: observed.path, bytes: observed.bytes, sha256: observed.sha256}; })(),
-          prerequisiteEvidence: JSON.parse(fs.readFileSync(path.join(inputRoot, "prerequisite-evidence.json"))),
+          ...(isCalibration ? {} : {prerequisiteEvidence: JSON.parse(fs.readFileSync(path.join(inputRoot, "prerequisite-evidence.json")))}),
           budget, wallDeadlineUnixMilliseconds: Date.now() + budget.jobBudgetMilliseconds};
           fs.writeFileSync(output, `${JSON.stringify(request)}\n`, {flag: "wx", mode: 0o600});
           NODE

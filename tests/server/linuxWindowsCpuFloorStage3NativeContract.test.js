@@ -21,6 +21,7 @@ import {
     inspectV161PostReleaseCpuFloorEvidence
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {acquisitionInput, buildPostReleaseStage3Fixture, hostedContext, manifestBytes, placeholderStage2Receipts,
+    stage3ExecutionPlan,
     targetInput} from "../helpers/post-release-cpu-floor-fixture.mjs";
 
 const SHA = character => character.repeat(64);
@@ -79,17 +80,21 @@ describe("Stage 3 probe seed naming contract", () => {
  * carry fails here rather than natively. Everything the simulated guest does is named as such.
  */
 async function runInertStage3({mutateLaunchArgv = argv => argv, renameSeedEntry = name => name,
-    mutateGuestEnvelope = envelope => envelope, bootConfirmation, qmpInputSent = false} = {}) {
+    mutateGuestEnvelope = envelope => envelope, installerConfirmation = "no-input",
+    elapsedMilliseconds = 0, qmpInputSent = false} = {}) {
     const target = bindV161PostReleaseTarget(targetInput());
     const acquiredBinding = acquireV161PostReleaseCpuFloorBaselineSummary(
         createV161PostReleaseCpuFloorBinding({target, manifestBytes: manifestBytes(),
             hostedContext: hostedContext()}), acquisitionInput());
-    const projection = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, placeholderStage2Receipts());
+    // The run's own declared plan, carried by the real builder rather than patched into the request.
+    const plan = stage3ExecutionPlan({installerConfirmation});
+    const projection = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding,
+        placeholderStage2Receipts(), plan);
     // Real Stage 2 evidence for this same execution, produced by the shared Stage 3 fixture.
-    const stage2Fixture = await buildPostReleaseStage3Fixture(projection.candidate);
-    const built = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, stage2Fixture.request.stage2);
+    const stage2Fixture = await buildPostReleaseStage3Fixture(projection.candidate, plan);
+    const built = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, stage2Fixture.request.stage2, plan);
     const request = structuredClone(built);
-    if (bootConfirmation !== undefined) request.authorization.bootConfirmation = bootConfirmation;
+    const launchedAt = plan.wallDeadlineUnixMilliseconds - 80 * 60_000 + elapsedMilliseconds;
     const context = request.context;
     const root = request.paths.root;
     const candidateRoot = `${root}/candidate`;
@@ -287,6 +292,7 @@ async function runInertStage3({mutateLaunchArgv = argv => argv, renameSeedEntry 
 
     const operations = createHostedStage3Operations({context, paths: request.paths, guestFiles, dependencies: {
         deriveActualContext: () => structuredClone(context),
+        unixMilliseconds: () => launchedAt,
         inspectFile: target_ => inspectOwned(target_),
         readJson: target_ => {
             if (target_ === request.stage2.result.path)
@@ -390,8 +396,33 @@ describe("Stage 3 inert native execution contract", () => {
         const refused = await runInertStage3({qmpInputSent: confirmation});
         assert.equal(refused.result.status, "failed");
         const admitted = await runInertStage3({qmpInputSent: confirmation,
-            bootConfirmation: INSTALLER_BOOT_CONFIRMATION});
+            installerConfirmation: INSTALLER_BOOT_CONFIRMATION});
         assert.equal(admitted.result.status, "observed", admitted.result.failure);
         assert.deepEqual(admitted.result.earlyBoot.inputSent, confirmation);
+    });
+
+    it("bounds the real launcher invocation by the declared budget, not the generic allowance", async () => {
+        const run = await runInertStage3();
+        assert.equal(run.result.status, "observed", run.result.failure);
+        const bound = run.observed.launchArgv[run.observed.launchArgv.indexOf("--signal=KILL") + 1];
+        assert.equal(bound, `${run.result.reservation.executionMilliseconds / 1_000}s`);
+        assert.equal(bound, "3300s");
+        assert.equal(run.observed.launchArgv.includes("16200s"), false);
+        assert.deepEqual(run.result.reservation, {label: "cpu-floor-stage3-baseline",
+            executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000});
+
+        // Time already spent above comes off the bound rather than being handed back.
+        const late = await runInertStage3({elapsedMilliseconds: 40 * 60_000});
+        assert.equal(late.result.status, "observed", late.result.failure);
+        assert.equal(late.result.reservation.executionMilliseconds, 36 * 60_000);
+        assert.equal(late.observed.launchArgv[late.observed.launchArgv.indexOf("--signal=KILL") + 1], "2160s");
+    });
+
+    it("refuses to start a guest when the declared deadline can no longer hold one", async () => {
+        const run = await runInertStage3({elapsedMilliseconds: 66 * 60_000});
+        assert.equal(run.result.status, "failed");
+        assert.equal(run.result.stage, "qemu-launch");
+        assert.match(run.result.failure, /Stage 3 execution budget/u);
+        assert.equal(run.observed.launchArgv, null);
     });
 });

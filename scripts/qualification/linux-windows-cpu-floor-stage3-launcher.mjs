@@ -259,11 +259,16 @@ export function buildStage3SequenceRequest({
     };
 }
 
-export function inspectCompletedStage3Sequence({binding, acquired, sequenceResult, sameExecutionStage2,
+export function inspectCompletedStage3Sequence({binding, acquired, plan, sequenceResult, sameExecutionStage2,
     stage2ResultBytes}, dependencies = {}) {
     const buildStage3Request = dependencies.buildStage3Request ?? buildV161PostReleaseCpuFloorStage3Request;
     const inspectEvidence = dependencies.inspectEvidence ?? inspectV161PostReleaseCpuFloorEvidence;
-    const executedStage3Request = buildStage3Request(acquired, sameExecutionStage2);
+    /*
+     * The same plan that built the dispatched template. The executed request is re-derived rather
+     * than echoed back, so the boot policy and the execution budget the consumer checks against are
+     * the ones this run declared, never ones the result claimed for itself.
+     */
+    const executedStage3Request = buildStage3Request(acquired, sameExecutionStage2, plan);
     return inspectEvidence({binding, request: executedStage3Request, result: sequenceResult,
         retainedStage2Bytes: stage2ResultBytes});
 }
@@ -275,6 +280,7 @@ export async function executeStage3Launcher(options, dependencies = {}) {
         envelopeRoot,
         binding,
         acquired,
+        plan,
         probeArtifact,
         guestFiles = []
     } = options;
@@ -301,7 +307,7 @@ export async function executeStage3Launcher(options, dependencies = {}) {
             return {path: targetPath, bytes: bytes.length, sha256: sha256(bytes)};
         });
         const stage2Request = buildStage2Request(binding, probeArtifact, fileIdentity);
-        const stage3Template = buildStage3Template(acquired);
+        const stage3Template = buildStage3Template(acquired, plan);
 
         // 3. Build sequence request envelope and write it
         let sequenceRequest;
@@ -326,12 +332,18 @@ export async function executeStage3Launcher(options, dependencies = {}) {
 
         // 4. Run sequence
         sequenceResult = await runSequence(sequenceRequest);
+        /*
+         * Retained before the status is judged. A refused sequence is the only place the stage that
+         * failed and its bounded message exist at all, and discarding it would leave a stalled or
+         * deadline-stopped installer with nothing but a stderr tail to explain itself.
+         */
+        if (sequenceResult) {
+            writeBoundedCanonicalJson(path.join(transportRoot, STAGE3_RESULT_FILE), sequenceResult,
+                STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
+        }
         if (!sequenceResult || sequenceResult.status !== "observed") {
             throw new Error("Stage 3 sequence did not produce an observed result");
         }
-        writeBoundedCanonicalJson(path.join(transportRoot, STAGE3_RESULT_FILE), sequenceResult,
-            STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
-
         const stage2Path = path.join(transportRoot, "stage2-result.json");
         const guestResultPath = path.join(transportRoot, "guest-result.json");
         stage2ResultBytes = readBoundedRegularFile(stage2Path, STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
@@ -343,7 +355,7 @@ export async function executeStage3Launcher(options, dependencies = {}) {
         };
 
         // 5. Inspect evidence with consumer
-        const inspection = inspectCompletedStage3Sequence({binding, acquired, sequenceResult,
+        const inspection = inspectCompletedStage3Sequence({binding, acquired, plan, sequenceResult,
             sameExecutionStage2, stage2ResultBytes}, {buildStage3Request, inspectEvidence});
         if (inspection?.accepted !== true) throw new Error("Stage 3 consumer did not accept the execution");
         writeBoundedCanonicalJson(path.join(transportRoot, ACCEPTED_INSPECTION_FILE), inspection,

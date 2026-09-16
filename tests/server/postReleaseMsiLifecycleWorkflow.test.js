@@ -560,3 +560,196 @@ describe("the MSI lifecycle execute environment reaches the sealed controllers",
             "the derived context and the request context must name one commit, not two");
     });
 });
+
+describe("Post-release MSI lifecycle calibration mode and rollback input conditioning", () => {
+    it("ensures all 6 rollback dispatch inputs have required: false", () => {
+        const rollbackInputs = [
+            "rollback_artifact_id",
+            "rollback_run_id",
+            "rollback_run_attempt",
+            "rollback_source_sha",
+            "rollback_archive_bytes",
+            "rollback_archive_sha256"
+        ];
+        for (const name of rollbackInputs) {
+            const input = WORKFLOW.on.workflow_dispatch.inputs[name];
+            assert.ok(input !== undefined, `${name} must exist in workflow inputs`);
+            assert.equal(input.required, false, `${name} must not be required`);
+        }
+    });
+
+    it("ensures rollback acquisition and assembly steps are skipped in calibration mode", () => {
+        const acquireStep = stepNamed("execute", "Acquire the accepted rollback calibration evidence");
+        assert.equal(acquireStep.if, "inputs.calibration_mode != 'true'");
+        const assembleStep = stepNamed("execute", "Assemble the typed prerequisite evidence");
+        assert.equal(assembleStep.if, "inputs.calibration_mode != 'true'");
+    });
+
+    const budgetValidationScript = () => {
+        const step = stepNamed("execute", "Validate the dispatched budget before the expensive setup");
+        const lines = step.run.split("\n");
+        const opened = lines.findIndex(line => line.includes("node --input-type=module -"));
+        assert.notEqual(opened, -1, "the budget validation runs as an inline module");
+        const closed = lines.indexOf("NODE", opened);
+        assert.ok(closed > opened, "the inline module is terminated");
+        return lines.slice(opened + 1, closed).join("\n");
+    };
+
+    const runBudgetValidation = (envOverrides = {}) => {
+        const validEnv = {
+            ...process.env,
+            JOB_BUDGET_MINUTES: "300",
+            JOB_TIMEOUT_MINUTES: "350",
+            RETENTION_RESERVE_MINUTES: "30",
+            ROW_ALLOWANCE_MINUTES: "20",
+            ROW_CLEANUP_MARGIN_MINUTES: "5",
+            FINAL_MARGIN_MINUTES: "10",
+            CALIBRATION_MODE: "false",
+            ROLLBACK_ARTIFACT_ID: "12345678",
+            ROLLBACK_RUN_ID: "34817703654",
+            ROLLBACK_RUN_ATTEMPT: "1",
+            ROLLBACK_SOURCE_SHA: "92f0ff3eab126271548684a5384c7b2ff2213655",
+            ROLLBACK_ARCHIVE_BYTES: "1048576",
+            ROLLBACK_ARCHIVE_SHA256: "0".repeat(64),
+            ...envOverrides
+        };
+        for (const [k, v] of Object.entries(envOverrides)) {
+            if (v === undefined) delete validEnv[k];
+        }
+        return spawnSync(process.execPath, ["--input-type=module", "-", process.cwd()], {
+            input: budgetValidationScript(),
+            encoding: "utf8",
+            env: validEnv
+        });
+    };
+
+    it("early fail-closed budget validation accepts valid full-matrix and calibration configurations", () => {
+        const fullMatrix = runBudgetValidation({CALIBRATION_MODE: "false"});
+        assert.equal(fullMatrix.status, 0, fullMatrix.stderr);
+
+        const calibration = runBudgetValidation({
+            CALIBRATION_MODE: "true",
+            JOB_BUDGET_MINUTES: "60",
+            ROW_ALLOWANCE_MINUTES: "20",
+            ROLLBACK_ARTIFACT_ID: undefined,
+            ROLLBACK_RUN_ID: undefined,
+            ROLLBACK_RUN_ATTEMPT: undefined,
+            ROLLBACK_SOURCE_SHA: undefined,
+            ROLLBACK_ARCHIVE_BYTES: undefined,
+            ROLLBACK_ARCHIVE_SHA256: undefined
+        });
+        assert.equal(calibration.status, 0, calibration.stderr);
+    });
+
+    it("early fail-closed budget validation rejects invalid CALIBRATION_MODE values", () => {
+        for (const invalidMode of ["", "TRUE", "maybe", "1", "null", undefined]) {
+            const result = runBudgetValidation({CALIBRATION_MODE: invalidMode});
+            assert.notEqual(result.status, 0, `mode "${invalidMode}" should fail`);
+            assert.match(result.stderr, /calibration mode is invalid/u);
+        }
+    });
+
+    it("early fail-closed budget validation rejects missing or malformed rollback inputs when calibration_mode is false", () => {
+        const rollbackKeys = [
+            "ROLLBACK_ARTIFACT_ID",
+            "ROLLBACK_RUN_ID",
+            "ROLLBACK_RUN_ATTEMPT",
+            "ROLLBACK_SOURCE_SHA",
+            "ROLLBACK_ARCHIVE_BYTES",
+            "ROLLBACK_ARCHIVE_SHA256"
+        ];
+        for (const key of rollbackKeys) {
+            const missing = runBudgetValidation({[key]: undefined});
+            assert.notEqual(missing.status, 0, `missing ${key} should fail`);
+            assert.match(missing.stderr, /is invalid/u);
+
+            const empty = runBudgetValidation({[key]: ""});
+            assert.notEqual(empty.status, 0, `empty ${key} should fail`);
+            assert.match(empty.stderr, /is invalid/u);
+        }
+
+        // Malformed formats
+        assert.match(runBudgetValidation({ROLLBACK_ARTIFACT_ID: "0123"}).stderr, /rollback artifact id is invalid/u);
+        assert.match(runBudgetValidation({ROLLBACK_RUN_ID: "abc"}).stderr, /rollback run id is invalid/u);
+        assert.match(runBudgetValidation({ROLLBACK_RUN_ATTEMPT: "0"}).stderr, /rollback run attempt is invalid/u);
+        assert.match(runBudgetValidation({ROLLBACK_SOURCE_SHA: "notasha"}).stderr, /rollback source SHA is invalid/u);
+        assert.match(runBudgetValidation({ROLLBACK_ARCHIVE_BYTES: "0"}).stderr, /rollback archive bytes is invalid/u);
+        assert.match(runBudgetValidation({ROLLBACK_ARCHIVE_SHA256: "deadbeef"}).stderr, /rollback archive SHA-256 is invalid/u);
+        // Exceeds 64MB bound
+        assert.match(runBudgetValidation({ROLLBACK_ARCHIVE_BYTES: "67108865"}).stderr, /rollback archive size bound is invalid/u);
+    });
+
+    const requestAssemblyScript = () => {
+        const step = stepNamed("execute", "Seal the installed base and run the exact fourteen rows");
+        const lines = step.run.split("\n");
+        const opened = lines.findIndex(line => line.includes("node --input-type=module -"));
+        assert.notEqual(opened, -1, "request assembly runs as an inline module");
+        const closed = lines.indexOf("NODE", opened);
+        assert.ok(closed > opened, "inline module is terminated");
+        return lines.slice(opened + 1, closed).join("\n");
+    };
+
+    const buildRequestInMode = (calibrationMode) => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-request-test-"));
+        try {
+            const nonce = "0123456789abcdef0123456789abcdef";
+            const inputRoot = path.join(root, "input");
+            const taskRoot = path.join(root, "task");
+            const transportRoot = path.join(root, `myspeed-msi-transport-${nonce}`);
+            fs.mkdirSync(inputRoot, {recursive: true});
+            fs.mkdirSync(taskRoot, {recursive: true});
+            fs.mkdirSync(transportRoot, {recursive: true});
+
+            const prepArtifact = {id: "1", name: "post-release-v1.6.1-msi-appassets"};
+            fs.writeFileSync(path.join(inputRoot, "preparation-artifact.json"), JSON.stringify(prepArtifact));
+            const stage2Result = {status: "completed", calibrationPassed: true};
+            fs.writeFileSync(path.join(transportRoot, "stage2-result.json"), JSON.stringify(stage2Result));
+            const prereqEvidence = {rollbackCalibration: {schemaVersion: 1}};
+            fs.writeFileSync(path.join(inputRoot, "prerequisite-evidence.json"), JSON.stringify(prereqEvidence));
+
+            const outputPath = path.join(taskRoot, "msi-lifecycle-request.json");
+            const script = requestAssemblyScript();
+
+            const completed = spawnSync(process.execPath, [
+                "--input-type=module", "-",
+                process.cwd(), inputRoot, taskRoot, "0", outputPath
+            ], {
+                input: script,
+                encoding: "utf8",
+                env: {
+                    ...process.env,
+                    RUNNER_TEMP: root,
+                    EXPECTED_NONCE: nonce,
+                    EXPECTED_SOURCE_SHA: "a".repeat(40),
+                    EXPECTED_EVENT_SHA: "b".repeat(40),
+                    EXPECTED_RUN_ID: "12345",
+                    EXPECTED_RUN_ATTEMPT: "1",
+                    GITHUB_REPOSITORY: "i7Gamer/MySpeed",
+                    JOB_BUDGET_MINUTES: "120",
+                    JOB_TIMEOUT_MINUTES: "350",
+                    RETENTION_RESERVE_MINUTES: "30",
+                    ROW_ALLOWANCE_MINUTES: "20",
+                    ROW_CLEANUP_MARGIN_MINUTES: "5",
+                    FINAL_MARGIN_MINUTES: "10",
+                    CALIBRATION_MODE: calibrationMode
+                }
+            });
+            assert.equal(completed.status, 0, completed.stderr);
+            return JSON.parse(fs.readFileSync(outputPath, "utf8"));
+        } finally {
+            fs.rmSync(root, {recursive: true, force: true});
+        }
+    };
+
+    it("assembles request omitting prerequisiteEvidence in calibration mode and including it in full matrix mode", () => {
+        const calRequest = buildRequestInMode("true");
+        assert.equal(calRequest.mode, "scenario0-calibration");
+        assert.equal(Object.hasOwn(calRequest, "prerequisiteEvidence"), false);
+        assert.equal(calRequest.prerequisiteEvidence, undefined);
+
+        const fullRequest = buildRequestInMode("false");
+        assert.equal(fullRequest.mode, "full-matrix");
+        assert.equal(Object.hasOwn(fullRequest, "prerequisiteEvidence"), true);
+        assert.deepEqual(fullRequest.prerequisiteEvidence, {rollbackCalibration: {schemaVersion: 1}});
+    });
+});

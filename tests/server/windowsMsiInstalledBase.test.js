@@ -7,6 +7,7 @@ import {PACKAGE_ROOTS, STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, runWindowsCpuF
 import {STAGE2_LIMITS} from "../../scripts/qualification/linux-windows-cpu-floor-admission.mjs";
 import {sealSameJobInstalledBase,
     validateSameJobInstalledBaseSeal} from "../../scripts/qualification/windows-msi-installed-base.mjs";
+import {INSTALLER_BOOT_CONFIRMATION} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
     "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
 
@@ -363,5 +364,116 @@ describe("same-job installed Stage 2 base sealing", () => {
             const value = structuredClone(sealed); mutate(value);
             assert.throws(() => validateSameJobInstalledBaseSeal(value, context()));
         }
+    });
+
+    it("accepts and validates optional Stage 2 installer-confirmation evidence and rejects malformed evidence before seal mutation", async () => {
+        const validConfirmationInput = Object.freeze({
+            kind: "installer-boot-confirmation",
+            qcode: "ret",
+            holdMilliseconds: 100,
+            requestedOffsetMilliseconds: 2000,
+            sentOffsetMilliseconds: 2050,
+            acknowledged: true
+        });
+
+        // 1. Authorized positive: valid bootConfirmation and valid inputSent evidence
+        const authorizedEvidence = stage2Result();
+        authorizedEvidence.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+        authorizedEvidence.earlyBoot.inputSent = structuredClone(validConfirmationInput);
+
+        const ioAuthorized = operations();
+        const sealed = await sealSameJobInstalledBase({
+            expectedContext: context(),
+            paths: paths(),
+            stage2Result: authorizedEvidence
+        }, ioAuthorized.value);
+        assert.equal(sealed.status, "sealed");
+        assert.deepEqual(ioAuthorized.calls.map(([kind]) => kind), ["group", "file", "qcow2", "seal", "file"]);
+
+        // 2. Default no-input positive: omitted bootConfirmation and inputSent: false
+        const defaultEvidence = stage2Result();
+        assert.equal(defaultEvidence.bootConfirmation, undefined);
+        assert.equal(defaultEvidence.earlyBoot.inputSent, false);
+        const ioDefault = operations();
+        const sealedDefault = await sealSameJobInstalledBase({
+            expectedContext: context(),
+            paths: paths(),
+            stage2Result: defaultEvidence
+        }, ioDefault.value);
+        assert.equal(sealedDefault.status, "sealed");
+
+        // 3. Absent-policy input rejection: inputSent is present without bootConfirmation authorization
+        const absentPolicyEvidence = stage2Result();
+        absentPolicyEvidence.earlyBoot.inputSent = structuredClone(validConfirmationInput);
+        const ioAbsent = operations();
+        await assert.rejects(() => sealSameJobInstalledBase({
+            expectedContext: context(),
+            paths: paths(),
+            stage2Result: absentPolicyEvidence
+        }, ioAbsent.value), /input sent without bootConfirmation authorization|keys are invalid|boot input is invalid/u);
+        assert.equal(ioAbsent.calls.some(([kind]) => kind === "seal"), false);
+
+        // 4. Malformed token: bootConfirmation differs from canonical exported token
+        for (const badToken of ["invalid-token", 123, null, "", "single-enter-before-setup-v2"]) {
+            const badTokenEvidence = stage2Result();
+            badTokenEvidence.bootConfirmation = badToken;
+            badTokenEvidence.earlyBoot.inputSent = structuredClone(validConfirmationInput);
+            const io = operations();
+            await assert.rejects(() => sealSameJobInstalledBase({
+                expectedContext: context(),
+                paths: paths(),
+                stage2Result: badTokenEvidence
+            }, io.value));
+            assert.equal(io.calls.some(([kind]) => kind === "seal"), false);
+        }
+
+        // 5. Malformed record: invalid qcode, timing, or unacknowledged
+        const malformedRecords = [
+            {...validConfirmationInput, acknowledged: false},
+            {...validConfirmationInput, qcode: "space"},
+            {...validConfirmationInput, holdMilliseconds: 50},
+            {...validConfirmationInput, requestedOffsetMilliseconds: 1000},
+            {...validConfirmationInput, sentOffsetMilliseconds: 1900},
+            {...validConfirmationInput, sentOffsetMilliseconds: 3500},
+            {...validConfirmationInput, extraKey: true}
+        ];
+        for (const malformed of malformedRecords) {
+            const badRecordEvidence = stage2Result();
+            badRecordEvidence.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+            badRecordEvidence.earlyBoot.inputSent = malformed;
+            const io = operations();
+            await assert.rejects(() => sealSameJobInstalledBase({
+                expectedContext: context(),
+                paths: paths(),
+                stage2Result: badRecordEvidence
+            }, io.value));
+            assert.equal(io.calls.some(([kind]) => kind === "seal"), false);
+        }
+
+        // 6. Wrong screenshot digest
+        const badScreenshotEvidence = stage2Result();
+        badScreenshotEvidence.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+        badScreenshotEvidence.earlyBoot.inputSent = structuredClone(validConfirmationInput);
+        badScreenshotEvidence.earlyBoot.screenshots[0].sha256 = "0".repeat(64);
+        const ioScreenshot = operations();
+        await assert.rejects(() => sealSameJobInstalledBase({
+            expectedContext: context(),
+            paths: paths(),
+            stage2Result: badScreenshotEvidence
+        }, ioScreenshot.value));
+        assert.equal(ioScreenshot.calls.some(([kind]) => kind === "seal"), false);
+
+        // 7. Failed cleanup: qemuProcess.cleanupProven = false
+        const failedCleanupEvidence = stage2Result();
+        failedCleanupEvidence.bootConfirmation = INSTALLER_BOOT_CONFIRMATION;
+        failedCleanupEvidence.earlyBoot.inputSent = structuredClone(validConfirmationInput);
+        failedCleanupEvidence.qemuProcess.cleanupProven = false;
+        const ioCleanup = operations();
+        await assert.rejects(() => sealSameJobInstalledBase({
+            expectedContext: context(),
+            paths: paths(),
+            stage2Result: failedCleanupEvidence
+        }, ioCleanup.value));
+        assert.equal(ioCleanup.calls.some(([kind]) => kind === "seal"), false);
     });
 });

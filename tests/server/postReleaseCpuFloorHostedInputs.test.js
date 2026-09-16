@@ -13,8 +13,8 @@ import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
 import {prepareV161PostReleaseCpuFloorGuestFiles} from
     "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
-import {targetInput, hostedContext, authenticBaselineSummaryBytes, baselineArtifactRecord, OBSERVED_AT} from
-    "../helpers/post-release-cpu-floor-fixture.mjs";
+import {targetInput, hostedContext, authenticBaselineSummaryBytes, baselineArtifactRecord, OBSERVED_AT,
+    stage3ExecutionPlan} from "../helpers/post-release-cpu-floor-fixture.mjs";
 
 const context = hostedContext();
 const REPOSITORY = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -42,7 +42,8 @@ function observedFixture() {
 const adapterInput = observed => ({observedMsiPreparation: observed, hostedContext: context,
     artifactRoot: ARTIFACT_ROOT, baselineArtifact: baselineArtifactRecord(),
     baselineSummaryBytes: authenticBaselineSummaryBytes(), observedAt: OBSERVED_AT,
-    probeArtifact: {sourceSha: targetInput().tag.commitSha}, probes: [], roots: roots(), closureRecords: []});
+    probeArtifact: {sourceSha: targetInput().tag.commitSha}, probes: [], roots: roots(), closureRecords: [],
+    stage3Plan: stage3ExecutionPlan()});
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const physicalIdentity = target => { const bytes = fs.readFileSync(target); return {path: fs.realpathSync.native(target),
     bytes: bytes.length, sha256: hash(bytes)}; };
@@ -69,7 +70,7 @@ describe("post-release CPU-floor hosted input adapter", () => {
         const result = await runV161PostReleaseCpuFloorHostedInputs({observedMsiPreparation: observed,
             hostedContext: context, artifactRoot: ARTIFACT_ROOT, baselineArtifact: baselineArtifactRecord(),
             baselineSummaryBytes: summary, observedAt: OBSERVED_AT, probeArtifact: {sourceSha: target.candidate.sourceSha},
-            probes, roots: roots(), closureRecords: [{name: "sealed"}]}, {
+            probes, roots: roots(), closureRecords: [{name: "sealed"}], stage3Plan: stage3ExecutionPlan()}, {
             readOwned: (_identity, label) => label === "qualification manifest" ? manifest : Buffer.from("candidate"),
             makeDirectory: targetPath => assert.equal(targetPath, STAGE3_ROOT),
             prepareGuest: value => { preparedInput = value; return {files: [{name: "node.exe"}]}; },
@@ -88,6 +89,7 @@ describe("post-release CPU-floor hosted input adapter", () => {
         assert.equal(launcherInput.acquired.summary.sha256,
             "e8e8106aa6584fe99382a205842d78dbf83d21ae9fe8b4edafc6156cf2f29ddd");
         assert.deepEqual(launcherInput.guestFiles, [{name: "node.exe"}]);
+        assert.deepEqual(launcherInput.plan, stage3ExecutionPlan());
         assert.deepEqual(staged.map(value => path.basename(value.targetPath)),
             ["MySpeed.exe", "qualification-summary.json", "qualification-manifest.json"]);
         assert.equal(staged[1].bytes.equals(summary), true);
@@ -171,7 +173,7 @@ describe("post-release CPU-floor hosted input adapter", () => {
             target: bindV161PostReleaseTarget(targetInput()), execution: {root: "/different"}},
         hostedContext: context, artifactRoot: ARTIFACT_ROOT, baselineArtifact: baselineArtifactRecord(),
         baselineSummaryBytes: authenticBaselineSummaryBytes(), observedAt: OBSERVED_AT, probeArtifact: {}, probes: [],
-        roots: roots(), closureRecords: []}), /preparation binding differs/u);
+        roots: roots(), closureRecords: [], stage3Plan: stage3ExecutionPlan()}), /preparation binding differs/u);
     });
 
     for (const [label, mutate, pattern] of [
@@ -191,6 +193,13 @@ describe("post-release CPU-floor hosted input adapter", () => {
             stageFile: () => { staged = true; }
         }), pattern);
         assert.equal(staged, false);
+    });
+
+    it("refuses a hosted input that declares no Stage 3 execution plan", async () => {
+        const value = adapterInput(observedFixture());
+        delete value.stage3Plan;
+        await assert.rejects(() => runV161PostReleaseCpuFloorHostedInputs(value, {}),
+            /hosted CPU-floor input schema differs/u);
     });
 
     it("refuses a non-accepted launcher result", async () => {

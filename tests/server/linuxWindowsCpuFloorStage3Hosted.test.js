@@ -105,6 +105,7 @@ function fixture(overrides = {}) {
             throw new Error(`unexpected read ${target}`);
         },
         pathExists: () => false,
+        unixMilliseconds: () => NOW_MILLISECONDS,
         runOwned: async (command, argv, options) => { calls.push(["run", command, argv, options]);
             return {process: processObservation, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}; },
         stage2Factory: input => { calls.push(["factory", input]); return {
@@ -124,6 +125,11 @@ function fixture(overrides = {}) {
         guestFiles: guestFiles(), dependencies});
     return {operations, calls, stage2ResultIdentity, stage2GuestResultIdentity, stage2GuestBytes, baseline};
 }
+
+const WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
+const NOW_MILLISECONDS = WALL_DEADLINE_MILLISECONDS - 80 * 60_000;
+const budget = () => ({label: "cpu-floor-stage3-baseline",
+    wallDeadlineUnixMilliseconds: WALL_DEADLINE_MILLISECONDS});
 
 describe("hosted Windows CPU-floor Stage 3 operations", () => {
     it("rejects a copied context before inspecting any file", () => {
@@ -187,7 +193,7 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         assert.match(bootstrap, /Install-MyspeedBaselineRuntimeBundle/u);
         assert.match(bootstrap, /windows-baseline-guest-executor\.mjs/u);
         assert.doesNotMatch(bootstrap, /baseline-guest-runner\.mjs/u);
-        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(), paths: paths(),
             stage2: stage2(), toolchain: toolchain()});
         assert.equal(launch.process.treeGone, true);
         const result = await value.operations.collectBaselineGuestResult({outputDisk: launch.outputDisk});
@@ -226,12 +232,15 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         await value.operations.replayStage2({identity: value.stage2ResultIdentity,
             guestIdentity: value.stage2GuestResultIdentity});
         const raw = ["-nodefaults", "-nic", "none"];
-        await assert.rejects(value.operations.launchBaselineGuest({argv: raw, paths: paths(), stage2: stage2(),
+        await assert.rejects(value.operations.launchBaselineGuest({argv: raw, budget: budget(), paths: paths(), stage2: stage2(),
             toolchain: toolchain()}), /did not return/u);
         assert.equal(monitored.length, 1);
+        // The bounded reservation, not the launcher's generic 16200s allowance.
         assert.deepEqual(monitored[0].argv.slice(0, 10), ["-n", "--", "/usr/bin/timeout", "--foreground",
-            "--signal=KILL", "16200s", toolchain().runtime.loader.path, "--argv0",
+            "--signal=KILL", "3300s", toolchain().runtime.loader.path, "--argv0",
             toolchain().qemu.invocationPath, "--library-path"]);
+        assert.equal(monitored[0].argv.includes("16200s"), false);
+        assert.equal(monitored[0].timeoutMs, 55 * 60_000 + 2 * 60_000);
         assert.deepEqual(monitored[0].argv.slice(-raw.length), raw);
         assert.equal(monitored[0].argv.filter(value => value === "--argv0").length, 1);
     });
@@ -257,7 +266,7 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         })});
         await failed.operations.replayStage2({identity: failed.stage2ResultIdentity,
             guestIdentity: failed.stage2GuestResultIdentity});
-        await assert.rejects(failed.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+        await assert.rejects(failed.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(), paths: paths(),
             stage2: stage2(), toolchain: toolchain()}), /QEMU cleanup was not proven/u);
         assert.equal(value.calls.some(call => call[0] === "run"), false);
     });
@@ -343,7 +352,7 @@ describe("hosted Windows CPU-floor Stage 3 seed contract", () => {
         const value = fixture();
         await value.operations.replayStage2({identity: value.stage2ResultIdentity,
             guestIdentity: value.stage2GuestResultIdentity});
-        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(), paths: paths(),
             stage2: stage2(), toolchain: toolchain()});
         assert.deepEqual(launch.earlyBoot, EARLY_BOOT);
         assert.deepEqual(value.calls.find(call => call[0] === "launch")[1].bootConfirmation, undefined);
@@ -358,15 +367,45 @@ describe("hosted Windows CPU-floor Stage 3 seed contract", () => {
         })});
         await value.operations.replayStage2({identity: value.stage2ResultIdentity,
             guestIdentity: value.stage2GuestResultIdentity});
-        await assert.rejects(value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+        await assert.rejects(value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(), paths: paths(),
             stage2: stage2(), toolchain: toolchain()}), /early-boot observation/u);
+    });
+
+    it("admits one bounded reservation from the declared budget instead of the generic allowance", async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(),
+            paths: paths(), stage2: stage2(), toolchain: toolchain()});
+        const expected = {label: "cpu-floor-stage3-baseline", executionMilliseconds: 55 * 60_000,
+            cleanupMilliseconds: 2 * 60_000};
+        assert.deepEqual(launch.reservation, expected);
+        assert.deepEqual(value.calls.find(call => call[0] === "launch")[1].reservation, expected);
+    });
+
+    it("refuses to start a guest the declared deadline can no longer hold", async () => {
+        const value = fixture({unixMilliseconds: () => WALL_DEADLINE_MILLISECONDS - 10 * 60_000});
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        await assert.rejects(value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(),
+            paths: paths(), stage2: stage2(), toolchain: toolchain()}), /Stage 3 execution budget/u);
+        assert.equal(value.calls.some(call => call[0] === "launch"), false);
+    });
+
+    it("refuses a launch that declares no budget at all", async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        await assert.rejects(value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(),
+            stage2: stage2(), toolchain: toolchain()}), /Stage 3 budget keys are invalid/u);
+        assert.equal(value.calls.some(call => call[0] === "launch"), false);
     });
 
     it("forwards only an explicitly bound Stage 3 confirmation to the shared launcher", async () => {
         const value = fixture();
         await value.operations.replayStage2({identity: value.stage2ResultIdentity,
             guestIdentity: value.stage2GuestResultIdentity});
-        await value.operations.launchBaselineGuest({argv: ["-nic", "none"], paths: paths(), stage2: stage2(),
+        await value.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(), paths: paths(), stage2: stage2(),
             toolchain: toolchain(), bootConfirmation: "single-enter-before-setup-v1"});
         assert.equal(value.calls.find(call => call[0] === "launch")[1].bootConfirmation,
             "single-enter-before-setup-v1");

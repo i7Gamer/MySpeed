@@ -8,6 +8,7 @@ import {
     createHostedStage2Operations,
     runHostedOwnedProcess
 } from "./linux-windows-cpu-floor-stage2-hosted.mjs";
+import {admitStage3Reservation} from "./linux-windows-cpu-floor-stage3.mjs";
 import {renderWindowsBaselineGuestBootstrap} from "./windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaselineCpuHandoff} from
     "./windows-msi-post-setup-activation.mjs";
@@ -268,11 +269,17 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
             ovmfVars: {path: prepared.ovmfVars.path, bytes: inspect(prepared.ovmfVars.path,
                 MAX_CANDIDATE_BYTES).bytes, sha256: prepared.ovmfVars.sha256}};
         },
-        async launchBaselineGuest({argv, bootConfirmation, paths: inputPaths, stage2, toolchain}) {
+        async launchBaselineGuest({argv, bootConfirmation, budget, paths: inputPaths, stage2, toolchain}) {
             launchCleanupProven = false;
+            /*
+             * Admitted before any guest starts, against the deadline the request declared. A run with
+             * no room left for a Windows installation is refused here rather than started and killed
+             * later, and the shared launcher never falls through to its generic allowance.
+             */
+            const reservation = admitStage3Reservation(budget, dependencies.unixMilliseconds ?? Date.now);
             const compatible = stage2CompatiblePaths(context, inputPaths);
             const launch = await getAdapter(stage2).launchOwnedQemu({context, paths: compatible, toolchain, argv,
-                privilegeMode: stage2.privilegeMode,
+                privilegeMode: stage2.privilegeMode, reservation: {...reservation},
                 ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
             if (!launch.guest || launch.guest.status !== "observed")
                 throw new Error("baseline guest did not return the CPU calibration envelope");
@@ -283,7 +290,8 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
                 throw new Error("baseline QEMU cleanup was not proven");
             launchCleanupProven = true;
             return {argv: structuredClone(argv), process: structuredClone(launch.process),
-                earlyBoot: structuredClone(launch.earlyBoot), outputDisk: structuredClone(launch.guest.output)};
+                earlyBoot: structuredClone(launch.earlyBoot), reservation: {...reservation},
+                outputDisk: structuredClone(launch.guest.output)};
         },
         async collectBaselineGuestResult({outputDisk}) {
             const target = `${paths.root}/${BASELINE_RESULT_NAME}`;

@@ -127,6 +127,15 @@ export const placeholderStage2Receipts = () => ({
     guestResult: {path: `${TRANSPORT_ROOT}/guest-result.json`, bytes: "2048", sha256: "2".repeat(64)}
 });
 
+/*
+ * The Stage 3 execution plan the hosted run declares: which installer-confirmation policy it binds,
+ * and the wall-clock moment the sequence process has to be finished by. Both are caller-supplied and
+ * neither is inferred from Stage 2, so a test that wants the opt-in has to name it.
+ */
+export const STAGE3_WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
+export const stage3ExecutionPlan = (overrides = {}) => ({installerConfirmation: "no-input",
+    wallDeadlineUnixMilliseconds: STAGE3_WALL_DEADLINE_MILLISECONDS, ...overrides});
+
 export const OTHER_RUN_ID = "40000000002";
 export const OTHER_NONCE = "f0e1d2c3b4a5968778695a4b3c2d1e0f";
 
@@ -150,7 +159,7 @@ export async function buildOtherExecutionStage3Fixture(candidate) {
  * Drives Gemini's real Stage 3 producer with inert injected operations over the post-release
  * candidate projection, so the consumer is tested against an actually produced result.
  */
-export async function buildPostReleaseStage3Fixture(candidate) {
+export async function buildPostReleaseStage3Fixture(candidate, plan = stage3ExecutionPlan()) {
     return buildAcceptedStage3Fixture({
         sourceSha: HARNESS_SHA,
         eventSha: HARNESS_SHA,
@@ -158,6 +167,10 @@ export async function buildPostReleaseStage3Fixture(candidate) {
         runId: HOSTED_RUN_ID,
         runAttempt: HOSTED_RUN_ATTEMPT,
         nonce: HOSTED_NONCE,
-        candidate: structuredClone(candidate)
+        candidate: structuredClone(candidate),
+        budget: {label: "cpu-floor-stage3-baseline",
+            wallDeadlineUnixMilliseconds: plan.wallDeadlineUnixMilliseconds},
+        ...(plan.installerConfirmation === "no-input" ? {}
+            : {bootConfirmation: plan.installerConfirmation})
     });
 }

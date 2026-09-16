@@ -63,6 +63,149 @@ const STAGE3_INSTALL_MEDIA_BOOT_INDEX = 1;
 const STAGE3_REQUIRED_QEMU_DEVICES = Object.freeze(["ich9-ahci", "ide-cd", "ide-hd", "isa-serial", "VGA",
     "qemu-xhci", "usb-kbd"]);
 
+/*
+ * Stage 3's execution budget.
+ *
+ * One QEMU process covers both Windows boots: Setup's own boot off the installation media, and the
+ * first boot of the installed system that runs the baseline. The shared launcher will otherwise give
+ * that process its generic 270-minute allowance, which no hosted job can ever spend - a stalled
+ * installer would run until the job itself was cancelled, taking the evidence upload with it. So the
+ * request carries a wall deadline and the launch is admitted against it, never against a fresh clock.
+ *
+ * The deadline is the moment the sequence process must be finished, so the workflow has already
+ * subtracted the retention reserve from the job ceiling before declaring it. What is subtracted here
+ * is only what has to happen after the execution deadline stops QEMU: proving the process tree is
+ * gone, and extracting and reading the guest result off the output disk.
+ *
+ * The ceiling and the minimum are planning allowances, not measurements: no native Stage 3 run has
+ * completed, so neither is calibrated. The minimum is a stopping criterion rather than a promise -
+ * below it a fresh Windows installation cannot plausibly finish, so refusing to start costs nothing
+ * while starting would spend the whole remainder proving that.
+ */
+const STAGE3_RESERVATION_LABEL = "cpu-floor-stage3-baseline";
+const STAGE3_JOB_CEILING_MILLISECONDS = 90 * 60 * 1_000;
+const STAGE3_RETENTION_RESERVE_MILLISECONDS = 6 * 60 * 1_000;
+const STAGE3_EXECUTION_CEILING_MILLISECONDS = 55 * 60 * 1_000;
+const STAGE3_MINIMUM_EXECUTION_MILLISECONDS = 20 * 60 * 1_000;
+const STAGE3_LAUNCH_CLEANUP_MILLISECONDS = 2 * 60 * 1_000;
+const STAGE3_COLLECTION_RESERVE_MILLISECONDS = 2 * 60 * 1_000;
+const STAGE3_SEQUENCE_KILL_GRACE_MILLISECONDS = 30 * 1_000;
+const STAGE3_MINIMUM_SEQUENCE_MILLISECONDS = 25 * 60 * 1_000;
+const STAGE3_MAX_JOB_METADATA_ENTRIES = 100;
+
+export const STAGE3_BUDGET_CONSTANTS = Object.freeze({
+    RESERVATION_LABEL: STAGE3_RESERVATION_LABEL,
+    JOB_CEILING_MILLISECONDS: STAGE3_JOB_CEILING_MILLISECONDS,
+    RETENTION_RESERVE_MILLISECONDS: STAGE3_RETENTION_RESERVE_MILLISECONDS,
+    EXECUTION_CEILING_MILLISECONDS: STAGE3_EXECUTION_CEILING_MILLISECONDS,
+    MINIMUM_EXECUTION_MILLISECONDS: STAGE3_MINIMUM_EXECUTION_MILLISECONDS,
+    LAUNCH_CLEANUP_MILLISECONDS: STAGE3_LAUNCH_CLEANUP_MILLISECONDS,
+    COLLECTION_RESERVE_MILLISECONDS: STAGE3_COLLECTION_RESERVE_MILLISECONDS,
+    SEQUENCE_KILL_GRACE_MILLISECONDS: STAGE3_SEQUENCE_KILL_GRACE_MILLISECONDS,
+    MINIMUM_SEQUENCE_MILLISECONDS: STAGE3_MINIMUM_SEQUENCE_MILLISECONDS,
+    MAX_JOB_METADATA_ENTRIES: STAGE3_MAX_JOB_METADATA_ENTRIES
+});
+
+/*
+ * Where the ceiling is anchored.
+ *
+ * GitHub charges a job's timeout-minutes from the moment the job starts, which is before any step of
+ * ours runs: runner assignment and job setup happen first, and a workflow expression cannot read a
+ * job's own start either. A first shell step that opens the budget from its own clock therefore
+ * claims setup time it has already spent, and the further the start is delayed the more of the
+ * retention reserve the claim quietly consumes.
+ *
+ * So the anchor is the authenticated start of this job, read once from the run attempt's own job
+ * metadata and matched on run, attempt, job name, runner and in-progress status together. Anything
+ * ambiguous, unavailable or unparsable refuses the run: there is no fallback to a fresh clock,
+ * because a fresh clock is exactly the error being corrected. If the API's started_at were ever the
+ * queued moment rather than the running one it would be earlier than the true start, which shortens
+ * the budget - the run may be refused, never extended.
+ *
+ * Two deadlines come out of it, and they are not the same moment. The hard stop is when nothing of
+ * the sequence may still be running, and it leaves the whole retention reserve for the cleanup proof
+ * and the two uploads. The wall deadline is one kill grace earlier: it is when the outer timeout
+ * sends TERM, so its escalation to KILL still completes by the hard stop rather than spending the
+ * reserve. The wall deadline is what the sequence and the Stage 3 launch admission are given.
+ */
+export function anchorStage3JobBudget(value, unixMilliseconds) {
+    keys(value, ["jobName", "jobs", "runAttempt", "runId", "runnerName", "totalCount"],
+        "Stage 3 job anchor request");
+    const name = text => typeof text === "string" && text.length > 0 && text.length <= 255;
+    if (!name(value.jobName) || !name(value.runnerName) ||
+        !name(value.runId) || !DECIMAL_PATTERN.test(value.runId) ||
+        !name(value.runAttempt) || !DECIMAL_PATTERN.test(value.runAttempt))
+        throw new TypeError("Stage 3 job anchor request is invalid");
+    if (!Array.isArray(value.jobs) || value.jobs.length > STAGE3_MAX_JOB_METADATA_ENTRIES ||
+        value.jobs.some(job => !job || typeof job !== "object" || Array.isArray(job)))
+        throw new TypeError("Stage 3 job metadata is invalid");
+    if (!Number.isSafeInteger(value.totalCount) || value.totalCount !== value.jobs.length)
+        throw new TypeError("Stage 3 job metadata is incomplete");
+    const matches = value.jobs.filter(job => job.name === value.jobName &&
+        String(job.run_id) === value.runId && String(job.run_attempt) === value.runAttempt &&
+        job.runner_name === value.runnerName && job.status === "in_progress");
+    if (matches.length !== 1)
+        throw new Error(`Stage 3 job anchor is ambiguous or absent: ${matches.length} matching jobs`);
+    const startedAt = typeof matches[0].started_at === "string" ? Date.parse(matches[0].started_at) : Number.NaN;
+    if (!Number.isSafeInteger(startedAt) || startedAt < 1)
+        throw new TypeError("Stage 3 job start is invalid");
+    if (typeof unixMilliseconds !== "function") throw new TypeError("Stage 3 budget clock is invalid");
+    const now = unixMilliseconds();
+    if (!Number.isSafeInteger(now) || now < 1) throw new TypeError("Stage 3 budget clock is invalid");
+    // A job cannot be running before it started, nor for longer than the ceiling it is cancelled at.
+    if (startedAt > now || now - startedAt > STAGE3_JOB_CEILING_MILLISECONDS)
+        throw new TypeError("Stage 3 job start is invalid");
+    const hardStopUnixMilliseconds = startedAt + STAGE3_JOB_CEILING_MILLISECONDS -
+        STAGE3_RETENTION_RESERVE_MILLISECONDS;
+    const wallDeadlineUnixMilliseconds = hardStopUnixMilliseconds - STAGE3_SEQUENCE_KILL_GRACE_MILLISECONDS;
+    const remainingMilliseconds = wallDeadlineUnixMilliseconds - now;
+    if (remainingMilliseconds < STAGE3_MINIMUM_SEQUENCE_MILLISECONDS)
+        throw new Error(`Stage 3 job budget leaves ${remainingMilliseconds}ms, below the `
+            + `${STAGE3_MINIMUM_SEQUENCE_MILLISECONDS}ms a sequence requires`);
+    return Object.freeze({startedAtUnixMilliseconds: startedAt, hardStopUnixMilliseconds,
+        wallDeadlineUnixMilliseconds, remainingMilliseconds});
+}
+
+export function validateStage3Budget(value) {
+    keys(value, ["label", "wallDeadlineUnixMilliseconds"], "Stage 3 budget");
+    if (value.label !== STAGE3_RESERVATION_LABEL ||
+        !Number.isSafeInteger(value.wallDeadlineUnixMilliseconds) || value.wallDeadlineUnixMilliseconds < 1)
+        throw new TypeError("Stage 3 budget is invalid");
+    return Object.freeze({...value});
+}
+
+/*
+ * The reservation the shared launcher is handed. Its cleanup allowance travels separately rather
+ * than folded into the execution bound, so the process and its group still have headroom to be
+ * proven gone after the execution deadline has stopped them.
+ */
+export function admitStage3Reservation(budget, unixMilliseconds) {
+    const checked = validateStage3Budget(budget);
+    if (typeof unixMilliseconds !== "function") throw new TypeError("Stage 3 budget clock is invalid");
+    const now = unixMilliseconds();
+    if (!Number.isSafeInteger(now) || now < 1) throw new TypeError("Stage 3 budget clock is invalid");
+    const spendable = checked.wallDeadlineUnixMilliseconds - now - STAGE3_LAUNCH_CLEANUP_MILLISECONDS -
+        STAGE3_COLLECTION_RESERVE_MILLISECONDS;
+    const executionMilliseconds = Math.min(STAGE3_EXECUTION_CEILING_MILLISECONDS, spendable);
+    if (executionMilliseconds < STAGE3_MINIMUM_EXECUTION_MILLISECONDS)
+        throw new Error(`Stage 3 execution budget of ${executionMilliseconds}ms is below the `
+            + `${STAGE3_MINIMUM_EXECUTION_MILLISECONDS}ms a fresh Windows installation requires`);
+    return Object.freeze({label: STAGE3_RESERVATION_LABEL, executionMilliseconds,
+        cleanupMilliseconds: STAGE3_LAUNCH_CLEANUP_MILLISECONDS});
+}
+
+/* What the launcher was actually given, re-checked against the bounds the admission applied. */
+export function validateStage3Reservation(value) {
+    keys(value, ["cleanupMilliseconds", "executionMilliseconds", "label"], "Stage 3 reservation");
+    if (value.label !== STAGE3_RESERVATION_LABEL ||
+        value.cleanupMilliseconds !== STAGE3_LAUNCH_CLEANUP_MILLISECONDS ||
+        !Number.isSafeInteger(value.executionMilliseconds) ||
+        value.executionMilliseconds < STAGE3_MINIMUM_EXECUTION_MILLISECONDS ||
+        value.executionMilliseconds > STAGE3_EXECUTION_CEILING_MILLISECONDS)
+        throw new TypeError("Stage 3 reservation is invalid");
+    return Object.freeze({...value});
+}
+
 function keys(value, expected, name) {
     if (!value || typeof value !== "object" || Array.isArray(value) ||
         JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...expected].sort()))
@@ -422,8 +565,8 @@ function validateCandidate(value, context) {
 }
 
 export function validateRequest(value) {
-    keys(value, ["authorization", "candidate", "context", "paths", "profile", "schemaVersion", "stage2"],
-        "Stage 3 request");
+    keys(value, ["authorization", "budget", "candidate", "context", "paths", "profile", "schemaVersion",
+        "stage2"], "Stage 3 request");
     if (value.schemaVersion !== SCHEMA_VERSION || value.profile !== PROFILE) throw new TypeError("Stage 3 profile is invalid");
     const context = validateHostedContext(value.context);
     const authorizationKeys = ["candidate", "confirmation", "qemu", "scope"];
@@ -445,8 +588,9 @@ export function validateRequest(value) {
         stage2GuestResult.path !== `${transportRoot}/guest-result.json`)
         throw new TypeError("Stage 2 retained evidence paths differ");
     const paths = validatePaths(value.paths, context);
-    return {context, paths, bootConfirmation, candidate: validateCandidate(value.candidate, context), stage2Result,
-        stage2GuestResult, request: structuredClone(value)};
+    const budget = validateStage3Budget(value.budget);
+    return {context, paths, bootConfirmation, budget, candidate: validateCandidate(value.candidate, context),
+        stage2Result, stage2GuestResult, request: structuredClone(value)};
 }
 
 function drive(id, file, {readOnly = false, format = "raw"} = {}) {
@@ -652,8 +796,8 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     const stage2 = validateStage2Observation(stage2Value, checked.context);
     keys(value, ["argv", "baselineFullRuntimeAccepted", "candidate", "classification", "cleanupProven", "context",
         "cpuFloorAccepted", "earlyBoot", "guest", "guestEvidence", "media", "outputDisk", "qemuProcess", "qualifying",
-        "releaseGateCleared", "schemaVersion", "stage", "stage2GuestEvidence", "stage2Result", "status"],
-    "completed Stage 3 result");
+        "releaseGateCleared", "reservation", "schemaVersion", "stage", "stage2GuestEvidence", "stage2Result",
+        "status"], "completed Stage 3 result");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.stage !== "complete" ||
         value.classification !== CLASSIFICATION || value.qualifying !== false || value.releaseGateCleared !== false ||
         value.baselineFullRuntimeAccepted !== true || value.cpuFloorAccepted !== true || value.cleanupProven !== true ||
@@ -667,6 +811,7 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     const argv = buildBaselineQemuArguments({paths: checked.paths, toolchain: stage2.toolchain, windowsIso});
     if (!same(value.argv, argv)) throw new TypeError("completed Stage 3 QEMU vector differs");
     validateEarlyBoot(value.earlyBoot, checked.paths, checked.bootConfirmation);
+    validateStage3Reservation(value.reservation);
     validateProcess(value.qemuProcess, stage2.toolchain);
     const outputDisk = validateIdentity(value.outputDisk, "completed Stage 3 output disk");
     if (outputDisk.path !== checked.paths.outputDisk || outputDisk.bytes !== OUTPUT_DISK_BYTES)
@@ -714,12 +859,13 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         const argv = buildBaselineQemuArguments({paths: checked.paths, toolchain: stage2.toolchain, windowsIso});
         stage = "qemu-launch";
         cleanupProven = false;
-        const launch = await operations.launchBaselineGuest({context, argv, candidate, media, paths: checked.paths,
-            profile: PROFILE, stage2, toolchain: stage2.toolchain, windowsIso,
+        const launch = await operations.launchBaselineGuest({context, argv, budget: checked.budget, candidate,
+            media, paths: checked.paths, profile: PROFILE, stage2, toolchain: stage2.toolchain, windowsIso,
             ...(checked.bootConfirmation === undefined ? {} : {bootConfirmation: checked.bootConfirmation})});
-        keys(launch, ["argv", "earlyBoot", "outputDisk", "process"], "Stage 3 launch observation");
+        keys(launch, ["argv", "earlyBoot", "outputDisk", "process", "reservation"], "Stage 3 launch observation");
         if (!same(launch.argv, argv)) throw new TypeError("Stage 3 observed QEMU vector differs");
         const earlyBoot = validateEarlyBoot(launch.earlyBoot, checked.paths, checked.bootConfirmation);
+        const reservation = validateStage3Reservation(launch.reservation);
         try { validateProcess(launch.process, stage2.toolchain); }
         catch (error) { cleanupProven = false; throw error; }
         cleanupProven = true;
@@ -734,7 +880,8 @@ export async function runWindowsCpuFloorStage3(input, operations) {
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             baselineFullRuntimeAccepted: true, cpuFloorAccepted: true, cleanupProven: true, context,
             stage2Result: checked.stage2Result, stage2GuestEvidence, candidate, media, argv,
-            earlyBoot: structuredClone(earlyBoot), qemuProcess: launch.process, outputDisk,
+            earlyBoot: structuredClone(earlyBoot), reservation: structuredClone(reservation),
+            qemuProcess: launch.process, outputDisk,
             guestEvidence: structuredClone(guestEvidence), guest});
     } catch (error) { return failure(context, stage, error, cleanupProven); }
 }

@@ -5,6 +5,9 @@ import {describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
 import {parse} from "yaml";
 
+import {STAGE3_BUDGET_CONSTANTS} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
+import {POST_RELEASE_CPU_FLOOR_CONSTANTS} from "../../scripts/release/post-release-cpu-floor.mjs";
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORKFLOW_PATH = path.join(HERE, "..", "..", ".github", "workflows",
     "windows-cpu-floor-post-release-v1.6.1.yml");
@@ -157,6 +160,84 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
             "sequence requires an empty fresh transport root, not precreated log files");
     });
 
+    it("offers exactly the two supported Stage 3 installer policies and defaults to no input", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const input = workflow.on.workflow_dispatch.inputs.stage3_installer_confirmation;
+        assert.equal(input.required, true);
+        assert.equal(input.type, "choice");
+        assert.equal(input.default, POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_NO_INPUT);
+        assert.deepEqual(input.options, [...POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_INSTALLER_CONFIRMATIONS]);
+        const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
+        assert.match(runSeqStep.run,
+            /installerConfirmation: process\.env\.STAGE3_INSTALLER_CONFIRMATION/u);
+    });
+
+    it("derives the sequence bound from what is left of the same 90-minute ceiling", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        assert.equal(workflow.jobs.execute["timeout-minutes"] * 60,
+            Number(workflow.env.EXECUTE_JOB_CEILING_SECONDS));
+        assert.equal(Number(workflow.env.EXECUTE_JOB_CEILING_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS);
+        assert.equal(Number(workflow.env.EVIDENCE_RETENTION_RESERVE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS);
+        assert.equal(Number(workflow.env.MINIMUM_SEQUENCE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.MINIMUM_SEQUENCE_MILLISECONDS);
+        const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
+        assert.equal(Object.hasOwn(runSeqStep.env, "SEQUENCE_TIMEOUT_SECONDS"), false,
+            "a fixed bound would outlive the ceiling once the steps above it ran long");
+        assert.match(runSeqStep.run, /remaining_seconds=\$\(\( \(SEQUENCE_DEADLINE_MILLISECONDS - now_ms\) \/ 1000 \)\)/u);
+        assert.match(runSeqStep.run, /--kill-after="\$\{SEQUENCE_KILL_GRACE_SECONDS\}s" "\$\{remaining_seconds\}s"/u);
+        assert.match(runSeqStep.run, /remaining_seconds" -lt "\$MINIMUM_SEQUENCE_SECONDS/u);
+    });
+
+    it("anchors that ceiling to authenticated job metadata, never to the clock of the step reading it", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const steps = workflow.jobs.execute.steps;
+        const budgetStep = steps.find(step => step.id === "budget");
+        const script = budgetStep.with.script;
+
+        assert.match(budgetStep.uses, /^actions\/github-script@[0-9a-f]{40}$/u);
+        assert.equal(budgetStep.env.EXECUTE_JOB_NAME, workflow.jobs.execute.name,
+            "the anchor matches this job by its display name, so a rename must not orphan it");
+        assert.match(script, /listJobsForWorkflowRunAttempt/u);
+        assert.match(script, /anchorStage3JobBudget/u);
+        assert.match(script, /runnerName: process\.env\.RUNNER_NAME/u);
+        assert.match(script, /AbortSignal\.timeout/u);
+        // The helper is the sealed one, and there is no second path that could answer instead of it.
+        assert.match(script, /myspeed-stage3-closure-\$\{nonce\}/u);
+        assert.doesNotMatch(script, /catch|GITHUB_JOB\b|run_started_at/u,
+            "an unavailable or ambiguous anchor must fail the run, not fall back");
+        assert.doesNotMatch(budgetStep.with.script, /date -u/u);
+
+        const indexOf = id => steps.indexOf(steps.find(step => step.id === id));
+        assert.ok(indexOf("verify-closure") < indexOf("budget"),
+            "the anchor helper is imported from the verified closure");
+        assert.ok(indexOf("budget") < indexOf("run-sequence"));
+    });
+
+    it("charges the outer timeout's kill grace so the hard stop stays inside the retention reserve", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
+
+        assert.equal(Number(runSeqStep.env.SEQUENCE_KILL_GRACE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS);
+        assert.equal(runSeqStep.env.SEQUENCE_DEADLINE_MILLISECONDS, "${{ steps.budget.outputs.deadline_ms }}");
+        assert.equal(runSeqStep.env.SEQUENCE_HARD_STOP_MILLISECONDS, "${{ steps.budget.outputs.hard_stop_ms }}");
+        // TERM at the declared deadline, KILL one grace later, and that hard stop is what the anchor
+        // held the retention reserve back from - so the two numbers have to differ by exactly the grace.
+        assert.match(runSeqStep.run,
+            /grace_ms=\$\(\( SEQUENCE_HARD_STOP_MILLISECONDS - SEQUENCE_DEADLINE_MILLISECONDS \)\)/u);
+        assert.match(runSeqStep.run, /"\$grace_ms" -ne "\$\(\( SEQUENCE_KILL_GRACE_SECONDS \* 1000 \)\)"/u);
+    });
+
+    it("declares the same wall deadline to the production request builder", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
+        assert.equal(runSeqStep.env.SEQUENCE_DEADLINE_MILLISECONDS, "${{ steps.budget.outputs.deadline_ms }}");
+        assert.match(runSeqStep.run,
+            /wallDeadlineUnixMilliseconds: Number\(process\.env\.SEQUENCE_DEADLINE_MILLISECONDS\)/u);
+    });
+
     it("binds the runtime-derived hosted source SHA to the dispatched harness SHA", () => {
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
 
@@ -186,6 +267,9 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(cleanupStep.run, /createHostedCpuFloorCleanupOperations/u);
         assert.match(cleanupStep.run, /cleanupProven/u);
         assert.doesNotMatch(cleanupStep.run, /pkill.*qemu-system-x86_64/u);
+        // Pre-existing and deliberately retained: without a retained receipt the step refuses rather
+        // than signalling a PID it cannot prove it owns. See the follow-up result's native caveat.
+        assert.match(cleanupStep.run, /refusing PID-only signalling/u);
     });
 
     it("evidence is uploaded from stage2 transport root not stage3 transport root (Finding 3)", () => {

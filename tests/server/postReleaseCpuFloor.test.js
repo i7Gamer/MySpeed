@@ -13,6 +13,9 @@ import {
     inspectV161PostReleaseCpuFloorEvidence
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {WINDOWS_MSI_STAGE2_CLOSURE} from "../../scripts/qualification/windows-msi-stage2-request.mjs";
+import {INSTALLER_BOOT_CONFIRMATION} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
+import {admitStage3Reservation, validateRequest, STAGE3_BUDGET_CONSTANTS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {runHostedStage2Controller}
     from "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
 import {
@@ -34,6 +37,7 @@ import {
     hostedContext,
     manifestBytes,
     placeholderStage2Receipts,
+    stage3ExecutionPlan,
     targetInput
 } from "../helpers/post-release-cpu-floor-fixture.mjs";
 
@@ -64,11 +68,11 @@ const probeArtifact = () => ({
 });
 
 /** The full authentic path: binding, acquisition, Stage 3 request, real producer, consumer. */
-async function producedEvidence() {
+async function producedEvidence(plan = stage3ExecutionPlan()) {
     const acquiredBinding = acquired();
-    const projection = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, placeholderStage2Receipts());
-    const fixture = await buildPostReleaseStage3Fixture(projection.candidate);
-    const request = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, fixture.request.stage2);
+    const projection = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, placeholderStage2Receipts(), plan);
+    const fixture = await buildPostReleaseStage3Fixture(projection.candidate, plan);
+    const request = buildV161PostReleaseCpuFloorStage3Request(acquiredBinding, fixture.request.stage2, plan);
     return {acquiredBinding, fixture, request};
 }
 
@@ -233,18 +237,18 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
                 candidate: {sourceSha: CANDIDATE_SHA}};
             assert.throws(() => buildV161PostReleaseCpuFloorStage2Request(fabricated, probeArtifact(), identityOf),
                 /binding/i);
-            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(fabricated, placeholderStage2Receipts()),
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(fabricated, placeholderStage2Receipts(), stage3ExecutionPlan()),
                 /binding/i);
             // An identity binding has no verified summary, so it cannot build a Stage 3 request.
-            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(binding(), placeholderStage2Receipts()),
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(binding(), placeholderStage2Receipts(), stage3ExecutionPlan()),
                 /acquir/i);
             // A structural clone loses the brand and must not be trusted at a subsequent call.
             assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(
-                structuredClone(acquired()), placeholderStage2Receipts()), /binding/i);
+                structuredClone(acquired()), placeholderStage2Receipts(), stage3ExecutionPlan()), /binding/i);
         });
 
         it("separates candidate identity from harness context in the Stage 3 request", () => {
-            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts());
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(), stage3ExecutionPlan());
             assert.equal(request.context.sourceSha, HARNESS_SHA);
             assert.notEqual(request.candidate.sourceSha, request.context.sourceSha);
             assert.equal(request.candidate.sourceSha, CANDIDATE_SHA);
@@ -258,13 +262,65 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
         });
 
         it("builds a branded acquired Stage 3 template without invented Stage 2 identities", () => {
-            const template = buildV161PostReleaseCpuFloorStage3Template(acquired());
-            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts());
+            const template = buildV161PostReleaseCpuFloorStage3Template(acquired(), stage3ExecutionPlan());
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(), stage3ExecutionPlan());
             assert.deepEqual(template, Object.fromEntries(Object.entries(request)
                 .filter(([key]) => key !== "stage2")));
             assert.equal(Object.hasOwn(template, "stage2"), false);
-            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(binding()), /acquir/i);
-            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(structuredClone(acquired())), /binding/i);
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(binding(), stage3ExecutionPlan()), /acquir/i);
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Template(structuredClone(acquired()), stage3ExecutionPlan()), /binding/i);
+        });
+
+        it("keeps Stage 3 no-input by default while the installer preparation keeps its own authority", () => {
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                stage3ExecutionPlan());
+            assert.equal(Object.hasOwn(request.authorization, "bootConfirmation"), false);
+            const stage2Request = buildV161PostReleaseCpuFloorStage2Request(acquired(), probeArtifact(), identityOf);
+            assert.equal(stage2Request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION);
+            assert.equal(validateRequest(request).bootConfirmation, undefined);
+        });
+
+        it("binds the single bounded Enter policy only when the plan names it", () => {
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                stage3ExecutionPlan({installerConfirmation: INSTALLER_BOOT_CONFIRMATION}));
+            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION);
+            assert.equal(validateRequest(request).bootConfirmation, INSTALLER_BOOT_CONFIRMATION);
+        });
+
+        it("rejects an installer confirmation that is not one of the two supported policies", () => {
+            for (const installerConfirmation of ["press-any-key", "", "single-enter-before-setup-v2", null, true,
+                undefined, ["no-input"]]) {
+                assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(),
+                    placeholderStage2Receipts(), stage3ExecutionPlan({installerConfirmation})),
+                /installer confirmation/u);
+            }
+        });
+
+        it("requires an explicit execution plan with a usable wall deadline", () => {
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts()),
+                /execution plan/u);
+            const plan = stage3ExecutionPlan();
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                {...plan, extra: 1}), /execution plan/u);
+            const {wallDeadlineUnixMilliseconds: _dropped, ...withoutDeadline} = plan;
+            assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                withoutDeadline), /execution plan/u);
+            for (const wallDeadlineUnixMilliseconds of [0, -1, 1.5, "later", null, Number.NaN]) {
+                assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(),
+                    placeholderStage2Receipts(), {...plan, wallDeadlineUnixMilliseconds}), /wall deadline/u);
+            }
+        });
+
+        it("declares the bounded execution budget the launcher will be held to", () => {
+            const plan = stage3ExecutionPlan();
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(), plan);
+            assert.deepEqual(request.budget, {label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+                wallDeadlineUnixMilliseconds: plan.wallDeadlineUnixMilliseconds});
+            const admitted = admitStage3Reservation(request.budget,
+                () => plan.wallDeadlineUnixMilliseconds - 84 * 60_000);
+            assert.equal(admitted.executionMilliseconds,
+                STAGE3_BUDGET_CONSTANTS.EXECUTION_CEILING_MILLISECONDS);
+            assert.ok(admitted.executionMilliseconds < 16_200_000);
         });
 
         it("refuses malformed same-execution Stage 2 receipts", () => {
@@ -275,7 +331,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
             ]) {
                 const receipts = placeholderStage2Receipts();
                 mutate(receipts);
-                assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), receipts));
+                assert.throws(() => buildV161PostReleaseCpuFloorStage3Request(acquired(), receipts, stage3ExecutionPlan()));
             }
         });
     });
@@ -379,7 +435,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
 
             const acquiredBinding = acquired();
             const projection = buildV161PostReleaseCpuFloorStage3Request(
-                acquiredBinding, placeholderStage2Receipts());
+                acquiredBinding, placeholderStage2Receipts(), stage3ExecutionPlan());
             const otherExecution = await buildOtherExecutionStage3Fixture(projection.candidate);
             assert.throws(() => inspectV161PostReleaseCpuFloorEvidence({
                 binding: acquiredBinding, request: otherExecution.request,
