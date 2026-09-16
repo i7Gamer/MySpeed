@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 const QMP_MESSAGE_TIMEOUT_MILLISECONDS = 10_000;
 const QMP_SESSION_TIMEOUT_MILLISECONDS = 90_000;
 const FIRST_SCREENSHOT_DELAY_MILLISECONDS = 5_000;
@@ -34,6 +36,155 @@ export const INSTALLER_BOOT_CONFIRMATION_REQUESTED_OFFSET_MILLISECONDS = 2_000;
 export const INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS = 3_000;
 export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS = 5_000;
 export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS = 6_000;
+
+/*
+ * The WinPE answer-file diagnostic.
+ *
+ * This is a separate authorization, not a third installer-boot-confirmation policy. The two boot
+ * policies answer a firmware prompt before Setup exists; this one types one fixed line into a WinPE
+ * console long after Setup has started, so sharing their field would let a boot-policy request reach
+ * a keyboard sequence it never asked for. The undefined/v1/v2 contracts above are untouched by it,
+ * and `validateInstallerBootConfirmation` still refuses this confirmation string.
+ *
+ * What it proves and what it cannot. A QMP reply proves the monitor accepted a `send-key`; it proves
+ * nothing about guest-side receipt, about the guest having focus, or about a key having been
+ * released. The whole sequence is therefore best-effort evidence gathering whose only host-side
+ * assertion is "these exact events were accepted at these offsets"; whether a console opened and
+ * read them is settled, if at all, by the guest's own collected output and the +300s frame.
+ */
+export const WINPE_DIAGNOSTIC_CONFIRMATION = "winpe-answer-file-diagnostic-v1";
+/*
+ * The executed script's name is a salted digest of the run nonce, truncated to an 8.3-safe base
+ * name so it resolves under Joliet and under ISO 9660's 8.3 fallback alike. It is collision
+ * avoidance and a pre-execution guard on a name that cannot be guessed from the retained frame - it
+ * is NOT authentication and NOT proof of a unique seed volume. The script itself re-verifies the
+ * trusted seed identity before it collects anything.
+ */
+const WINPE_DIAGNOSTIC_TAG_SALT = "myspeed-winpe-answer-file-diagnostic-v1";
+export const WINPE_DIAGNOSTIC_TAG_LENGTH = 8;
+/*
+ * Every standard fixed-disk/optical letter except X, which WinPE itself occupies. C-H was an
+ * avoidable limit: Windows Setup places the boot media and any extra volume wherever it likes, and a
+ * seed that landed on I would have been invisible. The set is fixed and closed - this is a bounded
+ * probe for one derived filename, never a general script search.
+ */
+export const WINPE_DIAGNOSTIC_DRIVE_LETTERS = Object.freeze(
+    [..."cdefghijklmnopqrstuvwyz"]);
+export const WINPE_DIAGNOSTIC_HOLD_MILLISECONDS = 30;
+/*
+ * The gap is measured from the monitor's reply to the previous key and is strictly longer than the
+ * hold, so the release of key N is due before key N+1 is written. Nothing here depends on QEMU's
+ * internal key-queue semantics, and neither figure is evidence that the guest observed either edge.
+ */
+export const WINPE_DIAGNOSTIC_KEY_GAP_MILLISECONDS = 60;
+export const WINPE_DIAGNOSTIC_CONSOLE_QCODES = Object.freeze(["shift", "f10"]);
+export const WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS = 2_000;
+export const WINPE_DIAGNOSTIC_SUBMIT_QCODE = "ret";
+/* Per-reply allowance and the whole-phase bound, both enforced on every write, read and delay. */
+export const WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS = 10_000;
+export const WINPE_DIAGNOSTIC_PHASE_MILLISECONDS = 60_000;
+/*
+ * The phase opens after the +120s frame and must be finished well before the +300s frame that
+ * observes its effect, so the sequence can never straddle the milestone it is evidence for.
+ */
+export const WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS = 240_000;
+/* Measured against the shipped reader: the longest reply this session sees is 45 bytes. */
+export const WINPE_DIAGNOSTIC_REPLY_BYTES = 64;
+
+const WINPE_DIAGNOSTIC_QCODE_BY_CHARACTER = new Map([
+    [" ", ["spc"]], [".", ["dot"]], ["\\", ["backslash"]],
+    [":", ["shift", "semicolon"]], ["%", ["shift", "5"]], ["(", ["shift", "9"]],
+    [")", ["shift", "0"]], ["@", ["shift", "2"]],
+    ...[..."abcdefghijklmnopqrstuvwxyz"].map(character => [character, [character]]),
+    ...[..."0123456789"].map(character => [character, [character]])
+]);
+
+const NONCE_PATTERN = /^[a-f0-9]{32}$/u;
+
+export function winpeDiagnosticScriptTag(nonce) {
+    if (typeof nonce !== "string" || !NONCE_PATTERN.test(nonce))
+        throw new TypeError("WinPE diagnostic nonce is invalid");
+    return crypto.createHash("sha256").update(`${nonce}|${WINPE_DIAGNOSTIC_TAG_SALT}`)
+        .digest("hex").slice(0, WINPE_DIAGNOSTIC_TAG_LENGTH);
+}
+
+export function winpeDiagnosticScriptName(nonce) { return `${winpeDiagnosticScriptTag(nonce)}.cmd`; }
+
+export function winpeDiagnosticCommand(nonce) {
+    const letters = WINPE_DIAGNOSTIC_DRIVE_LETTERS.join(" ");
+    return `for %d in (${letters}) do @call %d:\\${winpeDiagnosticScriptName(nonce)}`;
+}
+
+/*
+ * The complete key encoding, derived from the command text rather than declared beside it, so a
+ * command this table cannot express fails here instead of typing something else into the guest.
+ */
+export function encodeWinpeDiagnosticKeys(command) {
+    if (typeof command !== "string" || command.length < 1)
+        throw new TypeError("WinPE diagnostic command is invalid");
+    return Object.freeze([...command].map((character, index) => {
+        const qcodes = WINPE_DIAGNOSTIC_QCODE_BY_CHARACTER.get(character);
+        if (qcodes === undefined)
+            throw new TypeError(`WinPE diagnostic command character ${index} is not encodable`);
+        return Object.freeze({character, qcodes: Object.freeze([...qcodes])});
+    }));
+}
+
+/*
+ * Derived from the exact sequence, never chosen: one console shortcut, one event per character, one
+ * submit. The default ceilings stay where they are and the diagnostic keeps exactly today's
+ * headroom for asynchronous events on top of its own traffic.
+ */
+export function winpeDiagnosticBudget(nonce) {
+    const command = winpeDiagnosticCommand(nonce);
+    const keyEvents = 1 + encodeWinpeDiagnosticKeys(command).length + 1;
+    return Object.freeze({command, keyEvents,
+        maximumMessages: MAXIMUM_MESSAGES + keyEvents,
+        maximumTranscriptBytes: MAXIMUM_TRANSCRIPT_BYTES + keyEvents * WINPE_DIAGNOSTIC_REPLY_BYTES});
+}
+
+export function validateWinpeDiagnosticAuthorization(value) {
+    if (value === undefined) return undefined;
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        Object.keys(value).length !== 2 || value.confirmation !== WINPE_DIAGNOSTIC_CONFIRMATION ||
+        typeof value.nonce !== "string" || !NONCE_PATTERN.test(value.nonce))
+        throw new TypeError("WinPE diagnostic authorization is invalid");
+    return Object.freeze({confirmation: value.confirmation, nonce: value.nonce});
+}
+
+const WINPE_DIAGNOSTIC_INPUT_KEYS = ["acknowledgedKeyEvents", "commandSha256", "confirmation",
+    "consoleOpenedOffsetMs", "failure", "firstKeyOffsetMs", "keyEvents", "kind", "schemaVersion",
+    "scriptTag", "status", "submitted", "submittedOffsetMs"];
+export const WINPE_DIAGNOSTIC_INPUT_KIND = "winpe-answer-file-diagnostic-input";
+
+export function validateWinpeDiagnosticInput(value, authorization) {
+    const checked = validateWinpeDiagnosticAuthorization(authorization);
+    if (checked === undefined) throw new TypeError("WinPE diagnostic input is not authorized");
+    const budget = winpeDiagnosticBudget(checked.nonce);
+    const offset = candidate => Number.isSafeInteger(candidate) && candidate >= 0 &&
+        candidate <= WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS;
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(WINPE_DIAGNOSTIC_INPUT_KEYS) ||
+        value.schemaVersion !== 1 || value.kind !== WINPE_DIAGNOSTIC_INPUT_KIND ||
+        value.confirmation !== checked.confirmation ||
+        value.scriptTag !== winpeDiagnosticScriptTag(checked.nonce) ||
+        value.commandSha256 !== crypto.createHash("sha256").update(budget.command).digest("hex") ||
+        value.keyEvents !== budget.keyEvents ||
+        !Number.isSafeInteger(value.acknowledgedKeyEvents) || value.acknowledgedKeyEvents < 0 ||
+        value.acknowledgedKeyEvents > budget.keyEvents ||
+        !["submitted", "aborted"].includes(value.status) ||
+        value.submitted !== (value.status === "submitted") ||
+        value.submitted !== (value.acknowledgedKeyEvents === budget.keyEvents) ||
+        (value.consoleOpenedOffsetMs !== null && !offset(value.consoleOpenedOffsetMs)) ||
+        (value.firstKeyOffsetMs !== null && !offset(value.firstKeyOffsetMs)) ||
+        (value.submittedOffsetMs !== null && !offset(value.submittedOffsetMs)) ||
+        (value.submitted && value.submittedOffsetMs === null) ||
+        (!value.submitted && value.submittedOffsetMs !== null) ||
+        (value.failure !== null && (typeof value.failure !== "string" || value.failure.length < 1 ||
+            value.failure.length > 512 || /[\x00-\x1f\x7f]/u.test(value.failure))))
+        throw new TypeError("WinPE diagnostic input is invalid");
+    return Object.freeze({...value});
+}
 
 function delay(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
@@ -154,9 +305,13 @@ function withDeadline(promise, dependencies, milliseconds = QMP_MESSAGE_TIMEOUT_
     return Promise.race([promise, deadline]).finally(() => clearTimer(timer));
 }
 
-function createMessageReader(readable, dependencies) {
+function createMessageReader(readable, dependencies, bounds = {}) {
     if (!readable || typeof readable[Symbol.asyncIterator] !== "function")
         throw new TypeError("QMP readable stream is invalid");
+    const maximumMessages = bounds.maximumMessages ?? MAXIMUM_MESSAGES;
+    const maximumTranscriptBytes = bounds.maximumTranscriptBytes ?? MAXIMUM_TRANSCRIPT_BYTES;
+    if (maximumMessages < MAXIMUM_MESSAGES || maximumTranscriptBytes < MAXIMUM_TRANSCRIPT_BYTES)
+        throw new TypeError("QMP transcript bounds are invalid");
     const iterator = readable[Symbol.asyncIterator]();
     let buffered = Buffer.alloc(0), totalBytes = 0, messages = 0;
     return async () => {
@@ -168,7 +323,7 @@ function createMessageReader(readable, dependencies) {
                 if (line.at(-1) === 0x0d) line = line.subarray(0, -1);
                 if (line.length < 2) throw new Error("QMP JSON message is invalid");
                 messages += 1;
-                if (messages > MAXIMUM_MESSAGES) throw new Error("QMP transcript bound exceeded");
+                if (messages > maximumMessages) throw new Error("QMP transcript bound exceeded");
                 try {
                     const value = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(line));
                     if (!value || typeof value !== "object" || Array.isArray(value))
@@ -182,7 +337,7 @@ function createMessageReader(readable, dependencies) {
             if (next.done) throw new Error("QMP stream ended before response");
             const chunk = Buffer.from(next.value);
             totalBytes += chunk.length;
-            if (totalBytes > MAXIMUM_TRANSCRIPT_BYTES) throw new Error("QMP transcript bound exceeded");
+            if (totalBytes > maximumTranscriptBytes) throw new Error("QMP transcript bound exceeded");
             buffered = Buffer.concat([buffered, chunk]);
         }
     };
@@ -203,9 +358,19 @@ async function runSession(input, dependencies, session) {
     const lateScreenshotPaths = input?.lateScreenshotPaths !== undefined ?
         validateLateScreenshots(input.lateScreenshotPaths) : null;
     const bootConfirmation = validateInstallerBootConfirmation(input?.bootConfirmation);
+    const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input?.winpeDiagnostic);
     const screenshotRoot = screenshotPaths[0].slice(0, -"/early-boot-1.png".length);
     if (bootConfirmation !== undefined && !INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN.test(screenshotRoot))
         throw new TypeError("QMP installer boot confirmation root is invalid");
+    /*
+     * The diagnostic is bound to this exact run: its nonce has to be the one in the root it is
+     * typing on behalf of, and it has no meaning without the late capture whose first frame opens
+     * its one window.
+     */
+    if (winpeDiagnostic !== undefined &&
+        (lateScreenshotPaths === null ||
+            screenshotRoot !== `/home/runner/work/_temp/myspeed-windows-cpu-floor-${winpeDiagnostic.nonce}`))
+        throw new TypeError("QMP WinPE diagnostic root is invalid");
     if (typeof input.writeBytes !== "function") throw new TypeError("QMP writer is invalid");
 
     const cancelSession = () => {
@@ -221,7 +386,8 @@ async function runSession(input, dependencies, session) {
     };
     input.onSession?.({cancel: cancelSession});
 
-    const readMessage = createMessageReader(input.readable, dependencies);
+    const readMessage = createMessageReader(input.readable, dependencies, winpeDiagnostic === undefined ? {} :
+        winpeDiagnosticBudget(winpeDiagnostic.nonce));
     const getTime = dependencies.now ?? (() => performance.now());
     const sessionStartTime = getTime();
     const greeting = await readMessage();
@@ -297,8 +463,74 @@ async function runSession(input, dependencies, session) {
         screenshotPaths: Object.freeze(screenshotPaths), inputSent});
 
     if (lateScreenshotPaths !== null) {
+        /*
+         * One sealed sequence, at most once, opened only after the +120s frame has been taken and
+         * acknowledged. There is no retry: a failure anywhere leaves `submitted: false`, and because
+         * the submit key is the last event of the sequence, an abort can never leave a partial line
+         * executing - it leaves an unsubmitted line in a console nothing will read.
+         */
+        const diagnosticState = {attempted: false};
+        const runWinpeDiagnostic = async () => {
+            if (winpeDiagnostic === undefined || diagnosticState.attempted) return null;
+            diagnosticState.attempted = true;
+            const budget = winpeDiagnosticBudget(winpeDiagnostic.nonce);
+            const keys = encodeWinpeDiagnosticKeys(budget.command);
+            const phaseStart = getTime();
+            const record = {schemaVersion: 1, kind: WINPE_DIAGNOSTIC_INPUT_KIND,
+                confirmation: winpeDiagnostic.confirmation,
+                scriptTag: winpeDiagnosticScriptTag(winpeDiagnostic.nonce),
+                commandSha256: crypto.createHash("sha256").update(budget.command).digest("hex"),
+                keyEvents: budget.keyEvents, acknowledgedKeyEvents: 0, consoleOpenedOffsetMs: null,
+                firstKeyOffsetMs: null, submittedOffsetMs: null, submitted: false, status: "aborted",
+                failure: null};
+            /*
+             * Checked before every single write, read and delay - not once at the top. A phase that
+             * has run out of either its own allowance or the room before the +300s frame stops
+             * where it stands rather than pushing the milestone it exists to observe.
+             */
+            const assertPhaseOpen = () => {
+                if (session.cancelled || session.expired) throw new Error("WinPE diagnostic cancelled");
+                const now = getTime();
+                if (now - phaseStart > WINPE_DIAGNOSTIC_PHASE_MILLISECONDS ||
+                    now - sessionStartTime > WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS)
+                    throw new Error("WinPE diagnostic phase deadline exceeded");
+                return now;
+            };
+            const sendKey = async (qcodes, id) => {
+                assertPhaseOpen();
+                await withDeadline(write({execute: "send-key", arguments: {
+                    keys: qcodes.map(data => ({type: "qcode", data})),
+                    "hold-time": WINPE_DIAGNOSTIC_HOLD_MILLISECONDS}, id}), dependencies,
+                WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
+                assertPhaseOpen();
+                await withDeadline(expectResponse(readMessage, id), dependencies,
+                    WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
+                record.acknowledgedKeyEvents += 1;
+                return assertPhaseOpen();
+            };
+            try {
+                record.consoleOpenedOffsetMs = Math.round(
+                    await sendKey([...WINPE_DIAGNOSTIC_CONSOLE_QCODES], "winpe-console") - sessionStartTime);
+                await cancellableDelay(WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS, dependencies, session);
+                for (const [index, key] of keys.entries()) {
+                    assertPhaseOpen();
+                    const at = await sendKey([...key.qcodes], `winpe-key-${index + 1}`);
+                    if (index === 0) record.firstKeyOffsetMs = Math.round(at - sessionStartTime);
+                    await cancellableDelay(WINPE_DIAGNOSTIC_KEY_GAP_MILLISECONDS, dependencies, session);
+                }
+                const submitted = await sendKey([WINPE_DIAGNOSTIC_SUBMIT_QCODE], "winpe-submit");
+                record.submittedOffsetMs = Math.round(submitted - sessionStartTime);
+                record.submitted = true;
+                record.status = "submitted";
+            } catch (error) {
+                record.failure = (error instanceof Error ? error.message : String(error))
+                    .replace(/[\x00-\x1f\x7f]+/gu, " ").slice(0, 512) || "unspecified failure";
+            }
+            return validateWinpeDiagnosticInput(record, winpeDiagnostic);
+        };
         const runLateMilestones = async () => {
             const milestones = [];
+            let winpeDiagnosticRecord = null;
             try {
                 for (let i = 0; i < MAX_LATE_BOOT_MILESTONES; i += 1) {
                     if (session.cancelled || session.expired) break;
@@ -324,15 +556,23 @@ async function runSession(input, dependencies, session) {
                         running: lateStatus.running,
                         screenshotPath: lateScreenshotPaths[i]
                     }));
+                    /*
+                     * The one window: after the first frame is on disk and before the wait for the
+                     * second one starts. Its own failure never breaks the milestone loop, because
+                     * the second frame is part of the evidence about whether the input landed.
+                     */
+                    if (milestoneIndex === 1 && winpeDiagnostic !== undefined)
+                        winpeDiagnosticRecord = await runWinpeDiagnostic();
                 }
             } catch {
                 // Non-blocking failure handled gracefully
             }
-            if (milestones.length === 0) return null;
+            if (milestones.length === 0 && winpeDiagnosticRecord === null) return null;
             return Object.freeze({
                 schemaVersion: 1,
                 kind: "qemu-late-boot-observation",
-                milestones: Object.freeze(milestones)
+                milestones: Object.freeze(milestones),
+                ...(winpeDiagnosticRecord === null ? {} : {winpeDiagnostic: winpeDiagnosticRecord})
             });
         };
         const latePromise = runLateMilestones();

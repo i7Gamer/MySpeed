@@ -3,7 +3,8 @@ import path from "node:path";
 
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
-import {validateInstallerBootConfirmation, validateInstallerBootInput} from
+import {validateInstallerBootConfirmation, validateInstallerBootInput,
+    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput, winpeDiagnosticScriptName} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
@@ -60,6 +61,16 @@ const INSTALL_MEDIA_BOOT_INDEX = 1;
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
 const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
+/*
+ * A distinct classification, so no consumer can mistake a diagnostic record for a calibration one.
+ * It is not a weaker calibration: no CPU floor is observed on this path, no guest receipt exists,
+ * and `cpuCalibrationAccepted` is false on every exit it can reach. A capture that completes proves
+ * that bounded, authentic evidence was collected from a guest - never that Windows installed.
+ */
+export const WINPE_DIAGNOSTIC_CLASSIFICATION =
+    "github-hosted-windows-cpu-floor-winpe-answer-file-diagnostic-nonqualifying";
+const WINPE_DIAGNOSTIC_STAGE = "winpe-answer-file-diagnostic";
+const MAX_WINPE_DIAGNOSTIC_MEMBER_BASE64_CHARACTERS = Math.ceil(131_072 / 3) * 4;
 const EXPECTED_IMAGE = Object.freeze({name: "Windows Server 2025 SERVERSTANDARD", architecture: "x64",
     editionId: "ServerStandardEval", installationType: "Server"});
 const WIM_SELECTION_DIAGNOSTIC_KIND = "windows-server-2025-wim-selection-diagnostic";
@@ -617,14 +628,217 @@ function validateInstallWim(value, pathsValue, iso) {
 }
 
 /*
- * Windows Setup shows a page whenever the answer file leaves that page's settings empty, and the
- * very first one - "Select language settings" - is what run 35106186247 sat on until the launch
- * budget killed QEMU. The documented settings for it are the windowsPE international component, so
- * both generated answer files take the component from here rather than from a second copy. The
- * installation media is the en-us evaluation ISO, so one locale covers every field and needs no
- * language pack. This component is valid only in the windowsPE pass.
+ * Explicit locale configuration for the windowsPE pass, so no Setup page is left to a default this
+ * harness never chose. Both generated answer files take the component from here rather than from a
+ * second copy, and the installation media is the en-us evaluation ISO, so one locale covers every
+ * field and needs no language pack. This component is valid only in the windowsPE pass.
+ *
+ * What this is NOT: a settled root cause for run 35106186247. The only evidence retained from that
+ * run is two sampled frames and a QEMU that the launch budget killed; the first frame resembles the
+ * "Select language settings" page, and nothing observed says the guest stayed there, that an answer
+ * file was ever read, or that it progressed at all between the frames. The WinPE answer-file
+ * diagnostic exists precisely because that question is open - configuring the locale removes one
+ * candidate explanation, it does not confirm it was the explanation.
  */
 const GUEST_SETUP_LOCALE = "en-US";
+
+/*
+ * The WinPE answer-file diagnostic's guest side: one fixed cmd script, seeded on the same read-only
+ * ISO the answer file travels on, invoked by the one line the host types into a WinPE console.
+ *
+ * Identity before anything else. The script runs from wherever Setup mounted the seed, so it first
+ * proves it is on the seed it was generated for - the volume label plus a marker file whose single
+ * line carries this run's nonce - and only then looks for somewhere to write. The destination is
+ * resolved the same way: exactly one volume carrying both the expected label and a marker naming
+ * this nonce. Zero matches and two matches are distinct refusals, and nothing is written in either.
+ *
+ * No arbitrary names ever reach cmd syntax. The sources and the cache-presence probes are a fixed
+ * allowlist of seven literal paths; the presence table records an index, a flag and a size, never a
+ * discovered filename. The marker check counts lines with a `for /f` whose variable is never
+ * expanded into a command, so a hostile marker file cannot inject anything.
+ *
+ * Cached answer files are probed for presence and size only and are never copied: an unattend.xml
+ * Setup has cached contains this run's synthetic administrator password.
+ */
+const WINPE_DIAGNOSTIC_SEED_LABEL = "MYSPEEDSEED";
+const WINPE_DIAGNOSTIC_OUTPUT_LABEL = "MYSPEEDOUT";
+export const WINPE_DIAGNOSTIC_SEED_MARKER_NAME = "seed.tag";
+export const WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME = "msout.tag";
+export const WINPE_DIAGNOSTIC_EXIT_CODES = Object.freeze({
+    complete: 0, seedMarkerAbsent: 11, seedIdentityDiffers: 12, destinationAmbiguous: 13,
+    destinationAbsent: 14, outputPreexisting: 15, startMarkerUnwritable: 16, collectionIncomplete: 17
+});
+/*
+ * The members the host is allowed to read back, and nothing else. Every name is 8.3-safe so it
+ * survives a FAT short-name round trip unchanged.
+ */
+export const WINPE_DIAGNOSTIC_MEMBERS = Object.freeze([
+    {name: "MSDIAG.STA", role: "start-marker"},
+    {name: "MSACT.LOG", role: "setup-action-log"},
+    {name: "MSERR.LOG", role: "setup-error-log"},
+    {name: "MSBTACT.LOG", role: "setup-boot-action-log"},
+    {name: "MSCACHE.TXT", role: "cache-presence"},
+    {name: "MSDIAG.OK", role: "completion-marker"},
+    {name: "MSDIAG.ERR", role: "incomplete-marker"}
+]);
+/* Index -> path, so the guest never has to echo a filesystem name into its report. */
+export const WINPE_DIAGNOSTIC_CACHE_PROBES = Object.freeze([
+    "X:\\Windows\\Panther\\unattend.xml",
+    "X:\\Windows\\Panther\\Unattend\\unattend.xml",
+    "X:\\$Windows.~BT\\Sources\\Panther\\unattend.xml",
+    "X:\\Windows\\Panther\\setupact.log",
+    "X:\\Windows\\Panther\\setuperr.log",
+    "X:\\$Windows.~BT\\Sources\\Panther\\setupact.log",
+    "X:\\$Windows.~BT\\Sources\\Panther\\setuperr.log"
+]);
+
+export function winpeDiagnosticSeedMarker(nonce) { return `${WINPE_DIAGNOSTIC_SEED_LABEL} ${nonce}`; }
+export function winpeDiagnosticOutputMarker(nonce) { return `${WINPE_DIAGNOSTIC_OUTPUT_LABEL} ${nonce}`; }
+
+/*
+ * The six lines a test may replace. Everything below the seam is byte-identical between the script
+ * this renders for the guest and the script a fixture exercises under a local cmd.exe.
+ */
+export const WINPE_DIAGNOSTIC_PRODUCTION_SEAM = Object.freeze({
+    seed: "%~dp0",
+    seedVolume: "%~d0",
+    volumePrefix: "vol ",
+    volumeSuffix: "",
+    /* Quoted tokens, so a root is one `for` item whatever it contains, and `%%~D` unquotes it. */
+    roots: [..."cdefghijklmnopqrstuvwyz"].map(letter => `"${letter}:"`).join(" "),
+    sources: Object.freeze(["X:\\Windows\\Panther\\setupact.log", "X:\\Windows\\Panther\\setuperr.log",
+        "X:\\$Windows.~BT\\Sources\\Panther\\setupact.log"]),
+    cacheProbes: WINPE_DIAGNOSTIC_CACHE_PROBES
+});
+
+export function renderWinpeDiagnosticScript(nonce, seam = WINPE_DIAGNOSTIC_PRODUCTION_SEAM) {
+    exactString(nonce, /^[a-f0-9]{32}$/u, "WinPE diagnostic nonce");
+    if (seam.sources.length !== 3 || seam.cacheProbes.length !== WINPE_DIAGNOSTIC_CACHE_PROBES.length)
+        throw new TypeError("WinPE diagnostic seam is invalid");
+    const backslash = String.fromCharCode(92);
+    const dest = `%MSDEST%${backslash}`;
+    const lines = [
+        "@echo off",
+        "setlocal EnableExtensions DisableDelayedExpansion",
+        `set "MSSEEDMARK=${winpeDiagnosticSeedMarker(nonce)}"`,
+        `set "MSOUTMARK=${winpeDiagnosticOutputMarker(nonce)}"`,
+        `set "MSSEEDLABEL=${WINPE_DIAGNOSTIC_SEED_LABEL}"`,
+        `set "MSOUTLABEL=${WINPE_DIAGNOSTIC_OUTPUT_LABEL}"`,
+        /* Absolute system tool paths: a PATH this script did not set must not choose its tools. */
+        `set "MSGREP=%SystemRoot%${backslash}System32${backslash}findstr.exe"`,
+        "rem ---- seam ----",
+        `set "MSSEED=${seam.seed}"`,
+        `set "MSSEEDVOL=${seam.seedVolume}"`,
+        `set "MSVOLPRE=${seam.volumePrefix}"`,
+        `set "MSVOLPOST=${seam.volumeSuffix}"`,
+        `set "MSROOTS=${seam.roots}"`,
+        ...seam.sources.map((source, index) => `set "MSSRC${index + 1}=${source}"`),
+        ...seam.cacheProbes.map((probe, index) => `set "MSCACHE${index + 1}=${probe}"`),
+        "rem ---- end seam ----",
+        `if not exist "%MSSEED%${WINPE_DIAGNOSTIC_SEED_MARKER_NAME}" exit /b ` +
+            `${WINPE_DIAGNOSTIC_EXIT_CODES.seedMarkerAbsent}`,
+        `call :marker "%MSSEED%${WINPE_DIAGNOSTIC_SEED_MARKER_NAME}" "%MSSEEDMARK%"`,
+        `if errorlevel 1 exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.seedIdentityDiffers}`,
+        "call :label \"%MSSEEDVOL%\" \"%MSSEEDLABEL%\"",
+        `if errorlevel 1 exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.seedIdentityDiffers}`,
+        "set \"MSDEST=\"",
+        "set \"MSCOUNT=0\"",
+        "for %%D in (%MSROOTS%) do call :probe \"%%~D\"",
+        `if "%MSCOUNT%"=="0" exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.destinationAbsent}`,
+        `if not "%MSCOUNT%"=="1" exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.destinationAmbiguous}`,
+        `if not defined MSDEST exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.destinationAbsent}`,
+        ...WINPE_DIAGNOSTIC_MEMBERS.map(member =>
+            `if exist "${dest}${member.name}" exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.outputPreexisting}`),
+        `>"${dest}MSDIAG.STA" echo %MSOUTMARK%`,
+        `if errorlevel 1 exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.startMarkerUnwritable}`,
+        `if not exist "${dest}MSDIAG.STA" exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.startMarkerUnwritable}`,
+        "set \"MSFAIL=0\"",
+        "call :grab \"%MSSRC1%\" \"MSACT.LOG\"",
+        "call :grab \"%MSSRC2%\" \"MSERR.LOG\"",
+        "call :grab \"%MSSRC3%\" \"MSBTACT.LOG\"",
+        `>"${dest}MSCACHE.TXT" echo %MSOUTMARK%`,
+        "if errorlevel 1 set \"MSFAIL=1\"",
+        ...WINPE_DIAGNOSTIC_CACHE_PROBES.map((probe, index) =>
+            `call :cache ${index + 1} "%MSCACHE${index + 1}%"`),
+        `if not exist "${dest}MSCACHE.TXT" set "MSFAIL=1"`,
+        "if not \"%MSFAIL%\"==\"0\" goto :incomplete",
+        `>"${dest}MSDIAG.OK" echo %MSOUTMARK%`,
+        `if errorlevel 1 exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.collectionIncomplete}`,
+        `if not exist "${dest}MSDIAG.OK" exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.collectionIncomplete}`,
+        `exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.complete}`,
+        "",
+        ":incomplete",
+        `>"${dest}MSDIAG.ERR" echo %MSOUTMARK%`,
+        `exit /b ${WINPE_DIAGNOSTIC_EXIT_CODES.collectionIncomplete}`,
+        "",
+        /*
+         * Exactly one non-blank line, and that line matches. The loop variable is counted and never
+         * expanded into a command, so marker content can never become cmd syntax.
+         */
+        ":marker",
+        "set \"MSN=0\"",
+        "for /f \"usebackq delims=\" %%L in (\"%~1\") do set /a MSN=MSN+1",
+        "if not \"%MSN%\"==\"1\" exit /b 1",
+        "\"%MSGREP%\" /x /c:\"%~2\" \"%~1\" >nul 2>&1",
+        "if errorlevel 1 exit /b 1",
+        "exit /b 0",
+        "",
+        /*
+         * The label as reported by the volume itself. `vol` renders its surrounding text in the
+         * guest's UI language, so the label is matched as a whole token rather than by column - and
+         * a lookup that cannot be read at all fails closed, leaving the volume unmatched.
+         */
+        ":label",
+        "%MSVOLPRE%%~1%MSVOLPOST% 2>nul | \"%MSGREP%\" /i /c:\"%~2\" >nul",
+        "if errorlevel 1 exit /b 1",
+        "exit /b 0",
+        "",
+        ":probe",
+        "set \"MSP=%~1\"",
+        `if not exist "%MSP%${backslash}${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}" goto :eof`,
+        `call :marker "%MSP%${backslash}${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}" "%MSOUTMARK%"`,
+        "if errorlevel 1 goto :eof",
+        "call :label \"%MSP%\" \"%MSOUTLABEL%\"",
+        "if errorlevel 1 goto :eof",
+        "set \"MSDEST=%MSP%\"",
+        "set /a MSCOUNT=MSCOUNT+1",
+        "goto :eof",
+        "",
+        /*
+         * A source that does not exist is recorded as absent by the presence table, not as a
+         * failure; a copy that was attempted and did not land is a failure.
+         */
+        ":grab",
+        "if not exist \"%~1\" goto :eof",
+        `copy /y "%~1" "${dest}%~2" >nul 2>&1`,
+        "if errorlevel 1 set \"MSFAIL=1\"",
+        `if not exist "${dest}%~2" set "MSFAIL=1"`,
+        "goto :eof",
+        "",
+        ":cache",
+        `if not exist "%~2" >>"${dest}MSCACHE.TXT" echo %~1=0 0`,
+        "if not exist \"%~2\" goto :eof",
+        `for %%F in ("%~2") do >>"${dest}MSCACHE.TXT" echo %~1=1 %%~zF`,
+        "goto :eof",
+        ""
+    ];
+    const text = lines.join("\r\n");
+    /*
+     * A render-time gate on the exact class of bug that silently rewrites this script: a backslash
+     * or a percent eaten by JavaScript escaping produces a valid-looking batch file that writes
+     * somewhere else. Every path separator the body depends on is asserted here, so the failure is
+     * at render time rather than inside a guest nobody can see.
+     */
+    for (const expected of [`"%MSSEED%${WINPE_DIAGNOSTIC_SEED_MARKER_NAME}"`,
+        `"%MSP%${backslash}${WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME}"`, `"${dest}MSDIAG.STA"`,
+        `"${dest}MSDIAG.OK"`, `"${dest}MSDIAG.ERR"`, `"${dest}MSCACHE.TXT"`, `"${dest}%~2"`,
+        "%SystemRoot%\\System32\\findstr.exe", "%MSVOLPRE%%~1%MSVOLPOST%", "%%~zF", "%MSOUTMARK%"])
+        if (!text.includes(expected))
+            throw new Error(`rendered WinPE diagnostic script lost ${expected}`);
+    if (/[^\r]\n|\r(?!\n)/u.test(text)) throw new Error("rendered WinPE diagnostic script line endings differ");
+    return Buffer.from(text, "ascii");
+}
+
 export const WINDOWS_PE_INTERNATIONAL_COMPONENT =
     `<component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" ` +
     `publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">` +
@@ -845,7 +1059,7 @@ export function renderGuestBootstrap(context) {
     return Buffer.from(script, "utf8");
 }
 
-function buildSeedSpec(image, context, probes, activation) {
+function buildSeedSpec(image, context, probes, activation, winpeDiagnostic = undefined) {
     const unattend = renderAutounattend(image, context.nonce);
     const bootstrap = renderGuestBootstrap(context);
     const handoff = createWindowsBaseCalibrationHandoff(activation, {name: "bootstrap.ps1",
@@ -866,7 +1080,23 @@ function buildSeedSpec(image, context, probes, activation) {
             kind: "activation-inline", bytes: String(file.bytes), sha256: file.sha256,
             bytesBase64: file.bytesBase64})),
         ...probes.files.map(file => ({name: PROBE_SEED_NAME_BY_ROLE.get(file.role), kind: "owned-file",
-            bytes: file.bytes, sha256: file.sha256, sourcePath: file.path}))
+            bytes: file.bytes, sha256: file.sha256, sourcePath: file.path})),
+        /*
+         * Only an explicitly authorized diagnostic puts a runnable script and a seed marker on the
+         * media. Without the authorization the seed is byte-for-byte what it has always been, so no
+         * ordinary calibration run carries anything a console could invoke.
+         */
+        ...(winpeDiagnostic === undefined ? [] : (() => {
+            const script = renderWinpeDiagnosticScript(context.nonce);
+            const marker = Buffer.from(`${winpeDiagnosticSeedMarker(context.nonce)}\r\n`, "ascii");
+            return [
+                {name: winpeDiagnosticScriptName(context.nonce), kind: "inline",
+                    bytes: String(script.length), sha256: sha256(script),
+                    bytesBase64: script.toString("base64")},
+                {name: WINPE_DIAGNOSTIC_SEED_MARKER_NAME, kind: "inline", bytes: String(marker.length),
+                    sha256: sha256(marker), bytesBase64: marker.toString("base64")}
+            ];
+        })())
     ];
     return deepFreeze({schemaVersion: SCHEMA_VERSION, format: "iso9660", volumeLabel: "MYSPEEDSEED", files,
         sha256: canonicalSha256(files)});
@@ -934,10 +1164,74 @@ function validateGuest(value, pathsValue, expectedNonce, activation) {
     return deepFreeze(structuredClone(value));
 }
 
-function failure(context, stage, error, cleanupProven = true) {
+const WINPE_DIAGNOSTIC_COLLECTION_STATUSES = new Set(["capture-complete", "inconclusive", "unsafe",
+    "not-attempted"]);
+const WINPE_DIAGNOSTIC_MEMBER_STATUSES = new Set(["captured", "absent", "timeout", "tool-error",
+    "cleanup-unproven", "unreadable", "budget-exhausted", "withheld-mixed-encoding",
+    "withheld-unaccounted", "withheld-unredactable"]);
+
+/*
+ * The retained diagnostic payload, bounded member by member. A member is either a base64 body that
+ * was decoded and redacted in full before it was cut, or a named reason it is not here - never a
+ * raw scratch log, never a cached answer file, never an unredacted error stream.
+ */
+export function validateWinpeDiagnosticEvidence(value, context, authorization) {
+    const checked = validateWinpeDiagnosticAuthorization(authorization);
+    if (checked === undefined) throw new TypeError("WinPE diagnostic evidence is not authorized");
+    assertKeys(value, ["collection", "confirmation", "input", "kind", "nonce", "schemaVersion"],
+        "WinPE diagnostic evidence");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "winpe-answer-file-diagnostic" ||
+        value.nonce !== context.nonce || value.nonce !== checked.nonce ||
+        value.confirmation !== checked.confirmation)
+        throw new TypeError("WinPE diagnostic evidence binding is invalid");
+    if (value.input !== null) validateWinpeDiagnosticInput(value.input, checked);
+    assertKeys(value.collection, ["failure", "kind", "members", "outputDiskVerified", "schemaVersion",
+        "status"], "WinPE diagnostic collection");
+    if (value.collection.schemaVersion !== SCHEMA_VERSION ||
+        value.collection.kind !== "winpe-answer-file-diagnostic-collection" ||
+        !WINPE_DIAGNOSTIC_COLLECTION_STATUSES.has(value.collection.status) ||
+        typeof value.collection.outputDiskVerified !== "boolean" ||
+        !Array.isArray(value.collection.members) ||
+        value.collection.members.length > WINPE_DIAGNOSTIC_MEMBERS.length ||
+        (value.collection.failure !== null && (typeof value.collection.failure !== "string" ||
+            value.collection.failure.length < 1 || value.collection.failure.length > 256 ||
+            /[\x00-\x1f\x7f]/u.test(value.collection.failure))))
+        throw new TypeError("WinPE diagnostic collection is invalid");
+    const expected = new Map(WINPE_DIAGNOSTIC_MEMBERS.map(member => [member.name, member.role]));
+    const seen = new Set();
+    for (const member of value.collection.members) {
+        if (!member || typeof member !== "object" || Array.isArray(member) ||
+            expected.get(member.name) !== member.role || seen.has(member.name) ||
+            !WINPE_DIAGNOSTIC_MEMBER_STATUSES.has(member.status))
+            throw new TypeError("WinPE diagnostic member is invalid");
+        seen.add(member.name);
+        if (member.status !== "captured") continue;
+        assertKeys(member, ["acceptedBytes", "bom", "decodeReplacements", "encoding", "name",
+            "partialRedactionHits", "publicationTruncated", "publishedBytes", "readCapReached",
+            "redactionHits", "role", "sha256", "status", "textBase64", "trailingOddByte"],
+        "WinPE diagnostic captured member");
+        exactString(member.sha256, SHA256_PATTERN, "WinPE diagnostic member hash");
+        if (!["utf-8", "utf-16le"].includes(member.encoding) ||
+            !Number.isSafeInteger(member.publishedBytes) || member.publishedBytes < 0 ||
+            typeof member.textBase64 !== "string" ||
+            member.textBase64.length > MAX_WINPE_DIAGNOSTIC_MEMBER_BASE64_CHARACTERS ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(member.textBase64))
+            throw new TypeError("WinPE diagnostic captured member is invalid");
+        const bytes = Buffer.from(member.textBase64, "base64");
+        if (bytes.length !== member.publishedBytes || sha256(bytes) !== member.sha256)
+            throw new TypeError("WinPE diagnostic member identity differs");
+    }
+    return deepFreeze(structuredClone(value));
+}
+
+/*
+ * `diagnosticExit` is the one extra parameter that reaches every validly authorized exit: when a
+ * WinPE diagnostic is authorized, no failure on any stage may carry the calibration classification.
+ */
+function failure(context, stage, error, cleanupProven = true, diagnosticExit = null) {
     const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/g, " ")
         .slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS);
-    const diagnostic = stage === "wim-inspection" && error instanceof WimSelectionError ?
+    const diagnosticFields = stage === "wim-inspection" && error instanceof WimSelectionError ?
         {wimSelection: structuredClone(error.diagnostic)} : stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) ?
             {
                 ...(error instanceof QemuLaunchError ? {qemuLaunch: structuredClone(error.diagnostic)} : {}),
@@ -946,9 +1240,10 @@ function failure(context, stage, error, cleanupProven = true) {
                 ...(error.guestFailure === null || error.guestFailure === undefined ? {} :
                     {guestFailure: structuredClone(error.guestFailure)})
             } : {};
-    const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
+    const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage,
+        classification: diagnosticExit?.classification ?? CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
-        context: structuredClone(context), failure: message || "unspecified failure", ...diagnostic};
+        context: structuredClone(context), failure: message || "unspecified failure", ...diagnosticFields};
     if (stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) &&
         error.lateBoot !== null && error.lateBoot !== undefined) {
         const candidateResult = {...baseResult, qemuLateBoot: structuredClone(error.lateBoot)};
@@ -958,6 +1253,42 @@ function failure(context, stage, error, cleanupProven = true) {
         }
     }
     return deepFreeze(baseResult);
+}
+
+/*
+ * The one result a WinPE diagnostic run produces, on the success path as on every other. It is
+ * never `status: "observed"`, never carries `cpuCalibrationAccepted: true`, and always names the
+ * diagnostic classification - so a diagnostic run that somehow reached the end of the launcher
+ * still cannot be read as a calibration by anything downstream.
+ *
+ * The payload is attached first and the sampled frames only if the serialized record still fits.
+ * The collected guest log is the point of the run; a frame is a picture of a screen.
+ */
+function winpeDiagnosticResult(context, pathsValue, observation, authorization, bootConfirmation) {
+    const allowed = ["argv", "earlyBoot", "guest", "process", "winpeDiagnostic"];
+    if (observation?.lateBoot !== undefined) allowed.push("lateBoot");
+    if (observation?.failureDiagnostic !== undefined) allowed.push("failureDiagnostic");
+    if (observation?.guestFailure !== undefined) allowed.push("guestFailure");
+    assertKeys(observation, allowed, "WinPE diagnostic QEMU observation");
+    const evidence = validateWinpeDiagnosticEvidence(observation.winpeDiagnostic, context, authorization);
+    const cleanupProven = observation.process?.cleanupProven === true &&
+        observation.process?.treeGone === true;
+    const base = {schemaVersion: SCHEMA_VERSION, status: "diagnostic", stage: WINPE_DIAGNOSTIC_STAGE,
+        classification: WINPE_DIAGNOSTIC_CLASSIFICATION, qualifying: false, releaseGateCleared: false,
+        cpuCalibrationAccepted: false, cleanupProven, context: structuredClone(context),
+        qemuProcess: structuredClone(observation.process), winpeDiagnostic: structuredClone(evidence),
+        ...(bootConfirmation === undefined ? {} : {bootConfirmation})};
+    let result = base;
+    const fits = candidate =>
+        Buffer.byteLength(`${JSON.stringify(candidate)}\n`, "utf8") <= MAX_STAGE2_RESULT_BYTES;
+    if (!fits(result)) throw new Error("WinPE diagnostic result exceeds its retained bound");
+    for (const [key, value] of [["qemuEarlyBoot", observation.earlyBoot],
+        ["qemuLateBoot", observation.lateBoot]]) {
+        if (value === null || value === undefined) continue;
+        const candidate = {...result, [key]: structuredClone(value)};
+        if (fits(candidate)) result = candidate;
+    }
+    return deepFreeze(result);
 }
 
 export function validateWindowsSystemTools(value) {
@@ -1126,15 +1457,26 @@ export function validateLateBoot(value, pathsValue) {
 }
 
 export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact,
-    bootConfirmation}, operations) {
+    bootConfirmation, winpeDiagnostic, admitWinpeDiagnostic}, operations) {
     validateInstallerBootConfirmation(bootConfirmation);
+    const diagnosticAuthorization = validateWinpeDiagnosticAuthorization(winpeDiagnostic);
+    if (diagnosticAuthorization !== undefined && (diagnosticAuthorization.nonce !== context.nonce ||
+        typeof admitWinpeDiagnostic !== "function"))
+        throw new TypeError("WinPE diagnostic authorization is not bound to this run");
+    /*
+     * One extra argument that reaches every validly authorized exit, so a diagnostic run can never
+     * fall back to the calibration classification on any path - including the admission refusal
+     * below, which happens before the try block.
+     */
+    const diagnosticExit = diagnosticAuthorization === undefined ? null :
+        {classification: WINPE_DIAGNOSTIC_CLASSIFICATION};
     const required = ["acquirePackages", "acquireProbeClosure", "acquireWindowsIso", "extractInstallWim", "extractPortableTools",
         "inspectInstallWim", "launchOwnedQemu", "prepareOfflineMedia", "resolveSignedPackageClosure"];
     if (!operations || typeof operations !== "object" || required.some(name => typeof operations[name] !== "function"))
         throw new TypeError("Stage 2 operations are incomplete");
     const checkedPaths = validatePaths(inputPaths, context);
     try { validateAdmission(admission, context); }
-    catch (error) { return failure(context, "admission", error); }
+    catch (error) { return failure(context, "admission", error, true, diagnosticExit); }
     const privilegeMode = selectPrivilegeMode(admission);
     let stage = "package-closure";
     let launchObservation = null;
@@ -1168,15 +1510,29 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         const selectedImage = selectWindowsImage(wimInspection.images);
         stage = "offline-media";
         const activation = buildPostSetupActivation(context);
-        const seedSpec = buildSeedSpec(selectedImage, context, probes, activation);
+        const seedSpec = buildSeedSpec(selectedImage, context, probes, activation, diagnosticAuthorization);
         const media = validatePreparedMedia(await operations.prepareOfflineMedia({context, paths: checkedPaths,
             toolchain, probes, selectedImage, seedSpec, transfer: STAGE2_PROVENANCE.transfer}), checkedPaths,
         seedSpec, toolchain);
         const argv = buildQemuArguments({paths: checkedPaths, toolchain});
         stage = "qemu-launch";
+        /*
+         * A diagnostic run is launched on its own reservation, never on the CPU diagnostic's fixed
+         * 25/5 deadlines: it needs a far shorter guest allowance, and the launcher already refuses
+         * to accept both at once. The reservation is taken here, after the downloads and the media
+         * preparation this run has already paid for, so their cost is charged to it. If the guest
+         * allowance no longer fits, this throws and nothing is launched.
+         */
+        const admitted = diagnosticAuthorization === undefined ? null : admitWinpeDiagnostic();
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
-            argv, selectedImage, privilegeMode, deadlines: STAGE2_DIAGNOSTIC_DEADLINES,
+            argv, selectedImage, privilegeMode,
+            ...(diagnosticAuthorization === undefined ? {deadlines: STAGE2_DIAGNOSTIC_DEADLINES} :
+                {winpeDiagnostic: diagnosticAuthorization, reservation: admitted.reservation,
+                    winpeDiagnosticCollectionDeadlineMilliseconds: admitted.collectionDeadlineMilliseconds}),
             ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
+        if (diagnosticAuthorization !== undefined)
+            return winpeDiagnosticResult(context, checkedPaths, launchObservation, diagnosticAuthorization,
+                bootConfirmation);
         const allowedObservationKeys = ["argv", "earlyBoot", "process"];
         if (launchObservation?.guest !== undefined) allowedObservationKeys.push("guest");
         if (launchObservation?.guestFailure !== undefined) allowedObservationKeys.push("guestFailure");
@@ -1227,6 +1583,6 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
     } catch (error) {
         const cleanup = stage === "qemu-launch" && launchObservation?.process?.cleanupProven === true &&
             launchObservation?.process?.treeGone === true;
-        return failure(context, stage, error, cleanup);
+        return failure(context, stage, error, cleanup, diagnosticExit);
     }
 }

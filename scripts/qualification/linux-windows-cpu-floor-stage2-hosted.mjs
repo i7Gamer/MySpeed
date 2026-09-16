@@ -5,9 +5,10 @@ import path from "node:path";
 
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
-import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, validateWindowsSystemTools} from
-    "./linux-windows-cpu-floor-stage2.mjs";
-import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput} from
+import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
+    validateWindowsSystemTools} from "./linux-windows-cpu-floor-stage2.mjs";
+import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
+    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const APT_GET = "/usr/bin/apt-get";
@@ -182,6 +183,8 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 ...(options.qmp.bootConfirmation === undefined ? {} :
                     {bootConfirmation: options.qmp.bootConfirmation}),
                 ...(options.qmp.lateScreenshotPaths ? {lateScreenshotPaths: options.qmp.lateScreenshotPaths} : {}),
+                ...(options.qmp.winpeDiagnostic === undefined ? {} :
+                    {winpeDiagnostic: options.qmp.winpeDiagnostic}),
                 onSession: handle => {
                     qmpCancelHandle = handle;
                     options.onQmpSessionHandle?.(handle);
@@ -586,6 +589,321 @@ export function parseProbeArtifactEvidence(bytes, artifact) {
         throw new TypeError("probe calibration did not pass");
     return Object.freeze({sourceSha: value.sourceSha, runId: value.runId, runAttempt: value.runAttempt,
         eventSha: value.eventSha, nonce: value.nonce, imageVersion: value.imageVersion});
+}
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * WinPE answer-file diagnostic: bounded extraction, decoding, redaction and publication.
+ *
+ * The bound is enforced while mcopy runs, not after it. `mcopy -i <disk> ::<member> -` writes the
+ * member to stdout (GNU mtools: a destination of `-` is standard output), and the shipped
+ * `runHostedOwnedProcess` caps that stream, terminates the process group the moment the cap is
+ * exceeded and reports whether the group was proven gone. No temporary file is created, so a member
+ * a rogue guest grew without limit can neither fill the runner disk nor be read back whole. A
+ * pre-size check would bound nothing: the source can grow between the check and the copy, and only
+ * the collector's own accounting is evidence.
+ *
+ * Order of operations: read(cap) -> decode(bounded) -> account for every secret occurrence in the
+ * raw bytes -> redact -> re-check the exact bytes that would be published, in both supported
+ * encodings -> only then truncate for publication. Truncating first is what leaks a split secret,
+ * so truncation is last; and a global nonzero redaction count is not proof that redaction was
+ * complete, so the occurrences are counted per encoding and matched against what was redacted.
+ * Anything that does not add up is withheld rather than sanitized harder.
+ * ---------------------------------------------------------------------------------------------
+ */
+export const WINPE_DIAGNOSTIC_MEMBER_READ_BYTES = 262_144;
+export const WINPE_DIAGNOSTIC_PUBLISHED_BYTES = 131_072;
+export const WINPE_DIAGNOSTIC_REDACTION_MARKER = "[redacted]";
+export const WINPE_DIAGNOSTIC_PARTIAL_REDACTION_MARKER = "[redacted-partial]";
+/* Shorter than this is not treated as a credential fragment, and the threshold is asserted. */
+export const WINPE_DIAGNOSTIC_MINIMUM_SECRET_FRAGMENT = 8;
+/* The two encodings this pipeline can reason about. It claims nothing about any other. */
+const WINPE_DIAGNOSTIC_ENCODINGS = Object.freeze(["utf-8", "utf-16le"]);
+const WINPE_DIAGNOSTIC_UTF16_NUL_DENSITY = 0.3;
+const MAX_WINPE_DIAGNOSTIC_REASON_CHARACTERS = 256;
+
+/*
+ * The one secret this diagnostic can meet, derived host-side from the run nonce exactly as the
+ * answer-file renderer derives it, so the collector never has to be handed a password.
+ */
+export function winpeDiagnosticGuestSecret(nonce) {
+    if (typeof nonce !== "string" || !/^[a-f0-9]{32}$/u.test(nonce))
+        throw new TypeError("WinPE diagnostic nonce is invalid");
+    return `Myspeed-Eval-${nonce.slice(0, 16)}!aA1`;
+}
+
+function winpeDiagnosticEncodedSecret(secret, encoding) {
+    return Buffer.from(secret, encoding === "utf-16le" ? "utf16le" : "utf8");
+}
+
+function countOccurrences(haystack, needle) {
+    if (needle.length === 0) return 0;
+    let count = 0, index = haystack.indexOf(needle);
+    while (index >= 0) { count += 1; index = haystack.indexOf(needle, index + needle.length); }
+    return count;
+}
+
+export function detectWinpeDiagnosticEncoding(bytes) {
+    if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return {encoding: "utf-16le", bom: 2};
+    if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf)
+        return {encoding: "utf-8", bom: 3};
+    /* No BOM: Windows Setup logs are commonly UTF-16LE, which shows a NUL in every odd position. */
+    const sample = Math.min(bytes.length, 4_096);
+    let oddNuls = 0, oddTotal = 0;
+    for (let index = 1; index < sample; index += 2) { oddTotal += 1; if (bytes[index] === 0) oddNuls += 1; }
+    if (oddTotal >= 16 && oddNuls / oddTotal >= WINPE_DIAGNOSTIC_UTF16_NUL_DENSITY)
+        return {encoding: "utf-16le", bom: 0};
+    return {encoding: "utf-8", bom: 0};
+}
+
+export function decodeWinpeDiagnosticBytes(bytes) {
+    const {encoding, bom} = detectWinpeDiagnosticEncoding(bytes);
+    let body = bytes.subarray(bom);
+    let trailingOddByte = false;
+    /* The read cap can cut a UTF-16 unit in half; the half unit is dropped, never guessed at. */
+    if (encoding === "utf-16le" && body.length % 2 === 1) {
+        body = body.subarray(0, body.length - 1);
+        trailingOddByte = true;
+    }
+    const text = new TextDecoder(encoding, {fatal: false}).decode(body);
+    /* UTF-16LE yields at most one character per two bytes, UTF-8 at most one per byte. */
+    if (text.length > WINPE_DIAGNOSTIC_MEMBER_READ_BYTES)
+        throw new Error("decoded expansion exceeded its bound");
+    const replacements = (text.match(/�/gu) ?? []).length;
+    return Object.freeze({encoding, bom: bom > 0, trailingOddByte, text, replacements});
+}
+
+/* Every proper prefix of a secret, longest first, so a split tail is caught by the longest match. */
+function secretPrefixes(secret) {
+    const prefixes = [];
+    for (let length = secret.length - 1; length >= WINPE_DIAGNOSTIC_MINIMUM_SECRET_FRAGMENT; length -= 1)
+        prefixes.push(secret.slice(0, length));
+    return prefixes;
+}
+
+export function redactWinpeDiagnosticText(text, secrets) {
+    let redacted = text;
+    let hits = 0, partialHits = 0;
+    for (const secret of secrets) {
+        const parts = redacted.split(secret);
+        hits += parts.length - 1;
+        redacted = parts.join(WINPE_DIAGNOSTIC_REDACTION_MARKER);
+    }
+    /*
+     * The read cap can cut a secret in half and the surviving head is still a credential fragment.
+     * Only the very end of the buffer can hold one, so only the tail is swept.
+     */
+    for (const secret of secrets) {
+        const window = Math.min(redacted.length, secret.length - 1);
+        if (window < WINPE_DIAGNOSTIC_MINIMUM_SECRET_FRAGMENT) continue;
+        const head = redacted.slice(0, redacted.length - window);
+        let tail = redacted.slice(redacted.length - window);
+        for (const prefix of secretPrefixes(secret)) {
+            if (tail.endsWith(prefix)) {
+                tail = `${tail.slice(0, tail.length - prefix.length)}${WINPE_DIAGNOSTIC_PARTIAL_REDACTION_MARKER}`;
+                partialHits += 1;
+                break;
+            }
+        }
+        redacted = `${head}${tail}`;
+    }
+    return {text: redacted, hits, partialHits};
+}
+
+/*
+ * The last word on whether anything may be published: the exact bytes, searched in both supported
+ * encodings, for a whole secret anywhere or a secret head at the very end. This is what makes the
+ * hit count unnecessary as proof - it is checked against the artefact, not against the bookkeeping.
+ */
+export function winpeDiagnosticBytesCarrySecret(bytes, secrets) {
+    for (const secret of secrets) {
+        for (const encoding of WINPE_DIAGNOSTIC_ENCODINGS) {
+            const encoded = winpeDiagnosticEncodedSecret(secret, encoding);
+            if (bytes.includes(encoded)) return true;
+            const unit = encoding === "utf-16le" ? 2 : 1;
+            const minimum = WINPE_DIAGNOSTIC_MINIMUM_SECRET_FRAGMENT * unit;
+            for (let length = encoded.length - unit; length >= minimum; length -= unit)
+                if (bytes.length >= length && bytes.subarray(bytes.length - length).equals(encoded.subarray(0, length)))
+                    return true;
+        }
+    }
+    return false;
+}
+
+function boundedReason(value) {
+    return String(value).replace(/[\x00-\x1f\x7f]+/gu, " ").slice(0, MAX_WINPE_DIAGNOSTIC_REASON_CHARACTERS) ||
+        "unspecified";
+}
+
+/*
+ * Publication of one extracted member. Absent evidence, a timed-out extraction, a tool failure and
+ * an extraction whose own process group was not proven gone are four different outcomes, and none
+ * of them is allowed to read as "collected nothing, all well".
+ */
+export function publishWinpeDiagnosticMember(name, observed, secrets) {
+    const state = observed?.process ?? {};
+    const stdout = observed?.stdout ?? Buffer.alloc(0);
+    const base = {name, acceptedBytes: stdout.length, readCapReached: state.stdoutOverflow === true};
+    const withheld = (status, reason) => Object.freeze({...base, status, reason: boundedReason(reason)});
+    if (state.timedOut === true) return withheld("timeout", "extraction deadline exceeded");
+    if (state.errorObserved === true) return withheld("tool-error", "extraction process error");
+    if (state.cleanupProven !== true)
+        return withheld("cleanup-unproven", "extraction process group was not proven gone");
+    if (state.exitCode !== 0 && state.stdoutOverflow !== true)
+        return Object.freeze({...base, status: "absent", exitCode: state.exitCode ?? null});
+    let decoded;
+    try { decoded = decodeWinpeDiagnosticBytes(stdout); }
+    catch (error) { return withheld("unreadable", error instanceof Error ? error.message : error); }
+    /*
+     * Per-encoding accounting. A member that carries a secret in an encoding the decode did not
+     * choose cannot be redacted by operating on the decoded text, and the fact that some other
+     * occurrence redacted cleanly says nothing about this one - so it is withheld outright.
+     */
+    const rawCounts = Object.fromEntries(WINPE_DIAGNOSTIC_ENCODINGS.map(encoding => [encoding,
+        secrets.reduce((sum, secret) =>
+            sum + countOccurrences(stdout, winpeDiagnosticEncodedSecret(secret, encoding)), 0)]));
+    const foreign = WINPE_DIAGNOSTIC_ENCODINGS
+        .filter(encoding => encoding !== decoded.encoding)
+        .reduce((sum, encoding) => sum + rawCounts[encoding], 0);
+    if (foreign > 0)
+        return withheld("withheld-mixed-encoding",
+            `secret present in an encoding other than the decoded ${decoded.encoding}`);
+    const {text, hits, partialHits} = redactWinpeDiagnosticText(decoded.text, secrets);
+    if (hits < rawCounts[decoded.encoding])
+        return withheld("withheld-unaccounted",
+            `${rawCounts[decoded.encoding]} raw occurrences but ${hits} redacted`);
+    /* Markers may only ever add their own length, once per hit. */
+    const expansionBound = decoded.text.length + hits * WINPE_DIAGNOSTIC_REDACTION_MARKER.length +
+        partialHits * WINPE_DIAGNOSTIC_PARTIAL_REDACTION_MARKER.length;
+    if (text.length > expansionBound)
+        return withheld("withheld-unredactable", "redaction expanded beyond its bound");
+    const full = Buffer.from(text, "utf8");
+    const published = full.subarray(0, WINPE_DIAGNOSTIC_PUBLISHED_BYTES);
+    for (const candidate of [full, published])
+        if (winpeDiagnosticBytesCarrySecret(candidate, secrets))
+            return withheld("withheld-unredactable", "publishable bytes still carry a secret");
+    return Object.freeze({...base, status: "captured", encoding: decoded.encoding, bom: decoded.bom,
+        trailingOddByte: decoded.trailingOddByte, decodeReplacements: decoded.replacements,
+        redactionHits: hits, partialRedactionHits: partialHits,
+        publishedBytes: published.length, publicationTruncated: full.length > WINPE_DIAGNOSTIC_PUBLISHED_BYTES,
+        sha256: sha256(published), textBase64: published.toString("base64")});
+}
+
+/*
+ * ---------------------------------------------------------------------------------------------
+ * WinPE answer-file diagnostic: the whole-job bound.
+ *
+ * Anchored to authenticated job metadata, exactly as the reviewed Stage 3 CPU workflow anchors its
+ * sequence: the job's own `started_at` from the API, one unambiguous in-progress match or nothing.
+ * There is no fallback to a fresh local clock, because a fresh clock is the error being corrected.
+ *
+ * The execute job declares a 25-minute ceiling. That is a planning limit, not a promise about how
+ * long anything takes: the GitHub job timeout is the final hard stop and is never the mechanism
+ * that reserves anything. Out of the ceiling come, in order, the retention reserve that has to be
+ * left for bounding and uploading the evidence, the cleanup allowance that funds proving the
+ * process group gone and re-validating the output disk, and the collection reserve that funds the
+ * extraction itself. Whatever is left may fund the guest - and if that is less than the six minutes
+ * the guest allowance asks for, the run is refused before QEMU is launched rather than started on a
+ * budget that cannot reach the +300s frame.
+ * ---------------------------------------------------------------------------------------------
+ */
+const MINUTE_MILLISECONDS = 60_000;
+export const WINPE_DIAGNOSTIC_RESERVATION_LABEL = "winpe-answer-file-diagnostic";
+export const WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS = 25 * MINUTE_MILLISECONDS;
+export const WINPE_DIAGNOSTIC_RETENTION_RESERVE_MILLISECONDS = 3 * MINUTE_MILLISECONDS;
+export const WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS = 5 * MINUTE_MILLISECONDS;
+export const WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS = MINUTE_MILLISECONDS;
+export const WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS = 6 * MINUTE_MILLISECONDS;
+/* The kill grace the outer timeout needs to escalate TERM to KILL inside the retention reserve. */
+export const WINPE_DIAGNOSTIC_KILL_GRACE_MILLISECONDS = 30_000;
+const WINPE_DIAGNOSTIC_MAX_JOB_METADATA_ENTRIES = 256;
+
+export function anchorWinpeDiagnosticJobBudget(value, unixMilliseconds) {
+    requireKeys(value, ["jobName", "jobs", "runAttempt", "runId", "runnerName", "totalCount"],
+        "WinPE diagnostic job anchor request");
+    const name = text => typeof text === "string" && text.length > 0 && text.length <= 255;
+    if (!name(value.jobName) || !name(value.runnerName) ||
+        !name(value.runId) || !/^(?:0|[1-9][0-9]*)$/u.test(value.runId) ||
+        !name(value.runAttempt) || !/^(?:0|[1-9][0-9]*)$/u.test(value.runAttempt))
+        throw new TypeError("WinPE diagnostic job anchor request is invalid");
+    if (!Array.isArray(value.jobs) || value.jobs.length > WINPE_DIAGNOSTIC_MAX_JOB_METADATA_ENTRIES ||
+        value.jobs.some(job => !job || typeof job !== "object" || Array.isArray(job)))
+        throw new TypeError("WinPE diagnostic job metadata is invalid");
+    if (!Number.isSafeInteger(value.totalCount) || value.totalCount !== value.jobs.length)
+        throw new TypeError("WinPE diagnostic job metadata is incomplete");
+    const matches = value.jobs.filter(job => job.name === value.jobName &&
+        String(job.run_id) === value.runId && String(job.run_attempt) === value.runAttempt &&
+        job.runner_name === value.runnerName && job.status === "in_progress");
+    if (matches.length !== 1)
+        throw new Error(`WinPE diagnostic job anchor is ambiguous or absent: ${matches.length} matching jobs`);
+    const startedAt = typeof matches[0].started_at === "string" ? Date.parse(matches[0].started_at) : Number.NaN;
+    if (!Number.isSafeInteger(startedAt) || startedAt < 1)
+        throw new TypeError("WinPE diagnostic job start is invalid");
+    if (typeof unixMilliseconds !== "function") throw new TypeError("WinPE diagnostic budget clock is invalid");
+    const now = unixMilliseconds();
+    if (!Number.isSafeInteger(now) || now < 1) throw new TypeError("WinPE diagnostic budget clock is invalid");
+    if (startedAt > now || now - startedAt > WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS)
+        throw new TypeError("WinPE diagnostic job start is invalid");
+    const hardStopUnixMilliseconds = startedAt + WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS -
+        WINPE_DIAGNOSTIC_RETENTION_RESERVE_MILLISECONDS;
+    const wallDeadlineUnixMilliseconds = hardStopUnixMilliseconds - WINPE_DIAGNOSTIC_KILL_GRACE_MILLISECONDS;
+    return Object.freeze({startedAtUnixMilliseconds: startedAt, hardStopUnixMilliseconds,
+        wallDeadlineUnixMilliseconds, remainingMilliseconds: wallDeadlineUnixMilliseconds - now});
+}
+
+/*
+ * The wall deadline converted, once, into the monotonic accounting everything after it uses. The
+ * preparation and download this job has already paid for are inside it by construction: the anchor
+ * is the job's start, not this call.
+ */
+export function admitWinpeDiagnosticReservation(budget, unixMilliseconds, monotonicMilliseconds) {
+    requireKeys(budget, ["label", "wallDeadlineUnixMilliseconds"], "WinPE diagnostic budget");
+    if (budget.label !== WINPE_DIAGNOSTIC_RESERVATION_LABEL ||
+        !Number.isSafeInteger(budget.wallDeadlineUnixMilliseconds) || budget.wallDeadlineUnixMilliseconds < 1)
+        throw new TypeError("WinPE diagnostic budget is invalid");
+    if (typeof unixMilliseconds !== "function" || typeof monotonicMilliseconds !== "function")
+        throw new TypeError("WinPE diagnostic budget clock is invalid");
+    const now = unixMilliseconds();
+    if (!Number.isSafeInteger(now) || now < 1) throw new TypeError("WinPE diagnostic budget clock is invalid");
+    const spendable = budget.wallDeadlineUnixMilliseconds - now -
+        WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS - WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS;
+    if (spendable < WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS)
+        throw new Error(`WinPE diagnostic guest allowance of ` +
+            `${WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS}ms does not fit in the ${spendable}ms left`);
+    const monotonic = monotonicMilliseconds();
+    if (!Number.isFinite(monotonic)) throw new TypeError("WinPE diagnostic budget clock is invalid");
+    return Object.freeze({
+        reservation: Object.freeze({label: WINPE_DIAGNOSTIC_RESERVATION_LABEL,
+            executionMilliseconds: WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS,
+            cleanupMilliseconds: WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS}),
+        collectionDeadlineMilliseconds: monotonic + WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS +
+            WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS + WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS
+    });
+}
+
+/*
+ * The remaining-time gate every collection command passes through. It is checked before each phase,
+ * not once at the top, and a clock that has gone backwards is refused rather than clamped.
+ */
+export function createWinpeDiagnosticCollectionBudget(collectionDeadlineMilliseconds, monotonicMilliseconds) {
+    if (!Number.isFinite(collectionDeadlineMilliseconds) || typeof monotonicMilliseconds !== "function")
+        throw new TypeError("WinPE diagnostic collection budget is invalid");
+    let observed = monotonicMilliseconds();
+    if (!Number.isFinite(observed)) throw new TypeError("WinPE diagnostic collection clock is invalid");
+    return Object.freeze({
+        remaining() {
+            const now = monotonicMilliseconds();
+            if (!Number.isFinite(now) || now < observed)
+                throw new Error("WinPE diagnostic collection clock is not monotonic");
+            observed = now;
+            return collectionDeadlineMilliseconds - now;
+        },
+        admit(requested) {
+            const remaining = this.remaining();
+            if (remaining < 1) throw new Error("WinPE diagnostic collection budget is exhausted");
+            return Math.min(requested, remaining);
+        }
+    });
 }
 
 export function defaultValidateOutputDisk(target, expectedIdentity = null, fileSystem = fs, expectedOwner = null) {
@@ -1443,6 +1761,7 @@ function assertPortableAncestry(io, portableRoot, fileTargets, directoryTargets 
 
 async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     validateInstallerBootConfirmation(input.bootConfirmation);
+    const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input.winpeDiagnostic);
     if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
         throw new TypeError("QEMU privilege mode is invalid");
     assertPortableAncestry(io, input.paths.portableRoot,
@@ -1515,7 +1834,13 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     const screenshotPaths = [`${input.paths.root}/early-boot-1.png`, `${input.paths.root}/early-boot-2.png`];
     if (screenshotPaths.some(target => io.pathExists(target)))
         throw new Error("early-boot screenshot target already exists");
-    const lateScreenshotPaths = isDiagnostic ?
+    /*
+     * The WinPE diagnostic needs the late capture for its own reasons: its one input window opens
+     * after the first frame, and the second frame is the only host-side observation of what the
+     * typed line did. It runs on a reservation rather than the CPU diagnostic's fixed deadlines, so
+     * the two stay mutually exclusive exactly as before.
+     */
+    const lateScreenshotPaths = isDiagnostic || winpeDiagnostic !== undefined ?
         [`${input.paths.root}/late-boot-1.png`, `${input.paths.root}/late-boot-2.png`] : null;
     if (lateScreenshotPaths !== null && lateScreenshotPaths.some(target => io.pathExists(target)))
         throw new Error("late-boot screenshot target already exists");
@@ -1526,7 +1851,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
-            ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation})}});
+            ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation}),
+            ...(winpeDiagnostic === undefined ? {} : {winpeDiagnostic})}});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
         monitored.absentAfter === true && monitored.processGroupGone === true;
@@ -1588,6 +1914,17 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
             lateBoot = null;
         }
     }
+    /*
+     * The typed sequence's own record, kept out of `lateBoot` on purpose: it is evidence about the
+     * host's writes, not about a frame, and a frame this launcher could not validate must not erase
+     * it. It is the only host-side assertion the diagnostic makes, and it asserts monitor
+     * acceptance and nothing beyond it.
+     */
+    let winpeDiagnosticInput = null;
+    if (winpeDiagnostic !== undefined && monitored.lateBoot?.winpeDiagnostic !== undefined) {
+        try { winpeDiagnosticInput = validateWinpeDiagnosticInput(monitored.lateBoot.winpeDiagnostic, winpeDiagnostic); }
+        catch { winpeDiagnosticInput = null; }
+    }
     const result = {process: {exitCode: processRecord.exitCode, signal: processRecord.signal,
         timedOut: processRecord.timedOut, cleanupProven: processRecord.cleanupProven,
         treeGone: processRecord.treeGone, qemuPid: processRecord.qemuPid,
@@ -1608,7 +1945,71 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
             bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
             bytesBase64: observation.stderr.toString("base64")},
         ...readSerialConsole(io, input.paths.serialLog)};
-    return {result, guestParsingAllowed, processFlags};
+    return {result, guestParsingAllowed, processFlags, winpeDiagnosticInput};
+}
+
+/*
+ * The collection, after the guest is gone. Every precondition is separate and every one of them
+ * produces a distinct recorded outcome rather than an empty success:
+ *
+ *   - the QEMU process group has to be proven gone and the tree with it, because mcopy reads the
+ *     same image file the guest was writing;
+ *   - the output disk has to still be the file this task created, by the same pre/post identity
+ *     check the ordinary guest receipt already uses;
+ *   - the collection budget has to have time left before each member, and the member's own
+ *     extraction has to have ended and had its process group proven gone before it is published.
+ */
+async function collectWinpeDiagnostic(io, context, input, launched, budget) {
+    const secrets = [winpeDiagnosticGuestSecret(context.nonce)];
+    const record = {schemaVersion: 1, kind: "winpe-answer-file-diagnostic-collection",
+        status: "not-attempted", outputDiskVerified: false, members: [], failure: null};
+    const fail = (status, reason) => {
+        record.status = status;
+        record.failure = boundedReason(reason);
+        return Object.freeze({...record, members: Object.freeze(record.members)});
+    };
+    if (launched.process?.cleanupProven !== true || launched.process?.treeGone !== true)
+        return fail("unsafe", "guest process tree was not proven gone");
+    const taskOwner = typeof process.getuid === "function" ?
+        {uid: BigInt(process.getuid()), gid: typeof process.getgid === "function" ? BigInt(process.getgid()) : null} : null;
+    try { io.validateOutputDisk(input.paths.outputDisk, input.preLaunchDiskIdentity ?? null, taskOwner); }
+    catch (error) { return fail("unsafe", error instanceof Error ? error.message : error); }
+    record.outputDiskVerified = true;
+    for (const member of WINPE_DIAGNOSTIC_MEMBERS) {
+        let allowedMilliseconds;
+        try { allowedMilliseconds = budget.admit(COMMAND_TIMEOUT_MILLISECONDS); }
+        catch (error) {
+            record.members.push(Object.freeze({name: member.name, role: member.role, status: "budget-exhausted",
+                reason: boundedReason(error instanceof Error ? error.message : error)}));
+            return fail("inconclusive", "collection budget was exhausted before every member was read");
+        }
+        const invocation = portableInvocation(input.toolchain, input.toolchain.mcopy,
+            ["-i", input.paths.outputDisk, `::${member.name}`, "-"]);
+        let observed;
+        try {
+            observed = await io.runOwned(invocation.command, invocation.argv,
+                {timeoutMs: Math.max(1, Math.floor(allowedMilliseconds)),
+                    maxStreamBytes: WINPE_DIAGNOSTIC_MEMBER_READ_BYTES});
+        } catch (error) {
+            record.members.push(Object.freeze({name: member.name, role: member.role, status: "tool-error",
+                reason: boundedReason(error instanceof Error ? error.message : error)}));
+            continue;
+        }
+        record.members.push(Object.freeze({role: member.role,
+            ...publishWinpeDiagnosticMember(member.name, observed, secrets)}));
+    }
+    const byName = new Map(record.members.map(member => [member.name, member]));
+    /*
+     * Complete means the guest wrote its own completion marker and nothing had to be withheld.
+     * Anything else is inconclusive - including a run where every log came back but the marker did
+     * not, because that is a collection the guest never said it finished.
+     */
+    const completed = byName.get("MSDIAG.OK")?.status === "captured";
+    const withheld = record.members.some(member => String(member.status).startsWith("withheld"));
+    record.status = completed && !withheld ? "capture-complete" : "inconclusive";
+    if (withheld) record.failure = "at least one member was withheld rather than published";
+    else if (!completed) record.failure = "the guest completion marker was not collected";
+    return Object.freeze({...record, members: Object.freeze(record.members)});
 }
 
 export function createHostedQemuProcessLauncher({context, dependencies = {}}) {
@@ -1889,6 +2290,24 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             }
             const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
             const launched = monitoredLaunch.result;
+            /*
+             * A WinPE diagnostic run collects instead of parsing a guest receipt: the guest it was
+             * launched for is Windows Setup, which produces none. Nothing here can make the launch
+             * acceptable - the record it returns is diagnostic evidence and is rejected by every
+             * calibration consumer.
+             */
+            if (input.winpeDiagnostic !== undefined) {
+                const budget = createWinpeDiagnosticCollectionBudget(
+                    input.winpeDiagnosticCollectionDeadlineMilliseconds ??
+                        io.monotonicMilliseconds() + WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS,
+                    () => io.monotonicMilliseconds());
+                const collection = await collectWinpeDiagnostic(io, context,
+                    {...input, preLaunchDiskIdentity}, launched, budget);
+                return {...launched, guest: null, winpeDiagnostic: Object.freeze({schemaVersion: 1,
+                    kind: "winpe-answer-file-diagnostic", nonce: context.nonce,
+                    confirmation: input.winpeDiagnostic.confirmation,
+                    input: monitoredLaunch.winpeDiagnosticInput, collection})};
+            }
             if (!monitoredLaunch.guestParsingAllowed) {
                 let guestFailure = null;
                 if (launched.process?.cleanupProven === true && launched.process?.treeGone === true &&

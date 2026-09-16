@@ -231,7 +231,17 @@ describe("same-job installed Stage 2 base sealing", () => {
             value => { value.qemuProcess.treeGone = false; },
             value => { value.qemuProcess.qemuPid = OVERSIZED_PROCESS_ID; },
             value => { value.qemuProcess.processGroupId = OVERSIZED_PROCESS_ID; },
-            value => { value.qemuProcess.qemuStartTicks = OVERSIZED_START_TICKS; }
+            value => { value.qemuProcess.qemuStartTicks = OVERSIZED_START_TICKS; },
+            /*
+             * A WinPE answer-file diagnostic record, refused three independent ways: its extra
+             * key, its distinct classification and its refusal of calibration acceptance. Each is
+             * listed on its own, so no single one of them carries the rejection alone.
+             */
+            value => { value.winpeDiagnostic = {schemaVersion: 1, kind: "winpe-answer-file-diagnostic"}; },
+            value => { value.classification =
+                "github-hosted-windows-cpu-floor-winpe-answer-file-diagnostic-nonqualifying"; },
+            value => { value.cpuCalibrationAccepted = false; },
+            value => { value.status = "diagnostic"; value.stage = "winpe-answer-file-diagnostic"; }
         ];
         for (const mutate of cases) {
             const evidence = stage2Result(); mutate(evidence);

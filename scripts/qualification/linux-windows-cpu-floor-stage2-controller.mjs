@@ -6,9 +6,10 @@ import {fileURLToPath} from "node:url";
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {assessWindowsCpuFloorAdmission} from "./linux-windows-cpu-floor-admission.mjs";
 import {runWindowsCpuFloorStage2, validateStage2Paths} from "./linux-windows-cpu-floor-stage2.mjs";
-import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
-    "./linux-windows-cpu-floor-stage2-qmp.mjs";
-import {collectHostedAdmissionObservations, createHostedStage2Operations} from
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    validateWinpeDiagnosticAuthorization} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
+import {WINPE_DIAGNOSTIC_RESERVATION_LABEL, admitWinpeDiagnosticReservation,
+    collectHostedAdmissionObservations, createHostedStage2Operations} from
     "./linux-windows-cpu-floor-stage2-hosted.mjs";
 
 const SCHEMA_VERSION = 1;
@@ -65,8 +66,16 @@ function requireDirectInput(record, inputRoot, name) {
 }
 
 function validateRequest(request) {
-    assertKeys(request, ["authorization", "closure", "context", "kvm", "paths", "probeArtifact", "probeStage",
-        "schemaVersion"], "Stage 2 controller request");
+    const requestKeys = ["authorization", "closure", "context", "kvm", "paths", "probeArtifact", "probeStage",
+        "schemaVersion"];
+    /*
+     * The diagnostic budget travels with the request that authorizes the diagnostic and only with
+     * it: an ordinary calibration request that carried one would be refused by the exact-key check
+     * below, and a diagnostic request without one has nothing to convert into a reservation.
+     */
+    const diagnosticAuthorized = Object.hasOwn(request?.authorization ?? {}, "winpeDiagnostic");
+    if (diagnosticAuthorized) requestKeys.push("winpeDiagnosticBudget");
+    assertKeys(request, requestKeys, "Stage 2 controller request");
     if (request.schemaVersion !== SCHEMA_VERSION) throw new TypeError("request schema is invalid");
     const context = validateHostedContext(request.context);
     request.paths = validateStage2Paths(request.paths, context);
@@ -76,6 +85,18 @@ function validateRequest(request) {
         if (![INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]
             .includes(request.authorization.bootConfirmation))
             throw new TypeError("Stage 2 boot confirmation is not authorized");
+    }
+    if (diagnosticAuthorized) {
+        authorizationKeys.push("winpeDiagnostic");
+        const diagnostic = validateWinpeDiagnosticAuthorization(request.authorization.winpeDiagnostic);
+        if (diagnostic === undefined || diagnostic.nonce !== context.nonce)
+            throw new TypeError("Stage 2 WinPE diagnostic is not authorized");
+        assertKeys(request.winpeDiagnosticBudget, ["label", "wallDeadlineUnixMilliseconds"],
+            "Stage 2 WinPE diagnostic budget");
+        if (request.winpeDiagnosticBudget.label !== WINPE_DIAGNOSTIC_RESERVATION_LABEL ||
+            !Number.isSafeInteger(request.winpeDiagnosticBudget.wallDeadlineUnixMilliseconds) ||
+            request.winpeDiagnosticBudget.wallDeadlineUnixMilliseconds < 1)
+            throw new TypeError("Stage 2 WinPE diagnostic budget is invalid");
     }
     assertKeys(request.authorization, authorizationKeys, "Stage 2 authorization");
     if (request.authorization.confirmation !== CONFIRMATION || request.authorization.media !== true ||
@@ -179,9 +200,26 @@ export async function runHostedStage2Controller(requestValue, dependencies = {})
     const operations = dependencies.operations ?? createHostedStage2Operations({context, paths: request.paths,
         dependencies: dependencies.native});
     const run = dependencies.runStage2 ?? runWindowsCpuFloorStage2;
+    /*
+     * The wall deadline travels down as a function, not as a fixed reservation. It is evaluated
+     * twice against the same anchored deadline: once here, before any expensive setup, so a job
+     * that already cannot hold a guest refuses before it downloads eight gigabytes; and again
+     * immediately before the launch, so the preparation and the downloads that just happened are
+     * charged to the guest's allowance rather than assumed free. A refusal at either point leaves
+     * the guest unlaunched.
+     */
+    const diagnostic = request.authorization.winpeDiagnostic === undefined ? {} : (() => {
+        const unixMilliseconds = dependencies.unixMilliseconds ?? Date.now;
+        const monotonicMilliseconds = dependencies.monotonicMilliseconds ??
+            (() => Number(process.hrtime.bigint() / 1_000_000n));
+        const admit = () => admitWinpeDiagnosticReservation(request.winpeDiagnosticBudget,
+            unixMilliseconds, monotonicMilliseconds);
+        admit();
+        return {winpeDiagnostic: request.authorization.winpeDiagnostic, admitWinpeDiagnostic: admit};
+    })();
     return await run({context, admission, paths: request.paths, probeArtifact: request.probeArtifact,
         ...(request.authorization.bootConfirmation === undefined ? {} :
-            {bootConfirmation: request.authorization.bootConfirmation})}, operations);
+            {bootConfirmation: request.authorization.bootConfirmation}), ...diagnostic}, operations);
 }
 
 function writeExclusive(target, value) {
@@ -207,7 +245,12 @@ async function main() {
         throw new Error("actual hosted context differs from request");
     const result = await runHostedStage2Controller(request);
     writeExclusive(options.result, result);
-    if (result.status !== "observed") process.exitCode = 1;
+    /*
+     * A diagnostic record is a completed run of a different kind, not a failed calibration: the
+     * workflow decides what it means from the record, and an exit code cannot say "collected
+     * bounded evidence, drew no conclusion".
+     */
+    if (result.status !== "observed" && result.status !== "diagnostic") process.exitCode = 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

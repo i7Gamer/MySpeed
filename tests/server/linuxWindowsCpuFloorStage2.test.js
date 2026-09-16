@@ -24,6 +24,7 @@ import {
     selectWindowsImage
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 import {STAGE2_LIMITS} from "../../scripts/qualification/linux-windows-cpu-floor-admission.mjs";
+import {sealSameJobInstalledBase} from "../../scripts/qualification/windows-msi-installed-base.mjs";
 import {createHostedStage2Operations} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
 import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
@@ -1192,5 +1193,143 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         for (const forbidden of ["guestFailure", "qemuLateBoot", "failureDiagnostic", "qemuLaunch"]) {
             assert.equal(actualKeys.includes(forbidden), false);
         }
+    });
+});
+
+describe("hosted Windows CPU-floor Stage 2 WinPE answer-file diagnostic", () => {
+    const DIAGNOSTIC_AUTHORIZATION = {confirmation: "winpe-answer-file-diagnostic-v1", nonce: NONCE};
+    const DIAGNOSTIC_CLASSIFICATION =
+        "github-hosted-windows-cpu-floor-winpe-answer-file-diagnostic-nonqualifying";
+    const ADMITTED = {reservation: {label: "winpe-answer-file-diagnostic",
+        executionMilliseconds: 360_000, cleanupMilliseconds: 300_000},
+    collectionDeadlineMilliseconds: 720_000};
+    const diagnosticEvidence = () => ({schemaVersion: 1, kind: "winpe-answer-file-diagnostic",
+        nonce: NONCE, confirmation: "winpe-answer-file-diagnostic-v1", input: null,
+        collection: {schemaVersion: 1, kind: "winpe-answer-file-diagnostic-collection",
+            status: "capture-complete", outputDiskVerified: true, failure: null, members: []}});
+
+    function diagnosticOperations() {
+        const fixture = operations();
+        fixture.op.launchOwnedQemu = async input => {
+            fixture.calls.push("launch");
+            fixture.seen.launch = input;
+            return {process: {exitCode: null, signal: "SIGKILL", timedOut: true, cleanupProven: true,
+                treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
+                launcherExecutablePath: toolchain().runtime.loader.path, processGroupId: 2300,
+                qemuPidAbsentAfter: true, terminationReason: "deadline"},
+            argv: input.argv, earlyBoot: earlyBoot(), guest: null,
+            winpeDiagnostic: diagnosticEvidence()};
+        };
+        return fixture;
+    }
+
+    it("launches on a reservation rather than the CPU diagnostic deadlines, and returns a diagnostic record", async () => {
+        const fixture = diagnosticOperations();
+        const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact(), winpeDiagnostic: DIAGNOSTIC_AUTHORIZATION,
+            admitWinpeDiagnostic: () => ADMITTED}, fixture.op);
+        /* The two budget mechanisms never travel together. */
+        assert.equal(fixture.seen.launch.deadlines, undefined);
+        assert.deepEqual(fixture.seen.launch.reservation, {label: "winpe-answer-file-diagnostic",
+            executionMilliseconds: 360_000, cleanupMilliseconds: 300_000});
+        assert.deepEqual(fixture.seen.launch.winpeDiagnostic, DIAGNOSTIC_AUTHORIZATION);
+        assert.equal(result.status, "diagnostic");
+        assert.equal(result.stage, "winpe-answer-file-diagnostic");
+        assert.equal(result.classification, DIAGNOSTIC_CLASSIFICATION);
+        assert.equal(result.qualifying, false);
+        assert.equal(result.releaseGateCleared, false);
+        assert.equal(result.cpuCalibrationAccepted, false);
+        assert.equal(result.cleanupProven, true);
+        assert.deepEqual(result.context, context());
+        assert.deepEqual(result.winpeDiagnostic, diagnosticEvidence());
+        /* No guest receipt exists on this path and none is invented. */
+        assert.equal("guest" in result, false);
+        assert.equal("installWim" in result, false);
+        assert.equal("media" in result, false);
+    });
+
+    it("seeds the diagnostic script and its marker only when the diagnostic is authorized", async () => {
+        const plain = operations();
+        await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact()}, plain.op);
+        const plainNames = plain.seen.seedSpec.files.map(file => file.name);
+        assert.equal(plainNames.includes("seed.tag"), false);
+        assert.equal(plainNames.some(name => /^[a-f0-9]{8}\.cmd$/u.test(name)), false);
+
+        const fixture = diagnosticOperations();
+        await runWindowsCpuFloorStage2({context: context(), admission: admission(), paths: paths(),
+            probeArtifact: probeArtifact(), winpeDiagnostic: DIAGNOSTIC_AUTHORIZATION,
+            admitWinpeDiagnostic: () => ADMITTED}, fixture.op);
+        const names = fixture.seen.seedSpec.files.map(file => file.name);
+        assert.equal(names.includes("seed.tag"), true);
+        assert.equal(names.filter(name => /^[a-f0-9]{8}\.cmd$/u.test(name)).length, 1);
+        /* Everything the ordinary seed carried is still there, in the same order. */
+        assert.deepEqual(names.slice(0, plainNames.length), plainNames);
+        const script = fixture.seen.seedSpec.files.find(file => /^[a-f0-9]{8}\.cmd$/u.test(file.name));
+        const body = Buffer.from(script.bytesBase64, "base64").toString("ascii");
+        assert.ok(body.includes(`MYSPEEDSEED ${NONCE}`));
+        assert.ok(body.includes("setlocal EnableExtensions DisableDelayedExpansion"));
+        assert.equal(script.sha256, HASH(Buffer.from(script.bytesBase64, "base64")));
+    });
+
+    it("keeps a diagnostic result inside the retained bound by dropping frames before evidence", async () => {
+        const huge = {...diagnosticEvidence(), collection: {...diagnosticEvidence().collection,
+            members: [{name: "MSACT.LOG", role: "setup-action-log", status: "captured",
+                acceptedBytes: 131_072, readCapReached: false, encoding: "utf-8", bom: false,
+                trailingOddByte: false, decodeReplacements: 0, redactionHits: 0, partialRedactionHits: 0,
+                publishedBytes: 131_072, publicationTruncated: false,
+                sha256: HASH(Buffer.alloc(131_072, 0x41)),
+                textBase64: Buffer.alloc(131_072, 0x41).toString("base64")}]}};
+        const oversizedFrame = Buffer.concat([PNG, Buffer.alloc(1_048_576 - PNG.length, 0x42)]);
+        const fixture = diagnosticOperations();
+        const inner = fixture.op.launchOwnedQemu;
+        fixture.op.launchOwnedQemu = async input => {
+            const observation = await inner(input);
+            observation.winpeDiagnostic = huge;
+            observation.earlyBoot = {...earlyBoot(), screenshots: earlyBoot().screenshots.map(shot => ({
+                ...shot, bytes: String(oversizedFrame.length), sha256: HASH(oversizedFrame),
+                bytesBase64: oversizedFrame.toString("base64")}))};
+            return observation;
+        };
+        const result = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact(), winpeDiagnostic: DIAGNOSTIC_AUTHORIZATION,
+            admitWinpeDiagnostic: () => ADMITTED}, fixture.op);
+        assert.equal(result.status, "diagnostic");
+        assert.equal(result.winpeDiagnostic.collection.members.length, 1,
+            "the collected guest log is the point of the run and is never the thing dropped");
+        assert.ok(Buffer.byteLength(`${JSON.stringify(result)}\n`, "utf8") <= MAX_STAGE2_RESULT_BYTES);
+    });
+});
+
+describe("hosted Windows CPU-floor Stage 2 diagnostic record reaches no calibration consumer", () => {
+    const ADMITTED = {reservation: {label: "winpe-answer-file-diagnostic",
+        executionMilliseconds: 360_000, cleanupMilliseconds: 300_000},
+    collectionDeadlineMilliseconds: 720_000};
+
+    it("is refused by the real MSI installed-base sealer before any sealing operation runs", async () => {
+        const fixture = operations();
+        fixture.op.launchOwnedQemu = async input => ({
+            process: {exitCode: null, signal: "SIGKILL", timedOut: true, cleanupProven: true,
+                treeGone: true, qemuPid: 2345, qemuStartTicks: "77",
+                launcherExecutablePath: toolchain().runtime.loader.path, processGroupId: 2300,
+                qemuPidAbsentAfter: true, terminationReason: "deadline"},
+            argv: input.argv, earlyBoot: earlyBoot(), guest: null,
+            winpeDiagnostic: {schemaVersion: 1, kind: "winpe-answer-file-diagnostic", nonce: NONCE,
+                confirmation: "winpe-answer-file-diagnostic-v1", input: null,
+                collection: {schemaVersion: 1, kind: "winpe-answer-file-diagnostic-collection",
+                    status: "inconclusive", outputDiskVerified: true,
+                    failure: "the guest completion marker was not collected", members: []}}});
+        const diagnosticResult = await runWindowsCpuFloorStage2({context: context(),
+            admission: admission(), paths: paths(), probeArtifact: probeArtifact(),
+            winpeDiagnostic: {confirmation: "winpe-answer-file-diagnostic-v1", nonce: NONCE},
+            admitWinpeDiagnostic: () => ADMITTED}, fixture.op);
+        assert.equal(diagnosticResult.status, "diagnostic");
+        const calls = [];
+        const sealOperations = Object.fromEntries(
+            ["inspectFile", "inspectQcow2", "observeQemuGroup", "sealExact"]
+                .map(name => [name, async () => { calls.push(name); return {}; }]));
+        await assert.rejects(sealSameJobInstalledBase({expectedContext: context(), paths: paths(),
+            stage2Result: diagnosticResult}, sealOperations));
+        assert.deepEqual(calls, [], "no sealing operation may run for a diagnostic record");
     });
 });

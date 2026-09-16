@@ -491,6 +491,30 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
         }
     });
 
+    it("rejects a WinPE answer-file diagnostic record wherever a Stage 2 calibration is expected", async () => {
+        /*
+         * A diagnostic record is refused three independent ways by this consumer: its extra
+         * `winpeDiagnostic` key, its distinct classification and `cpuCalibrationAccepted: false`.
+         * Each is asserted on its own, so removing any one of them would still fail the run.
+         */
+        const diagnosticClassification =
+            "github-hosted-windows-cpu-floor-winpe-answer-file-diagnostic-nonqualifying";
+        for (const mutate of [
+            value => { value.winpeDiagnostic = {schemaVersion: 1, kind: "winpe-answer-file-diagnostic"}; },
+            value => { value.classification = diagnosticClassification; },
+            value => { value.cpuCalibrationAccepted = false; },
+            value => { value.status = "diagnostic"; value.stage = "winpe-answer-file-diagnostic"; }
+        ]) {
+            const observed = stage2Observation();
+            mutate(observed);
+            const fixture = operations({async replayStage2(input) { return {identity: input.identity,
+                result: observed, guestEvidence: stage2GuestEvidence()}; }});
+            const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+            assert.equal(result.status, "failed");
+            assert.equal(result.stage, "stage2-replay");
+        }
+    });
+
     it("replays the retained raw Stage 2 CPUID and all eight instruction runs", async () => {
         const raw = rawStage2Guest();
         raw.runs.find(run => run.role === "avx").exitCode = 0;
