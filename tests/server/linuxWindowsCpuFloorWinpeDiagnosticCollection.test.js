@@ -286,3 +286,31 @@ describe("WinPE diagnostic mcopy round trip", () => {
         assert.equal(publishWinpeDiagnosticMember("MSDIAG.OK", missing, [SECRET]).status, "absent");
     });
 });
+
+describe("WinPE diagnostic record carries no unredacted stream", () => {
+    it("never attaches the serial console prefix or the raw QEMU stderr", async () => {
+        /*
+         * The ordinary failure path attaches a bounded serial-console prefix and the raw QEMU
+         * stderr to `failureDiagnostic`. Those are unredacted guest and process streams; a
+         * diagnostic run returns before that record can reach its result, and this asserts it.
+         */
+        const {operations} = adapter({members: {"MSDIAG.OK": Buffer.from(`MYSPEEDOUT ${NONCE}\r\n`, "utf8")},
+            processFor: member => member === "MSDIAG.OK" ? okProcess : {...okProcess, exitCode: 1}});
+        const launched = await operations.launchOwnedQemu(launchInput({
+            winpeDiagnosticCollectionDeadlineMilliseconds: 10_000_000}));
+        const serialized = JSON.stringify(launched.winpeDiagnostic);
+        assert.equal(serialized.includes("serialLog"), false);
+        assert.equal(serialized.includes("stderr"), false);
+        assert.deepEqual(Object.keys(launched.winpeDiagnostic).sort(),
+            ["collection", "confirmation", "input", "kind", "nonce", "schemaVersion"]);
+    });
+
+    it("refuses to read when the output disk was never identified before the launch", async () => {
+        const {operations, runs} = adapter({validateOutputDisk: () => { throw new Error("not owned"); }});
+        const launched = await operations.launchOwnedQemu(launchInput({
+            winpeDiagnosticCollectionDeadlineMilliseconds: 10_000_000}));
+        assert.deepEqual(runs, []);
+        assert.equal(launched.winpeDiagnostic.collection.status, "unsafe");
+        assert.match(launched.winpeDiagnostic.collection.failure, /not identified before the launch/u);
+    });
+});

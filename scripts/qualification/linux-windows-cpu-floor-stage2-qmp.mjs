@@ -88,6 +88,13 @@ export const WINPE_DIAGNOSTIC_PHASE_MILLISECONDS = 60_000;
  * observes its effect, so the sequence can never straddle the milestone it is evidence for.
  */
 export const WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS = 240_000;
+/*
+ * The deadline gates the start of an exchange, never its acknowledgement, so the last offset a
+ * record can hold is one reply timeout past the latest offset. Derived from the two bounds rather
+ * than chosen, so neither can be widened without widening this with it.
+ */
+export const WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS =
+    WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS + WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS;
 /* Measured against the shipped reader: the longest reply this session sees is 45 bytes. */
 export const WINPE_DIAGNOSTIC_REPLY_BYTES = 64;
 
@@ -162,7 +169,7 @@ export function validateWinpeDiagnosticInput(value, authorization) {
     if (checked === undefined) throw new TypeError("WinPE diagnostic input is not authorized");
     const budget = winpeDiagnosticBudget(checked.nonce);
     const offset = candidate => Number.isSafeInteger(candidate) && candidate >= 0 &&
-        candidate <= WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS;
+        candidate <= WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS;
     if (!value || typeof value !== "object" || Array.isArray(value) ||
         JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(WINPE_DIAGNOSTIC_INPUT_KEYS) ||
         value.schemaVersion !== 1 || value.kind !== WINPE_DIAGNOSTIC_INPUT_KIND ||
@@ -496,7 +503,13 @@ async function runSession(input, dependencies, session) {
                     throw new Error("WinPE diagnostic phase deadline exceeded");
                 return now;
             };
-            const sendKey = async (qcodes, id) => {
+            /*
+             * `final` marks the key nothing follows. The deadline still gates that key's write and
+             * its read; what it must not do is fire once the monitor has already acknowledged the
+             * submit, because there is no next action left to stop and discarding the record would
+             * cost the +300s frame the whole phase exists to observe.
+             */
+            const sendKey = async (qcodes, id, final = false) => {
                 assertPhaseOpen();
                 await withDeadline(write({execute: "send-key", arguments: {
                     keys: qcodes.map(data => ({type: "qcode", data})),
@@ -506,7 +519,7 @@ async function runSession(input, dependencies, session) {
                 await withDeadline(expectResponse(readMessage, id), dependencies,
                     WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
                 record.acknowledgedKeyEvents += 1;
-                return assertPhaseOpen();
+                return final ? getTime() : assertPhaseOpen();
             };
             try {
                 record.consoleOpenedOffsetMs = Math.round(
@@ -518,7 +531,7 @@ async function runSession(input, dependencies, session) {
                     if (index === 0) record.firstKeyOffsetMs = Math.round(at - sessionStartTime);
                     await cancellableDelay(WINPE_DIAGNOSTIC_KEY_GAP_MILLISECONDS, dependencies, session);
                 }
-                const submitted = await sendKey([WINPE_DIAGNOSTIC_SUBMIT_QCODE], "winpe-submit");
+                const submitted = await sendKey([WINPE_DIAGNOSTIC_SUBMIT_QCODE], "winpe-submit", true);
                 record.submittedOffsetMs = Math.round(submitted - sessionStartTime);
                 record.submitted = true;
                 record.status = "submitted";
@@ -562,7 +575,14 @@ async function runSession(input, dependencies, session) {
                      * the second frame is part of the evidence about whether the input landed.
                      */
                     if (milestoneIndex === 1 && winpeDiagnostic !== undefined)
-                        winpeDiagnosticRecord = await runWinpeDiagnostic();
+                        /*
+                         * Its own catch, not the loop's: the loop's `catch` ends every remaining
+                         * milestone, so a record that cannot be validated must cost this loop
+                         * nothing. An absent record is reported as inconclusive downstream, which
+                         * is the honest outcome; a missing second frame would not be.
+                         */
+                        try { winpeDiagnosticRecord = await runWinpeDiagnostic(); }
+                        catch { winpeDiagnosticRecord = null; }
                 }
             } catch {
                 // Non-blocking failure handled gracefully

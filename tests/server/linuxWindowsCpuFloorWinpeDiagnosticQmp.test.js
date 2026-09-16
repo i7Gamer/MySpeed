@@ -13,7 +13,9 @@ import {
     WINPE_DIAGNOSTIC_HOLD_MILLISECONDS,
     WINPE_DIAGNOSTIC_KEY_GAP_MILLISECONDS,
     WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS,
+    WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS,
     WINPE_DIAGNOSTIC_PHASE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS,
     WINPE_DIAGNOSTIC_TAG_LENGTH,
     encodeWinpeDiagnosticKeys,
     runEarlyBootQmpSession,
@@ -73,9 +75,10 @@ const STATUS_RESPONSES = {
  * factory is supplied, which leaves the real `withDeadline` timers alone - a fake timer factory
  * would fire the per-message deadline instantly and prove nothing about pacing.
  */
-async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock} = {}) {
+async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock, nowHook} = {}) {
     const bus = transport({...responses, ...STATUS_RESPONSES});
     let now = 0;
+    let nowReads = 0;
     const waits = [];
     let latePromise = null;
     await runEarlyBootQmpSession({
@@ -83,7 +86,12 @@ async function runDiagnosticSession({responses, authorization = AUTHORIZATION, c
         lateScreenshotPaths: LATE_SCREENSHOTS, winpeDiagnostic: authorization,
         onLateObservation: promise => { latePromise = promise; }
     }, {
-        now: () => now,
+        /*
+         * `nowHook` sees a 1-based index for every clock read, which is how a test can place a
+         * jump on one exact read - the acknowledgement of a single key - instead of advancing a
+         * whole delay and hitting a different check than the one under test.
+         */
+        now: () => { nowReads += 1; return nowHook?.(nowReads, now) ?? now; },
         wait: async milliseconds => { waits.push(milliseconds); now += clock?.(milliseconds) ?? milliseconds; }
     });
     return {late: await latePromise, writes: bus.writes, waits, elapsed: () => now};
@@ -176,7 +184,7 @@ describe("WinPE answer-file diagnostic authorization", () => {
         for (const override of [
             {submitted: false}, {status: "aborted"}, {acknowledgedKeyEvents: budget.keyEvents - 1},
             {acknowledgedKeyEvents: budget.keyEvents + 1}, {keyEvents: budget.keyEvents + 1},
-            {submittedOffsetMs: null}, {submittedOffsetMs: WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS + 1},
+            {submittedOffsetMs: null}, {submittedOffsetMs: WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS + 1},
             {scriptTag: "deadbeef"}, {commandSha256: "0".repeat(64)}, {status: "partial"},
             {failure: "x\u0000y"}, {kind: "installer-boot-confirmation"}])
             assert.throws(() => validateWinpeDiagnosticInput({...accepted, ...override}, AUTHORIZATION),
@@ -186,6 +194,16 @@ describe("WinPE answer-file diagnostic authorization", () => {
         assert.deepEqual({...validateWinpeDiagnosticInput(aborted, AUTHORIZATION)}, aborted);
         assert.throws(() => validateWinpeDiagnosticInput({...aborted, submittedOffsetMs: 130_000},
             AUTHORIZATION), /input is invalid/u);
+        /*
+         * The deadline is checked before the final exchange, never after it, so the acknowledgement
+         * it records can land later than the latest offset by at most one reply timeout. Refusing
+         * that record would throw away a sequence that actually completed.
+         */
+        assert.equal(WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS,
+            WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS + WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
+        assert.equal(validateWinpeDiagnosticInput({...accepted,
+            submittedOffsetMs: WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS}, AUTHORIZATION)
+            .submittedOffsetMs, WINPE_DIAGNOSTIC_LATEST_RECORDED_OFFSET_MILLISECONDS);
     });
 });
 
@@ -281,5 +299,51 @@ describe("WinPE answer-file diagnostic QMP sequence", () => {
         const late = await latePromise;
         assert.equal(Object.hasOwn(late, "winpeDiagnostic"), false);
         assert.equal(bus.writes.filter(value => value.execute === "send-key").length, 0);
+    });
+});
+
+describe("WinPE answer-file diagnostic never costs the frame it exists to observe", () => {
+    it("keeps the completed record and the +300s frame when the deadline falls on the final acknowledgement", async () => {
+        /*
+         * The submit key is the last of 85 exchanges, so a loaded runner crosses the phase deadline
+         * there before anywhere else. Nothing follows that acknowledgement, so it must not be
+         * discarded: the sequence did land, and the second frame is the evidence about its effect.
+         */
+        let reads = 0;
+        let jumpAt = null;
+        const session = await runDiagnosticSession({
+            responses: {"winpe-submit": value => { jumpAt = reads + 2; return {return: {}, id: value.id}; }},
+            nowHook: (index, current) => {
+                reads = index;
+                return index === jumpAt ? current + WINPE_DIAGNOSTIC_PHASE_MILLISECONDS + 1 : current;
+            }
+        });
+        const budget = winpeDiagnosticBudget(NONCE);
+        assert.equal(session.late.winpeDiagnostic.status, "submitted");
+        assert.equal(session.late.winpeDiagnostic.submitted, true);
+        assert.equal(session.late.winpeDiagnostic.acknowledgedKeyEvents, budget.keyEvents);
+        assert.equal(session.late.winpeDiagnostic.failure, null);
+        assert.equal(session.late.milestones.length, 2);
+        assert.equal(session.late.milestones[1].screenshotPath, LATE_SCREENSHOTS[1]);
+    });
+
+    it("still captures the +300s frame when the deadline aborts the sequence mid-line", async () => {
+        let reads = 0;
+        let jumpAt = null;
+        const session = await runDiagnosticSession({
+            responses: {"winpe-key-10": value => { jumpAt = reads + 2; return {return: {}, id: value.id}; }},
+            nowHook: (index, current) => {
+                reads = index;
+                return jumpAt !== null && index >= jumpAt ?
+                    current + WINPE_DIAGNOSTIC_PHASE_MILLISECONDS + 1 : current;
+            }
+        });
+        assert.equal(session.late.winpeDiagnostic.status, "aborted");
+        assert.equal(session.late.winpeDiagnostic.submitted, false);
+        assert.equal(session.late.winpeDiagnostic.submittedOffsetMs, null);
+        assert.match(session.late.winpeDiagnostic.failure, /phase deadline exceeded/u);
+        assert.equal(session.late.winpeDiagnostic.acknowledgedKeyEvents, 11);
+        assert.equal(session.late.milestones.length, 2);
+        assert.equal(session.writes.filter(value => value.execute === "send-key").length, 11);
     });
 });

@@ -1970,9 +1970,15 @@ async function collectWinpeDiagnostic(io, context, input, launched, budget) {
     };
     if (launched.process?.cleanupProven !== true || launched.process?.treeGone !== true)
         return fail("unsafe", "guest process tree was not proven gone");
+    /*
+     * Without a pre-launch identity there is nothing to compare the disk against, and validating it
+     * against `null` would only prove it is some ordinary owned file. That is not the check.
+     */
+    if (input.preLaunchDiskIdentity === null || input.preLaunchDiskIdentity === undefined)
+        return fail("unsafe", "output disk was not identified before the launch");
     const taskOwner = typeof process.getuid === "function" ?
         {uid: BigInt(process.getuid()), gid: typeof process.getgid === "function" ? BigInt(process.getgid()) : null} : null;
-    try { io.validateOutputDisk(input.paths.outputDisk, input.preLaunchDiskIdentity ?? null, taskOwner); }
+    try { io.validateOutputDisk(input.paths.outputDisk, input.preLaunchDiskIdentity, taskOwner); }
     catch (error) { return fail("unsafe", error instanceof Error ? error.message : error); }
     record.outputDiskVerified = true;
     for (const member of WINPE_DIAGNOSTIC_MEMBERS) {
