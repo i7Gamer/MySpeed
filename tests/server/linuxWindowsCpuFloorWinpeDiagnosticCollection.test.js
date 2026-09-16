@@ -3,7 +3,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
+import {EventEmitter} from "node:events";
 import {describe, it} from "node:test";
+import {PassThrough} from "node:stream";
 
 import {
     WINPE_DIAGNOSTIC_MEMBER_READ_BYTES,
@@ -216,7 +218,10 @@ const POSIX_GROUPS = process.platform !== "win32";
 
 describe("WinPE diagnostic extraction bound is enforced while the subprocess runs", () => {
     it("stops a member that grows without limit at the cap, with no runner temporary file", async () => {
-        const emitter = "const b=Buffer.alloc(65536,65);for(;;){if(!process.stdout.write(b))break;}";
+        const emitterChunkBytes = 65_536;
+        const emitterByte = 65;
+        const emitter = `const {once}=require('node:events');const b=Buffer.alloc(${emitterChunkBytes},${emitterByte});` +
+            "(async()=>{for(;;){if(!process.stdout.write(b))await once(process.stdout,'drain');}})();";
         const started = Date.now();
         const observed = await runHostedOwnedProcess(process.execPath, ["-e", emitter],
             {timeoutMs: 30_000, maxStreamBytes: WINPE_DIAGNOSTIC_MEMBER_READ_BYTES});
@@ -224,6 +229,40 @@ describe("WinPE diagnostic extraction bound is enforced while the subprocess run
         assert.equal(observed.process.stdoutOverflow, true);
         assert.equal(observed.process.timedOut, false);
         assert.ok(Date.now() - started < 20_000, "the cap has to stop the writer, not the deadline");
+    });
+
+    it("retains the exact bounded prefix across an irregular overflowing chunk", async () => {
+        const remainingPrefixBytes = 5;
+        const prefixBytes = WINPE_DIAGNOSTIC_MEMBER_READ_BYTES - remainingPrefixBytes;
+        const overflowingChunkBytes = 9;
+        const firstChunkByte = 0x61;
+        const secondChunkByte = 0x62;
+        const childProcessId = 4567;
+        const first = Buffer.alloc(prefixBytes, firstChunkByte);
+        const second = Buffer.alloc(overflowingChunkBytes, secondChunkByte);
+        const child = new EventEmitter();
+        child.pid = childProcessId;
+        child.stdout = new PassThrough();
+        child.stderr = new PassThrough();
+        let killed = false;
+        const observed = await runHostedOwnedProcess("/owned/mcopy", [], {timeoutMs: 1_000,
+            maxStreamBytes: WINPE_DIAGNOSTIC_MEMBER_READ_BYTES}, {
+            spawnImpl: () => {
+                queueMicrotask(() => {
+                    child.stdout.write(first);
+                    child.stdout.write(second);
+                    child.emit("close", null, "SIGKILL");
+                });
+                return child;
+            },
+            killGroup: processId => { assert.equal(processId, child.pid); killed = true; },
+            isGroupAlive: () => false
+        });
+        assert.equal(killed, true);
+        assert.equal(observed.process.stdoutOverflow, true);
+        assert.equal(observed.process.cleanupProven, true);
+        assert.deepEqual(observed.stdout, Buffer.concat([first, second.subarray(0,
+            WINPE_DIAGNOSTIC_MEMBER_READ_BYTES - prefixBytes)]));
     });
 
     it("is the production cap: a chunk that exactly fills it is accepted, not called an overflow", async () => {
