@@ -995,8 +995,9 @@ export function validateEarlyBoot(value, pathsValue) {
 }
 
 export function validateLateBoot(value, pathsValue) {
-    assertKeys(value, ["kind", "milestones", "schemaVersion"], "QEMU late-boot observation");
+    assertKeys(value, ["displayAdvanced", "kind", "milestones", "schemaVersion"], "QEMU late-boot observation");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-late-boot-observation" ||
+        (value.displayAdvanced !== null && typeof value.displayAdvanced !== "boolean") ||
         !Array.isArray(value.milestones) || value.milestones.length < 1 ||
         value.milestones.length > MAX_LATE_BOOT_MILESTONES)
         throw new TypeError("QEMU late-boot observation is invalid");

@@ -1540,6 +1540,67 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(res4.process.exitCode, 1);
     });
 
+    it("derives the late-boot display-progress verdict from the captured frame digests", async () => {
+        const png = target => Buffer.concat([
+            Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+            Buffer.from(target)
+        ]);
+        const lateMilestones = [
+            {milestone: 1, offsetMs: 120_000, status: "running", running: true,
+             screenshotPath: `${paths().root}/late-boot-1.png`},
+            {milestone: 2, offsetMs: 300_000, status: "running", running: true,
+             screenshotPath: `${paths().root}/late-boot-2.png`}
+        ];
+        const toolchain = {
+            runtime: {loader: rootFileIdentity(`${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+                libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mtools`),
+            firmware: qemuFirmware()
+        };
+        const makeAdapter = frameFor => createHostedStage2Operations({context: context(), paths: paths(),
+            dependencies: {
+                monotonicMilliseconds: () => 1000,
+                pathExists: () => false,
+                inspectOwned: rootFileIdentity,
+                inspectDirectory: directoryIdentity,
+                runMonitoredQemu: async () => ({
+                    observation: {process: {...okProcess, exitCode: 137, cleanupProven: true, timedOut: false},
+                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                    identity: {pid: 2345, startTicks: "77",
+                        executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
+                        processGroupId: 2300},
+                    absentAfter: true,
+                    processGroupGone: true,
+                    qmp: qmpObservation(),
+                    lateBoot: {milestones: lateMilestones}
+                }),
+                readOwnedVerified: target => {
+                    const bytes = png(frameFor(target));
+                    return {bytes, identity: {path: target, bytes: String(bytes.length),
+                        sha256: sha256ForTest(bytes)}};
+                }
+            }});
+
+        // A guest that is alive but frozen: every frame from the last early capture onwards is the
+        // same image, which is exactly the shape a QEMU killed at its wrapper deadline produces.
+        const frozen = await makeAdapter(() => "frozen").launchOwnedQemu({toolchain, paths: paths(), argv: [],
+            privilegeMode: "ordinary-kvm"});
+        assert.equal(frozen.lateBoot.displayAdvanced, false);
+
+        // A guest that is actually progressing changes the framebuffer between milestones.
+        const moving = await makeAdapter(target => target).launchOwnedQemu({toolchain, paths: paths(), argv: [],
+            privilegeMode: "ordinary-kvm"});
+        assert.equal(moving.lateBoot.displayAdvanced, true);
+
+        // Progress before the late window must not be counted: early-boot-1 differing from
+        // early-boot-2 is firmware still drawing its first screen, not the guest advancing.
+        const earlyOnly = await makeAdapter(target =>
+            target.endsWith("early-boot-1.png") ? "first" : "settled").launchOwnedQemu({toolchain, paths: paths(),
+            argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal(earlyOnly.lateBoot.displayAdvanced, false);
+    });
+
     it("cancels QMP handle on child termination and monitor abort while keeping late observation failure separate from qmp-failed", async () => {
         // 1. In runHostedOwnedProcess: handle cancellation on close
         let capturedOnSessionHandle = null;

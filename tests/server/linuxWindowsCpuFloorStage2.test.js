@@ -743,6 +743,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const valid = {
             schemaVersion: 1,
             kind: "qemu-late-boot-observation",
+            displayAdvanced: false,
             milestones: [
                 {
                     milestone: 1,
@@ -770,6 +771,18 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const badPath = structuredClone(valid);
         badPath.milestones[0].screenshot.path = "/tmp/late-boot-1.png";
         assert.throws(() => validateLateBoot(badPath, paths()), /late-boot/u);
+
+        // The display-progress verdict is a required, explicitly three-valued field: a run that kept
+        // QEMU alive without advancing the framebuffer has to be readable as such, and a verdict that
+        // could not be formed must stay null rather than borrow "did not advance".
+        const advanced = {...valid, displayAdvanced: true};
+        assert.deepEqual(validateLateBoot(advanced, paths()), advanced);
+        const undetermined = {...valid, displayAdvanced: null};
+        assert.deepEqual(validateLateBoot(undetermined, paths()), undetermined);
+        const missingVerdict = structuredClone(valid);
+        delete missingVerdict.displayAdvanced;
+        assert.throws(() => validateLateBoot(missingVerdict, paths()), /late-boot/u);
+        assert.throws(() => validateLateBoot({...valid, displayAdvanced: "false"}, paths()), /late-boot/u);
     });
 
     it("instantiates typed GuestBootstrapError and QemuLaunchError with failure diagnostics", () => {
@@ -930,6 +943,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const largeLate = {
             schemaVersion: 1,
             kind: "qemu-late-boot-observation",
+            displayAdvanced: false,
             milestones: [
                 {
                     milestone: 1,
@@ -1006,6 +1020,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const smallLate = {
             schemaVersion: 1,
             kind: "qemu-late-boot-observation",
+            displayAdvanced: false,
             milestones: [
                 {
                     milestone: 1,

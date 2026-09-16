@@ -1190,6 +1190,21 @@ export async function runMonitoredQemu(io, request) {
         processGroupGone: false, terminationReason: terminationReasons[0] ?? null});
 }
 
+/*
+ * A late-boot observation only proves that QEMU stayed alive; run 35016673141 held a UEFI shell
+ * prompt for its whole 25-minute window and still reported running at every milestone. The verdict
+ * compares the captured frame digests from the last early frame onwards, so a byte-identical
+ * sequence reads as "the guest drew nothing", not as a slow boot. Progress between the two early
+ * frames is firmware still painting its first screen and is deliberately outside the comparison.
+ * A chain too short to compare stays null rather than borrowing "did not advance".
+ */
+function displayProgressVerdict(earlyBoot, milestones) {
+    const digests = [...(earlyBoot === null ? [] : [earlyBoot.screenshots.at(-1).sha256]),
+        ...milestones.map(item => item.screenshot.sha256)];
+    if (digests.length < 2) return null;
+    return digests.some((digest, index) => index > 0 && digest !== digests[index - 1]);
+}
+
 function normalizeDependencies(value) {
     const normalized = {mkdirExclusive: value.mkdirExclusive ?? defaultMkdirExclusive,
         writeExclusive: value.writeExclusive ?? defaultWriteExclusive,
@@ -1499,6 +1514,7 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
                 lateBoot = {
                     schemaVersion: 1,
                     kind: "qemu-late-boot-observation",
+                    displayAdvanced: displayProgressVerdict(earlyBoot, validatedMilestones),
                     milestones: validatedMilestones
                 };
             }
