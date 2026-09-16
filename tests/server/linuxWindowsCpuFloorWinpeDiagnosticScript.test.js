@@ -53,6 +53,15 @@ function seamFor(root, volumes) {
     };
 }
 
+function formatVolOutput(entry) {
+    if (entry.rawLabel !== undefined) return entry.rawLabel;
+    const label = entry.label;
+    if (label !== null && label !== undefined && label !== "") {
+        return ` Volume in drive Z is ${label}\r\n Volume Serial Number is 1234-5678\r\n`;
+    }
+    return " Volume in drive Z has no label.\r\n Volume Serial Number is 1234-5678\r\n";
+}
+
 /*
  * One case = one fresh task directory holding a seed, some candidate volumes and some sources. No
  * real drive root is enumerated, read or written; nothing is mounted, substituted or partitioned;
@@ -67,7 +76,7 @@ function runCase({seed = {marker: SEED_MARKER_FILE, label: "MYSPEEDSEED"}, volum
     if (seed !== null) {
         if (seed.marker !== null)
             fs.writeFileSync(path.join(root, "seed", WINPE_DIAGNOSTIC_SEED_MARKER_NAME), seed.marker);
-        fs.writeFileSync(path.join(root, "seed", "label.txt"), `${seed.label}\r\n`);
+        fs.writeFileSync(path.join(root, "seed", "label.txt"), formatVolOutput(seed));
     }
     for (const [name, bytes] of Object.entries(sources))
         fs.writeFileSync(path.join(root, "src", name), bytes);
@@ -77,7 +86,7 @@ function runCase({seed = {marker: SEED_MARKER_FILE, label: "MYSPEEDSEED"}, volum
     for (const volume of volumes) {
         const directory = path.join(root, volume.name);
         fs.mkdirSync(directory);
-        fs.writeFileSync(path.join(directory, "label.txt"), `${volume.label ?? ""}\r\n`);
+        fs.writeFileSync(path.join(directory, "label.txt"), formatVolOutput(volume));
         if (volume.marker !== null && volume.marker !== undefined)
             fs.writeFileSync(path.join(directory, WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME), volume.marker);
     }
@@ -113,7 +122,7 @@ describe("WinPE diagnostic guest script rendering", () => {
         assert.equal(fixture.indexOf("rem ---- end seam ----"), end);
         assert.deepEqual(production.slice(0, start + 1), fixture.slice(0, start + 1));
         assert.deepEqual(production.slice(end), fixture.slice(end));
-        assert.equal(production.length - (end - start + 1), 89,
+        assert.equal(production.length - (end - start + 1), 90,
             "only the seam may differ; the rest of the body is the tested one");
     });
 
@@ -182,19 +191,23 @@ describe("WinPE diagnostic guest script under cmd.exe", {skip: WINDOWS ? false :
                 `marker ${JSON.stringify(marker)} must not resolve a destination`);
             expectMembers(observed.written, "vol1", []);
         }
-        for (const label of ["MYSPEEDOU", "", "MYSPEED"]) {
+        for (const label of ["MYSPEEDOU", "", "MYSPEED", "MYSPEEDOUTX", "XMYSPEEDOUT", "MYSPEEDOUT EXTRA"]) {
             const observed = runCase({volumes: [{name: "vol1", label, marker: OUTPUT_MARKER_FILE}]});
-            assert.equal(observed.status, WINPE_DIAGNOSTIC_EXIT_CODES.destinationAbsent);
+            assert.equal(observed.status, WINPE_DIAGNOSTIC_EXIT_CODES.destinationAbsent,
+                `label ${JSON.stringify(label)} must not resolve a destination`);
             expectMembers(observed.written, "vol1", []);
         }
-        /*
-         * A label the expected one is a substring of still matches, because `vol` renders its label
-         * inside localised prose that cannot be anchored. That is a documented weakening of the
-         * label check, which is why the marker file - exact, whole-line, nonce-bound - is required
-         * as well and is what actually identifies the volume.
-         */
-        const superset = runCase({volumes: [{name: "vol1", label: "MYSPEEDOUTX", marker: OUTPUT_MARKER_FILE}]});
-        assert.equal(superset.status, WINPE_DIAGNOSTIC_EXIT_CODES.complete);
+        for (const rawLabel of [
+            "Garbage output\r\n",
+            " Volume Serial Number is 1234-5678\r\n",
+            " Volume in drive Z is \r\n",
+            " Volume in drive Z has no label.\r\n Volume Serial Number is 1234-5678\r\n"
+        ]) {
+            const observed = runCase({volumes: [{name: "vol1", rawLabel, marker: OUTPUT_MARKER_FILE}]});
+            assert.equal(observed.status, WINPE_DIAGNOSTIC_EXIT_CODES.destinationAbsent,
+                `rawLabel ${JSON.stringify(rawLabel)} must not resolve a destination`);
+            expectMembers(observed.written, "vol1", []);
+        }
     });
 
     it("refuses to run at all when the seed it was generated for cannot be identified", () => {
@@ -205,7 +218,12 @@ describe("WinPE diagnostic guest script under cmd.exe", {skip: WINDOWS ? false :
 
         for (const seed of [{marker: `${winpeDiagnosticSeedMarker(OTHER_NONCE)}${CRLF}`, label: "MYSPEEDSEED"},
             {marker: `${SEED_MARKER}\r\nextra\r\n`, label: "MYSPEEDSEED"},
-            {marker: SEED_MARKER_FILE, label: "SOMETHINGELSE"}]) {
+            {marker: SEED_MARKER_FILE, label: "SOMETHINGELSE"},
+            {marker: SEED_MARKER_FILE, label: "MYSPEEDSEEDX"},
+            {marker: SEED_MARKER_FILE, label: "MYSPEED"},
+            {marker: SEED_MARKER_FILE, label: "MYSPEEDSEED EXTRA"},
+            {marker: SEED_MARKER_FILE, label: ""},
+            {marker: SEED_MARKER_FILE, rawLabel: "Garbage output\r\n"}]) {
             const observed = runCase({seed, volumes: [{name: "vol1", label: "MYSPEEDOUT", marker: OUTPUT_MARKER_FILE}]});
             assert.equal(observed.status, WINPE_DIAGNOSTIC_EXIT_CODES.seedIdentityDiffers);
             expectMembers(observed.written, "vol1", []);

@@ -115,7 +115,7 @@ function validateRequest(request) {
         throw new TypeError("probe artifact binding is invalid");
     assertKeys(request.closure, ["files", "root"], "Stage 2 closure");
     const closureRoot = `/home/runner/work/_temp/myspeed-stage2-closure-${context.nonce}`;
-    const closureNames = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
+    const baseClosureNames = ["scripts/qualification/linux-windows-cpu-floor-admission.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
         "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
@@ -123,6 +123,11 @@ function validateRequest(request) {
         "scripts/qualification/linux-kvm-capability.mjs",
         "scripts/qualification/linux-kvm-privileged-capability.mjs",
         "scripts/qualification/windows-msi-post-setup-activation.mjs"];
+    const diagnosticClosureNames = [...baseClosureNames,
+        "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs"];
+    const closureNames = request.closure?.files?.length === diagnosticClosureNames.length
+        ? diagnosticClosureNames
+        : baseClosureNames;
     if (request.closure.root !== closureRoot || !Array.isArray(request.closure.files) ||
         request.closure.files.length !== closureNames.length) throw new TypeError("Stage 2 closure is invalid");
     for (const [index, name] of closureNames.entries()) {

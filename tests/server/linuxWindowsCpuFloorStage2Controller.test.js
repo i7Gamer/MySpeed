@@ -187,4 +187,31 @@ describe("hosted Stage 2 controller", () => {
         assert.throws(() => deriveActualHostedContext(context.nonce, environment,
             {platform: "win32", architecture: "x64"}), /actual hosted runtime/u);
     });
+
+    it("accepts the sealed nine-module diagnostic closure including stage3 cleanup", async () => {
+        const {request, contents} = fixture();
+        const closureRoot = `/home/runner/work/_temp/myspeed-stage2-closure-${context.nonce}`;
+        const cleanupModule = "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs";
+        contents.set(`${closureRoot}/${cleanupModule}`, Buffer.from("closure-cleanup"));
+        request.closure.files.push(identity(`${closureRoot}/${cleanupModule}`, Buffer.from("closure-cleanup")));
+        const changed = observations();
+        let executed = false;
+        const result = await runHostedStage2Controller(request, {
+            readVerified: target => {
+                const bytes = contents.get(target);
+                return {bytes, path: target, sha256: digest(bytes)};
+            },
+            collectAdmission: async () => changed,
+            mkdirExclusive: () => {},
+            copyExclusive: (source, target) => { contents.set(target, contents.get(source)); },
+            operations: {},
+            runStage2: async () => {
+                executed = true;
+                return {status: "observed"};
+            }
+        });
+        assert.equal(executed, true);
+        assert.equal(result.status, "observed");
+    });
 });
+

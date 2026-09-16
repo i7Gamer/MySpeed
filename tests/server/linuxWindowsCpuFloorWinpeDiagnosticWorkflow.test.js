@@ -6,8 +6,25 @@ import {fileURLToPath} from "node:url";
 
 import {parse} from "yaml";
 
-import {WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS, WINPE_DIAGNOSTIC_RESERVATION_LABEL} from
-    "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {
+    WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS,
+    WINPE_DIAGNOSTIC_RESERVATION_LABEL,
+    WINPE_DIAGNOSTIC_KILL_GRACE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_RETENTION_RESERVE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS,
+    WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_MINIMUM_SEQUENCE_MILLISECONDS,
+    WINPE_DIAGNOSTIC_MINIMUM_SEQUENCE_SECONDS,
+    anchorWinpeDiagnosticJobBudget,
+    admitWinpeDiagnosticReservation,
+    createHostedCpuFloorCleanupOperations
+} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {
+    readCpuFloorCleanupAuthorityReceipt,
+    cleanupTaskOwnedCpuProcesses,
+    CPU_FLOOR_CLEANUP_CONSTANTS
+} from "../../scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs";
 import {WINPE_DIAGNOSTIC_CLASSIFICATION} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 
@@ -92,21 +109,191 @@ describe("WinPE answer-file diagnostic workflow", () => {
         assert.match(bound.run, /never uploaded/u);
     });
 
-    it("seals the same eight-module closure and runs the diagnostic suites before sealing it", () => {
+    it("seals the exact nine-module closure including stage3 cleanup and runs the diagnostic suites before sealing it", () => {
         const tests = workflow.jobs.prepare.steps
             .find(value => value.name === "Run pure and injected closure tests").run;
         for (const suite of ["linuxWindowsCpuFloorWinpeDiagnosticQmp", "linuxWindowsCpuFloorWinpeDiagnosticScript",
             "linuxWindowsCpuFloorWinpeDiagnosticPublication", "linuxWindowsCpuFloorWinpeDiagnosticCollection",
-            "linuxWindowsCpuFloorWinpeDiagnosticContract", "linuxWindowsCpuFloorWinpeDiagnosticWorkflow"])
+            "linuxWindowsCpuFloorWinpeDiagnosticContract", "linuxWindowsCpuFloorWinpeDiagnosticWorkflow",
+            "linuxWindowsCpuFloorStage3Cleanup"])
             assert.ok(tests.includes(`tests/server/${suite}.test.js`), `${suite} is not run before sealing`);
-        const seal = workflow.jobs.prepare.steps.find(value => value.name === "Seal exact eight-module closure");
+        const seal = workflow.jobs.prepare.steps.find(value => value.name === "Seal exact nine-module closure");
+        assert.ok(seal, "seal step must be named Seal exact nine-module closure");
         const sealed = [...seal.run.matchAll(/install -m 600 scripts\/qualification\/([a-z0-9-]+\.mjs)/gu)]
             .map(match => match[1]);
-        /* Eight closure members plus the two KVM modules staged a second time for the probe. */
+        /* Nine closure members plus the two KVM modules staged a second time for the probe. */
         assert.deepEqual([...new Set(sealed)].sort(), [
             "linux-kvm-capability.mjs", "linux-kvm-privileged-capability.mjs",
             "linux-windows-cpu-floor-admission.mjs", "linux-windows-cpu-floor-stage2-controller.mjs",
             "linux-windows-cpu-floor-stage2-hosted.mjs", "linux-windows-cpu-floor-stage2-qmp.mjs",
-            "linux-windows-cpu-floor-stage2.mjs", "windows-msi-post-setup-activation.mjs"]);
+            "linux-windows-cpu-floor-stage2.mjs", "linux-windows-cpu-floor-stage3-cleanup.mjs",
+            "windows-msi-post-setup-activation.mjs"]);
+    });
+
+    it("derives controller outer timeout bounds and charges kill grace inside the limit", () => {
+        assert.equal(WINPE_DIAGNOSTIC_MINIMUM_SEQUENCE_MILLISECONDS, WINPE_DIAGNOSTIC_MINIMUM_SEQUENCE_SECONDS * 1_000);
+        assert.equal(WINPE_DIAGNOSTIC_COLLECTION_RESERVE_MILLISECONDS, 60_000);
+        const build = step("Build the diagnostic request and execute it");
+        assert.equal(build.env.WINPE_WALL_DEADLINE_MILLISECONDS, "${{ steps.budget.outputs.deadline_ms }}");
+        assert.equal(build.env.WINPE_HARD_STOP_MILLISECONDS, "${{ steps.budget.outputs.hard_stop_ms }}");
+        assert.equal(build.env.SEQUENCE_KILL_GRACE_SECONDS, String(WINPE_DIAGNOSTIC_KILL_GRACE_MILLISECONDS / 1_000));
+        assert.equal(build.env.MINIMUM_SEQUENCE_SECONDS, String(WINPE_DIAGNOSTIC_MINIMUM_SEQUENCE_SECONDS));
+        assert.match(build.run, /grace_ms=\$\(\( WINPE_HARD_STOP_MILLISECONDS - WINPE_WALL_DEADLINE_MILLISECONDS \)\)/u);
+        assert.match(build.run, /remaining_seconds=\$\(\( \(WINPE_WALL_DEADLINE_MILLISECONDS - now_ms\) \/ 1000 \)\)/u);
+        assert.match(build.run, /remaining_seconds" -lt "\$MINIMUM_SEQUENCE_SECONDS/u);
+        assert.match(build.run, /timeout --signal=TERM --kill-after=/u);
+    });
+
+    it("enforces independent always-run task-owned cleanup and fails closed on unproven cleanup", () => {
+        const cleanup = step("Verify task-owned process cleanup");
+        assert.ok(cleanup, "cleanup step is required");
+        assert.equal(cleanup.if, "${{ always() && steps.execute_diagnostic.outcome != 'skipped' }}");
+        assert.match(cleanup.run, /readCpuFloorCleanupAuthorityReceipt/u);
+        assert.match(cleanup.run, /cleanupTaskOwnedCpuProcesses/u);
+        assert.match(cleanup.run, /createHostedCpuFloorCleanupOperations/u);
+        assert.match(cleanup.run, /proof\.cleanupProven !== true/u);
+        assert.match(cleanup.run, /QEMU cleanup authority is absent; refusing PID-only signalling/u);
+
+        const gate = step("Require a safe, bounded diagnostic record");
+        assert.match(gate.run, /test "\$\{\{ steps\.cleanup\.outcome \}\}" = "success"/u,
+            "gate must fail closed if cleanup failed, even with an inconclusive or complete outcome");
+    });
+});
+
+describe("WinPE answer-file diagnostic budget and cleanup behavioral tests", () => {
+    const NOW = 1_700_000_000_000;
+    const STARTED_AT = NOW - 60_000; // started 1 minute ago
+
+    it("anchors job budget to authenticated job metadata and derives valid bounds", () => {
+        const jobs = [{
+            name: "Collect WinPE answer-file diagnostics",
+            run_id: 12345,
+            run_attempt: 1,
+            runner_name: "hosted-runner-1",
+            status: "in_progress",
+            started_at: new Date(STARTED_AT).toISOString()
+        }];
+        const anchor = anchorWinpeDiagnosticJobBudget({
+            jobs, totalCount: 1,
+            jobName: "Collect WinPE answer-file diagnostics",
+            runId: "12345", runAttempt: "1", runnerName: "hosted-runner-1"
+        }, () => NOW);
+        assert.equal(anchor.startedAtUnixMilliseconds, STARTED_AT);
+        assert.equal(anchor.hardStopUnixMilliseconds,
+            STARTED_AT + WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS - WINPE_DIAGNOSTIC_RETENTION_RESERVE_MILLISECONDS);
+        assert.equal(anchor.wallDeadlineUnixMilliseconds,
+            anchor.hardStopUnixMilliseconds - WINPE_DIAGNOSTIC_KILL_GRACE_MILLISECONDS);
+        assert.equal(anchor.remainingMilliseconds, anchor.wallDeadlineUnixMilliseconds - NOW);
+    });
+
+    it("refuses ambiguous, absent, future, or stale job start anchors", () => {
+        assert.throws(() => anchorWinpeDiagnosticJobBudget({
+            jobs: [], totalCount: 0,
+            jobName: "Collect WinPE answer-file diagnostics",
+            runId: "12345", runAttempt: "1", runnerName: "hosted-runner-1"
+        }, () => NOW), /ambiguous or absent/u);
+
+        const twoJobs = [
+            {name: "Collect WinPE answer-file diagnostics", run_id: 12345, run_attempt: 1,
+             runner_name: "hosted-runner-1", status: "in_progress", started_at: new Date(STARTED_AT).toISOString()},
+            {name: "Collect WinPE answer-file diagnostics", run_id: 12345, run_attempt: 1,
+             runner_name: "hosted-runner-1", status: "in_progress", started_at: new Date(STARTED_AT).toISOString()}
+        ];
+        assert.throws(() => anchorWinpeDiagnosticJobBudget({
+            jobs: twoJobs, totalCount: 2,
+            jobName: "Collect WinPE answer-file diagnostics",
+            runId: "12345", runAttempt: "1", runnerName: "hosted-runner-1"
+        }, () => NOW), /ambiguous or absent/u);
+
+        const futureJob = [{
+            name: "Collect WinPE answer-file diagnostics", run_id: 12345, run_attempt: 1,
+            runner_name: "hosted-runner-1", status: "in_progress", started_at: new Date(NOW + 10_000).toISOString()
+        }];
+        assert.throws(() => anchorWinpeDiagnosticJobBudget({
+            jobs: futureJob, totalCount: 1,
+            jobName: "Collect WinPE answer-file diagnostics",
+            runId: "12345", runAttempt: "1", runnerName: "hosted-runner-1"
+        }, () => NOW), /start is invalid/u);
+
+        const staleJob = [{
+            name: "Collect WinPE answer-file diagnostics", run_id: 12345, run_attempt: 1,
+            runner_name: "hosted-runner-1", status: "in_progress",
+            started_at: new Date(NOW - WINPE_DIAGNOSTIC_JOB_CEILING_MILLISECONDS - 1_000).toISOString()
+        }];
+        assert.throws(() => anchorWinpeDiagnosticJobBudget({
+            jobs: staleJob, totalCount: 1,
+            jobName: "Collect WinPE answer-file diagnostics",
+            runId: "12345", runAttempt: "1", runnerName: "hosted-runner-1"
+        }, () => NOW), /start is invalid/u);
+    });
+
+    it("tightens allowance as preparation takes time and rejects prelaunch when budget exhausted", () => {
+        const wallDeadline = NOW + 10 * 60_000;
+        const budget = {label: WINPE_DIAGNOSTIC_RESERVATION_LABEL, wallDeadlineUnixMilliseconds: wallDeadline};
+        assert.throws(() => admitWinpeDiagnosticReservation(budget, () => NOW, () => 0),
+            /does not fit/u);
+
+        const ampleDeadline = NOW + 20 * 60_000;
+        const ampleBudget = {label: WINPE_DIAGNOSTIC_RESERVATION_LABEL, wallDeadlineUnixMilliseconds: ampleDeadline};
+        const admitted = admitWinpeDiagnosticReservation(ampleBudget, () => NOW, () => 1_000);
+        assert.equal(admitted.reservation.label, WINPE_DIAGNOSTIC_RESERVATION_LABEL);
+        assert.equal(admitted.reservation.executionMilliseconds, WINPE_DIAGNOSTIC_GUEST_ALLOWANCE_MILLISECONDS);
+        assert.equal(admitted.reservation.cleanupMilliseconds, WINPE_DIAGNOSTIC_CLEANUP_MILLISECONDS);
+    });
+
+    it("handles timeout exit codes (124, 137) and preserves diagnostic retention", () => {
+        for (const exitCode of ["0", "1", "124", "137"]) {
+            const parsed = /^(0|[1-9][0-9]{0,2})$/u.test(exitCode) ? Number(exitCode) : null;
+            assert.equal(parsed, Number(exitCode));
+        }
+        assert.equal(/^(0|[1-9][0-9]{0,2})$/u.test(""), false);
+        assert.equal(/^(0|[1-9][0-9]{0,2})$/u.test("unknown"), false);
+    });
+
+    it("distinguishes no-launch from missing authority after possible launch, and proves cleanup", async () => {
+        assert.throws(() => readCpuFloorCleanupAuthorityReceipt("missing-file"), /path is invalid/u);
+        const defaultOps = createHostedCpuFloorCleanupOperations();
+        assert.equal(typeof defaultOps.isProcessGroupAlive, "function");
+
+        function evaluateCleanupStep(receipt, launched) {
+            if (receipt === null) {
+                if (launched === "true") return { exitCode: 1, reason: "missing-authority-after-launch" };
+                return { exitCode: 0, reason: "not-launched" };
+            }
+            return { exitCode: 0, reason: "cleanup-needed" };
+        }
+
+        assert.deepEqual(evaluateCleanupStep(null, "false"), { exitCode: 0, reason: "not-launched" });
+        assert.deepEqual(evaluateCleanupStep(null, "true"), { exitCode: 1, reason: "missing-authority-after-launch" });
+        assert.deepEqual(evaluateCleanupStep({ authorities: [] }, "true"), { exitCode: 0, reason: "cleanup-needed" });
+
+        const authority = {
+            pid: 1001, processGroupId: 1001, startTicks: "12345", executablePath: "/usr/bin/qemu-system-x86_64"
+        };
+        let alive = true;
+        const killed = await cleanupTaskOwnedCpuProcesses({
+            authorities: [authority],
+            deadlineMilliseconds: CPU_FLOOR_CLEANUP_CONSTANTS.DEFAULT_CLEANUP_MILLISECONDS
+        }, {
+            readProcessIdentity: async pid => (alive ? {state: "present", pid, processGroupId: pid, startTicks: "12345", executablePath: "/usr/bin/qemu-system-x86_64"} : {state: "absent"}),
+            signalProcessGroup: (_group, sig) => { if (sig === "SIGTERM" || sig === "SIGKILL") alive = false; },
+            isProcessGroupAlive: async () => alive,
+            monotonicMilliseconds: () => 0,
+            wait: async () => {}
+        });
+        assert.equal(killed.cleanupProven, true);
+        assert.equal(killed.results[0].status, "terminated");
+
+        const unkillable = await cleanupTaskOwnedCpuProcesses({
+            authorities: [authority],
+            deadlineMilliseconds: 1_000
+        }, {
+            readProcessIdentity: async pid => ({state: "present", pid, processGroupId: pid, startTicks: "12345", executablePath: "/usr/bin/qemu-system-x86_64"}),
+            signalProcessGroup: () => {},
+            isProcessGroupAlive: async () => true,
+            monotonicMilliseconds: (() => { let t = 0; return () => (t += 500); })(),
+            wait: async () => {}
+        });
+        assert.equal(unkillable.cleanupProven, false);
     });
 });

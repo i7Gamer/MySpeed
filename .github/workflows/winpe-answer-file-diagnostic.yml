@@ -82,6 +82,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorStage2.test.js \
             tests/server/linuxWindowsCpuFloorStage2Hosted.test.js \
             tests/server/linuxWindowsCpuFloorStage2Controller.test.js \
+            tests/server/linuxWindowsCpuFloorStage3Cleanup.test.js \
             tests/server/linuxWindowsCpuFloorWinpeDiagnosticQmp.test.js \
             tests/server/linuxWindowsCpuFloorWinpeDiagnosticScript.test.js \
             tests/server/linuxWindowsCpuFloorWinpeDiagnosticPublication.test.js \
@@ -89,7 +90,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorWinpeDiagnosticContract.test.js \
             tests/server/linuxWindowsCpuFloorWinpeDiagnosticWorkflow.test.js
 
-      - name: Seal exact eight-module closure
+      - name: Seal exact nine-module closure
         id: seal
         shell: bash
         run: |
@@ -106,6 +107,7 @@ jobs:
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs "$closure_root/scripts/qualification/"
+          install -m 600 scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-kvm-capability.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/linux-kvm-privileged-capability.mjs "$closure_root/scripts/qualification/"
           install -m 600 scripts/qualification/windows-msi-post-setup-activation.mjs "$closure_root/scripts/qualification/"
@@ -130,6 +132,7 @@ jobs:
             "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs",
             "scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs",
             "scripts/qualification/linux-windows-cpu-floor-stage2.mjs",
+            "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs",
             "scripts/qualification/linux-kvm-capability.mjs",
             "scripts/qualification/linux-kvm-privileged-capability.mjs",
             "scripts/qualification/windows-msi-post-setup-activation.mjs"];
@@ -199,7 +202,7 @@ jobs:
             "linux-kvm-privileged-capability.mjs", "linux-windows-cpu-floor-admission.mjs",
             "linux-windows-cpu-floor-stage2-controller.mjs", "linux-windows-cpu-floor-stage2-hosted.mjs",
             "linux-windows-cpu-floor-stage2-qmp.mjs", "linux-windows-cpu-floor-stage2.mjs",
-            "windows-msi-post-setup-activation.mjs"]);
+            "linux-windows-cpu-floor-stage3-cleanup.mjs", "windows-msi-post-setup-activation.mjs"]);
           exactDirectory(kvm, ["closure.json", "linux-kvm-capability.mjs",
             "linux-kvm-privileged-capability.mjs", "privileged-closure.json"]);
           NODE
@@ -331,7 +334,9 @@ jobs:
             const anchor = anchorWinpeDiagnosticJobBudget({jobs: data.jobs, totalCount: data.total_count,
               jobName: process.env.EXECUTE_JOB_NAME, runId: process.env.GITHUB_RUN_ID,
               runAttempt: process.env.GITHUB_RUN_ATTEMPT, runnerName: process.env.RUNNER_NAME}, Date.now);
+            core.setOutput('started_ms', String(anchor.startedAtUnixMilliseconds));
             core.setOutput('deadline_ms', String(anchor.wallDeadlineUnixMilliseconds));
+            core.setOutput('hard_stop_ms', String(anchor.hardStopUnixMilliseconds));
             core.info(`job started at ${new Date(anchor.startedAtUnixMilliseconds).toISOString()}, `
               + `${anchor.remainingMilliseconds}ms left before the diagnostic must have stopped`);
 
@@ -339,9 +344,18 @@ jobs:
         id: execute_diagnostic
         env:
           WINPE_WALL_DEADLINE_MILLISECONDS: ${{ steps.budget.outputs.deadline_ms }}
+          WINPE_HARD_STOP_MILLISECONDS: ${{ steps.budget.outputs.hard_stop_ms }}
+          SEQUENCE_KILL_GRACE_SECONDS: '30'
+          MINIMUM_SEQUENCE_SECONDS: '720'
         shell: bash
         run: |
           set -euo pipefail
+          grace_ms=$(( WINPE_HARD_STOP_MILLISECONDS - WINPE_WALL_DEADLINE_MILLISECONDS ))
+          if [ "$grace_ms" -ne "$(( SEQUENCE_KILL_GRACE_SECONDS * 1000 ))" ]; then
+            printf 'declared kill grace %sms does not match the %ss the outer timeout uses\n' \
+              "$grace_ms" "$SEQUENCE_KILL_GRACE_SECONDS" >&2
+            exit 1
+          fi
           closure_root="$RUNNER_TEMP/myspeed-stage2-closure-$EXPECTED_NONCE"
           input_root="$RUNNER_TEMP/myspeed-stage2-input-$EXPECTED_NONCE"
           transport_root="$RUNNER_TEMP/myspeed-winpe-diagnostic-transport-$EXPECTED_NONCE"
@@ -404,13 +418,53 @@ jobs:
               files: probeFiles.map(file => identity(path.join(inputRoot, file.name)))}};
           fs.writeFileSync(output, `${JSON.stringify(request)}\n`, {flag: "wx", mode: 0o600});
           NODE
+          now_ms=$(( $(date -u +%s) * 1000 ))
+          remaining_seconds=$(( (WINPE_WALL_DEADLINE_MILLISECONDS - now_ms) / 1000 ))
+          if [ "$remaining_seconds" -lt "$MINIMUM_SEQUENCE_SECONDS" ]; then
+            printf 'job budget leaves %ss, below the %ss diagnostic sequence requires\n' \
+              "$remaining_seconds" "$MINIMUM_SEQUENCE_SECONDS" >&2
+            exit 1
+          fi
           set +e
-          node "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs" run \
+          /usr/bin/timeout --signal=TERM --kill-after="${SEQUENCE_KILL_GRACE_SECONDS}s" "${remaining_seconds}s" \
+            node "$closure_root/scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs" run \
             --request "$transport_root/request.json" --result "$transport_root/diagnostic-result.json" \
             >"$transport_root/controller.stdout" 2>"$transport_root/controller.stderr"
           controller_exit=$?
           set -e
           printf 'controller_exit=%s\n' "$controller_exit" >> "$GITHUB_OUTPUT"
+
+      - name: Verify task-owned process cleanup
+        if: ${{ always() && steps.execute_diagnostic.outcome != 'skipped' }}
+        id: cleanup
+        shell: bash
+        env:
+          EXPECTED_NONCE: ${{ needs.prepare.outputs.nonce }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const nonce = process.env.EXPECTED_NONCE;
+          const closureRoot = path.join(process.env.RUNNER_TEMP, `myspeed-stage2-closure-${nonce}`);
+          const {readCpuFloorCleanupAuthorityReceipt, cleanupTaskOwnedCpuProcesses, CPU_FLOOR_CLEANUP_CONSTANTS} =
+            await import(pathToFileURL(path.join(closureRoot, "scripts/qualification/linux-windows-cpu-floor-stage3-cleanup.mjs")));
+          const {createHostedCpuFloorCleanupOperations} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs")));
+          const taskRoot = path.join(process.env.RUNNER_TEMP, `myspeed-windows-cpu-floor-${nonce}`);
+          const receipt = path.join(taskRoot, "cleanup-authority.json");
+          const authorities = [];
+          if (fs.existsSync(receipt)) {
+            authorities.push(...readCpuFloorCleanupAuthorityReceipt(receipt).authorities);
+          } else if (fs.existsSync(path.join(taskRoot, "qemu.pid"))) {
+            throw new Error("QEMU cleanup authority is absent; refusing PID-only signalling");
+          }
+          const proof = await cleanupTaskOwnedCpuProcesses({authorities,
+            deadlineMilliseconds: CPU_FLOOR_CLEANUP_CONSTANTS.DEFAULT_CLEANUP_MILLISECONDS},
+            createHostedCpuFloorCleanupOperations());
+          if (proof.cleanupProven !== true) throw new Error("QEMU cleanup was not proven");
+          NODE
 
       - name: Bound and classify the retained diagnostic evidence
         id: bound
@@ -433,7 +487,7 @@ jobs:
           const streams = ["controller.stdout", "controller.stderr"].map(name => {
             const bytes = fs.readFileSync(path.join(root, name));
             return {name, bytes: bytes.length, sha256: digest(bytes)}; });
-          const exit = /^(0|1)$/u.test(exitText) ? Number(exitText) : null;
+          const exit = /^(0|[1-9][0-9]{0,2})$/u.test(exitText) ? Number(exitText) : null;
           const resultPath = path.join(root, "diagnostic-result.json");
           let result = null, resultIdentity = null;
           if (fs.existsSync(resultPath)) { const facts = fs.lstatSync(resultPath);
@@ -485,7 +539,7 @@ jobs:
           path: |
             ${{ runner.temp }}/myspeed-winpe-diagnostic-transport-${{ needs.prepare.outputs.nonce }}/diagnostic-result.json
             ${{ runner.temp }}/myspeed-winpe-diagnostic-transport-${{ needs.prepare.outputs.nonce }}/transport-summary.json
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 7
 
       # Green means the diagnostic ran safely and produced a bounded record of what it found -
@@ -496,6 +550,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          test "${{ steps.cleanup.outcome }}" = "success"
           case "${{ steps.bound.outputs.outcome }}" in
             capture-complete|inconclusive|refused-before-launch) exit 0 ;;
             *) exit 1 ;;

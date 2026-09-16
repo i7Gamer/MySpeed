@@ -784,13 +784,15 @@ export function renderWinpeDiagnosticScript(nonce, seam = WINPE_DIAGNOSTIC_PRODU
         "exit /b 0",
         "",
         /*
-         * The label as reported by the volume itself. `vol` renders its surrounding text in the
-         * guest's UI language, so the label is matched as a whole token rather than by column - and
-         * a lookup that cannot be read at all fails closed, leaving the volume unmatched.
+         * The label as reported by the volume itself under en-US WinPE. Parsed deterministically
+         * from the expected `Volume in drive <X> is <LABEL>` line, requiring exact label equality.
+         * Unrecognized output, missing label or non-matching label fails closed.
          */
         ":label",
-        "%MSVOLPRE%%~1%MSVOLPOST% 2>nul | \"%MSGREP%\" /i /c:\"%~2\" >nul",
-        "if errorlevel 1 exit /b 1",
+        "set \"MSMATCH=0\"",
+        "for /f \"tokens=1-5* delims= \" %%A in ('\"%MSVOLPRE%%~1%MSVOLPOST%\" 2^>nul') do " +
+            "if \"%%A\"==\"Volume\" if \"%%B\"==\"in\" if \"%%C\"==\"drive\" if \"%%E\"==\"is\" if \"%%F\"==\"%~2\" set \"MSMATCH=1\"",
+        "if not \"%MSMATCH%\"==\"1\" exit /b 1",
         "exit /b 0",
         "",
         ":probe",
