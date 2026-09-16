@@ -13,6 +13,8 @@ const DEFAULT_EVENT_SHA = "3".repeat(40);
 const DEFAULT_NONCE = "2".repeat(32);
 const OUTPUT_DISK_BYTES = 67_108_864;
 const SHA = character => character.repeat(64);
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
+const PNG_HASH = crypto.createHash("sha256").update(PNG).digest("hex");
 const encode = value => {
     const bytes = Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
     return {bytes, bytesBase64: bytes.toString("base64"), sha256: crypto.createHash("sha256").update(bytes).digest("hex")};
@@ -108,15 +110,31 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
     const stage2GuestIdentity = {path: `/home/runner/work/_temp/myspeed-stage2-transport-${nonce}/guest-result.json`,
         bytes: String(rawGuestEncoding.bytes.length), sha256: rawGuestEncoding.sha256};
     const stage2Observation = {schemaVersion: 1, status: "observed", stage: "complete",
-        classification: "github-hosted-windows-cpu-floor-stage2-nonqualifying", qualifying: false,
+        classification: "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying", qualifying: false,
         releaseGateCleared: false, cpuCalibrationAccepted: true, cleanupProven: true, context,
-        privilegeMode: "reviewed-sudo-kvm", qemuProcess: {cleanupProven: true, treeGone: true,
+        privilegeMode: "reviewed-sudo-kvm",
+        earlyBoot: {
+            schemaVersion: 1,
+            kind: "qemu-early-boot-observation",
+            inputSent: false,
+            version: {major: 8, minor: 2, micro: 2},
+            status: "running",
+            running: true,
+            screenshots: [1, 2].map(index => ({
+                path: `${stage2Root}/early-boot-${index}.png`,
+                bytes: String(PNG.length),
+                sha256: PNG_HASH,
+                bytesBase64: PNG.toString("base64")
+            }))
+        },
+        qemuProcess: {cleanupProven: true, treeGone: true,
             qemuPidAbsentAfter: true, exitCode: 0, signal: null, timedOut: false, qemuPid: 2200,
             qemuStartTicks: "123456", processGroupId: 2200, launcherExecutablePath: toolchain.runtime.loader.path,
             terminationReason: null}, guest: {schemaVersion: 1, status: "observed",
             cpu: {sse42: true, popcnt: true, avx: false, avx2: false, osxsave: false, xcr0: null},
             instructions: {sse42: "completed", popcnt: "completed", avx: "illegal-instruction",
                 avx2: "illegal-instruction"}, network: rawGuest.network,
+            activation, systemTools,
             output: {path: `${stage2Root}/output.img`, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("0")}},
         argv: buildStage2QemuArguments({paths: stage2Paths, toolchain}), packageClosure, probeArtifact, probes,
         installWim: {path: `${stage2Root}/install.wim`, sourceIsoSha256: SHA("d"), bytes: "5000000000",

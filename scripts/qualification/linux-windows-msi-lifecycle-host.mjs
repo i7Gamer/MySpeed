@@ -29,6 +29,8 @@ const RESULT_KIND = "myspeed-windows-msi-lifecycle-host-result";
 const SCENARIO_COUNT = 14;
 const MAX_JSON_BYTES = 1_048_576;
 const MAX_PATH_CHARACTERS = 1024;
+const MAX_SEED_FILES = 128;
+const QEMU_SUCCESS_EXIT_CODE = 0;
 const OUTPUT_DISK_BYTES = 268_435_456;
 const ROW_MILLISECONDS = 16_200_000;
 const QEMU_MEMORY = "6144M";
@@ -108,6 +110,35 @@ const descendant = (root, value, label) => {
     if (relative === "" || relative === ".." || relative.startsWith("../") || path.posix.isAbsolute(relative))
         throw new Error(`${label} escapes its root`);
     return item;
+};
+/*
+ * The seed file set is the only part of a row request that names paths the host interpolates into the
+ * seed root, so it is the one place where an unbounded entry becomes a write outside the row. Both the
+ * matrix and the calibration validate it here; `reservedNames` lets a caller refuse a seed file that
+ * would land on a document the host generates for itself, before anything is created.
+ */
+export const assertWindowsMsiHostRowSeedFiles = (seedFiles, {label, reservedNames = []} = {}) => {
+    if (!Array.isArray(seedFiles) || seedFiles.length < 1 || seedFiles.length > MAX_SEED_FILES)
+        throw new Error(`${label} seed file set differs`);
+    const overlaps = (left, right) => left === right
+        || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
+    const names = new Set();
+    for (const file of seedFiles) {
+        exactKeys(file, ["name", "sourcePath", "bytes", "sha256"], `${label} seed file`);
+        seedRelativePath(file.name, `${label} seed file name`);
+        posixPath(file.sourcePath, `${label} seed source`);
+        const exactEmptyWal = file.name === OPTIONAL_EMPTY_WAL_NAME && file.bytes === "0"
+            && file.sha256 === EMPTY_SHA256;
+        if (!exactEmptyWal) exactString(file.bytes, `${label} seed bytes`, /^[1-9][0-9]{0,19}$/u);
+        exactString(file.sha256, `${label} seed SHA-256`, SHA256);
+        if (file.bytes === "0" && !exactEmptyWal) throw new Error(`${label} empty seed file differs`);
+        if ([...names].some(name => overlaps(file.name, name)))
+            throw new Error(`${label} seed file is duplicated`);
+        if (reservedNames.some(name => overlaps(file.name, name)))
+            throw new Error(`${label} seed file is reserved`);
+        names.add(file.name);
+    }
+    return new Map(seedFiles.map(file => [file.name, file]));
 };
 const rawBinding = (value, label) => {
     exactKeys(value, ["path", "bytes", "sha256", "bytesBase64"], label);
@@ -336,29 +367,12 @@ const validateHostRequest = (value, allowUnboundPostRelease) => {
             if (!document.path.startsWith(`${row.seedRoot}/`))
                 throw new Error("MSI lifecycle retained guest input path differs");
         }
-        if (!Array.isArray(row.seedFiles) || row.seedFiles.length < 1 || row.seedFiles.length > 128)
-            throw new Error("MSI lifecycle seed file set differs");
-        const names = new Set();
-        for (const file of row.seedFiles) {
-            exactKeys(file, ["name", "sourcePath", "bytes", "sha256"], "MSI lifecycle seed file");
-            seedRelativePath(file.name, "MSI lifecycle seed file name");
-            posixPath(file.sourcePath, "MSI lifecycle seed source");
-            const exactEmptyWal = file.name === OPTIONAL_EMPTY_WAL_NAME && file.bytes === "0"
-                && file.sha256 === EMPTY_SHA256;
-            if (!exactEmptyWal) exactString(file.bytes, "MSI lifecycle seed bytes", /^[1-9][0-9]{0,19}$/u);
-            exactString(file.sha256, "MSI lifecycle seed SHA-256", SHA256);
-            if (file.bytes === "0" && !exactEmptyWal)
-                throw new Error("MSI lifecycle empty seed file differs");
-            if (names.has(file.name) || [...names].some(name => name.startsWith(`${file.name}/`)
-                || file.name.startsWith(`${name}/`))) throw new Error("MSI lifecycle seed file is duplicated");
-            names.add(file.name);
-        }
+        const byName = assertWindowsMsiHostRowSeedFiles(row.seedFiles, {label: "MSI lifecycle"});
         const rowRequest = decodeRawBinding(row.rowRequest, "MSI lifecycle retained row request");
         const execution = decodeRawBinding(row.executionManifest,
             "MSI lifecycle retained execution manifest");
         const launchRequest = decodeRawBinding(row.launcherRequest,
             "MSI lifecycle retained launcher request");
-        const byName = new Map(row.seedFiles.map(file => [file.name, file]));
         const runnerSource = byName.get("windows-msi-guest-matrix-executor.mjs");
         const launcherSource = byName.get("media-job-launcher.ps1");
         if (!runnerSource || !launcherSource) throw new Error("MSI lifecycle required seed launcher differs");
@@ -400,6 +414,26 @@ const validateHostRequest = (value, allowUnboundPostRelease) => {
 
 export const validateWindowsMsiLifecycleHostRequest = value => validateHostRequest(value, false);
 
+/*
+ * The handoff a row's guest reads is built from the run's identity and that row's own nonce, which is
+ * all the document ever contained. Taking those directly lets a path whose request is not a fourteen-
+ * row matrix - the bounded Scenario 0 calibration - produce the identical document rather than a
+ * lookalike, while the matrix entry point below keeps validating the whole request it is handed.
+ */
+export const buildWindowsMsiHostRowActivationHandoff = ({identity, row, bootstrapBytes}) => {
+    if (!Buffer.isBuffer(bootstrapBytes) || bootstrapBytes.length < 1 || bootstrapBytes.length > MAX_JSON_BYTES)
+        throw new Error("MSI lifecycle activation bootstrap differs");
+    const activation = buildWindowsMsiSetupCompleteActivation({repository: identity.repository,
+        sourceSha: identity.sourceSha, eventSha: identity.eventSha, runId: identity.runId,
+        runAttempt: identity.runAttempt, nonce: identity.nonce});
+    const value = createWindowsMsiSetupCompleteHandoff(activation, {rowNonce: row.nonce,
+        scenarioIndex: row.scenarioIndex, scenarioId: row.scenarioId,
+        bootstrap: {name: "bootstrap.ps1", bytes: bootstrapBytes.length, sha256: sha256(bootstrapBytes)}});
+    const bytes = Buffer.from(JSON.stringify(value), "utf8");
+    return Object.freeze({value, bytes: bytes.length, sha256: sha256(bytes),
+        bytesBase64: bytes.toString("base64")});
+};
+
 export const buildWindowsMsiLifecycleRowActivationHandoff = ({request: input, row: inputRow,
     bootstrapBytes}) => {
     const request = validateWindowsMsiLifecycleHostRequest(input);
@@ -408,17 +442,7 @@ export const buildWindowsMsiLifecycleRowActivationHandoff = ({request: input, ro
     const row = request.rows[inputRow?.scenarioIndex];
     if (!row || JSON.stringify(row) !== JSON.stringify(inputRow))
         throw new Error("MSI lifecycle activation handoff row differs");
-    if (!Buffer.isBuffer(bootstrapBytes) || bootstrapBytes.length < 1 || bootstrapBytes.length > MAX_JSON_BYTES)
-        throw new Error("MSI lifecycle activation bootstrap differs");
-    const activation = buildWindowsMsiSetupCompleteActivation({repository: request.repository,
-        sourceSha: request.sourceSha, eventSha: request.eventSha, runId: request.runId,
-        runAttempt: request.runAttempt, nonce: request.nonce});
-    const value = createWindowsMsiSetupCompleteHandoff(activation, {rowNonce: row.nonce,
-        scenarioIndex: row.scenarioIndex, scenarioId: row.scenarioId,
-        bootstrap: {name: "bootstrap.ps1", bytes: bootstrapBytes.length, sha256: sha256(bootstrapBytes)}});
-    const bytes = Buffer.from(JSON.stringify(value), "utf8");
-    return Object.freeze({value, bytes: bytes.length, sha256: sha256(bytes),
-        bytesBase64: bytes.toString("base64")});
+    return buildWindowsMsiHostRowActivationHandoff({identity: request, row, bootstrapBytes});
 };
 
 const drive = (id, format, file, readOnly = false) =>
@@ -531,14 +555,25 @@ const assertMedia = (value, row, request, retained = false) => {
     return value;
 };
 
-const assertLaunch = (value, request, row, overlay, media) => {
+/*
+ * One row's artefacts are checked the same way wherever they come from. The bounded Scenario 0
+ * calibration is a different request with a different consumer, but it drives the identical overlay,
+ * media and QEMU contract, so it reuses these rather than keeping a second approximation of them in
+ * step. `additionalKeys` and `expectedArgv` are the only two places the two paths genuinely differ.
+ */
+export const assertWindowsMsiHostRowOverlay = (value, row, request) => assertOverlay(value, row, request);
+
+export const assertWindowsMsiHostRowMedia = (value, row, request, retained = false) =>
+    assertMedia(value, row, request, retained);
+
+export const assertWindowsMsiHostRowLaunch = (value, {request, row, overlay, media, expectedArgv,
+    additionalKeys = []}) => {
     exactKeys(value, ["argv", "argvSha256", "loaderPath", "loaderSha256", "qemuPath", "qemuSha256",
         "pid", "startTicks", "processGroupId", "exitCode", "signal", "timedOut", "terminationReason",
-        "cleanupProven", "earlyBoot", "treeGone"], "MSI lifecycle QEMU result");
+        "cleanupProven", "earlyBoot", "treeGone", ...additionalKeys], "MSI lifecycle QEMU result");
     if (!Array.isArray(value.argv) || value.argv.length < 1 || value.argv.length > 128
         || value.argv.some(item => typeof item !== "string" || item.length < 1 || item.length > MAX_PATH_CHARACTERS))
         throw new Error("MSI lifecycle QEMU argv differs");
-    const expectedArgv = buildWindowsMsiLifecycleQemuArguments({request, row, overlay, media});
     if (JSON.stringify(value.argv) !== JSON.stringify(expectedArgv)
         || value.argvSha256 !== sha256(Buffer.from(JSON.stringify(expectedArgv), "utf8"))
         || value.loaderPath !== request.toolchain.runtimeLoader.path
@@ -553,7 +588,7 @@ const assertLaunch = (value, request, row, overlay, media) => {
     integer(value.pid, "MSI lifecycle QEMU PID", 1, 0x7fff_ffff);
     exactString(value.startTicks, "MSI lifecycle QEMU start ticks", /^[1-9][0-9]{0,23}$/u);
     integer(value.processGroupId, "MSI lifecycle QEMU process group", 1, 0x7fff_ffff);
-    integer(value.exitCode, "MSI lifecycle QEMU exit", 0, 255);
+    integer(value.exitCode, "MSI lifecycle QEMU exit", QEMU_SUCCESS_EXIT_CODE, QEMU_SUCCESS_EXIT_CODE);
     if (value.signal !== null || bool(value.timedOut, "MSI lifecycle QEMU timeout")
         || value.terminationReason !== null || !bool(value.cleanupProven, "MSI lifecycle QEMU cleanup")
         || !bool(value.treeGone, "MSI lifecycle QEMU tree exit"))
@@ -561,6 +596,10 @@ const assertLaunch = (value, request, row, overlay, media) => {
     validateEarlyBoot(value.earlyBoot, {root: row.rowRoot});
     return value;
 };
+
+const assertLaunch = (value, request, row, overlay, media) => assertWindowsMsiHostRowLaunch(value,
+    {request, row, overlay, media,
+        expectedArgv: buildWindowsMsiLifecycleQemuArguments({request, row, overlay, media})});
 
 /*
  * A run that stops early still has to say what it observed. An opaque rejection loses the two facts

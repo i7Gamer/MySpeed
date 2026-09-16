@@ -11,8 +11,16 @@ import {createWindowsMsiGuestLifecycleEvidenceFixture} from
 import {validateWindowsMsiGuestExecutionManifest} from "../../scripts/qualification/windows-msi-guest-matrix-operations.mjs";
 import {validateWindowsMsiGuestMatrixRowRequest} from "../../scripts/qualification/windows-msi-guest-matrix-row.mjs";
 import {validateWindowsMsiLifecycleHostRequest} from "../../scripts/qualification/linux-windows-msi-lifecycle-host.mjs";
-import {buildV161PostReleaseMsiHostRequest, resolveV161PostReleaseMsiQemuLaunchSha256} from
-    "../../scripts/release/post-release-msi-host-request.mjs";
+import {
+    buildV161PostReleaseMsiHostRequest,
+    buildV161PostReleaseMsiScenario0CalibrationHostRequest,
+    resolveV161PostReleaseMsiQemuLaunchSha256,
+    resolveV161PostReleaseMsiScenario0CalibrationQemuLaunchSha256
+} from "../../scripts/release/post-release-msi-host-request.mjs";
+import {
+    SCENARIO0_CALIBRATION_REQUEST_KIND,
+    validateWindowsMsiScenario0CalibrationRequest
+} from "../../scripts/qualification/windows-msi-scenario0-calibration.mjs";
 
 const HARNESS_SHA = "a".repeat(40);
 const CANDIDATE_SHA = "4fa4dd40efcb17f49351df6d70e60975cd4fd948";
@@ -171,5 +179,31 @@ describe("post-release v1.6.1 MSI host request builder", () => {
         delete missingImport.sources.oracleSafety;
         await assert.rejects(buildV161PostReleaseMsiHostRequest(missingImport,
             async () => Array(14).fill(HASH)), /sources.*keys/i);
+    });
+
+    it("builds Scenario 0 calibration request validating correctly under diagnostic schema", async () => {
+        const input = await makeInput();
+        input.candidateProvenance = {
+            schemaVersion: 1,
+            kind: "myspeed-v1.6.1-published-msi-host-provenance",
+            repository: input.context.repository,
+            sourceSha: input.context.sourceSha,
+            runId: input.context.runId,
+            runAttempt: input.context.runAttempt,
+            manifestSha256: HASH,
+            packageSha256: HASH,
+            bunLockSha256: HASH
+        };
+
+        const calRequest = await buildV161PostReleaseMsiScenario0CalibrationHostRequest(
+            input,
+            resolveV161PostReleaseMsiScenario0CalibrationQemuLaunchSha256
+        );
+
+        assert.equal(calRequest.kind, SCENARIO0_CALIBRATION_REQUEST_KIND);
+        assert.equal(calRequest.qualifying, false);
+        assert.equal(calRequest.row.scenarioIndex, 0);
+        assert.equal(calRequest.row.scenarioId, "clean-default");
+        assert.deepEqual(validateWindowsMsiScenario0CalibrationRequest(calRequest), calRequest);
     });
 });

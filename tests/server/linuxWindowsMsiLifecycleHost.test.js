@@ -648,4 +648,19 @@ describe("NIC-free modern Windows MSI lifecycle host", () => {
             assert.throws(() => validateCompletedWindowsMsiLifecycleHostResult(changed, fixture.request));
         }
     });
+    /*
+     * A QEMU process that exited non-zero did not run the row: the exit status was bounded to a byte
+     * but never required to be success, so a failed launch satisfied the shared acceptance helper.
+     */
+    it("refuses a row whose QEMU process exited non-zero", async () => {
+        const fixture = await createWindowsMsiLifecycleHostEvidenceFixture({});
+        assert.equal(validateCompletedWindowsMsiLifecycleHostResult(fixture.result, fixture.request),
+            fixture.result);
+        for (const exitCode of [1, 137, 255]) {
+            const failed = structuredClone(fixture.result);
+            failed.hostRows[0].qemu.exitCode = exitCode;
+            assert.throws(() => validateCompletedWindowsMsiLifecycleHostResult(failed, fixture.request),
+                /QEMU exit differs/u, String(exitCode));
+        }
+    });
 });

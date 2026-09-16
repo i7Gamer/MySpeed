@@ -25,8 +25,14 @@ import {createWindowsMsiLifecycleHostOperations, runWindowsMsiLifecycleHost,
 import {createV161PostReleaseMsiHostBinding} from "./post-release-msi-host-bridge.mjs";
 import {prepareV161PostReleaseMsiLinuxFixture, validateV161PostReleaseMsiLinuxFixturePreparation} from
     "./post-release-msi-linux-fixture.mjs";
-import {buildV161PostReleaseMsiHostRequest, resolveV161PostReleaseMsiQemuLaunchSha256} from
+import {buildV161PostReleaseMsiHostRequest, buildV161PostReleaseMsiScenario0CalibrationHostRequest,
+    resolveV161PostReleaseMsiQemuLaunchSha256} from
     "./post-release-msi-host-request.mjs";
+import {createWindowsMsiScenario0CalibrationBudget, createWindowsMsiScenario0CalibrationOperations,
+    runWindowsMsiScenario0Calibration,
+    WindowsMsiScenario0CalibrationRunError, SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS,
+    SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS} from
+    "../qualification/windows-msi-scenario0-calibration.mjs";
 import {buildWindowsMsiContainmentPreflightRequest, runWindowsMsiContainmentPreflight} from
     "../qualification/windows-msi-containment-preflight.mjs";
 import {buildWindowsMsiContainmentPreflightGuestRequest,
@@ -641,11 +647,30 @@ export async function runV161PostReleaseMsiLifecycleHost(binding, dependencies =
  * if this run's guest produced it.
  */
 export async function runV161PostReleaseMsiLinuxController(input, dependencies = {}) {
-    exactKeys(input, ["context", "taskRoot", "artifactRoot", "artifact", "closureRoot", "stage2Paths",
-        "stage2Result", "installedBaseHelperSource", "prerequisiteEvidence", "budget",
-        "wallDeadlineUnixMilliseconds", "hostRequestPath"], "Linux lifecycle controller input");
-    exactKeys(input.prerequisiteEvidence, ["rollbackCalibration"],
-        "Linux lifecycle controller prerequisite evidence");
+    const isCalibration = input?.mode === "scenario0-calibration";
+    if (input?.mode !== undefined && input.mode !== "full-matrix" && input.mode !== "scenario0-calibration") {
+        fail("unsupported controller mode");
+    }
+    const expectedKeys = isCalibration
+        ? ["mode", "context", "taskRoot", "artifactRoot", "artifact", "closureRoot", "stage2Paths",
+            "stage2Result", "installedBaseHelperSource", "budget", "wallDeadlineUnixMilliseconds",
+            "hostRequestPath", ...(input.prerequisiteEvidence !== undefined ? ["prerequisiteEvidence"] : [])]
+        : ["context", "taskRoot", "artifactRoot", "artifact", "closureRoot", "stage2Paths",
+            "stage2Result", "installedBaseHelperSource", "prerequisiteEvidence", "budget",
+            "wallDeadlineUnixMilliseconds", "hostRequestPath", ...(input.mode !== undefined ? ["mode"] : [])];
+    exactKeys(input, expectedKeys, "Linux lifecycle controller input");
+    if (!isCalibration) {
+        exactKeys(input.prerequisiteEvidence, ["rollbackCalibration"],
+            "Linux lifecycle controller prerequisite evidence");
+    } else {
+        if (input.budget.jobBudgetMilliseconds > SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS) {
+            fail("scenario0 calibration job budget exceeds ceiling");
+        }
+        const rowAllowance = input.budget.rowAllowanceMilliseconds ?? input.budget.maxExecutionMilliseconds;
+        if (rowAllowance && rowAllowance > SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS) {
+            fail("scenario0 calibration execution allowance exceeds ceiling");
+        }
+    }
     const context = validateHostedContext(input.context);
     const observePreparation = dependencies.observePreparation ?? observeV161PostReleaseMsiPreparation;
     const observedPreparation = await observePreparation({context,
@@ -662,6 +687,46 @@ export async function runV161PostReleaseMsiLinuxController(input, dependencies =
     const observeSources = dependencies.observeSources ?? observeV161PostReleaseMsiHostSources;
     const sources = await observeSources({context, closureRoot: input.closureRoot,
         observedPreparation, stage2Result: input.stage2Result});
+
+    if (isCalibration) {
+        const fixture = validateV161PostReleaseMsiLinuxFixturePreparation(linuxFixture, {context,
+            taskRoot: input.taskRoot, artifactRoot: observedPreparation?.execution?.root,
+            baselinePreparation: observedPreparation?.baselinePreparation});
+        const buildCalRequest = dependencies.buildCalibrationRequest ?? buildV161PostReleaseMsiScenario0CalibrationHostRequest;
+        const calibrationRequest = await buildCalRequest({
+            context,
+            taskRoot: input.taskRoot,
+            toolchain: buildV161PostReleaseMsiLifecycleToolchain(input.stage2Result),
+            installedBaseSeal,
+            candidateManifestSha256: observedPreparation?.target?.originalQualification?.manifest?.sha256,
+            probeArtifact: input.stage2Result.probeArtifact,
+            budget: input.budget,
+            artifacts: buildV161PostReleaseMsiArtifactInputs(observedPreparation),
+            fixture: fixture.hostFixture,
+            sources: Object.fromEntries(Object.entries(sources).filter(([name]) => !PREFLIGHT_ONLY_SOURCES.includes(name))),
+            wallDeadlineUnixMilliseconds: input.wallDeadlineUnixMilliseconds,
+            candidateProvenance: observedPreparation.target,
+            ...(input.prerequisiteEvidence ? {prerequisiteEvidence: input.prerequisiteEvidence} : {})
+        });
+        if (dependencies.retainHostRequest !== undefined) {
+            dependencies.retainHostRequest(calibrationRequest);
+        } else {
+            writeV161PostReleaseMsiHostRequest(input.hostRequestPath, calibrationRequest);
+        }
+        /*
+         * One budget for the whole path. It is built here, before the operations that spend it, and
+         * handed to the runner through the operations themselves, so nothing downstream can start a
+         * second clock and hand the calibration back time this job has already spent. Its two bounds
+         * are the request's remaining job budget and the wall deadline fixed before setup began.
+         */
+        const runCal = dependencies.runCalibration ?? (request => {
+            const operations = createWindowsMsiScenario0CalibrationOperations({request,
+                dependencies: {budget: createWindowsMsiScenario0CalibrationBudget({request})}});
+            return runWindowsMsiScenario0Calibration(request, operations);
+        });
+        return runCal(calibrationRequest);
+    }
+
     const preflight = await runV161PostReleaseMsiContainmentPreflight({context,
         taskRoot: input.taskRoot, observedPreparation, installedBaseSeal, sources,
         stage2Result: input.stage2Result, budget: input.budget,
@@ -720,7 +785,8 @@ const writeControllerResult = (target, value) => {
 
 export const retainV161PostReleaseMsiControllerProgress = (error, write) => {
     if (!(error instanceof WindowsMsiLifecycleRunError
-        || error instanceof WindowsMsiContainmentPreflightRunError)) return false;
+        || error instanceof WindowsMsiContainmentPreflightRunError
+        || error instanceof WindowsMsiScenario0CalibrationRunError)) return false;
     write(error.progress);
     return true;
 };

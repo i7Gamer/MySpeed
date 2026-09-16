@@ -78,6 +78,11 @@ on:
       rollback_archive_sha256:
         required: true
         type: string
+      calibration_mode:
+        description: Run bounded Scenario 0 calibration instead of the 14-row matrix
+        required: false
+        default: 'false'
+        type: string
 
 permissions:
   actions: read
@@ -153,6 +158,7 @@ jobs:
             tests/server/postReleaseMsiHostRequest.test.js \
             tests/server/postReleaseMsiHostBridge.test.js \
             tests/server/postReleaseMsiLinuxController.test.js \
+            tests/server/windowsMsiScenario0Calibration.test.js \
             tests/server/postReleaseMsiLifecycleWorkflow.test.js
 
       - name: Seal the exact controller and guest closures
@@ -258,6 +264,7 @@ jobs:
       ROLLBACK_SOURCE_SHA: ${{ inputs.rollback_source_sha }}
       ROLLBACK_ARCHIVE_BYTES: ${{ inputs.rollback_archive_bytes }}
       ROLLBACK_ARCHIVE_SHA256: ${{ inputs.rollback_archive_sha256 }}
+      CALIBRATION_MODE: ${{ inputs.calibration_mode }}
     steps:
       - name: Record the job start for the measured budget
         shell: bash
@@ -346,6 +353,16 @@ jobs:
             rowCleanupMarginMilliseconds: minutes(process.env.ROW_CLEANUP_MARGIN_MINUTES,
               "row cleanup margin"),
             finalMarginMilliseconds: minutes(process.env.FINAL_MARGIN_MINUTES, "final margin")}});
+          if (process.env.CALIBRATION_MODE === "true") {
+            const maxJobBudgetMinutes = 120;
+            const maxExecutionAllowanceMinutes = 45;
+            const maxJobBudget = maxJobBudgetMinutes * 60_000;
+            const maxExecAllowance = maxExecutionAllowanceMinutes * 60_000;
+            if (job.jobBudgetMilliseconds > maxJobBudget)
+              throw new Error("scenario0 calibration job budget exceeds ceiling");
+            if (minutes(process.env.ROW_ALLOWANCE_MINUTES, "row allowance") > maxExecAllowance)
+              throw new Error("scenario0 calibration execution allowance exceeds ceiling");
+          }
           NODE
 
       # The KVM contract pins its closure root, so these are duplicate copies of two modules that
@@ -896,7 +913,9 @@ jobs:
           const stage2Result = JSON.parse(
             fs.readFileSync(`${process.env.RUNNER_TEMP}/myspeed-msi-transport-${process.env.EXPECTED_NONCE}/stage2-result.json`));
           const root = `${process.env.RUNNER_TEMP}/myspeed-windows-cpu-floor-${process.env.EXPECTED_NONCE}`;
-          const request = {context: {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
+          const isCalibration = process.env.CALIBRATION_MODE === "true";
+          const request = {mode: isCalibration ? "scenario0-calibration" : "full-matrix",
+            context: {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
             sourceSha: process.env.EXPECTED_SOURCE_SHA, eventSha: process.env.EXPECTED_EVENT_SHA,
             runId: process.env.EXPECTED_RUN_ID, runAttempt: process.env.EXPECTED_RUN_ATTEMPT,
             nonce: process.env.EXPECTED_NONCE, environment: {GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
@@ -960,9 +979,13 @@ jobs:
               install -m 600 "$task_root/$name" "$transport_root/$name"
             fi
           done
-          node - "$transport_root" "${{ steps.lifecycle.outputs.controller_exit }}" <<'NODE'
-          const crypto = require("node:crypto"); const fs = require("node:fs"); const path = require("node:path");
-          const [root, exitText] = process.argv.slice(2);
+          node --input-type=module - "$transport_root" "${{ steps.lifecycle.outputs.controller_exit }}" \
+            "$RUNNER_TEMP/myspeed-msi-closure-$EXPECTED_NONCE" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          import {pathToFileURL} from "node:url";
+          const [root, exitText, closureRoot] = process.argv.slice(2);
           const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
           const streams = ["controller.stdout", "controller.stderr"].map(name => {
             const bytes = fs.readFileSync(path.join(root, name));
@@ -983,16 +1006,39 @@ jobs:
            * A completed matrix is only acceptable with the final host request beside it: without that
            * document nobody can replay the result against the request it was produced from.
            */
-          const accepted = exit === 0 && value?.schemaVersion === 1 && value.qualifying === false &&
-            value.status === "completed" && JSON.stringify(value.releaseGatesCleared) === "[]" &&
-            Array.isArray(value.hostRows) && value.hostRows.length === 14 &&
-            value.budget?.status === "completed" && value.budget.rowsCompleted === 14 &&
-            hostRequest.identity !== null;
+          const isCalibration = process.env.CALIBRATION_MODE === "true";
+          /*
+           * The calibration result is accepted by the production consumer or not at all. A summary
+           * shape can be written by anything; only the module that knows the contract can say whether
+           * these exact retained bytes replay against the exact request they were produced from, and
+           * it is handed both documents as they were read back, not a projection of them.
+           */
+          let calibrationAccepted = false;
+          if (isCalibration && exit === 0 && value !== null && hostRequest.value !== null) {
+            try {
+              const {validateCompletedWindowsMsiScenario0CalibrationResult} = await import(
+                pathToFileURL(path.join(closureRoot,
+                  "scripts/qualification/windows-msi-scenario0-calibration.mjs")).href);
+              validateCompletedWindowsMsiScenario0CalibrationResult(value, hostRequest.value);
+              calibrationAccepted = true;
+            } catch (error) {
+              process.stderr.write(`scenario0 calibration result refused: ${error.message}\n`);
+            }
+          }
+          const accepted = exit === 0 && (isCalibration
+            ? calibrationAccepted
+            : (value?.schemaVersion === 1 && value.qualifying === false &&
+              value.status === "completed" && JSON.stringify(value.releaseGatesCleared) === "[]" &&
+              Array.isArray(value.hostRows) && value.hostRows.length === 14 &&
+              value.budget?.status === "completed" && value.budget.rowsCompleted === 14 &&
+              hostRequest.identity !== null));
           const summary = {schemaVersion: 1, kind: "myspeed-windows-msi-lifecycle-transport-summary",
             status: "observed", qualifying: false, releaseGatesCleared: [], controllerExit: exit,
             resultPresent: result.identity !== null, result: result.identity,
             progressPresent: progress.identity !== null, progress: progress.identity,
-            rowsCompleted: value?.budget?.rowsCompleted ?? progress.value?.budget?.rowsCompleted ?? null,
+            rowsCompleted: isCalibration
+              ? (calibrationAccepted ? 1 : 0)
+              : (value?.budget?.rowsCompleted ?? progress.value?.budget?.rowsCompleted ?? null),
             refusedScenarioIndex: progress.value?.refusedScenarioIndex ?? null, streams, accepted,
             hostRequestPresent: hostRequest.identity !== null, hostRequest: hostRequest.identity};
           fs.writeFileSync(path.join(root, "transport-summary.json"), `${JSON.stringify(summary)}\n`,

@@ -7,10 +7,16 @@ import {describe, it} from "node:test";
 
 import {buildV161PostReleaseMsiLifecycleToolchain, observeV161PostReleaseMsiHostSources,
     parseV161PostReleaseMsiControllerArguments,
-    POST_RELEASE_MSI_LINUX_CONTROLLER_CONSTANTS, runV161PostReleaseMsiLifecycleHost,
-    runV161PostReleaseMsiLinuxController, sealV161PostReleaseMsiInstalledBase,
-    writeV161PostReleaseMsiHostRequest} from
+    POST_RELEASE_MSI_LINUX_CONTROLLER_CONSTANTS, retainV161PostReleaseMsiControllerProgress,
+    runV161PostReleaseMsiLifecycleHost, runV161PostReleaseMsiLinuxController,
+    sealV161PostReleaseMsiInstalledBase, writeV161PostReleaseMsiHostRequest} from
     "../../scripts/release/post-release-msi-linux-controller.mjs";
+import {createPostReleaseMsiControllerFixture, decodedExecution, lifecycleInput} from
+    "../helpers/post-release-msi-controller-fixture.mjs";
+import {WindowsMsiScenario0CalibrationRunError,
+    SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS,
+    SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS} from
+    "../../scripts/qualification/windows-msi-scenario0-calibration.mjs";
 
 const NONCE = "9".repeat(32);
 const HASH = "a".repeat(64);
@@ -158,5 +164,152 @@ describe("post-release MSI Linux execution closure", () => {
             assert.throws(() => writeV161PostReleaseMsiHostRequest(path.join(root, "tiny.json"), 0),
                 /size differs/u);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("rejects an unsupported controller mode", async () => {
+        const arbitraryDeadlineMs = Date.now() + 60_000;
+        await assert.rejects(runV161PostReleaseMsiLinuxController({
+            mode: "invalid-mode",
+            context: context(),
+            taskRoot: "/t/task",
+            artifactRoot: "/t/artifacts",
+            artifact: {},
+            closureRoot: "/t/closure",
+            stage2Paths: {},
+            stage2Result: {},
+            installedBaseHelperSource: {},
+            budget: {},
+            wallDeadlineUnixMilliseconds: arbitraryDeadlineMs,
+            hostRequestPath: "/t/host-request.json"
+        }), /unsupported controller mode/u);
+    });
+
+    it("rejects scenario0 calibration mode when job or execution budget exceeds ceiling", async () => {
+        const arbitraryDeadlineMs = Date.now() + 60_000;
+        const excessBudgetMs = 1;
+        const baseInput = {
+            mode: "scenario0-calibration",
+            context: context(),
+            taskRoot: "/t/task",
+            artifactRoot: "/t/artifacts",
+            artifact: {},
+            closureRoot: "/t/closure",
+            stage2Paths: {},
+            stage2Result: {},
+            installedBaseHelperSource: {},
+            budget: {
+                jobBudgetMilliseconds: SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS + excessBudgetMs,
+                rowAllowanceMilliseconds: SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS
+            },
+            wallDeadlineUnixMilliseconds: arbitraryDeadlineMs,
+            hostRequestPath: "/t/host-request.json"
+        };
+        await assert.rejects(runV161PostReleaseMsiLinuxController(baseInput),
+            /scenario0 calibration job budget exceeds ceiling/u);
+
+        const execOverInput = {
+            ...baseInput,
+            budget: {
+                jobBudgetMilliseconds: SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS,
+                rowAllowanceMilliseconds: SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS + excessBudgetMs
+            }
+        };
+        await assert.rejects(runV161PostReleaseMsiLinuxController(execOverInput),
+            /scenario0 calibration execution allowance exceeds ceiling/u);
+    });
+
+    it("runs scenario0 calibration mode skipping containment preflight", async () => {
+        const cleanupMarginMs = 5 * 60_000;
+        const finalMarginMs = 10 * 60_000;
+        const value = await createPostReleaseMsiControllerFixture();
+        const input = lifecycleInput(value, decodedExecution(value.host.request.rows[0]));
+        const calls = [];
+        let retainedHostRequest = null;
+        let calibrationRequest = null;
+
+        const result = await runV161PostReleaseMsiLinuxController({
+            mode: "scenario0-calibration",
+            context: input.context,
+            taskRoot: input.taskRoot,
+            artifactRoot: `${input.taskRoot}/appassets`,
+            artifact: {
+                repository: "i7Gamer/MySpeed", id: "7001",
+                name: "post-release-v1.6.1-msi-appassets", bytes: "400000000",
+                digest: `sha256:${"e".repeat(64)}`, runId: input.context.runId,
+                runAttempt: input.context.runAttempt, headSha: input.context.sourceSha
+            },
+            closureRoot: input.closureRoot,
+            stage2Paths: {root: input.taskRoot},
+            stage2Result: input.stage2Result,
+            installedBaseHelperSource: {
+                path: "scripts/qualification/windows-msi-installed-base.mjs",
+                bytes: "4096", sha256: "b".repeat(64)
+            },
+            budget: {
+                jobBudgetMilliseconds: SCENARIO0_CALIBRATION_MAX_JOB_MILLISECONDS,
+                rowAllowanceMilliseconds: SCENARIO0_CALIBRATION_MAX_EXECUTION_MILLISECONDS,
+                rowCleanupMarginMilliseconds: cleanupMarginMs,
+                finalMarginMilliseconds: finalMarginMs
+            },
+            wallDeadlineUnixMilliseconds: input.wallDeadlineUnixMilliseconds,
+            hostRequestPath: `${input.taskRoot}/msi-host-request.json`
+        }, {
+            observePreparation: async () => {
+                calls.push("observe-preparation");
+                return input.observedPreparation;
+            },
+            prepareLinuxFixture: async () => {
+                calls.push("prepare-fixture");
+                return input.linuxFixture;
+            },
+            sealInstalledBase: async () => {
+                calls.push("seal-base");
+                return input.installedBaseSeal;
+            },
+            observeSources: async () => {
+                calls.push("observe-sources");
+                return input.sources;
+            },
+            onPreflight: () => {
+                calls.push("run-preflight");
+            },
+            retainHostRequest: request => {
+                calls.push("retain-host-request");
+                retainedHostRequest = request;
+            },
+            runCalibration: async request => {
+                calls.push("run-calibration");
+                calibrationRequest = request;
+                return {status: "completed", mode: "scenario0-calibration", row: request.row.scenarioIndex};
+            }
+        });
+
+        assert.deepEqual(calls, [
+            "observe-preparation",
+            "prepare-fixture",
+            "seal-base",
+            "observe-sources",
+            "retain-host-request",
+            "run-calibration"
+        ]);
+        assert.equal(calls.includes("run-preflight"), false);
+        assert.equal(retainedHostRequest.row.scenarioIndex, 0);
+        assert.equal(retainedHostRequest.row.scenarioId, "clean-default");
+        /*
+         * The deadline the job as a whole is held to reaches the retained request, which is what lets
+         * the budget the operations run under be recomputed from the document rather than trusted.
+         */
+        assert.equal(retainedHostRequest.wallDeadlineUnixMilliseconds, input.wallDeadlineUnixMilliseconds);
+        assert.equal(calibrationRequest, retainedHostRequest);
+        assert.deepEqual(result, {status: "completed", mode: "scenario0-calibration", row: 0});
+    });
+
+    it("retains controller progress for WindowsMsiScenario0CalibrationRunError", () => {
+        const progress = {schemaVersion: 1, nonce: NONCE, status: "timed-out"};
+        const error = new WindowsMsiScenario0CalibrationRunError(progress);
+        let written = null;
+        const handled = retainV161PostReleaseMsiControllerProgress(error, val => { written = val; });
+        assert.equal(handled, true);
+        assert.deepEqual(written, progress);
     });
 });

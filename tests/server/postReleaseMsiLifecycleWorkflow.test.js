@@ -262,8 +262,38 @@ describe("post-release v1.6.1 MSI lifecycle workflow", () => {
         for (const name of ["windowsMsiExecutionClosure", "windowsMsiLifecycleBudget",
             "windowsMsiPrerequisiteEvidence", "linuxWindowsMsiLifecycleHost", "postReleaseMsiHostRequest",
             "postReleaseMsiHostBridge", "postReleaseMsiLinuxController", "postReleaseMsiLifecycleWorkflow",
-            "windowsMsiStage2Request", "windowsMsiContainmentPreflight"])
+            "windowsMsiStage2Request", "windowsMsiContainmentPreflight",
+            "windowsMsiScenario0Calibration"])
             assert.ok(tests.includes(`tests/server/${name}.test.js`), name);
+    });
+
+    it("supports calibration_mode dispatch input with budget bounds and execution mode", () => {
+        const calInput = WORKFLOW.on.workflow_dispatch.inputs.calibration_mode;
+        assert.ok(calInput !== undefined);
+        assert.equal(calInput.required, false);
+        assert.equal(calInput.default, "false");
+        assert.equal(WORKFLOW.jobs.execute.env.CALIBRATION_MODE, "${{ inputs.calibration_mode }}");
+
+        const validateBudget = bodyOf("execute", "Validate the dispatched budget before the expensive setup");
+        assert.match(validateBudget, /CALIBRATION_MODE === "true"/u);
+        assert.match(validateBudget, /scenario0 calibration job budget exceeds ceiling/u);
+        assert.match(validateBudget, /scenario0 calibration execution allowance exceeds ceiling/u);
+
+        const lifecycle = bodyOf("execute", "Seal the installed base and run the exact fourteen rows");
+        assert.match(lifecycle, /CALIBRATION_MODE === "true"/u);
+        assert.match(lifecycle, /scenario0-calibration/u);
+
+        const bound = bodyOf("execute", "Bound the retained text evidence");
+        assert.match(bound, /CALIBRATION_MODE === "true"/u);
+        /*
+         * Acceptance is the production consumer replaying the exact retained pair, not a shape a
+         * matching document could imitate. The default fourteen-row branch is unchanged beside it.
+         */
+        assert.match(bound, /validateCompletedWindowsMsiScenario0CalibrationResult\(value, hostRequest\.value\)/u);
+        assert.match(bound, /scripts\/qualification\/windows-msi-scenario0-calibration\.mjs/u);
+        assert.match(bound, /accepted = exit === 0 && \(isCalibration\s*\n?\s*\? calibrationAccepted/u);
+        assert.match(bound, /value\.hostRows\.length === 14/u);
+        assert.doesNotMatch(bound, /value\.kind === "myspeed-windows-msi-scenario0-calibration-result"/u);
     });
 });
 

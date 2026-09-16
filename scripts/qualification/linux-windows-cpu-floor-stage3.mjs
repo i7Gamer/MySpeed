@@ -3,9 +3,11 @@ import path from "node:path";
 
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_PROVENANCE, buildQemuArguments as buildStage2QemuArguments,
-    validatePackageClosure} from "./linux-windows-cpu-floor-stage2.mjs";
+    validateEarlyBoot, validatePackageClosure, validateWindowsSystemTools} from "./linux-windows-cpu-floor-stage2.mjs";
 import {parseGuestOutput as parseStage2GuestOutput} from
     "./linux-windows-cpu-floor-stage2-hosted.mjs";
+import {buildWindowsMsiSetupCompleteActivation,
+    getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 import {OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS} from "./safety.mjs";
 
 const SCHEMA_VERSION = 1;
@@ -270,12 +272,14 @@ function validateStage2Media(value, pathsValue, toolchain) {
 }
 
 function validateStage2Observation(value, context) {
-    keys(value, ["argv", "classification", "cleanupProven", "context", "cpuCalibrationAccepted", "guest", "installWim",
-        "installWimRemoval", "iso", "media", "packageClosure", "privilegeMode", "probeArtifact", "probes",
-        "qemuProcess", "qualifying", "releaseGateCleared", "schemaVersion", "selectedImage", "stage", "status",
-        "toolchain"], "Stage 2 observation");
+    const expectedKeys = ["argv", "classification", "cleanupProven", "context", "cpuCalibrationAccepted",
+        "earlyBoot", "guest", "installWim", "installWimRemoval", "iso", "media", "packageClosure",
+        "privilegeMode", "probeArtifact", "probes", "qemuProcess", "qualifying", "releaseGateCleared",
+        "schemaVersion", "selectedImage", "stage", "status", "toolchain",
+        ...(value?.bootConfirmation !== undefined ? ["bootConfirmation"] : [])];
+    keys(value, expectedKeys, "Stage 2 observation");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.stage !== "complete" ||
-        value.classification !== "github-hosted-windows-cpu-floor-stage2-nonqualifying" || value.qualifying !== false ||
+        value.classification !== "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying" || value.qualifying !== false ||
         value.releaseGateCleared !== false || value.cpuCalibrationAccepted !== true || value.cleanupProven !== true ||
         !same(value.context, context) || !new Set(["ordinary-kvm", "reviewed-sudo-kvm"]).has(value.privilegeMode))
         throw new TypeError("Stage 2 observation is not accepted");
@@ -286,7 +290,10 @@ function validateStage2Observation(value, context) {
         value.qemuProcess.qemuPidAbsentAfter !== true || value.qemuProcess.exitCode !== 0 ||
         value.qemuProcess.signal !== null || value.qemuProcess.timedOut !== false ||
         value.qemuProcess.terminationReason !== null) throw new TypeError("Stage 2 cleanup is not proven");
-    keys(value.guest, ["cpu", "instructions", "network", "output", "schemaVersion", "status"], "Stage 2 guest");
+    const pathsValue = stage2Paths(context);
+    validateEarlyBoot(value.earlyBoot, pathsValue, value.bootConfirmation);
+    keys(value.guest, ["activation", "cpu", "instructions", "network", "output", "schemaVersion", "status",
+        "systemTools"], "Stage 2 guest");
     if (value.guest.schemaVersion !== SCHEMA_VERSION || value.guest.status !== "observed")
         throw new TypeError("Stage 2 guest header is invalid");
     keys(value.guest.cpu, ["avx", "avx2", "osxsave", "popcnt", "sse42", "xcr0"], "Stage 2 CPU projection");
@@ -297,7 +304,12 @@ function validateStage2Observation(value, context) {
     if (!same(value.guest.instructions, {sse42: "completed", popcnt: "completed", avx: "illegal-instruction",
         avx2: "illegal-instruction"})) throw new TypeError("Stage 2 instruction floor is invalid");
     validateZeroNetwork(value.guest.network, "Stage 2 guest network");
-    const pathsValue = stage2Paths(context);
+    validateWindowsSystemTools(value.guest.systemTools);
+    const expectedActivation = getCompletedWindowsMsiActivationEvidence(
+        buildWindowsMsiSetupCompleteActivation({repository: context.repository, sourceSha: context.sourceSha,
+            eventSha: context.eventSha, runId: context.runId, runAttempt: context.runAttempt, nonce: context.nonce}));
+    if (!same(value.guest.activation, expectedActivation))
+        throw new TypeError("Stage 2 guest activation evidence is invalid");
     const packageClosure = validatePackageClosure(value.packageClosure);
     const packageClosureSha256 = crypto.createHash("sha256").update(JSON.stringify(packageClosure)).digest("hex");
     const toolchain = validateToolchain(value.toolchain, context);
@@ -340,10 +352,26 @@ function validateStage2GuestEvidence(value, expectedIdentity, context, projected
     const decoded = decodeEvidence(value.bytesBase64, id.sha256, "Stage 2 raw guest evidence");
     if (String(decoded.bytes.length) !== id.bytes) throw new TypeError("Stage 2 raw guest size differs");
     const replayed = parseStage2GuestOutput(decoded.bytes, context.nonce);
-    const normalized = {...replayed, cpu: {sse42: replayed.cpu.sse42, popcnt: replayed.cpu.popcnt,
-        avx: replayed.cpu.avx, avx2: replayed.cpu.avx2, osxsave: replayed.cpu.osxsave, xcr0: null}};
-    if (!same(normalized.cpu, projectedGuest.cpu) || !same(normalized.instructions, projectedGuest.instructions) ||
-        !same(normalized.network, projectedGuest.network))
+    const normalizedCpu = {
+        sse42: replayed.cpu.sse42,
+        popcnt: replayed.cpu.popcnt,
+        osxsave: replayed.cpu.osxsave,
+        avx: replayed.cpu.avx,
+        avx2: replayed.cpu.avx2,
+        xcr0: null
+    };
+    const projectedCpu = {
+        sse42: projectedGuest.cpu?.sse42,
+        popcnt: projectedGuest.cpu?.popcnt,
+        osxsave: projectedGuest.cpu?.osxsave,
+        avx: projectedGuest.cpu?.avx,
+        avx2: projectedGuest.cpu?.avx2,
+        xcr0: null
+    };
+    if (!same(normalizedCpu, projectedCpu) || !same(replayed.instructions, projectedGuest.instructions) ||
+        !same(replayed.network, projectedGuest.network) ||
+        !same(replayed.activation, projectedGuest.activation) ||
+        !same(replayed.systemTools, projectedGuest.systemTools))
         throw new TypeError("Stage 2 raw guest projection differs");
     return {identity: id, bytesBase64: value.bytesBase64};
 }

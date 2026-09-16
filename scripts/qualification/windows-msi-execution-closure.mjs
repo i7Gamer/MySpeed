@@ -78,6 +78,7 @@ export const WINDOWS_MSI_CONTROLLER_IMPORT_CLOSURE = Object.freeze([
     "scripts/qualification/windows-msi-matrix-contract.mjs",
     "scripts/qualification/windows-msi-post-setup-activation.mjs",
     "scripts/qualification/windows-msi-prerequisite-evidence.mjs",
+    "scripts/qualification/windows-msi-scenario0-calibration.mjs",
     "scripts/release/post-release-msi-acquisition.mjs",
     "scripts/release/post-release-msi-baseline-input-preparation.mjs",
     "scripts/release/post-release-msi-envelope.mjs",
