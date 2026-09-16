@@ -1191,12 +1191,30 @@ export async function runMonitoredQemu(io, request) {
 }
 
 /*
- * A late-boot observation only proves that QEMU stayed alive; run 35016673141 held a UEFI shell
- * prompt for its whole 25-minute window and still reported running at every milestone. The verdict
- * compares the captured frame digests from the last early frame onwards, so a byte-identical
- * sequence reads as "the guest drew nothing", not as a slow boot. Progress between the two early
- * frames is firmware still painting its first screen and is deliberately outside the comparison.
- * A chain too short to compare stays null rather than borrowing "did not advance".
+ * The vector already gives the guest a serial port that writes to a file, and OVMF puts that UART in
+ * ConOut, so the file holds the whole UEFI console text - which boot option BDS chose, any loader
+ * prompt, and whatever the guest printed afterwards - continuously, where the screenshots only
+ * sample. Run 35016673141 could not say whether the installer was ever attempted because nothing
+ * ever read this file back. It is read only once the launch has already failed, under the same bound
+ * as the captured stderr, and an unreadable log yields no key rather than discarding the rest of the
+ * diagnostic: the evidence it would sit next to matters more than the evidence it is.
+ */
+function readSerialConsole(io, target) {
+    try {
+        const observed = io.readOwnedVerified(target, QEMU_STREAM_BYTES, {allowEmpty: true});
+        return {serialLog: {bytes: observed.identity.bytes, sha256: observed.identity.sha256,
+            bytesBase64: observed.bytes.toString("base64")}};
+    } catch { return {}; }
+}
+
+/*
+ * An advisory note on the sampled frames, and nothing more. The verdict compares the captured frame
+ * digests from the last early frame onwards, so an identical sequence says the sampled images were
+ * equal - not that no intermediate frame changed, and not that nothing happened after the last
+ * milestone, which in run 35016673141 left roughly twenty unobserved minutes. Progress between the
+ * two early frames is firmware still painting its first screen and is deliberately outside the
+ * comparison. A chain too short to compare stays null rather than borrowing "did not advance".
+ * Nothing reads this to abort, accept or gate a run; the serial console above is the evidence.
  */
 function displayProgressVerdict(earlyBoot, milestones) {
     const digests = [...(earlyBoot === null ? [] : [earlyBoot.screenshots.at(-1).sha256]),
@@ -1540,7 +1558,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         process: structuredClone(result.process), processFlags: structuredClone(processFlags),
         monitorFailure: monitored.monitorFailure ?? null, stderr: {
             bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
-            bytesBase64: observation.stderr.toString("base64")}};
+            bytesBase64: observation.stderr.toString("base64")},
+        ...readSerialConsole(io, input.paths.serialLog)};
     return {result, guestParsingAllowed, processFlags};
 }
 

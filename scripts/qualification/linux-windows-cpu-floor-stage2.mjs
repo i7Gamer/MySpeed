@@ -38,6 +38,23 @@ const MAX_EARLY_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_EARLY_BOOT_SCR
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const CPU_MODEL = "Westmere-v2";
 const MACHINE_MODEL = "q35";
+/*
+ * Boot selection has two mechanisms on x86 and only one of them reaches this machine's firmware.
+ * "-boot order=/once=" travels through the RTC CMOS boot byte that SeaBIOS reads; OVMF never looks
+ * at it, so the order this harness used to declare was invisible to the firmware that actually runs
+ * and the guest booted whatever EDK II enumerated first. bootindex travels through the fw_cfg
+ * "bootorder" file, which OVMF's QemuBootOrderLib does read - and which stayed empty while no device
+ * carried one. QEMU documents that mixing the two is undefined, so only bootindex is used now.
+ *
+ * The system disk is first and the installer second, which covers both boots in one static order:
+ * on the install boot the disk is a blank image with no EFI system partition, so no boot option
+ * exists for it and the installer is the first option that does; after setup reboots, the disk
+ * carries a boot manager and wins, so setup cannot loop. The system disk needs its own index for
+ * that second boot - QemuBootOrderLib drops PciRoot()-rooted options that match no bootorder entry,
+ * so an unindexed disk would lose the boot manager setup had just written.
+ */
+const SYSTEM_DISK_BOOT_INDEX = 0;
+const INSTALL_MEDIA_BOOT_INDEX = 1;
 const SEVEN_ZIP_LIBRARY_RELATIVE_PATH = "usr/lib/7zip";
 const SEVEN_ZIP_RELATIVE_PATH = `${SEVEN_ZIP_LIBRARY_RELATIVE_PATH}/7z`;
 const CLASSIFICATION = "github-hosted-windows-cpu-floor-stage2-calibration-nonqualifying";
@@ -504,12 +521,14 @@ export function buildQemuArguments({paths: value, toolchain}) {
         "usb-kbd,bus=usb0.0",
         "-nic", "none", "-drive", `if=pflash,format=raw,readonly=on,file=${toolchain.ovmfCode.path}`,
         "-drive", `if=pflash,format=raw,file=${value.ovmfVars}`, "-device", "ich9-ahci,id=sata",
-        "-drive", drive("osdisk", "qcow2", value.systemDisk), "-device", "ide-hd,drive=osdisk,bus=sata.1",
-        "-drive", drive("install", "raw", value.windowsIso, true), "-device", "ide-cd,drive=install,bus=sata.2",
+        "-drive", drive("osdisk", "qcow2", value.systemDisk), "-device",
+        `ide-hd,drive=osdisk,bus=sata.1,bootindex=${SYSTEM_DISK_BOOT_INDEX}`,
+        "-drive", drive("install", "raw", value.windowsIso, true), "-device",
+        `ide-cd,drive=install,bus=sata.2,bootindex=${INSTALL_MEDIA_BOOT_INDEX}`,
         "-drive", drive("seed", "raw", value.seedIso, true), "-device", "ide-cd,drive=seed,bus=sata.3",
         "-drive", drive("output", "raw", value.outputDisk), "-device", "ide-hd,drive=output,bus=sata.4",
         "-chardev", `file,id=serial0,path=${value.serialLog}`, "-device", "isa-serial,chardev=serial0",
-        "-pidfile", value.qemuPid, "-boot", "once=d,order=c,strict=on"];
+        "-pidfile", value.qemuPid];
     const forbiddenSwitches = new Set(["-net", "-netdev", "-virtfs", "-fsdev"]);
     if (argv.some(value => forbiddenSwitches.has(value) ||
         /(?:^|[,=])(?:tap|user|socket|vsock)(?:[,=]|$)|(?:^|[,=])(?:fat:|nbd:|ssh:|https?:)/iu.test(value) ||
@@ -915,9 +934,29 @@ export function validateWindowsSystemTools(value) {
     return deepFreeze(structuredClone(value));
 }
 
+function validateDiagnosticStream(value, name) {
+    assertKeys(value, ["bytes", "bytesBase64", "sha256"], `QEMU ${name} diagnostic`);
+    const byteCount = decimal(value.bytes, `QEMU ${name} bytes`);
+    exactString(value.sha256, SHA256_PATTERN, `QEMU ${name} hash`);
+    if (byteCount > BigInt(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES) || typeof value.bytesBase64 !== "string" ||
+        value.bytesBase64.length > MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value.bytesBase64))
+        throw new TypeError(`QEMU ${name} diagnostic is invalid`);
+    const bytes = Buffer.from(value.bytesBase64, "base64");
+    if (bytes.length !== Number(byteCount) || sha256(bytes) !== value.sha256)
+        throw new TypeError(`QEMU ${name} diagnostic identity differs`);
+}
+
 function validateQemuLaunchDiagnostic(value, process) {
-    assertKeys(value, ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"],
-        "QEMU failure diagnostic");
+    /*
+     * The serial console carries the whole UEFI console text - OVMF puts that UART in ConOut - so it
+     * is the only continuous record of what the firmware chose to boot, with none of the gaps the
+     * sampled screenshots leave. It is optional so that diagnostics retained before the capture
+     * existed still replay, and it is read only on this path, which the launch has already failed.
+     */
+    const diagnosticKeys = ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"];
+    if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
+    assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
     assertKeys(value.processFlags, ["errorObserved", "stderrOverflow", "stdoutOverflow"], "QEMU process flags");
@@ -953,16 +992,8 @@ function validateQemuLaunchDiagnostic(value, process) {
             }
         }
     }
-    assertKeys(value.stderr, ["bytes", "bytesBase64", "sha256"], "QEMU stderr diagnostic");
-    const byteCount = decimal(value.stderr.bytes, "QEMU stderr bytes");
-    exactString(value.stderr.sha256, SHA256_PATTERN, "QEMU stderr hash");
-    if (byteCount > BigInt(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES) || typeof value.stderr.bytesBase64 !== "string" ||
-        value.stderr.bytesBase64.length > MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS ||
-        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value.stderr.bytesBase64))
-        throw new TypeError("QEMU stderr diagnostic is invalid");
-    const bytes = Buffer.from(value.stderr.bytesBase64, "base64");
-    if (bytes.length !== Number(byteCount) || sha256(bytes) !== value.stderr.sha256)
-        throw new TypeError("QEMU stderr diagnostic identity differs");
+    validateDiagnosticStream(value.stderr, "stderr");
+    if (value.serialLog !== undefined) validateDiagnosticStream(value.serialLog, "serial log");
     return deepFreeze(structuredClone(value));
 }
 
@@ -995,9 +1026,17 @@ export function validateEarlyBoot(value, pathsValue) {
 }
 
 export function validateLateBoot(value, pathsValue) {
-    assertKeys(value, ["displayAdvanced", "kind", "milestones", "schemaVersion"], "QEMU late-boot observation");
+    /*
+     * displayAdvanced is advisory and optional: it says only that the sampled frames did or did not
+     * differ, never that the guest made no progress between or after them, and nothing gates on it.
+     * Admitting its absence keeps failure records retained before the field existed replayable.
+     */
+    const lateBootKeys = ["kind", "milestones", "schemaVersion"];
+    if (Object.hasOwn(value ?? {}, "displayAdvanced")) lateBootKeys.push("displayAdvanced");
+    assertKeys(value, lateBootKeys, "QEMU late-boot observation");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-late-boot-observation" ||
-        (value.displayAdvanced !== null && typeof value.displayAdvanced !== "boolean") ||
+        (value.displayAdvanced !== undefined && value.displayAdvanced !== null &&
+            typeof value.displayAdvanced !== "boolean") ||
         !Array.isArray(value.milestones) || value.milestones.length < 1 ||
         value.milestones.length > MAX_LATE_BOOT_MILESTONES)
         throw new TypeError("QEMU late-boot observation is invalid");

@@ -333,7 +333,11 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal(argv[argv.indexOf("-qmp") + 1], "stdio");
         assert.equal(argv[argv.indexOf("-L") + 1], toolchain().firmware.searchPath);
         assert.ok(argv.includes(`VGA,id=video0,romfile=${toolchain().firmware.vga.path}`));
-        assert.equal(argv[argv.indexOf("-boot") + 1], "once=d,order=c,strict=on");
+        assert.equal(argv.includes("-boot"), false);
+        assert.deepEqual(argv.filter(value => value.includes("bootindex=")),
+            ["ide-hd,drive=osdisk,bus=sata.1,bootindex=0", "ide-cd,drive=install,bus=sata.2,bootindex=1"]);
+        assert.equal(argv.includes("ide-cd,drive=seed,bus=sata.3"), true);
+        assert.equal(argv.includes("ide-hd,drive=output,bus=sata.4"), true);
         assert.equal(argv.some(value => /(?:^|[,=])(?:tap|user|socket|vsock)(?:[,=]|$)|virtfs|9p|fat:|nbd:|ssh:|http:/iu
             .test(value)), false);
         assert.equal(argv.some(value => value.endsWith(`file=${paths().windowsIso}`)), true);
@@ -682,6 +686,30 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             paths: paths(), probeArtifact: probeArtifact()}, missingEarlyBoot.op);
         assert.equal(missingEarlyBootResult.status, "failed");
         assert.deepEqual(missingEarlyBootResult.qemuLaunch, cleanDiagnostic);
+        /*
+         * The guest serial console is the only continuous record of what the firmware did, so a
+         * failure diagnostic may carry it. It is optional: diagnostics retained before the capture
+         * existed still replay, which is why the key is admitted rather than required.
+         */
+        const serial = Buffer.from("BdsDxe: loading Boot0001 UEFI QEMU DVD-ROM\r\n");
+        const withSerial = {...structuredClone(diagnostic), serialLog: {bytes: String(serial.length),
+            sha256: HASH(serial), bytesBase64: serial.toString("base64")}};
+        const serialFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: withSerial})});
+        const serialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, serialFixture.op);
+        assert.deepEqual(serialResult.qemuLaunch, withSerial);
+        for (const broken of [{...withSerial.serialLog, sha256: "0".repeat(64)},
+            {...withSerial.serialLog, bytesBase64: "A".repeat(MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS + 1)},
+            {bytes: String(serial.length), sha256: HASH(serial)}]) {
+            const rejectedSerial = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+                earlyBoot: earlyBoot(), guest: null,
+                failureDiagnostic: {...structuredClone(diagnostic), serialLog: broken}})});
+            const outcome = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+                paths: paths(), probeArtifact: probeArtifact()}, rejectedSerial.op);
+            assert.equal("qemuLaunch" in outcome, false);
+        }
+
         const oversized = structuredClone(diagnostic);
         oversized.stderr.bytesBase64 = "A".repeat(MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS + 1);
         const rejected = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
@@ -772,16 +800,17 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         badPath.milestones[0].screenshot.path = "/tmp/late-boot-1.png";
         assert.throws(() => validateLateBoot(badPath, paths()), /late-boot/u);
 
-        // The display-progress verdict is a required, explicitly three-valued field: a run that kept
-        // QEMU alive without advancing the framebuffer has to be readable as such, and a verdict that
-        // could not be formed must stay null rather than borrow "did not advance".
+        // The display-progress verdict is advisory and explicitly three-valued: a run whose sampled
+        // frames never differed has to be readable as such, and a verdict that could not be formed
+        // must stay null rather than borrow "did not advance". It is optional, so a failure record
+        // retained before the field existed still replays; a malformed one is still rejected.
         const advanced = {...valid, displayAdvanced: true};
         assert.deepEqual(validateLateBoot(advanced, paths()), advanced);
         const undetermined = {...valid, displayAdvanced: null};
         assert.deepEqual(validateLateBoot(undetermined, paths()), undetermined);
         const missingVerdict = structuredClone(valid);
         delete missingVerdict.displayAdvanced;
-        assert.throws(() => validateLateBoot(missingVerdict, paths()), /late-boot/u);
+        assert.deepEqual(validateLateBoot(missingVerdict, paths()), missingVerdict);
         assert.throws(() => validateLateBoot({...valid, displayAdvanced: "false"}, paths()), /late-boot/u);
     });
 

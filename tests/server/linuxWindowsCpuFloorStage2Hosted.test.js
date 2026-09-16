@@ -1558,7 +1558,7 @@ describe("hosted Stage 2 native adapter preparation", () => {
             mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mtools`),
             firmware: qemuFirmware()
         };
-        const makeAdapter = frameFor => createHostedStage2Operations({context: context(), paths: paths(),
+        const makeAdapter = (frameFor, options = {}) => createHostedStage2Operations({context: context(), paths: paths(),
             dependencies: {
                 monotonicMilliseconds: () => 1000,
                 pathExists: () => false,
@@ -1572,8 +1572,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
                         processGroupId: 2300},
                     absentAfter: true,
                     processGroupGone: true,
-                    qmp: qmpObservation(),
-                    lateBoot: {milestones: lateMilestones}
+                    qmp: options.qmp === undefined ? qmpObservation() : options.qmp,
+                    lateBoot: {milestones: options.milestones ?? lateMilestones}
                 }),
                 readOwnedVerified: target => {
                     const bytes = png(frameFor(target));
@@ -1599,6 +1599,28 @@ describe("hosted Stage 2 native adapter preparation", () => {
             target.endsWith("early-boot-1.png") ? "first" : "settled").launchOwnedQemu({toolchain, paths: paths(),
             argv: [], privilegeMode: "ordinary-kvm"});
         assert.equal(earlyOnly.lateBoot.displayAdvanced, false);
+
+        // Undetermined: without an early observation a single milestone leaves nothing to compare,
+        // so the verdict stays null instead of claiming the display did not advance.
+        const undetermined = await makeAdapter(() => "only", {qmp: null,
+            milestones: [lateMilestones[0]]}).launchOwnedQemu({toolchain, paths: paths(), argv: [],
+            privilegeMode: "ordinary-kvm"});
+        assert.equal(undetermined.earlyBoot, null);
+        assert.equal(undetermined.lateBoot.milestones.length, 1);
+        assert.equal(undetermined.lateBoot.displayAdvanced, null);
+
+        // The serial console is the one continuous record of what the firmware did, so a failed
+        // launch retains it alongside the sampled frames. An unreadable log omits the key rather
+        // than failing the diagnostic that carries every other piece of failure evidence.
+        const serialBytes = png("frozen");
+        assert.deepEqual(frozen.failureDiagnostic.serialLog, {bytes: String(serialBytes.length),
+            sha256: sha256ForTest(serialBytes), bytesBase64: serialBytes.toString("base64")});
+        const withoutSerial = await makeAdapter(target => {
+            if (target === paths().serialLog) throw new Error("owned file read bound is invalid");
+            return "frozen";
+        }).launchOwnedQemu({toolchain, paths: paths(), argv: [], privilegeMode: "ordinary-kvm"});
+        assert.equal("serialLog" in withoutSerial.failureDiagnostic, false);
+        assert.equal(withoutSerial.lateBoot.displayAdvanced, false);
     });
 
     it("cancels QMP handle on child termination and monitor abort while keeping late observation failure separate from qmp-failed", async () => {
