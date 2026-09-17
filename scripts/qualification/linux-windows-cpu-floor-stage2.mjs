@@ -1130,7 +1130,7 @@ function validatePreparedMedia(value, pathsValue, seedSpec, toolchain) {
 export function validateGuestFailure(value, expectedNonce) {
     assertKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
     if (value.schemaVersion !== SCHEMA_VERSION || value.nonce !== expectedNonce ||
-        value.stage !== "guest-bootstrap" || value.status !== "failed" ||
+        (value.stage !== "guest-bootstrap" && value.stage !== "post-setup-completion") || value.status !== "failed" ||
         typeof value.failure !== "string" || value.failure.length < 1 ||
         value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS ||
         /[\x00-\x1f\x7f]/u.test(value.failure)) throw new TypeError("guest failure evidence is invalid");
@@ -1342,7 +1342,67 @@ function validateSerialDiagnostic(value) {
         throw new TypeError("QEMU serial log capture extent is invalid");
 }
 
-function validateQemuLaunchDiagnostic(value, process) {
+export const MAX_GUEST_BYTES = 262_144;
+export const GUEST_FAILURE_FALLBACK_NAME = "bootstrap-failure.json";
+export const RECEIPT_SOURCES = deepFreeze(["result.json", GUEST_FAILURE_FALLBACK_NAME]);
+export const RECEIPT_STATUSES = deepFreeze(["valid-failure", "valid-success", "malformed", "unavailable"]);
+export const RECEIPT_UNAVAILABLE_REASONS = deepFreeze([
+    "cleanup-unproven",
+    "output-disk-unverified",
+    "disk-identity-mismatch",
+    "extraction-timeout",
+    "tool-error",
+    "receipt-not-retrieved"
+]);
+export const RECEIPT_MALFORMED_REASONS = deepFreeze([
+    "json-syntax-error",
+    "nonce-mismatch",
+    "schema-invalid",
+    "read-cap-exceeded"
+]);
+
+export function validateReceiptDiagnostic(value) {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+        throw new TypeError("QEMU receipt diagnostic is invalid");
+    if (!RECEIPT_STATUSES.includes(value.status))
+        throw new TypeError("QEMU receipt diagnostic is invalid");
+
+    if (value.status === "valid-failure") {
+        assertKeys(value, ["receipt", "schemaVersion", "source", "status"], "QEMU receipt diagnostic");
+        if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_SOURCES.includes(value.source))
+            throw new TypeError("QEMU receipt diagnostic is invalid");
+        if (value.receipt === null || typeof value.receipt !== "object" || Array.isArray(value.receipt))
+            throw new TypeError("QEMU receipt diagnostic is invalid");
+        exactString(value.receipt.nonce, /^[a-f0-9]{32}$/u, "receipt nonce");
+        validateGuestFailure(value.receipt, value.receipt.nonce);
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "valid-success") {
+        assertKeys(value, ["bytes", "schemaVersion", "sha256", "source", "status"], "QEMU receipt diagnostic");
+        if (value.schemaVersion !== SCHEMA_VERSION || value.source !== "result.json")
+            throw new TypeError("QEMU receipt diagnostic is invalid");
+        decimal(value.bytes, "QEMU receipt diagnostic bytes", {positive: true});
+        exactString(value.sha256, SHA256_PATTERN, "QEMU receipt diagnostic sha256");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "malformed") {
+        assertKeys(value, ["bytes", "reason", "schemaVersion", "sha256", "source", "status"], "QEMU receipt diagnostic");
+        if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_SOURCES.includes(value.source) ||
+            !RECEIPT_MALFORMED_REASONS.includes(value.reason))
+            throw new TypeError("QEMU receipt diagnostic is invalid");
+        decimal(value.bytes, "QEMU receipt diagnostic bytes");
+        exactString(value.sha256, SHA256_PATTERN, "QEMU receipt diagnostic sha256");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "unavailable") {
+        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU receipt diagnostic");
+        if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_UNAVAILABLE_REASONS.includes(value.reason))
+            throw new TypeError("QEMU receipt diagnostic is invalid");
+        return deepFreeze(structuredClone(value));
+    }
+}
+
+export function validateQemuLaunchDiagnostic(value, process) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
      * that no text was captured. The field stays optional so records retained before capture existed
@@ -1350,6 +1410,7 @@ function validateQemuLaunchDiagnostic(value, process) {
      */
     const diagnosticKeys = ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"];
     if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
+    if (Object.hasOwn(value ?? {}, "receipt")) diagnosticKeys.push("receipt");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
@@ -1388,6 +1449,7 @@ function validateQemuLaunchDiagnostic(value, process) {
     }
     validateDiagnosticStream(value.stderr, "stderr");
     if (value.serialLog !== undefined) validateSerialDiagnostic(value.serialLog);
+    if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt);
     return deepFreeze(structuredClone(value));
 }
 

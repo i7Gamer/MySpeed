@@ -535,12 +535,25 @@ export function parseGuestFailure(bytes, expectedNonce) {
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_GUEST_BYTES)
         throw new TypeError("guest failure evidence exceeded its bound");
     const value = parseJson(bytes, "guest failure evidence");
-    requireKeys(value, ["failure", "nonce", "schemaVersion", "stage", "status"], "guest failure evidence");
-    if (value.schemaVersion !== 1 || value.status !== "failed" || value.nonce !== expectedNonce ||
-        value.stage !== "guest-bootstrap" || typeof value.failure !== "string" || value.failure.length < 1 ||
-        value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS || /[\x00-\x1f\x7f]/u.test(value.failure))
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new TypeError("guest failure evidence schema is invalid");
+    const keys = Object.keys(value).sort();
+    const isWorker = JSON.stringify(keys) === JSON.stringify(["failure", "hostNonce", "schemaVersion", "stage", "status"]);
+    const isBootstrap = JSON.stringify(keys) === JSON.stringify(["failure", "nonce", "schemaVersion", "stage", "status"]);
+    if (!isWorker && !isBootstrap)
+        throw new TypeError("guest failure evidence schema is invalid");
+    if (value.schemaVersion !== 1 || value.status !== "failed" || typeof value.failure !== "string" ||
+        value.failure.length < 1 || value.failure.length > MAX_GUEST_FAILURE_MESSAGE_CHARACTERS ||
+        /[\x00-\x1f\x7f]/u.test(value.failure))
         throw new TypeError("guest failure evidence is invalid");
-    return value;
+    if (isWorker) {
+        if (value.stage !== "post-setup-completion" || value.hostNonce !== expectedNonce)
+            throw new TypeError("guest failure evidence is invalid");
+        return {schemaVersion: 1, status: "failed", nonce: value.hostNonce, stage: "post-setup-completion", failure: value.failure};
+    }
+    if (value.stage !== "guest-bootstrap" || value.nonce !== expectedNonce)
+        throw new TypeError("guest failure evidence is invalid");
+    return {schemaVersion: 1, status: "failed", nonce: value.nonce, stage: "guest-bootstrap", failure: value.failure};
 }
 
 export function parseGuestOutcome(bytes, expectedNonce) {
@@ -2033,6 +2046,230 @@ export function createHostedQemuProcessLauncher({context, dependencies = {}}) {
     });
 }
 
+export async function extractGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity) {
+    if (launched.process?.cleanupProven !== true || launched.process?.treeGone !== true) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "cleanup-unproven"}, guestFailure: null};
+    }
+    if (preLaunchDiskIdentity === null || preLaunchDiskIdentity === undefined) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "output-disk-unverified"}, guestFailure: null};
+    }
+    try {
+        io.validateOutputDisk(input.paths.outputDisk, preLaunchDiskIdentity, taskOwner);
+    } catch {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "disk-identity-mismatch"}, guestFailure: null};
+    }
+
+    async function attemptStreamExtraction(filename) {
+        const invocation = portableInvocation(input.toolchain, input.toolchain.mcopy,
+            ["-i", input.paths.outputDisk, `::${filename}`, "-"]);
+        try {
+            return {
+                ok: true,
+                observed: await io.runOwned(invocation.command, invocation.argv,
+                    {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS, maxStreamBytes: MAX_GUEST_BYTES})
+            };
+        } catch {
+            return {ok: false};
+        }
+    }
+
+    // 1. Primary: result.json
+    const primary = await attemptStreamExtraction("result.json");
+    if (!primary.ok) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}, guestFailure: null};
+    }
+    const pProc = primary.observed.process;
+    if (pProc?.timedOut) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "extraction-timeout"}, guestFailure: null};
+    }
+    if (pProc?.stdoutOverflow) {
+        return {
+            diagnostic: {
+                schemaVersion: 1,
+                status: "malformed",
+                source: "result.json",
+                reason: "read-cap-exceeded",
+                bytes: String(primary.observed.stdout.length),
+                sha256: sha256(primary.observed.stdout)
+            },
+            guestFailure: null
+        };
+    }
+    if (pProc?.signal !== null || pProc?.errorObserved) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}, guestFailure: null};
+    }
+
+    if (pProc?.exitCode === 0) {
+        let stdout = primary.observed.stdout;
+        if (stdout.length === 0 && typeof io.readOwnedVerified === "function") {
+            try {
+                const target = directChild(input.paths.root, `${input.paths.root}/guest-result.json`, "guest-result.json");
+                const read = io.readOwnedVerified(target, MAX_GUEST_BYTES);
+                if (read?.bytes && Buffer.isBuffer(read.bytes)) stdout = read.bytes;
+            } catch { /* ignore */ }
+        }
+        const bytes = String(stdout.length);
+        const digest = sha256(stdout);
+        let parsedJson;
+        try {
+            parsedJson = parseJson(stdout, "guest result");
+        } catch {
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "malformed",
+                    source: "result.json",
+                    reason: "json-syntax-error",
+                    bytes,
+                    sha256: digest
+                },
+                guestFailure: null
+            };
+        }
+        if (parsedJson?.status === "failed") {
+            try {
+                const canonical = parseGuestFailure(stdout, context.nonce);
+                return {
+                    diagnostic: {
+                        schemaVersion: 1,
+                        status: "valid-failure",
+                        source: "result.json",
+                        receipt: canonical
+                    },
+                    guestFailure: canonical
+                };
+            } catch {
+                const nonceMismatch = (parsedJson.nonce !== undefined && parsedJson.nonce !== context.nonce) ||
+                    (parsedJson.hostNonce !== undefined && parsedJson.hostNonce !== context.nonce);
+                return {
+                    diagnostic: {
+                        schemaVersion: 1,
+                        status: "malformed",
+                        source: "result.json",
+                        reason: nonceMismatch ? "nonce-mismatch" : "schema-invalid",
+                        bytes,
+                        sha256: digest
+                    },
+                    guestFailure: null
+                };
+            }
+        }
+        try {
+            parseGuestOutput(stdout, context.nonce);
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "valid-success",
+                    source: "result.json",
+                    bytes,
+                    sha256: digest
+                },
+                guestFailure: null
+            };
+        } catch {
+            const nonceMismatch = parsedJson?.nonce !== undefined && parsedJson?.nonce !== context.nonce;
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "malformed",
+                    source: "result.json",
+                    reason: nonceMismatch ? "nonce-mismatch" : "schema-invalid",
+                    bytes,
+                    sha256: digest
+                },
+                guestFailure: null
+            };
+        }
+    }
+
+    // result.json was not retrieved (exitCode !== 0 with stdout empty).
+    // 2. Fallback: bootstrap-failure.json
+    const fallback = await attemptStreamExtraction(GUEST_FAILURE_FALLBACK_NAME);
+    if (!fallback.ok) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}, guestFailure: null};
+    }
+    const fProc = fallback.observed.process;
+    if (fProc?.timedOut) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "extraction-timeout"}, guestFailure: null};
+    }
+    if (fProc?.stdoutOverflow) {
+        return {
+            diagnostic: {
+                schemaVersion: 1,
+                status: "malformed",
+                source: GUEST_FAILURE_FALLBACK_NAME,
+                reason: "read-cap-exceeded",
+                bytes: String(fallback.observed.stdout.length),
+                sha256: sha256(fallback.observed.stdout)
+            },
+            guestFailure: null
+        };
+    }
+    if (fProc?.signal !== null || fProc?.errorObserved) {
+        return {diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}, guestFailure: null};
+    }
+
+    if (fProc?.exitCode === 0) {
+        let stdout = fallback.observed.stdout;
+        if (stdout.length === 0 && typeof io.readOwnedVerified === "function") {
+            try {
+                const target = directChild(input.paths.root, `${input.paths.root}/${GUEST_FAILURE_FALLBACK_NAME}`, GUEST_FAILURE_FALLBACK_NAME);
+                const read = io.readOwnedVerified(target, MAX_GUEST_BYTES);
+                if (read?.bytes && Buffer.isBuffer(read.bytes)) stdout = read.bytes;
+            } catch { /* ignore */ }
+        }
+        const bytes = String(stdout.length);
+        const digest = sha256(stdout);
+        let parsedJson;
+        try {
+            parsedJson = parseJson(stdout, "guest fallback failure");
+        } catch {
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "malformed",
+                    source: GUEST_FAILURE_FALLBACK_NAME,
+                    reason: "json-syntax-error",
+                    bytes,
+                    sha256: digest
+                },
+                guestFailure: null
+            };
+        }
+        try {
+            const canonical = parseGuestFailure(stdout, context.nonce);
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "valid-failure",
+                    source: GUEST_FAILURE_FALLBACK_NAME,
+                    receipt: canonical
+                },
+                guestFailure: canonical
+            };
+        } catch {
+            const nonceMismatch = (parsedJson?.nonce !== undefined && parsedJson?.nonce !== context.nonce) ||
+                (parsedJson?.hostNonce !== undefined && parsedJson?.hostNonce !== context.nonce);
+            return {
+                diagnostic: {
+                    schemaVersion: 1,
+                    status: "malformed",
+                    source: GUEST_FAILURE_FALLBACK_NAME,
+                    reason: nonceMismatch ? "nonce-mismatch" : "schema-invalid",
+                    bytes,
+                    sha256: digest
+                },
+                guestFailure: null
+            };
+        }
+    }
+
+    return {
+        diagnostic: {schemaVersion: 1, status: "unavailable", reason: "receipt-not-retrieved"},
+        guestFailure: null
+    };
+}
+
 export function createHostedStage2Operations({context, paths: pathsValue, dependencies = {}}) {
     validateHostedContext(context);
     const io = normalizeDependencies(dependencies);
@@ -2339,40 +2576,16 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                     input: monitoredLaunch.winpeDiagnosticInput, collection})};
             }
             if (!monitoredLaunch.guestParsingAllowed) {
-                let guestFailure = null;
-                if (launched.process?.cleanupProven === true && launched.process?.treeGone === true &&
-                    preLaunchDiskIdentity !== null) {
-                    try {
-                        io.validateOutputDisk(input.paths.outputDisk, preLaunchDiskIdentity, taskOwner);
-                        const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
-                            "guest-result.json");
-                        let receiptBytes = null;
-                        try {
-                            const extractResult = portableInvocation(input.toolchain, input.toolchain.mcopy,
-                                ["-i", input.paths.outputDisk, "::result.json", guestResult]);
-                            assertSuccessful(await io.runOwned(extractResult.command, extractResult.argv,
-                                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest result extraction");
-                            const guestRead = io.readOwnedVerified(guestResult, MAX_GUEST_BYTES);
-                            receiptBytes = guestRead.bytes;
-                        } catch {
-                            const fallback = directChild(input.paths.root,
-                                `${input.paths.root}/${GUEST_FAILURE_FALLBACK_NAME}`, GUEST_FAILURE_FALLBACK_NAME);
-                            const extractFailure = portableInvocation(input.toolchain, input.toolchain.mcopy,
-                                ["-i", input.paths.outputDisk, `::${GUEST_FAILURE_FALLBACK_NAME}`, fallback]);
-                            assertSuccessful(await io.runOwned(extractFailure.command, extractFailure.argv,
-                                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS}), "guest fallback failure extraction");
-                            const read = io.readOwnedVerified(fallback, MAX_GUEST_BYTES);
-                            receiptBytes = read.bytes;
-                        }
-                        if (receiptBytes !== null) {
-                            const parsed = parseGuestFailure(receiptBytes, context.nonce);
-                            if (parsed.status === "failed") guestFailure = parsed;
-                        }
-                    } catch {
-                        guestFailure = null;
-                    }
-                }
-                return {...launched, guest: null, ...(guestFailure ? {guestFailure} : {})};
+                const {diagnostic: receiptDiagnostic, guestFailure} =
+                    await extractGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity);
+                const failureDiagnostic = launched.failureDiagnostic ?
+                    {...launched.failureDiagnostic, receipt: receiptDiagnostic} : undefined;
+                return {
+                    ...launched,
+                    ...(failureDiagnostic !== undefined ? {failureDiagnostic} : {}),
+                    guest: null,
+                    ...(guestFailure !== null ? {guestFailure} : {})
+                };
             }
             const guestResult = directChild(input.paths.root, `${input.paths.root}/guest-result.json`,
                 "guest-result.json");
