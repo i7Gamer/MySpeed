@@ -82,7 +82,10 @@ const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
 export const PREDEADLINE_FRAME_SKIPPED_REASONS = Object.freeze(["insufficient-time", "guest-already-exited", "disabled"]);
-export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze(["command-timeout", "command-failed", "file-missing", "cleanup-unproven", "read-error"]);
+export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze([
+    "command-timeout", "command-failed", "qmp-write-failed", "qmp-stream-ended",
+    "qmp-error-response", "qmp-id-mismatch", "file-missing", "cleanup-unproven", "read-error"
+]);
 export const PREDEADLINE_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
 export const MAX_PREDEADLINE_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
 export const MAX_PREDEADLINE_FRAME_BASE64_CHARACTERS = Math.ceil(MAX_PREDEADLINE_FRAME_BYTES / 3) * 4;
@@ -892,6 +895,9 @@ export function renderGuestBootstrap(context) {
     const setupComplete = activation.files.setupComplete;
     const dispatcher = activation.files.dispatcher;
     const startupTask = activation.startupTask;
+    const activationRoot = path.win32.dirname(setupComplete.path);
+    if (activationRoot !== path.win32.dirname(dispatcher.path))
+        throw new TypeError("activation installed files do not share one root");
     const roles = PROBE_ROLES.map(role => `'${role}'`).join(",");
     const script = `param([switch]$LibraryMode)\r\n$ErrorActionPreference = 'Stop'\r\nSet-StrictMode -Version Latest\r\n` +
         `$EXPECTED_NONCE = '${nonce}'\r\n$MAX_STREAM_BYTES = 4096\r\n$EXPECTED_ILLEGAL_EXIT = 3221225501L\r\n` +
@@ -899,6 +905,14 @@ export function renderGuestBootstrap(context) {
         `$PROBE_CLEANUP_TIMEOUT_MILLISECONDS = ${GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
         `$MAX_FAILURE_MESSAGE_CHARACTERS = ${MAX_GUEST_FAILURE_MESSAGE_CHARACTERS}\r\n` +
         `$MAX_SYSTEM_TOOL_BYTES = ${MAX_SYSTEM_TOOL_BYTES}\r\n` +
+        /*
+         * The installed paths are part of the host contract, so the guest reports the declared
+         * paths rather than paths it assembles from %SystemRoot% - which Windows Setup writes as
+         * `C:\WINDOWS`, against a host comparison that is case sensitive.
+         */
+        `$EXPECTED_ACTIVATION_ROOT = '${activationRoot}'\r\n` +
+        `$EXPECTED_SETUP_COMPLETE_PATH = '${setupComplete.path}'\r\n` +
+        `$EXPECTED_DISPATCHER_PATH = '${dispatcher.path}'\r\n` +
         `$EXPECTED_SETUP_COMPLETE_BYTES = ${setupComplete.bytes}\r\n` +
         `$EXPECTED_SETUP_COMPLETE_SHA = '${setupComplete.sha256}'\r\n` +
         `$EXPECTED_DISPATCHER_BYTES = ${dispatcher.bytes}\r\n` +
@@ -912,6 +926,9 @@ export function renderGuestBootstrap(context) {
         `MyspeedErrorMode { [DllImport("kernel32.dll")] public static extern uint SetErrorMode(uint mode); }'\r\n` +
         `  $probeTimeoutMilliseconds = $PROBE_TIMEOUT_MILLISECONDS\r\n` +
         `  $probeCleanupTimeoutMilliseconds = $PROBE_CLEANUP_TIMEOUT_MILLISECONDS\r\n` +
+        `  $expectedActivationRoot = $EXPECTED_ACTIVATION_ROOT\r\n` +
+        `  $expectedSetupCompletePath = $EXPECTED_SETUP_COMPLETE_PATH\r\n` +
+        `  $expectedDispatcherPath = $EXPECTED_DISPATCHER_PATH\r\n` +
         `  $expectedSetupCompleteBytes = $EXPECTED_SETUP_COMPLETE_BYTES\r\n` +
         `  $expectedSetupCompleteSha = $EXPECTED_SETUP_COMPLETE_SHA\r\n` +
         `  $expectedDispatcherBytes = $EXPECTED_DISPATCHER_BYTES\r\n` +
@@ -970,17 +987,17 @@ export function renderGuestBootstrap(context) {
         `    return $systemTools\r\n` +
         `  }.GetNewClosure()\r\n` +
         `  $observeActivation = {\r\n` +
-        `    $root = Join-Path $env:SystemRoot 'Setup\\Scripts'\r\n` +
+        `    $root = $expectedActivationRoot\r\n` +
         `    $rootItem = Get-Item -LiteralPath $root -Force -ErrorAction Stop\r\n` +
         `    if ($rootItem -isnot [IO.DirectoryInfo] -or ` +
         `($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { ` +
         `throw 'MSI activation target root differs' }\r\n` +
         `    $records = [ordered]@{}\r\n` +
         `    foreach ($expected in @(` +
-        `[pscustomobject]@{key='setupComplete';name='SetupComplete.cmd';bytes=$expectedSetupCompleteBytes;` +
-        `sha=$expectedSetupCompleteSha},` +
+        `[pscustomobject]@{key='setupComplete';name='SetupComplete.cmd';path=$expectedSetupCompletePath;` +
+        `bytes=$expectedSetupCompleteBytes;sha=$expectedSetupCompleteSha},` +
         `[pscustomobject]@{key='dispatcher';name='myspeed-msi-setupcomplete.ps1';` +
-        `bytes=$expectedDispatcherBytes;sha=$expectedDispatcherSha})) {\r\n` +
+        `path=$expectedDispatcherPath;bytes=$expectedDispatcherBytes;sha=$expectedDispatcherSha})) {\r\n` +
         `      $target = Join-Path $root $expected.name; $targetItem = Get-Item -LiteralPath $target ` +
         `-Force -ErrorAction Stop\r\n` +
         `      if ($targetItem -isnot [IO.FileInfo] -or ` +
@@ -992,7 +1009,7 @@ export function renderGuestBootstrap(context) {
         `        if ($targetStream.Length -ne [int64]$expected.bytes -or ` +
         `(& $getFileSha $targetStream) -cne $expected.sha) { ` +
         `throw 'MSI activation installed identity differs' }\r\n` +
-        `        $records[$expected.key] = [ordered]@{path=$target;bytes=[int64]$expected.bytes;` +
+        `        $records[$expected.key] = [ordered]@{path=$expected.path;bytes=[int64]$expected.bytes;` +
         `sha256=[string]$expected.sha}\r\n` +
         `      } finally { if ($null -ne $targetStream) { $targetStream.Dispose() } }\r\n` +
         `    }\r\n` +
@@ -1490,9 +1507,13 @@ export function validatePredeadlineFrameDiagnostic(value, expectedRoot) {
         return deepFreeze(structuredClone(value));
     }
     if (value.status === "unavailable") {
-        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU predeadline frame diagnostic");
+        const allowedKeys = ["reason", "schemaVersion", "status"];
+        if (Object.hasOwn(value, "offsetMs")) allowedKeys.push("offsetMs");
+        assertKeys(value, allowedKeys, "QEMU predeadline frame diagnostic");
         if (!PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(value.reason))
             throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+        if (value.offsetMs !== undefined && (!Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0))
+            throw new TypeError("QEMU predeadline frame diagnostic offset is invalid");
         return deepFreeze(structuredClone(value));
     }
     assertKeys(value, ["bytes", "reason", "schemaVersion", "sha256", "status"], "QEMU predeadline frame diagnostic");

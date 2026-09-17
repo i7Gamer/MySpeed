@@ -2297,7 +2297,13 @@ export function collectPredeadlineFrameDiagnostic(io, input, predeadlineState, c
         if (predeadlineState.status === "unavailable") {
             const reason = PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(predeadlineState.reason) ?
                 predeadlineState.reason : "command-failed";
-            return {schemaVersion: 1, status: "unavailable", reason};
+            return {
+                schemaVersion: 1,
+                status: "unavailable",
+                reason,
+                ...(Number.isSafeInteger(predeadlineState.offsetMs) && predeadlineState.offsetMs >= 0 ?
+                    {offsetMs: predeadlineState.offsetMs} : {})
+            };
         }
         if (predeadlineState.status === "captured") {
             const expectedPath = `${input?.paths?.root}/predeadline-frame.png`;
