@@ -528,9 +528,14 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
                 Buffer.from(expected.files.setupComplete.bytesBase64, "base64"));
             fs.writeFileSync(path.join(setupRoot, "myspeed-msi-setupcomplete.ps1"),
                 Buffer.from(expected.files.dispatcher.bytesBase64, "base64"));
+            const declaredRoot = path.win32.dirname(expected.files.setupComplete.path).replaceAll("'", "''");
             const harness = `$ErrorActionPreference='Stop';$global:testRoot='${setupRoot.replaceAll("'", "''")}';` +
-                `function global:Join-Path{param($Path,$ChildPath)if($ChildPath -ceq 'Setup\\Scripts'){` +
-                `$global:testRoot}else{[IO.Path]::Combine([string]$Path,[string]$ChildPath)}}` +
+                `function global:Get-Item{param($LiteralPath,[switch]$Force)` +
+                `if([string]$LiteralPath -ceq '${declaredRoot}'){$LiteralPath=$global:testRoot};` +
+                `Microsoft.PowerShell.Management\\Get-Item -LiteralPath $LiteralPath -Force}` +
+                `function global:Join-Path{param($Path,$ChildPath)if([string]$Path -ceq '${declaredRoot}'){` +
+                `[IO.Path]::Combine($global:testRoot,[string]$ChildPath)}` +
+                `else{[IO.Path]::Combine([string]$Path,[string]$ChildPath)}}` +
                 `function global:Add-Type{param($TypeDefinition,$Language)}` +
                 `function global:Get-ScheduledTask{param($TaskName,$TaskPath)[pscustomobject]@{` +
                 `Actions=@([pscustomobject]@{Execute='${expected.startupTask.executable.replaceAll("'", "''")}';` +
@@ -552,6 +557,9 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
                 const receipt = activationReceipt();
                 assert.equal(observed.capturedLimit, 268_435_456);
                 assert.deepEqual(observed.activation.startupTask, receipt.startupTask);
+                /* The reported paths are the host-declared paths, never the observation root's own. */
+                assert.equal(observed.activation.files.setupComplete.path, receipt.files.setupComplete.path);
+                assert.equal(observed.activation.files.dispatcher.path, receipt.files.dispatcher.path);
                 assert.deepEqual(observed.activation.files.setupComplete.bytes, receipt.files.setupComplete.bytes);
                 assert.deepEqual(observed.activation.files.setupComplete.sha256, receipt.files.setupComplete.sha256);
                 assert.deepEqual(observed.activation.files.dispatcher.bytes, receipt.files.dispatcher.bytes);
