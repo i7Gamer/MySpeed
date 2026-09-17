@@ -1482,6 +1482,7 @@ export async function runMonitoredQemu(io, request) {
     let lateBootSettled = false;
     let predeadlineObservation = null;
     let midWindowSlots = null;
+    let midWindowReported = null;
     let midWindowFinalized = false;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
@@ -1531,8 +1532,13 @@ export async function runMonitoredQemu(io, request) {
                      * late/duplicate slot arriving after the process has already settled is dropped
                      * rather than mutating the snapshot already returned to the caller.
                      */
-                    if (midWindowFinalized) return;
-                    midWindowSlots ??= [null, null];
+                    if (midWindowFinalized || !Number.isSafeInteger(index) || index < 0 ||
+                        index >= MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.length || record === null ||
+                        typeof record !== "object" || Array.isArray(record)) return;
+                    midWindowReported ??= MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(() => false);
+                    if (midWindowReported[index]) return;
+                    midWindowReported[index] = true;
+                    midWindowSlots ??= MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(() => null);
                     midWindowSlots[index] = record;
                     try { request.onMidWindowFrame?.(index, record); } catch { /* non-throwing boundary */ }
                 },

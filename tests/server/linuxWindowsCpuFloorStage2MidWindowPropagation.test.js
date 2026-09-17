@@ -279,6 +279,7 @@ describe("Enabled-state finalization: session-unavailable fallback when the call
     it("retains a slot already captured when the process settles before the other slot reports, and " +
         "closes only the unresolved slot as session-unavailable", async () => {
         let lateArrival = null;
+        let forwardedFrames = 0;
         const monitored = await runMonitoredQemu({
             monotonicMilliseconds: () => 0,
             createOwnedPidFile: () => null,
@@ -287,6 +288,10 @@ describe("Enabled-state finalization: session-unavailable fallback when the call
                 // Slot 1 reports before the process settles; slot 2 never gets the chance to.
                 options.onMidWindowFrame(0, {schemaVersion: 1, status: "captured", nominalOffsetMs: 600_000,
                     offsetMs: 600_000, screenshotPath: "mid-window-frame-1.png"});
+                // A duplicate report for the same slot must neither overwrite the first immutable
+                // outcome nor escape through the public callback a second time.
+                options.onMidWindowFrame(0, {schemaVersion: 1, status: "unavailable", nominalOffsetMs: 600_000,
+                    reason: "command-failed"});
                 return {process: {exitCode: 0, signal: null, timedOut: false, stdoutOverflow: false,
                     stderrOverflow: false, cleanupProven: true, errorObserved: false},
                     stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)};
@@ -298,13 +303,15 @@ describe("Enabled-state finalization: session-unavailable fallback when the call
             command: "/bin/true", argv: [], timeoutMs: 1_000, pidPath: "/tmp/does-not-exist.pid",
             expectedExecutable: "/tmp/tools/ld.so", maxStreamBytes: 1_024,
             qmp: {screenshotPaths: ["a", "b"], midWindow: {screenshotPaths: MID_WINDOW_FRAME_FILENAMES,
-                executionDeadline: 1_500_000}}
+                executionDeadline: 1_500_000}},
+            onMidWindowFrame: () => { forwardedFrames += 1; }
         });
 
         assert.deepEqual(monitored.midWindowFrames[0], {schemaVersion: 1, status: "captured",
             nominalOffsetMs: 600_000, offsetMs: 600_000, screenshotPath: "mid-window-frame-1.png"});
         assert.deepEqual(monitored.midWindowFrames[1], {schemaVersion: 1, status: "unavailable",
             nominalOffsetMs: 900_000, reason: "session-unavailable"});
+        assert.equal(forwardedFrames, 1);
 
         // A late callback for the already-closed slot, arriving after finalization, must be dropped:
         // nothing about the returned snapshot may change.
