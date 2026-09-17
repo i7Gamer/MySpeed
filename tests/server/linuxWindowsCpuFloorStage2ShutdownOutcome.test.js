@@ -707,7 +707,8 @@ const directoryIdentity = target => ({path: target, dev: "1", ino: target === "/
  * admitted timeout that is too large.
  */
 async function runLaunchChain({launcherMilliseconds, frameMilliseconds, receiptMilliseconds,
-    diagnostic = true, uncleanLaunch = true, markerBytes = canonicalShutdownMarker(NONCE, "returned")} = {}) {
+    diagnostic = true, uncleanLaunch = true, markerBytes = canonicalShutdownMarker(NONCE, "returned"),
+    qmpShutdownEvent = null} = {}) {
     const pths = fullPaths();
     let now = LAUNCH_TIME_MILLISECONDS;
     const commands = [];
@@ -740,6 +741,7 @@ async function runLaunchChain({launcherMilliseconds, frameMilliseconds, receiptM
                         executablePath: `${pths.portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`,
                         processGroupId: 2300},
                     absentAfter: true, processGroupGone: true, terminationReason: "deadline",
+                    ...(qmpShutdownEvent === null ? {} : {qmpShutdownEvent}),
                     qmp: {version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
                         screenshotPaths: [`${pths.root}/early-boot-1.png`, `${pths.root}/early-boot-2.png`],
                         inputSent: false}
@@ -757,7 +759,8 @@ async function runLaunchChain({launcherMilliseconds, frameMilliseconds, receiptM
     const launch = await adapter.launchOwnedQemu({
         toolchain: toolchainFixture(), paths: pths, argv: [], privilegeMode: "ordinary-kvm",
         ...(diagnostic ? {deadlines: {executionMinutes: DIAGNOSTIC_EXECUTION_MINUTES,
-            cleanupMinutes: DIAGNOSTIC_CLEANUP_MINUTES}} : {})
+            cleanupMinutes: DIAGNOSTIC_CLEANUP_MINUTES}} : {}),
+        ...(qmpShutdownEvent === null ? {} : {midWindowFrames: true})
     });
     return {launch, commands,
         markerCommand: commands.find(entry => entry.argv.includes(`::${SHUTDOWN_OUTCOME_SOURCE}`)) ?? null};
@@ -809,10 +812,13 @@ describe("Stage 2 launch-anchored collection deadline", () => {
     });
 
     it("H-16 issues no marker command when the launch produced no failure diagnostic", async () => {
+        const qmpShutdownEvent = {schemaVersion: 1, status: "captured", guest: true,
+            reason: "guest-shutdown", offsetMs: 600_000};
         const {markerCommand, launch} = await runLaunchChain({launcherMilliseconds: 1_000,
-            frameMilliseconds: 0, receiptMilliseconds: 0, uncleanLaunch: false});
+            frameMilliseconds: 0, receiptMilliseconds: 0, uncleanLaunch: false, qmpShutdownEvent});
         assert.equal(markerCommand, null);
         assert.equal(launch.failureDiagnostic, undefined);
+        assert.equal(Object.hasOwn(launch, "qmpShutdownEvent"), false);
     });
 
     it("H-20 keeps every marker state non-qualifying beside an unclean stop", async () => {

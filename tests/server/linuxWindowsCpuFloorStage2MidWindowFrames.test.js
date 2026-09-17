@@ -50,6 +50,24 @@ const EARLY_MESSAGES = [
     {return: {}, id: "late-screenshot-2"}
 ];
 
+function controlledQmpStream() {
+    let controller;
+    const readable = new ReadableStream({start(value) {
+        controller = value;
+        value.enqueue(Buffer.from(`${JSON.stringify(EARLY_MESSAGES[0])}\n`));
+    }});
+    return {
+        readable,
+        push: value => controller.enqueue(Buffer.from(`${JSON.stringify(value)}\n`)),
+        close: () => controller.close()
+    };
+}
+
+function responseForCommand(command) {
+    return command.id === "status" || command.id.startsWith("late-status-") ?
+        {return: {running: true, status: "running"}, id: command.id} : {return: {}, id: command.id};
+}
+
 describe("Mid-window screenshot path validation", () => {
     it("accepts the two canonical mid-window frame paths in order", () => {
         assert.deepEqual(validateMidWindowScreenshotPaths(MID_WINDOW_PATHS), MID_WINDOW_PATHS);
@@ -281,23 +299,22 @@ describe("Mid-window capture: stop-optional-continuation on uncertain QMP failur
         let predeadlineObservation = null;
         let predeadlineCallCount = 0;
         let deliverLateReply = null;
-        let readCallCount = 0;
         let resolvePredeadline;
         const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
 
-        // A manually-driven async iterable: yields the scripted early/legacy messages, then hangs on
-        // slot 1's response until the test explicitly delivers it - after the deadline has already
-        // fired - to prove the stale reply cannot be consumed by a later, different command.
-        async function* readable() {
-            for (const item of EARLY_MESSAGES) { readCallCount += 1; yield Buffer.from(`${JSON.stringify(item)}\n`); }
-            readCallCount += 1;
-            const late = await new Promise(resolve => { deliverLateReply = resolve; });
-            yield Buffer.from(`${JSON.stringify(late)}\n`);
-        }
+        const qmp = controlledQmpStream();
 
         await runEarlyBootQmpSession({
-            readable: readable(),
-            writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))),
+            readable: qmp.readable,
+            writeBytes: bytes => {
+                const command = JSON.parse(bytes.toString("utf8"));
+                writes.push(command);
+                if (command.id === "mid-window-screenshot-1") {
+                    deliverLateReply = value => qmp.push(value);
+                    return;
+                }
+                qmp.push(responseForCommand(command));
+            },
             screenshotPaths: SCREENSHOTS,
             lateScreenshotPaths: LATE_SCREENSHOTS,
             midWindow: {screenshotPaths: MID_WINDOW_PATHS, executionDeadline: 1_500_000},
@@ -306,7 +323,8 @@ describe("Mid-window capture: stop-optional-continuation on uncertain QMP failur
             onPredeadlineObservation: obs => { predeadlineCallCount += 1; predeadlineObservation = obs; resolvePredeadline(); }
         }, {
             wait: async ms => { simulatedTime += ms; },
-            setTimer: (callback, ms) => setTimeout(() => { simulatedTime += ms; callback(); }, 5),
+            setTimer: (callback, ms) => ms === 90_000 ? {sessionDeadline: true} :
+                setTimeout(() => { simulatedTime += ms; callback(); }, 100),
             clearTimer: id => clearTimeout(id),
             now: () => simulatedTime
         });
@@ -321,7 +339,6 @@ describe("Mid-window capture: stop-optional-continuation on uncertain QMP failur
         assert.equal(collected.calls.length, 2);
         assert.equal(predeadlineCallCount, 1);
         const writeCountAtTaint = writes.length;
-        const readCallCountBeforeDelivery = readCallCount;
 
         // Now deliver the stale reply. No further optional command was ever issued after tainting,
         // so nothing is left reading the stream to consume it; delivering it must not throw, must not
@@ -335,75 +352,72 @@ describe("Mid-window capture: stop-optional-continuation on uncertain QMP failur
         assert.equal(writes.length, writeCountAtTaint, "no write was issued after tainting");
         assert.equal(collected.calls.length, 2, "no second mid-window report after the stale reply");
         assert.equal(predeadlineCallCount, 1, "no second predeadline report after the stale reply");
-        assert.equal(readCallCount, readCallCountBeforeDelivery,
-            "nothing called the shared reader again to consume the stale reply");
+        qmp.close();
     });
 
-    it("a write that succeeds only after its outer command deadline already tainted the session " +
-        "must not start a new read", async () => {
-        let readCallCount = 0;
+    it("a write that succeeds only after its command's response deadline already tainted the " +
+        "dispatcher must not start a new read", async () => {
         let deliverLateWrite = null;
         const pendingWrite = new Promise(resolve => { deliverLateWrite = resolve; });
         let simulatedTime = 0;
-        let setTimerCallIndex = 0;
-        /*
-         * Every deadline in this session behaves normally (short real delay, uniform for every
-         * call) except two, identified by their fixed position in this exact session's call order
-         * (empirically confirmed: #22 is write()'s own internal deadline for the mid-window slot-1
-         * command, #23 is the outer per-command deadline wrapping that write+read pair). #22 is made
-         * inert - it must never fire, so the write settles only through the test's own control,
-         * mirroring a write whose own deadline never actually elapsed. #23 fires via a microtask,
-         * deterministically ahead of that still-pending write, reproducing "the outer deadline
-         * observes this operation as lost while the write is still in flight and later succeeds."
-         */
+        const armed = [];
+        let dispatcherTimer = null, writeOwnTimer = null;
         const setTimer = (callback, ms) => {
-            setTimerCallIndex += 1;
-            const myIndex = setTimerCallIndex;
-            if (myIndex === 22) return {inert: true};
-            if (myIndex === 23) { queueMicrotask(callback); return {queued: true}; }
-            const id = setTimeout(() => { simulatedTime += ms; callback(); }, 5);
-            return {id};
+            const entry = {callback, ms, fired: false, cleared: false, held: ms === 90_000};
+            if (ms > 10_000 && ms !== 90_000) queueMicrotask(() => {
+                if (entry.cleared || entry.held) return;
+                entry.fired = true;
+                simulatedTime += ms;
+                callback();
+            });
+            armed.push(entry);
+            return entry;
         };
-        const clearTimer = handle => { if (handle?.id !== undefined) clearTimeout(handle.id); };
+        const clearTimer = entry => { if (entry) entry.cleared = true; };
 
-        async function* readable() {
-            for (const item of EARLY_MESSAGES) { readCallCount += 1; yield Buffer.from(`${JSON.stringify(item)}\n`); }
-        }
+        const qmp = controlledQmpStream();
+        const writes = [];
         const writeBytes = bytes => {
             const parsed = JSON.parse(bytes.toString("utf8"));
-            if (parsed.id === "mid-window-screenshot-1") return pendingWrite;
+            writes.push(parsed);
+            if (parsed.id === "mid-window-screenshot-1") {
+                writeOwnTimer = armed.at(-1);
+                dispatcherTimer = armed.at(-2);
+                writeOwnTimer.held = true;
+                dispatcherTimer.held = true;
+                return pendingWrite;
+            }
+            qmp.push(responseForCommand(parsed));
             return undefined;
         };
 
         const collected = collectMidWindowFrames();
-        await runEarlyBootQmpSession({
-            readable: readable(),
+        runEarlyBootQmpSession({
+            readable: qmp.readable,
             writeBytes,
             screenshotPaths: SCREENSHOTS,
             lateScreenshotPaths: LATE_SCREENSHOTS,
             midWindow: {screenshotPaths: MID_WINDOW_PATHS, executionDeadline: 1_500_000},
             onMidWindowFrame: collected.onMidWindowFrame
-        }, {wait: async ms => { simulatedTime += ms; }, setTimer, clearTimer, now: () => simulatedTime});
-        const frames = await collected.bothSettled;
+        }, {wait: async ms => { simulatedTime += ms; }, setTimer, clearTimer, now: () => simulatedTime}).catch(() => undefined);
 
-        // The outer deadline fired (via the queued microtask) before the write settled, tainting the
-        // session; slot 2 inherits reader-unavailable without ever attempting its own write.
+        while (dispatcherTimer === null) await new Promise(resolve => setTimeout(resolve, 0));
+        assert.notEqual(dispatcherTimer, writeOwnTimer);
+        assert.equal(dispatcherTimer.cleared, false);
+        dispatcherTimer.held = false;
+        dispatcherTimer.fired = true;
+        dispatcherTimer.callback();
+
+        const writeCountAtTaint = writes.length;
+        deliverLateWrite();
+        const frames = await collected.bothSettled;
         assert.equal(frames[0].status, "unavailable");
         assert.equal(frames[0].reason, "command-timeout");
         assert.equal(frames[1].status, "unavailable");
         assert.equal(frames[1].reason, "reader-unavailable");
-        const readCallCountAtTaint = readCallCount;
-        const callCountAtTaint = collected.calls.length;
-
-        // Deliver the late write resolution: the abandoned commandOperation's own `await write(...)`
-        // now resolves successfully (not via its own deadline). It must see the taint set earlier and
-        // must not proceed to call expectResponse/readMessage - the guard this test exists to prove.
-        deliverLateWrite();
-        await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
-
-        assert.equal(readCallCount, readCallCountAtTaint,
-            "a write that resolves after tainting must not start a new read");
-        assert.equal(collected.calls.length, callCountAtTaint, "no further mid-window report after the late write");
+        assert.equal(writeOwnTimer.fired, false, "write()'s own deadline must never have fired");
+        assert.equal(writes.length, writeCountAtTaint, "a late write settlement must not issue another command");
+        qmp.close();
     });
 
     it("taints mid-window when the legacy mandatory milestone loop itself fails, only when enabled", async () => {

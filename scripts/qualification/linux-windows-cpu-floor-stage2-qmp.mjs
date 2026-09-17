@@ -7,6 +7,14 @@ const SECOND_SCREENSHOT_DELAY_MILLISECONDS = 30_000;
 const MAXIMUM_TRANSCRIPT_BYTES = 65_536;
 const MAXIMUM_MESSAGES = 64;
 /*
+ * QEMU 8.2.2's closed `ShutdownCause` enum. A `SHUTDOWN` event whose `data.reason` is outside this
+ * set is a protocol failure, not an unrecognized-but-valid cause: this harness pins an exact QEMU
+ * build, so a reason this set does not name did not come from that build behaving normally.
+ */
+export const QMP_SHUTDOWN_CAUSES = Object.freeze(["none", "host-error", "host-qmp-quit",
+    "host-qmp-system-reset", "host-signal", "host-ui", "guest-shutdown", "guest-reset", "guest-panic",
+    "subsystem-reset", "snapshot-load"]);
+/*
  * Stage 3 boots its own fresh install under a root of its own, bound to the same run nonce. It is
  * admitted for the two early frames only, exactly like the preflight below: Stage 3 opens no late
  * capture, so a late name under this root would widen the shared validator for a caller that has
@@ -377,7 +385,15 @@ function createMidWindowAdmissionAbortError() {
     return error;
 }
 
-function createMessageReader(readable, dependencies, bounds = {}) {
+/*
+ * One source, one iterator, one buffered-byte cursor for the whole session. `readBounded` is
+ * byte-for-byte the previous per-call-deadline reader (used for the greeting always, and for the
+ * entire session when no continuous dispatcher is ever created). `createDispatcher` hands the SAME
+ * iterator/buffer state to a continuous single-reader pump, so a session that starts with bounded
+ * reads (the greeting, always read this way) and later switches to the pump never opens a second
+ * reader of the underlying stream - it is one cursor throughout, only the read strategy changes.
+ */
+function createQmpMessageSource(readable, dependencies, bounds = {}) {
     if (!readable || typeof readable[Symbol.asyncIterator] !== "function")
         throw new TypeError("QMP readable stream is invalid");
     const maximumMessages = bounds.maximumMessages ?? MAXIMUM_MESSAGES;
@@ -386,25 +402,31 @@ function createMessageReader(readable, dependencies, bounds = {}) {
         throw new TypeError("QMP transcript bounds are invalid");
     const iterator = readable[Symbol.asyncIterator]();
     let buffered = Buffer.alloc(0), totalBytes = 0, messages = 0;
-    return async () => {
+
+    // Synchronous: returns a parsed message already fully buffered, or undefined if none is ready yet.
+    function extractOneMessage() {
+        const newline = buffered.indexOf(0x0a);
+        if (newline < 0) return undefined;
+        let line = buffered.subarray(0, newline);
+        buffered = buffered.subarray(newline + 1);
+        if (line.at(-1) === 0x0d) line = line.subarray(0, -1);
+        if (line.length < 2) throw new Error("QMP JSON message is invalid");
+        messages += 1;
+        if (messages > maximumMessages) throw new Error("QMP transcript bound exceeded");
+        try {
+            const value = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(line));
+            if (!value || typeof value !== "object" || Array.isArray(value))
+                throw new Error("QMP JSON message is invalid");
+            return value;
+        } catch (error) {
+            throw new Error("QMP JSON message is invalid", {cause: error});
+        }
+    }
+
+    async function readBounded() {
         while (true) {
-            const newline = buffered.indexOf(0x0a);
-            if (newline >= 0) {
-                let line = buffered.subarray(0, newline);
-                buffered = buffered.subarray(newline + 1);
-                if (line.at(-1) === 0x0d) line = line.subarray(0, -1);
-                if (line.length < 2) throw new Error("QMP JSON message is invalid");
-                messages += 1;
-                if (messages > maximumMessages) throw new Error("QMP transcript bound exceeded");
-                try {
-                    const value = JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(line));
-                    if (!value || typeof value !== "object" || Array.isArray(value))
-                        throw new Error("QMP JSON message is invalid");
-                    return value;
-                } catch (error) {
-                    throw new Error("QMP JSON message is invalid", {cause: error});
-                }
-            }
+            const message = extractOneMessage();
+            if (message !== undefined) return message;
             const next = await withDeadline(iterator.next(), dependencies);
             if (next.done) {
                 const streamEndError = new Error("QMP stream ended before response");
@@ -416,7 +438,212 @@ function createMessageReader(readable, dependencies, bounds = {}) {
             if (totalBytes > maximumTranscriptBytes) throw new Error("QMP transcript bound exceeded");
             buffered = Buffer.concat([buffered, chunk]);
         }
-    };
+    }
+
+    /*
+     * A continuous single-reader pump, created at most once per source. It owns every later
+     * `iterator.next()` call: once `expect()` starts it (on the first command), nothing else may call
+     * `readBounded()` or a second `createDispatcher()` against this same source.
+     *
+     * Any uncertain command/read/protocol failure makes the dispatcher terminal. It never starts
+     * another read or command afterward; only the single iterator.next() already pending at the
+     * terminal transition may settle, and that settlement is ignored. Continuous capture before that
+     * boundary covers the evidence gap between the +600s response and a later +900s write failure.
+     */
+    function createDispatcher(getTime, sessionStartTime, onShutdownEvent) {
+        const defer = dependencies.defer ?? setImmediate;
+        let pending = null;
+        let activeEntry = null;
+        let terminalError = null;
+        let resolveTerminal;
+        const terminalSignal = new Promise(resolve => { resolveTerminal = resolve; });
+        let shutdownRecord = null;
+        let pumpStarted = false;
+
+        function completeEntry(entry) {
+            if (entry.timer !== null) entry.clearTimer(entry.timer);
+            entry.timer = null;
+            entry.completed = true;
+            if (activeEntry === entry) activeEntry = null;
+        }
+
+        function rejectPending(error) {
+            if (pending === null) return;
+            const entry = pending;
+            pending = null;
+            entry.reject(error);
+        }
+
+        function terminate(error) {
+            if (terminalError !== null) return;
+            terminalError = error instanceof Error ? error : new Error(String(error));
+            resolveTerminal(terminalError);
+            if (activeEntry !== null) completeEntry(activeEntry);
+            rejectPending(terminalError);
+        }
+
+        function captureShutdown(value) {
+            const data = value.data;
+            if (!data || typeof data !== "object" || Array.isArray(data) || typeof data.guest !== "boolean" ||
+                typeof data.reason !== "string" || !QMP_SHUTDOWN_CAUSES.includes(data.reason)) {
+                const error = new Error("QMP SHUTDOWN event is invalid");
+                QMP_ERROR_PROVENANCE.set(error, "qmp-shutdown-malformed");
+                throw error;
+            }
+            // Every SHUTDOWN is validated; only retention/callback are first-event-only.
+            if (shutdownRecord !== null) return;
+            const offsetMs = Math.round(getTime() - sessionStartTime);
+            if (!Number.isSafeInteger(offsetMs) || offsetMs < 0) {
+                const error = new Error("QMP SHUTDOWN event offset is invalid");
+                QMP_ERROR_PROVENANCE.set(error, "qmp-shutdown-malformed");
+                throw error;
+            }
+            shutdownRecord = Object.freeze({schemaVersion: 1, status: "captured", guest: data.guest,
+                reason: data.reason, offsetMs});
+            if (typeof onShutdownEvent === "function") {
+                try { onShutdownEvent(shutdownRecord); }
+                catch { /* a throwing callback cannot fail the pump */ }
+            }
+        }
+
+        // Returns true after routing a response, so the loop can yield to the command continuation.
+        function handleMessage(value) {
+            if (value.event !== undefined) {
+                if (value.event === "SHUTDOWN") captureShutdown(value);
+                return false;
+            }
+            if (pending === null) {
+                const error = new Error("QMP response arrived without a pending command");
+                QMP_ERROR_PROVENANCE.set(error, "qmp-unexpected-response");
+                throw error;
+            }
+            if (value.id !== pending.id) {
+                const error = new Error("QMP response is invalid");
+                QMP_ERROR_PROVENANCE.set(error, "qmp-id-mismatch");
+                throw error;
+            }
+            if (value.error !== undefined || value.return === undefined) {
+                const error = new Error("QMP response is invalid");
+                if (value.error !== undefined) QMP_ERROR_PROVENANCE.set(error, "qmp-error-response");
+                throw error;
+            }
+            const entry = pending;
+            pending = null;
+            if (!entry.deadlineIncludesWrite) completeEntry(entry);
+            entry.resolve(value.return);
+            return true;
+        }
+
+        async function pumpLoop() {
+            try {
+                while (terminalError === null) {
+                    let message;
+                    try { message = extractOneMessage(); }
+                    catch (error) { terminate(error); return; }
+                    if (message === undefined) {
+                        let next;
+                        try { next = await iterator.next(); } // no per-read deadline: idle-safe
+                        catch (error) { terminate(error); return; }
+                        // Cancellation/timeout/write failure terminalizes the dispatcher while this one
+                        // read may still be pending. Its eventual settlement is ignored and never
+                        // followed by another iterator.next().
+                        if (terminalError !== null) return;
+                        if (next.done) {
+                            const error = new Error("QMP stream ended before response");
+                            QMP_ERROR_PROVENANCE.set(error, "qmp-stream-ended");
+                            terminate(error);
+                            return;
+                        }
+                        const chunk = Buffer.from(next.value);
+                        totalBytes += chunk.length;
+                        if (totalBytes > maximumTranscriptBytes) {
+                            terminate(new Error("QMP transcript bound exceeded"));
+                            return;
+                        }
+                        buffered = Buffer.concat([buffered, chunk]);
+                        continue;
+                    }
+                    try {
+                        if (handleMessage(message)) {
+                            // Give the serialized command continuation one event-loop turn to finish
+                            // its bounded write/result bookkeeping and arm an immediately-following
+                            // command before an already-buffered response is examined. If the caller
+                            // instead enters a real delay, the pump resumes on this turn and remains
+                            // continuously parked in iterator.next() for events throughout that delay.
+                            await new Promise(resolve => defer(resolve));
+                        }
+                    } catch (error) {
+                        terminate(error);
+                        return;
+                    }
+                }
+            } catch (error) {
+                terminate(error);
+            }
+        }
+
+        function taintedError() {
+            const error = new Error("QMP dispatcher is terminal", {cause: terminalError});
+            QMP_ERROR_PROVENANCE.set(error, "dispatcher-terminal");
+            return error;
+        }
+
+        function ensurePumpStarted() {
+            if (!pumpStarted) { pumpStarted = true; pumpLoop().catch(() => undefined); }
+        }
+
+        function startResponseDeadline(entry, timeoutMilliseconds) {
+            if (terminalError !== null || activeEntry !== entry || entry.timer !== null) return;
+            entry.timer = entry.setTimer(() => {
+                if (activeEntry === entry && !entry.completed)
+                    terminate(new Error("QMP response deadline exceeded"));
+            }, timeoutMilliseconds);
+        }
+
+        /* Registers the one pending waiter for `id`, then starts the pump on first use. The caller
+         * chooses whether the response budget includes the write (mid-window/predeadline's prior
+         * outer deadline) or begins after a successful write (the legacy early/late behavior). */
+        function expect(id, timeoutMilliseconds, deadlineIncludesWrite) {
+            if (terminalError !== null) throw taintedError();
+            if (activeEntry !== null) throw new Error("QMP dispatcher command already pending");
+            const setTimer = dependencies.setTimer ?? setTimeout;
+            const clearTimer = dependencies.clearTimer ?? clearTimeout;
+            let resolveResponse, rejectResponse;
+            const responsePromise = new Promise((resolve, reject) => {
+                resolveResponse = resolve;
+                rejectResponse = reject;
+            });
+            // The command path may still be awaiting a bounded write when this response rejects.
+            // Attach a terminal handler now so that gap can never produce an unhandled rejection.
+            responsePromise.catch(() => undefined);
+            const entry = {id, resolve: resolveResponse, reject: rejectResponse, clearTimer, timer: null,
+                completed: false, deadlineIncludesWrite};
+            pending = entry;
+            activeEntry = entry;
+            entry.setTimer = setTimer;
+            if (deadlineIncludesWrite) startResponseDeadline(entry, timeoutMilliseconds);
+            ensurePumpStarted();
+            return {entry, responsePromise};
+        }
+
+        /* Called when the write that was supposed to satisfy an armed `expect(id, ...)` itself failed
+         * (including the mid-window admission-abort, which owes no response and must not taint). */
+        function abandon(id, error) {
+            const admissionAbort = error instanceof Error && MID_WINDOW_ADMISSION_ABORT_ERRORS.has(error);
+            if (admissionAbort) {
+                if (activeEntry !== null && activeEntry.id === id) completeEntry(activeEntry);
+                if (pending !== null && pending.id === id) rejectPending(error);
+                return;
+            }
+            terminate(error);
+        }
+
+        return {expect, abandon, complete: completeEntry, startResponseDeadline, terminate,
+            waitForTermination: () => terminalSignal,
+            get shutdownRecord() { return shutdownRecord; }};
+    }
+
+    return {readBounded, createDispatcher};
 }
 
 async function expectResponse(readMessage, id) {
@@ -494,8 +721,10 @@ async function runSession(input, dependencies, session) {
         throw new TypeError("QMP WinPE diagnostic root is invalid");
     if (typeof input.writeBytes !== "function") throw new TypeError("QMP writer is invalid");
 
+    let dispatcher = null;
     const cancelSession = () => {
         session.cancelled = true;
+        dispatcher?.terminate(new Error("QMP session cancelled"));
         if (session.activeTimer !== null) {
             const clearTimer = dependencies.clearTimer ?? clearTimeout;
             clearTimer(session.activeTimer);
@@ -507,8 +736,9 @@ async function runSession(input, dependencies, session) {
     };
     input.onSession?.({cancel: cancelSession});
 
-    const readMessage = createMessageReader(input.readable, dependencies, winpeDiagnostic === undefined ? {} :
+    const messageSource = createQmpMessageSource(input.readable, dependencies, winpeDiagnostic === undefined ? {} :
         winpeDiagnosticBudget(winpeDiagnostic.nonce));
+    const readMessage = messageSource.readBounded;
     const getTime = dependencies.now ?? (() => performance.now());
     const sessionStartTime = getTime();
     const greeting = await readMessage();
@@ -517,9 +747,19 @@ async function runSession(input, dependencies, session) {
         !Array.isArray(greeting?.QMP?.capabilities) ||
         !greeting.QMP.capabilities.every(value => typeof value === "string"))
         throw new Error("QMP greeting is invalid");
+    /*
+     * Only a mid-window session ever gets a continuous dispatcher: default, MSI, WinPE and Stage 3
+     * sessions (midWindow === null, always true when winpeDiagnostic is set - the two are mutually
+     * exclusive by the validation above) keep the exact bounded-per-read behavior they always had, via
+     * `write` + `expectResponse` below unchanged. A mid-window session routes every later command
+     * through the dispatcher instead: `sendAndAwait` is the only place that decides which.
+     */
+    dispatcher = midWindow !== null ? messageSource.createDispatcher(getTime, sessionStartTime,
+        input.onShutdownEvent) : null;
+    session.cancelDispatcher = () => dispatcher?.terminate(new Error("QMP session deadline exceeded"));
     const write = (value, beforeWrite = () => undefined) => {
         if (session.expired || session.cancelled) return Promise.reject(new Error("QMP session deadline exceeded"));
-        return withDeadline(Promise.resolve().then(async () => {
+        const operation = Promise.resolve().then(async () => {
             if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
             beforeWrite();
             try {
@@ -530,12 +770,45 @@ async function runSession(input, dependencies, session) {
                 }
                 throw error;
             }
-        }), dependencies);
+        });
+        /* Cancellation/protocol failure must settle a command whose underlying write is stuck. The
+         * Promise.race handlers permanently observe that write, while settling this wrapper clears
+         * its own deadline timer; no attempt is made to cancel the underlying pipe operation. */
+        const guarded = dispatcher === null ? operation : Promise.race([operation,
+            dispatcher.waitForTermination().then(error => { throw error; })]);
+        return withDeadline(guarded, dependencies);
     };
-    await write({execute: "qmp_capabilities", id: "capabilities"});
-    await expectResponse(readMessage, "capabilities");
-    await write({execute: "query-status", id: "status"});
-    const status = await expectResponse(readMessage, "status");
+    /*
+     * The one call site every command in this session uses. With no dispatcher it is exactly the
+     * original write-then-expectResponse pair, sharing the single bounded reader. With a dispatcher,
+     * the response waiter is armed first (satisfying the single-reader admission ordering), then the
+     * write is issued; a write that never sent bytes (a real failure, or the mid-window admission
+     * abort) tells the dispatcher so it can unregister the waiter it already holds without a queue.
+     *
+     * The bounded write is awaited before the already-armed response. A response may safely settle
+     * first, but a later write failure must still win and terminalize the dispatcher; reporting the
+     * response as success before that write outcome is known would lose an uncertain-write failure.
+     */
+    const sendAndAwait = async (value, id, timeoutMilliseconds = QMP_MESSAGE_TIMEOUT_MILLISECONDS,
+        beforeWrite = () => undefined, deadlineIncludesWrite = false) => {
+        if (dispatcher === null) {
+            await write(value, beforeWrite);
+            return await expectResponse(readMessage, id);
+        }
+        const {entry, responsePromise} = dispatcher.expect(id, timeoutMilliseconds, deadlineIncludesWrite);
+        try {
+            await write(value, beforeWrite);
+        } catch (error) {
+            dispatcher.abandon(id, error);
+            throw error;
+        }
+        if (!deadlineIncludesWrite) dispatcher.startResponseDeadline(entry, timeoutMilliseconds);
+        const response = await responsePromise;
+        dispatcher.complete(entry);
+        return response;
+    };
+    await sendAndAwait({execute: "qmp_capabilities", id: "capabilities"}, "capabilities");
+    const status = await sendAndAwait({execute: "query-status", id: "status"}, "status");
     if (typeof status.running !== "boolean" || typeof status.status !== "string" || status.status.length < 1)
         throw new Error("QMP status response is invalid");
     let inputSent = false;
@@ -559,14 +832,14 @@ async function runSession(input, dependencies, session) {
         if (session.cancelled || session.expired)
             throw new Error("QMP installer boot confirmation cancelled");
         let sentOffsetMilliseconds = null;
-        await write({execute: "send-key", arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
-            "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id: "installer-boot-confirmation"}, () => {
+        await sendAndAwait({execute: "send-key", arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
+            "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id: "installer-boot-confirmation"},
+        "installer-boot-confirmation", QMP_MESSAGE_TIMEOUT_MILLISECONDS, () => {
             sentOffsetMilliseconds = getTime() - sessionStartTime;
             if (!Number.isFinite(sentOffsetMilliseconds) ||
                 sentOffsetMilliseconds < requestedOffsetMilliseconds || sentOffsetMilliseconds > latestOffsetMilliseconds)
                 throw new Error("QMP installer boot confirmation window elapsed");
         });
-        await expectResponse(readMessage, "installer-boot-confirmation");
         // A QMP acknowledgement proves only monitor acceptance, never guest-side receipt.
         return validateInstallerBootInput({kind: "installer-boot-confirmation",
             qcode: INSTALLER_BOOT_CONFIRMATION_QCODE, holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
@@ -582,8 +855,7 @@ async function runSession(input, dependencies, session) {
         SECOND_SCREENSHOT_DELAY_MILLISECONDS].entries()) {
         await wait(milliseconds);
         const id = `screenshot-${index + 1}`;
-        await write({execute: "screendump", arguments: {filename: screenshotPaths[index], format: "png"}, id});
-        await expectResponse(readMessage, id);
+        await sendAndAwait({execute: "screendump", arguments: {filename: screenshotPaths[index], format: "png"}, id}, id);
         if (index === 0 && bootConfirmation === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME)
             inputSent = await sendInstallerBootConfirmation();
     }
@@ -697,14 +969,12 @@ async function runSession(input, dependencies, session) {
                     if (session.cancelled || session.expired) break;
                     const milestoneIndex = i + 1;
                     const statusId = `late-status-${milestoneIndex}`;
-                    await write({execute: "query-status", id: statusId});
-                    const lateStatus = await expectResponse(readMessage, statusId);
+                    const lateStatus = await sendAndAwait({execute: "query-status", id: statusId}, statusId);
                     if (session.cancelled || session.expired) break;
                     const screenshotId = `late-screenshot-${milestoneIndex}`;
-                    await write({execute: "screendump", arguments: {
+                    await sendAndAwait({execute: "screendump", arguments: {
                         filename: lateScreenshotPaths[i], format: "png"
-                    }, id: screenshotId});
-                    await expectResponse(readMessage, screenshotId);
+                    }, id: screenshotId}, screenshotId);
                     milestones.push(Object.freeze({
                         milestone: milestoneIndex,
                         offsetMs: targetOffset,
@@ -799,29 +1069,23 @@ async function runSession(input, dependencies, session) {
                     }
                     try {
                         const screenshotId = `mid-window-screenshot-${i + 1}`;
-                        const commandOperation = (async () => {
-                            await write({
-                                execute: "screendump",
-                                arguments: {filename: midWindow.screenshotPaths[i], format: "png"},
-                                id: screenshotId
-                            }, () => {
-                                // The actual writeBytes boundary: a command never issued here must
-                                // never taint the reader, unlike every other rejection in this loop.
-                                if (!fits(getTime())) throw createMidWindowAdmissionAbortError();
-                            });
-                            /*
-                             * The write landed. Taint may have arrived while it was still in flight -
-                             * this very operation's own outer deadline below can lose a race against a
-                             * real late resolution of `input.writeBytes`. Once tainted, this losing
-                             * write must not start a *new* read: the one already-pending delayed
-                             * response that a still-outstanding write could owe is unavoidable and
-                             * stays isolated to this abandoned chain, but nothing here may issue
-                             * another competing read.
-                             */
-                            if (optionalContinuationUnsafe) return;
-                            await expectResponse(readMessage, screenshotId);
-                        })();
-                        await withDeadline(commandOperation, dependencies, MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS);
+                        /*
+                         * The dispatcher (always present here: this loop only runs when midWindow !==
+                         * null) owns the response wait and its own timeout directly - there is no
+                         * separate outer race and no "losing write must not start a new read" hazard
+                         * to guard against, because there is exactly one `pending` slot in the
+                         * dispatcher and a write that never sent bytes (the admission abort below)
+                         * tells it so via `abandon`, never by racing a second reader.
+                         */
+                        await sendAndAwait({
+                            execute: "screendump",
+                            arguments: {filename: midWindow.screenshotPaths[i], format: "png"},
+                            id: screenshotId
+                        }, screenshotId, MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS, () => {
+                            // The actual writeBytes boundary: a command never issued here must
+                            // never taint the dispatcher, unlike every other rejection in this loop.
+                            if (!fits(getTime())) throw createMidWindowAdmissionAbortError();
+                        }, true);
                         const observedOffsetMs = Math.round(getTime() - sessionStartTime);
                         reportMidWindowFrame(i, {schemaVersion: 1, status: "captured", nominalOffsetMs,
                             offsetMs: observedOffsetMs, screenshotPath: midWindow.screenshotPaths[i]});
@@ -870,15 +1134,11 @@ async function runSession(input, dependencies, session) {
                                     );
                                     try {
                                         const screenshotId = "predeadline-screenshot";
-                                        const commandOperation = (async () => {
-                                            await write({
-                                                execute: "screendump",
-                                                arguments: {filename: predeadline.screenshotPath, format: "png"},
-                                                id: screenshotId
-                                            });
-                                            await expectResponse(readMessage, screenshotId);
-                                        })();
-                                        await withDeadline(commandOperation, dependencies, totalCommandBudget);
+                                        await sendAndAwait({
+                                            execute: "screendump",
+                                            arguments: {filename: predeadline.screenshotPath, format: "png"},
+                                            id: screenshotId
+                                        }, screenshotId, totalCommandBudget, undefined, true);
                                         const observedOffsetMs = Math.round(getTime() - sessionStartTime);
                                         reportPredeadline({
                                             status: "captured",
@@ -922,7 +1182,18 @@ async function runSession(input, dependencies, session) {
 }
 
 export function runEarlyBootQmpSession(input, dependencies = {}) {
-    const session = {expired: false, cancelled: false, activeTimer: null, onCancel: null};
-    return withDeadline(runSession(input, dependencies, session), dependencies, QMP_SESSION_TIMEOUT_MILLISECONDS,
-        () => { session.expired = true; if (typeof session.onCancel === "function") session.onCancel(); });
+    const session = {expired: false, cancelled: false, activeTimer: null, onCancel: null,
+        cancelDispatcher: null};
+    const operation = runSession(input, dependencies, session).catch(error => {
+        // An early-phase failure after the continuous dispatcher started must not leave its idle
+        // reader live until some outer process owner eventually notices and cancels the session.
+        session.cancelDispatcher?.();
+        throw error;
+    });
+    return withDeadline(operation, dependencies, QMP_SESSION_TIMEOUT_MILLISECONDS,
+        () => {
+            session.expired = true;
+            session.cancelDispatcher?.();
+            if (typeof session.onCancel === "function") session.onCancel();
+        });
 }
