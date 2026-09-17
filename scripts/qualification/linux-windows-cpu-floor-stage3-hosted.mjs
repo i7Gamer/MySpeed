@@ -283,8 +283,15 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
             const launch = await getAdapter(stage2).launchOwnedQemu({context, paths: compatible, toolchain, argv,
                 privilegeMode: stage2.privilegeMode, reservation: {...reservation},
                 ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
-            if (!launch.guest || launch.guest.status !== "observed")
-                throw new Error("baseline guest did not return the CPU calibration envelope");
+            if (!launch.guest || launch.guest.status !== "observed") {
+                /*
+                 * The shared launcher already parsed the guest's bounded failure receipt when there
+                 * was one; discarding it here left run 35273132053 with nothing but this sentence.
+                 */
+                const receipt = typeof launch.guestFailure?.failure === "string" ?
+                    `: ${launch.guestFailure.failure}` : "";
+                throw new Error(`baseline guest did not return the CPU calibration envelope${receipt}`);
+            }
             if (launch.earlyBoot === null || launch.earlyBoot === undefined)
                 throw new Error("baseline QEMU produced no early-boot observation");
             if (launch.process?.cleanupProven !== true || launch.process.treeGone !== true ||
