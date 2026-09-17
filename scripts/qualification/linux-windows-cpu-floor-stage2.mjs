@@ -1356,12 +1356,34 @@ export const RECEIPT_UNAVAILABLE_REASONS = deepFreeze([
     "tool-error",
     "receipt-not-retrieved"
 ]);
+/*
+ * One fixed code per validation region the guest receipt parsers already contain, so a rejected
+ * receipt says WHICH check refused it rather than only that something did. The vocabulary is closed
+ * and carries no observed value, no guest text and no exception message: a code is published only
+ * when the parser itself marked the rejection, and anything else stays `schema-invalid`. Growing
+ * this list never changes the diagnostic's shape, status or key set, so records retained before it
+ * existed replay unchanged.
+ */
+export const RECEIPT_REJECTION_CODES = deepFreeze([
+    "result-header-invalid",
+    "probe-run-invalid",
+    "cpuid-run-failed",
+    "cpuid-output-invalid",
+    "cpu-floor-unmet",
+    "control-probe-mismatch",
+    "fault-probe-not-illegal",
+    "network-not-isolated",
+    "activation-invalid",
+    "system-tools-invalid",
+    "failure-receipt-invalid"
+]);
 export const RECEIPT_MALFORMED_REASONS = deepFreeze([
     "json-syntax-error",
     "nonce-mismatch",
     "schema-invalid",
     "partial-read",
-    "read-cap-exceeded"
+    "read-cap-exceeded",
+    ...RECEIPT_REJECTION_CODES
 ]);
 
 /*
