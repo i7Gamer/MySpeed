@@ -43,6 +43,38 @@ export function validatePredeadlineScreenshotPath(value) {
     return value;
 }
 
+/*
+ * Two optional, fixed, named diagnostic samples taken inside the existing 25-minute window - never a
+ * third, never a caller-chosen offset. They only ever run when the CPU-specific caller opts in
+ * explicitly; every other caller (generic MSI requests, WinPE diagnostic, Stage 3) is unaffected by
+ * their mere existence in this file.
+ */
+export const MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS = Object.freeze([600_000, 900_000]);
+export const MID_WINDOW_FRAME_FILENAMES = Object.freeze(["mid-window-frame-1.png", "mid-window-frame-2.png"]);
+export const MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS = QMP_MESSAGE_TIMEOUT_MILLISECONDS;
+/*
+ * A named margin held back on top of the command's own timeout budget, distinct from and additive to
+ * PREDEADLINE_FRAME_LEAD_MILLISECONDS (which already reserves the predeadline command's own timeout,
+ * jitter, and cleanup headroom). This margin is mid-window's own scheduling slack, not a second copy
+ * of predeadline's reserve.
+ */
+export const MID_WINDOW_SCHEDULING_MARGIN_MILLISECONDS = 5_000;
+
+const MID_WINDOW_FRAME_PATH_PATTERNS = Object.freeze([
+    /^\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32}\/mid-window-frame-1\.png$/u,
+    /^\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32}\/mid-window-frame-2\.png$/u
+]);
+
+export function validateMidWindowScreenshotPaths(value) {
+    if (!Array.isArray(value) || value.length !== MID_WINDOW_FRAME_FILENAMES.length)
+        throw new TypeError("QMP mid-window screenshot paths are invalid");
+    value.forEach((item, index) => {
+        if (typeof item !== "string" || !MID_WINDOW_FRAME_PATH_PATTERNS[index].test(item))
+            throw new TypeError("QMP mid-window screenshot paths are invalid");
+    });
+    return value;
+}
+
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
 export const INSTALLER_BOOT_CONFIRMATION = "single-enter-before-setup-v1";
@@ -403,6 +435,10 @@ async function runSession(input, dependencies, session) {
         screenshotPath: validatePredeadlineScreenshotPath(input.predeadline.screenshotPath),
         executionDeadline: input.predeadline.executionDeadline
     } : null;
+    const midWindow = input?.midWindow !== undefined ? {
+        screenshotPaths: validateMidWindowScreenshotPaths(input.midWindow.screenshotPaths),
+        executionDeadline: input.midWindow.executionDeadline
+    } : null;
     const screenshotRoot = screenshotPaths[0].slice(0, -"/early-boot-1.png".length);
     if (predeadline !== null) {
         if (lateScreenshotPaths === null)
@@ -412,6 +448,16 @@ async function runSession(input, dependencies, session) {
         const predeadlineRoot = predeadline.screenshotPath.slice(0, -`/${PREDEADLINE_FRAME_FILENAME}`.length);
         if (predeadlineRoot !== screenshotRoot)
             throw new TypeError("QMP predeadline root is invalid");
+    }
+    if (midWindow !== null) {
+        if (lateScreenshotPaths === null)
+            throw new TypeError("QMP mid-window requires late screenshot paths");
+        if (!Number.isFinite(midWindow.executionDeadline))
+            throw new TypeError("QMP mid-window execution deadline is invalid");
+        midWindow.screenshotPaths.forEach((path, index) => {
+            const root = path.slice(0, -`/${MID_WINDOW_FRAME_FILENAMES[index]}`.length);
+            if (root !== screenshotRoot) throw new TypeError("QMP mid-window root is invalid");
+        });
     }
     if (bootConfirmation !== undefined && !INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN.test(screenshotRoot))
         throw new TypeError("QMP installer boot confirmation root is invalid");
@@ -603,6 +649,17 @@ async function runSession(input, dependencies, session) {
             const milestones = [];
             let winpeDiagnosticRecord = null;
             let predeadlineSettled = false;
+            /*
+             * A stray timeout does not cancel its own losing read/write (Promise.race never does):
+             * that operation may still resolve later, and a later optional command reusing the one
+             * shared QMP reader while it does would be a second concurrent reader of the same
+             * transcript. This flag is the conservative answer - once ANY optional-phase QMP command
+             * fails for ANY reason (not only a timeout: an id-mismatch can leave the wanted response
+             * still outstanding too), no further optional write/read is issued for the rest of this
+             * session. It only ever becomes true when mid-window capture is enabled, so a disabled or
+             * WinPE/MSI session's behavior is untouched by this flag's mere existence.
+             */
+            let optionalContinuationUnsafe = false;
             const reportPredeadline = record => {
                 if (predeadlineSettled) return;
                 predeadlineSettled = true;
@@ -650,6 +707,7 @@ async function runSession(input, dependencies, session) {
                 }
             } catch {
                 /* any milestone failure terminates the milestone loop */
+                if (midWindow !== null) optionalContinuationUnsafe = true;
             }
 
             // Late boot observation settles promptly at Milestone 2 (300s) - never held hostage by predeadline!
@@ -661,9 +719,82 @@ async function runSession(input, dependencies, session) {
             });
             resolveLateBoot(lateBootRecord);
 
+            if (midWindow !== null) {
+                const records = [];
+                for (let i = 0; i < MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.length; i += 1) {
+                    const nominalOffsetMs = MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[i];
+                    /*
+                     * protectedStart is the same boundary predeadline already protects for itself
+                     * (executionDeadline minus its own lead, which already bundles its command
+                     * timeout, jitter, and cleanup headroom). A mid-window sample may only start when
+                     * it - plus its own command timeout and its own named scheduling margin - fits
+                     * entirely before that boundary, so an overdue sample can never eat into
+                     * predeadline's reserved window. This is evaluated fresh before waiting and again
+                     * after waking, per the runtime-admission decision.
+                     */
+                    const protectedStart = midWindow.executionDeadline - PREDEADLINE_FRAME_LEAD_MILLISECONDS;
+                    const fits = now => now + MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS +
+                        MID_WINDOW_SCHEDULING_MARGIN_MILLISECONDS < protectedStart;
+                    if (optionalContinuationUnsafe) {
+                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
+                        continue;
+                    }
+                    if (session.cancelled || session.expired) {
+                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
+                        continue;
+                    }
+                    const preWaitNow = Math.max(getTime(), sessionStartTime + nominalOffsetMs);
+                    if (!fits(preWaitNow)) {
+                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
+                        continue;
+                    }
+                    const remaining = Math.max(0, nominalOffsetMs - (getTime() - sessionStartTime));
+                    await cancellableDelay(remaining, dependencies, session);
+                    if (session.cancelled || session.expired) {
+                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
+                        continue;
+                    }
+                    if (!fits(getTime())) {
+                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
+                        continue;
+                    }
+                    if (optionalContinuationUnsafe) {
+                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
+                        continue;
+                    }
+                    try {
+                        const screenshotId = `mid-window-screenshot-${i + 1}`;
+                        const commandOperation = (async () => {
+                            await write({
+                                execute: "screendump",
+                                arguments: {filename: midWindow.screenshotPaths[i], format: "png"},
+                                id: screenshotId
+                            });
+                            await expectResponse(readMessage, screenshotId);
+                        })();
+                        await withDeadline(commandOperation, dependencies, MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS);
+                        const observedOffsetMs = Math.round(getTime() - sessionStartTime);
+                        records.push({schemaVersion: 1, status: "captured", nominalOffsetMs,
+                            offsetMs: observedOffsetMs, screenshotPath: midWindow.screenshotPaths[i]});
+                    } catch (error) {
+                        optionalContinuationUnsafe = true;
+                        const observedOffsetMs = Math.round(getTime() - sessionStartTime);
+                        const isTimeout = error?.message?.includes("deadline");
+                        const provenance = (error && typeof error === "object") ?
+                            QMP_ERROR_PROVENANCE.get(error) : undefined;
+                        const reason = isTimeout ? "command-timeout" : (provenance ?? "command-failed");
+                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs,
+                            offsetMs: observedOffsetMs, reason});
+                    }
+                }
+                input.onMidWindowObservation?.(Object.freeze(records.map(record => Object.freeze(record))));
+            }
+
             if (predeadline !== null) {
                 try {
-                    if (session.cancelled || session.expired) {
+                    if (optionalContinuationUnsafe) {
+                        reportPredeadline({status: "unavailable", reason: "reader-unavailable"});
+                    } else if (session.cancelled || session.expired) {
                         reportPredeadline({status: "skipped", reason: "guest-already-exited"});
                     } else {
                         const targetOffset = Math.round(predeadline.executionDeadline - sessionStartTime - PREDEADLINE_FRAME_LEAD_MILLISECONDS);

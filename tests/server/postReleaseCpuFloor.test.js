@@ -215,6 +215,9 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
         it("builds a Stage 2 request the real controller admits", async () => {
             const request = buildV161PostReleaseCpuFloorStage2Request(binding(), probeArtifact(), identityOf);
             assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
+            // Only this CPU-specific wrapper opts into the two optional mid-window diagnostic
+            // samples; the generic MSI builder it wraps never sets this key.
+            assert.equal(request.authorization.midWindowFrames, true);
             assert.equal(request.context.sourceSha, HARNESS_SHA);
             assert.equal(request.context.eventSha, HARNESS_SHA);
             assert.notEqual(request.context.sourceSha, CANDIDATE_SHA);

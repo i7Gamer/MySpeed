@@ -216,6 +216,20 @@ function validateRequest(request) {
             request.winpeDiagnosticBudget.wallDeadlineUnixMilliseconds < 1)
             throw new TypeError("Stage 2 WinPE diagnostic budget is invalid");
     }
+    /*
+     * Positive opt-in only, next to the boot-confirmation opt-in above: absence means disabled, and
+     * only the literal `true` is ever accepted - a truthy non-boolean is refused rather than treated
+     * as an implicit mode. It cannot combine with a WinPE diagnostic authorization, which runs its own
+     * reservation-bound session and never the fixed 25/5 diagnostic deadlines this field is scoped to.
+     */
+    const midWindowFramesRequested = Object.hasOwn(request.authorization ?? {}, "midWindowFrames");
+    if (midWindowFramesRequested) {
+        authorizationKeys.push("midWindowFrames");
+        if (request.authorization.midWindowFrames !== true)
+            throw new TypeError("Stage 2 mid-window frames flag is invalid");
+        if (diagnosticAuthorized)
+            throw new TypeError("Stage 2 mid-window frames cannot combine with a WinPE diagnostic authorization");
+    }
     assertKeys(request.authorization, authorizationKeys, "Stage 2 authorization");
     if (request.authorization.confirmation !== CONFIRMATION || request.authorization.media !== true ||
         request.authorization.qemu !== true || request.authorization.scope !== "candidate-neutral-cpu-calibration")
@@ -349,7 +363,9 @@ export async function runHostedStage2Controller(requestValue, dependencies = {})
         (dependencies.markLaunchAttempt ?? (target => writeLifecycleMarker(target, LAUNCH_ATTEMPT_MARKER)))(request.paths.root);
     return await run({context, admission, paths: request.paths, probeArtifact: request.probeArtifact,
         ...(request.authorization.bootConfirmation === undefined ? {} :
-            {bootConfirmation: request.authorization.bootConfirmation}), ...diagnostic}, operations);
+            {bootConfirmation: request.authorization.bootConfirmation}),
+        ...(request.authorization.midWindowFrames === true ? {midWindowFrames: true} : {}),
+        ...diagnostic}, operations);
 }
 
 function writeExclusive(target, value) {

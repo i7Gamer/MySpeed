@@ -4,7 +4,8 @@ import path from "node:path";
 import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
 import {validateInstallerBootConfirmation, validateInstallerBootInput,
-    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput, winpeDiagnosticScriptName} from
+    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput, winpeDiagnosticScriptName,
+    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
@@ -89,6 +90,25 @@ export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze([
 export const PREDEADLINE_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
 export const MAX_PREDEADLINE_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
 export const MAX_PREDEADLINE_FRAME_BASE64_CHARACTERS = Math.ceil(MAX_PREDEADLINE_FRAME_BYTES / 3) * 4;
+
+/*
+ * Mid-window's own closed vocabulary, kept separate from predeadline's: "insufficient-time" and
+ * "session-closed" are admission/cancellation outcomes that never write anything; "reader-unavailable"
+ * is the disclosed cost of the conservative stop-optional-continuation policy (a prior optional QMP
+ * command failed and the shared reader can no longer be proven safe to reuse); "session-unavailable"
+ * is the hosted-layer fallback for a slot whose callback never arrived at all (see
+ * collectMidWindowFramesDiagnostic in the hosted module).
+ */
+export const MID_WINDOW_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
+export const MID_WINDOW_FRAME_SKIPPED_REASONS = Object.freeze(["insufficient-time", "session-closed"]);
+export const MID_WINDOW_FRAME_UNAVAILABLE_REASONS = Object.freeze([
+    "command-timeout", "command-failed", "qmp-write-failed", "qmp-stream-ended",
+    "qmp-error-response", "qmp-id-mismatch", "file-missing", "cleanup-unproven", "read-error",
+    "reader-unavailable", "session-unavailable"
+]);
+export const MID_WINDOW_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
+export const MAX_MID_WINDOW_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
+export const MAX_MID_WINDOW_FRAME_BASE64_CHARACTERS = Math.ceil(MAX_MID_WINDOW_FRAME_BYTES / 3) * 4;
 
 export const TOP_LEVEL_PACKAGE_PINS = deepFreeze([
     {name: "7zip", version: "23.01+dfsg-11", architecture: "amd64",
@@ -1625,6 +1645,72 @@ export function validatePredeadlineFrameDiagnostic(value, expectedRoot) {
     return deepFreeze(structuredClone(value));
 }
 
+function validateMidWindowFrameEntry(value, index, expectedRoot) {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+        throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+    if (!MID_WINDOW_FRAME_STATUSES.includes(value.status))
+        throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+    if (value.schemaVersion !== SCHEMA_VERSION)
+        throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+    if (value.nominalOffsetMs !== MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[index])
+        throw new TypeError("QEMU mid-window frame diagnostic offset is invalid");
+    const expectedFilename = MID_WINDOW_FRAME_FILENAMES[index];
+
+    if (value.status === "captured") {
+        assertKeys(value, ["nominalOffsetMs", "offsetMs", "schemaVersion", "screenshot", "status"],
+            "QEMU mid-window frame diagnostic");
+        if (!Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0)
+            throw new TypeError("QEMU mid-window frame diagnostic offset is invalid");
+        assertKeys(value.screenshot, ["bytes", "bytesBase64", "path", "sha256"], "QEMU mid-window frame screenshot");
+        if (expectedRoot !== undefined && value.screenshot.path !== `${expectedRoot}/${expectedFilename}`)
+            throw new TypeError("QEMU mid-window frame screenshot path is invalid");
+        const byteCount = decimal(value.screenshot.bytes, "QEMU mid-window frame screenshot bytes", {positive: true});
+        if (byteCount > BigInt(MAX_MID_WINDOW_FRAME_BYTES))
+            throw new TypeError("QEMU mid-window frame screenshot bytes is invalid");
+        exactString(value.screenshot.sha256, SHA256_PATTERN, "QEMU mid-window frame screenshot hash");
+        if (typeof value.screenshot.bytesBase64 !== "string" ||
+            value.screenshot.bytesBase64.length > MAX_MID_WINDOW_FRAME_BASE64_CHARACTERS ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value.screenshot.bytesBase64))
+            throw new TypeError("QEMU mid-window frame screenshot is invalid");
+        const bytes = Buffer.from(value.screenshot.bytesBase64, "base64");
+        if (bytes.length !== Number(byteCount) || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+            crypto.createHash("sha256").update(bytes).digest("hex") !== value.screenshot.sha256)
+            throw new TypeError("QEMU mid-window frame screenshot content is invalid");
+        return structuredClone(value);
+    }
+    if (value.status === "skipped") {
+        assertKeys(value, ["nominalOffsetMs", "reason", "schemaVersion", "status"], "QEMU mid-window frame diagnostic");
+        if (!MID_WINDOW_FRAME_SKIPPED_REASONS.includes(value.reason))
+            throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+        return structuredClone(value);
+    }
+    if (value.status === "unavailable") {
+        const allowedKeys = ["nominalOffsetMs", "reason", "schemaVersion", "status"];
+        if (Object.hasOwn(value, "offsetMs")) allowedKeys.push("offsetMs");
+        assertKeys(value, allowedKeys, "QEMU mid-window frame diagnostic");
+        if (!MID_WINDOW_FRAME_UNAVAILABLE_REASONS.includes(value.reason))
+            throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+        if (value.offsetMs !== undefined && (!Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0))
+            throw new TypeError("QEMU mid-window frame diagnostic offset is invalid");
+        return structuredClone(value);
+    }
+    assertKeys(value, ["bytes", "nominalOffsetMs", "reason", "schemaVersion", "sha256", "status"],
+        "QEMU mid-window frame diagnostic");
+    if (!MID_WINDOW_FRAME_MALFORMED_REASONS.includes(value.reason))
+        throw new TypeError("QEMU mid-window frame diagnostic is invalid");
+    const parsedBytes = decimal(value.bytes, "QEMU mid-window frame diagnostic bytes");
+    if (parsedBytes > BigInt(MAX_MID_WINDOW_FRAME_BYTES))
+        throw new TypeError("QEMU mid-window frame diagnostic bytes is invalid");
+    exactString(value.sha256, SHA256_PATTERN, "QEMU mid-window frame diagnostic sha256");
+    return structuredClone(value);
+}
+
+export function validateMidWindowFramesDiagnostic(value, expectedRoot) {
+    if (!Array.isArray(value) || value.length !== MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.length)
+        throw new TypeError("QEMU mid-window frames diagnostic is invalid");
+    return deepFreeze(value.map((entry, index) => validateMidWindowFrameEntry(entry, index, expectedRoot)));
+}
+
 export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
@@ -1635,6 +1721,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
     if (Object.hasOwn(value ?? {}, "receipt")) diagnosticKeys.push("receipt");
     if (Object.hasOwn(value ?? {}, "predeadlineFrame")) diagnosticKeys.push("predeadlineFrame");
+    if (Object.hasOwn(value ?? {}, "midWindowFrames")) diagnosticKeys.push("midWindowFrames");
     if (Object.hasOwn(value ?? {}, "shutdown")) diagnosticKeys.push("shutdown");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
@@ -1677,6 +1764,8 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt, expectedNonce);
     if (value.predeadlineFrame !== undefined)
         validatePredeadlineFrameDiagnostic(value.predeadlineFrame, expectedNonce ? `/home/runner/work/_temp/myspeed-windows-cpu-floor-${expectedNonce}` : undefined);
+    if (value.midWindowFrames !== undefined)
+        validateMidWindowFramesDiagnostic(value.midWindowFrames, expectedNonce ? `/home/runner/work/_temp/myspeed-windows-cpu-floor-${expectedNonce}` : undefined);
     if (value.shutdown !== undefined) validateShutdownDiagnostic(value.shutdown, expectedNonce);
     return deepFreeze(structuredClone(value));
 }
@@ -1749,7 +1838,14 @@ export function validateLateBoot(value, pathsValue) {
 }
 
 export async function runWindowsCpuFloorStage2({context, admission, paths: inputPaths, probeArtifact,
-    bootConfirmation, winpeDiagnostic, admitWinpeDiagnostic}, operations) {
+    bootConfirmation, winpeDiagnostic, admitWinpeDiagnostic, midWindowFrames}, operations) {
+    /*
+     * Malformed values are refused here rather than silently treated as disabled: a caller that
+     * passes a truthy non-`true` value (a string, a `1`) almost certainly meant to opt in and would
+     * otherwise get silent, unexplained no-op behavior. Absence alone means disabled.
+     */
+    if (midWindowFrames !== undefined && midWindowFrames !== true)
+        throw new TypeError("Stage 2 mid-window frames flag is invalid");
     validateInstallerBootConfirmation(bootConfirmation);
     const diagnosticAuthorization = validateWinpeDiagnosticAuthorization(winpeDiagnostic);
     if (diagnosticAuthorization !== undefined && (diagnosticAuthorization.nonce !== context.nonce ||
@@ -1819,7 +1915,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         const admitted = diagnosticAuthorization === undefined ? null : admitWinpeDiagnostic();
         launchObservation = await operations.launchOwnedQemu({context, paths: checkedPaths, toolchain, media, probes,
             argv, selectedImage, privilegeMode,
-            ...(diagnosticAuthorization === undefined ? {deadlines: STAGE2_DIAGNOSTIC_DEADLINES} :
+            ...(diagnosticAuthorization === undefined ? {deadlines: STAGE2_DIAGNOSTIC_DEADLINES,
+                ...(midWindowFrames === true ? {midWindowFrames: true} : {})} :
                 {winpeDiagnostic: diagnosticAuthorization, reservation: admitted.reservation,
                     winpeDiagnosticCollectionDeadlineMilliseconds: admitted.collectionDeadlineMilliseconds}),
             ...(bootConfirmation === undefined ? {} : {bootConfirmation})});

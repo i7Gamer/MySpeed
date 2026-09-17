@@ -274,6 +274,11 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
     // Only the installer preparation opts in. MSI rows stay no-input, and Stage 3 - which installs
     // its own Windows rather than booting an installed one - makes its own separately explicit choice.
     request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
+    // This CPU-specific wrapper is the one caller that opts into the two optional mid-window
+    // diagnostic samples; the generic MSI builder it wraps stays unaware of the field entirely, so
+    // every other caller of buildWindowsMsiStage2Request (MSI rows, containment preflight) is
+    // unaffected by its mere existence.
+    request.authorization.midWindowFrames = true;
     return request;
 }
 

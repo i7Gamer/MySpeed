@@ -10,12 +10,17 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     PREDEADLINE_FRAME_SKIPPED_REASONS,
     PREDEADLINE_FRAME_UNAVAILABLE_REASONS,
     PREDEADLINE_FRAME_MALFORMED_REASONS,
+    MAX_MID_WINDOW_FRAME_BYTES,
+    MID_WINDOW_FRAME_SKIPPED_REASONS,
+    MID_WINDOW_FRAME_UNAVAILABLE_REASONS,
+    MID_WINDOW_FRAME_MALFORMED_REASONS,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
-    validatePredeadlineScreenshotPath, PREDEADLINE_FRAME_FILENAME} from
+    validatePredeadlineScreenshotPath, PREDEADLINE_FRAME_FILENAME,
+    MID_WINDOW_FRAME_FILENAMES, MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const APT_GET = "/usr/bin/apt-get";
@@ -204,6 +209,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 ...(options.qmp.winpeDiagnostic === undefined ? {} :
                     {winpeDiagnostic: options.qmp.winpeDiagnostic}),
                 ...(options.qmp.predeadline ? {predeadline: options.qmp.predeadline} : {}),
+                ...(options.qmp.midWindow ? {midWindow: options.qmp.midWindow} : {}),
                 onSession: handle => {
                     qmpCancelHandle = handle;
                     options.onQmpSessionHandle?.(handle);
@@ -216,6 +222,10 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 onPredeadlineObservation: observation => {
                     options.onPredeadlineObservation?.(observation);
                     options.qmp.onPredeadlineObservation?.(observation);
+                },
+                onMidWindowObservation: observation => {
+                    options.onMidWindowObservation?.(observation);
+                    options.qmp.onMidWindowObservation?.(observation);
                 }
             }, options.qmpDependencies);
             qmpSession.catch(() => undefined);
@@ -1464,6 +1474,8 @@ export async function runMonitoredQemu(io, request) {
     let lateBootObservation = null;
     let lateBootSettled = false;
     let predeadlineObservation = null;
+    let midWindowObservation = null;
+    let midWindowSettled = false;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
     const cancelQmp = () => {
@@ -1504,6 +1516,17 @@ export async function runMonitoredQemu(io, request) {
                 onPredeadlineObservation: observation => {
                     predeadlineObservation = observation;
                     request.onPredeadlineObservation?.(observation);
+                },
+                onMidWindowObservation: observation => {
+                    /*
+                     * At most once, non-throwing: the QMP layer already reports this exactly once as
+                     * one frozen two-slot array, but this boundary does not trust that guarantee
+                     * blindly - a late/duplicate call must not overwrite an already-finalized snapshot.
+                     */
+                    if (midWindowSettled) return;
+                    midWindowSettled = true;
+                    midWindowObservation = observation;
+                    try { request.onMidWindowObservation?.(observation); } catch { /* non-throwing boundary */ }
                 },
                 onQmpSession: value => {
                     qmpSession = value;
@@ -1617,8 +1640,18 @@ export async function runMonitoredQemu(io, request) {
         }
     }
     const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
+    /*
+     * Enabled-state finalization: when mid-window capture was requested, its two-slot state is never
+     * silently omitted. If the callback never arrived at all by the time the process/QMP session has
+     * fully settled here - the early QMP phase failed before the optional phase could even start -
+     * each slot gets an explicit closed "session-unavailable" record rather than staying absent.
+     */
+    const finalMidWindow = request.qmp?.midWindow ?
+        (midWindowObservation ?? MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(nominalOffsetMs =>
+            Object.freeze({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "session-unavailable"}))) :
+        null;
     const finish = value => {
-        const enriched = {...value, predeadline: predeadlineObservation};
+        const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow};
         if (pidfile && io.pathExists(request.pidPath)) {
             if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
                 return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
@@ -1959,6 +1992,18 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
     const predeadlineScreenshotPath = isPredeadlineActive ? `${input.paths.root}/predeadline-frame.png` : null;
     if (predeadlineScreenshotPath !== null && io.pathExists(predeadlineScreenshotPath))
         throw new Error("predeadline screenshot target already exists");
+    /*
+     * A malformed opt-in (anything other than boolean true) is refused here too, not just at the
+     * controller's authorization boundary: absence alone means disabled, and a truthy non-`true`
+     * value is never silently treated as enabled at any hop.
+     */
+    if (input.midWindowFrames !== undefined && input.midWindowFrames !== true)
+        throw new TypeError("QEMU mid-window frames flag is invalid");
+    const isMidWindowActive = isPredeadlineActive && input.midWindowFrames === true;
+    const midWindowScreenshotPaths = isMidWindowActive ?
+        MID_WINDOW_FRAME_FILENAMES.map(name => `${input.paths.root}/${name}`) : null;
+    if (midWindowScreenshotPaths !== null && midWindowScreenshotPaths.some(target => io.pathExists(target)))
+        throw new Error("mid-window screenshot target already exists");
     const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
         timeoutMs: outerTimeoutMs, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
@@ -1968,6 +2013,9 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
             ...(predeadlineScreenshotPath !== null ? {
                 predeadline: {screenshotPath: predeadlineScreenshotPath, executionDeadline}
+            } : {}),
+            ...(midWindowScreenshotPaths !== null ? {
+                midWindow: {screenshotPaths: midWindowScreenshotPaths, executionDeadline}
             } : {}),
             ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation}),
             ...(winpeDiagnostic === undefined ? {} : {winpeDiagnostic})},
@@ -2075,6 +2123,7 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         processFlags,
         winpeDiagnosticInput,
         predeadline: monitored.predeadline,
+        midWindowFrames: monitored.midWindowFrames,
         cleanupProven,
         stageCollectionDeadlineMilliseconds
     };
@@ -2505,6 +2554,105 @@ export function collectPredeadlineFrameDiagnostic(io, input, predeadlineState, c
     }
 }
 
+function collectMidWindowFrameEntry(io, input, entryState, index, cleanupProven) {
+    try {
+        if (cleanupProven !== true) {
+            return {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[index],
+                reason: "cleanup-unproven"};
+        }
+        const nominalOffsetMs = MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[index];
+        if (entryState.status === "skipped") {
+            const reason = MID_WINDOW_FRAME_SKIPPED_REASONS.includes(entryState.reason) ?
+                entryState.reason : "session-closed";
+            return {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason};
+        }
+        if (entryState.status === "unavailable") {
+            const reason = MID_WINDOW_FRAME_UNAVAILABLE_REASONS.includes(entryState.reason) ?
+                entryState.reason : "command-failed";
+            return {
+                schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason,
+                ...(Number.isSafeInteger(entryState.offsetMs) && entryState.offsetMs >= 0 ?
+                    {offsetMs: entryState.offsetMs} : {})
+            };
+        }
+        if (entryState.status === "captured") {
+            const expectedPath = `${input?.paths?.root}/${MID_WINDOW_FRAME_FILENAMES[index]}`;
+            const targetPath = entryState.screenshotPath;
+            if (typeof targetPath !== "string" || targetPath !== expectedPath) {
+                return {
+                    schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "path-mismatch",
+                    bytes: "0", sha256: crypto.createHash("sha256").update("").digest("hex")
+                };
+            }
+            let exists = false;
+            try {
+                exists = io.pathExists(targetPath);
+            } catch {
+                return {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "read-error"};
+            }
+            if (!exists) {
+                return {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "file-missing"};
+            }
+            let observed;
+            try {
+                observed = io.readOwnedVerified(targetPath, MAX_MID_WINDOW_FRAME_BYTES);
+            } catch {
+                return {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "read-error"};
+            }
+            if (!observed || !observed.identity || typeof observed.identity.bytes !== "string" ||
+                typeof observed.identity.sha256 !== "string" || !Buffer.isBuffer(observed.bytes)) {
+                return {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "read-error"};
+            }
+            if (observed.identity.path !== targetPath) {
+                return {
+                    schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "path-mismatch",
+                    bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+                };
+            }
+            if (observed.bytes.length < PNG_SIGNATURE.length ||
+                !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+                return {
+                    schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "invalid-png-signature",
+                    bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+                };
+            }
+            const fileSha = sha256(observed.bytes);
+            if (fileSha !== observed.identity.sha256) {
+                return {
+                    schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "hash-mismatch",
+                    bytes: String(observed.bytes.length), sha256: fileSha
+                };
+            }
+            return {
+                schemaVersion: 1, status: "captured", nominalOffsetMs,
+                offsetMs: Number.isSafeInteger(entryState.offsetMs) && entryState.offsetMs >= 0 ? entryState.offsetMs : 0,
+                screenshot: {
+                    path: targetPath, bytes: observed.identity.bytes, sha256: observed.identity.sha256,
+                    bytesBase64: observed.bytes.toString("base64")
+                }
+            };
+        }
+        return {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "command-failed"};
+    } catch {
+        return {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[index],
+            reason: "read-error"};
+    }
+}
+
+/*
+ * Mirrors collectPredeadlineFrameDiagnostic exactly, over the two fixed slots: collected strictly
+ * after proven owned cleanup, each slot's own status/reason retained with a fixed closed vocabulary,
+ * and any unexpected exception caught per-slot so it can never displace the primary launch failure or
+ * the other slot's own result.
+ */
+export function collectMidWindowFramesDiagnostic(io, input, midWindowState, cleanupProven) {
+    if (!midWindowState) return null;
+    if (!Array.isArray(midWindowState) || midWindowState.length !== MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.length)
+        return MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(nominalOffsetMs =>
+            ({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "read-error"}));
+    return midWindowState.map((entryState, index) => collectMidWindowFrameEntry(io, input, entryState, index, cleanupProven));
+}
+
 export function createHostedStage2Operations({context, paths: pathsValue, dependencies = {}}) {
     validateHostedContext(context);
     const io = normalizeDependencies(dependencies);
@@ -2816,6 +2964,8 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                         preLaunchDiskIdentity);
                 const predeadlineDiagnostic = collectPredeadlineFrameDiagnostic(
                     io, input, monitoredLaunch.predeadline, monitoredLaunch.cleanupProven);
+                const midWindowFramesDiagnostic = collectMidWindowFramesDiagnostic(
+                    io, input, monitoredLaunch.midWindowFrames, monitoredLaunch.cleanupProven);
                 /*
                  * The optional marker read runs after the receipt collector, only on the fixed
                  * diagnostic deadlines this stage declares, and only for a launch that already
@@ -2830,6 +2980,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                         ...launched.failureDiagnostic,
                         receipt: receiptDiagnostic,
                         ...(predeadlineDiagnostic !== null ? {predeadlineFrame: predeadlineDiagnostic} : {}),
+                        ...(midWindowFramesDiagnostic !== null ? {midWindowFrames: midWindowFramesDiagnostic} : {}),
                         ...(shutdownDiagnostic !== null ? {shutdown: shutdownDiagnostic} : {})
                     } : undefined;
                 return {
