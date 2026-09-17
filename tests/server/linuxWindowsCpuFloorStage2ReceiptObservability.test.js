@@ -1,10 +1,16 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import url from "node:url";
+import {spawnSync} from "node:child_process";
 import {describe, it} from "node:test";
 
 import {
     parseGuestFailure,
     parseGuestOutcome,
+    collectGuestReceiptDiagnostic,
     extractGuestReceiptDiagnostic,
     createHostedStage2Operations
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
@@ -46,6 +52,76 @@ function validBootstrapReceipt() {
         failure: "Probe exceeded its deadline"
     };
 }
+
+const WORKER_FIXTURE_ROOT = path.join(url.fileURLToPath(new URL("../fixtures/", import.meta.url)),
+    "windows-msi-post-setup-worker");
+const WORKER_WRITER_SCRIPT = path.join(WORKER_FIXTURE_ROOT, "write-worker-receipt.ps1");
+const WORKER_RECEIPT_FIXTURE = path.join(WORKER_FIXTURE_ROOT, "result.json");
+const WORKER_FIXTURE_SHA256 = "f4cdfade65e7d5d8b1b95a2356cf7deb8da0a98028ceb96fe93c452a48ea666d";
+const WORKER_FIXTURE_MESSAGE = "Windows setup did not complete within the bounded observation interval";
+const WORKER_FIXTURE_CONTEXT = Object.freeze({
+    repository: "i7Gamer/MySpeed",
+    sourceSha: "046219c3e1702fbef9a34dfbbb2220ab3ab9bb86",
+    eventSha: "046219c3e1702fbef9a34dfbbb2220ab3ab9bb86",
+    runId: "35183245912",
+    runAttempt: "1",
+    nonce: NONCE
+});
+
+const OK_EXTRACTION_PROCESS = Object.freeze({
+    exitCode: 0,
+    signal: null,
+    timedOut: false,
+    stdoutOverflow: false,
+    stderrOverflow: false,
+    cleanupProven: true,
+    errorObserved: false
+});
+
+function workerFixtureBytes() {
+    return fs.readFileSync(WORKER_RECEIPT_FIXTURE);
+}
+
+function receiptInput() {
+    return {
+        paths: {root: `/tmp/root-${NONCE}`, outputDisk: `/tmp/root-${NONCE}/output.img`},
+        toolchain: {
+            runtime: {loader: {path: "/tmp/loader"}, libraryPath: ["/tmp/lib"]},
+            mcopy: {path: "/usr/bin/mtools", invocationPath: "/usr/bin/mcopy"}
+        }
+    };
+}
+
+function launchProcessFixture() {
+    return {
+        exitCode: 1,
+        signal: null,
+        timedOut: true,
+        cleanupProven: true,
+        treeGone: true,
+        stdoutOverflow: false,
+        stderrOverflow: false,
+        errorObserved: false,
+        qemuPid: 2345,
+        qemuStartTicks: "77",
+        launcherExecutablePath: "/tmp/loader",
+        processGroupId: 2300,
+        qemuPidAbsentAfter: true,
+        terminationReason: null
+    };
+}
+
+function launchDiagnosticFixture() {
+    return {
+        schemaVersion: 1,
+        kind: "qemu-launch-failure-diagnostic",
+        process: launchProcessFixture(),
+        processFlags: {errorObserved: false, stderrOverflow: false, stdoutOverflow: false},
+        monitorFailure: null,
+        stderr: {bytes: "0", sha256: sha256(Buffer.alloc(0)), bytesBase64: ""}
+    };
+}
+
 
 describe("Stage 2 failure receipt parsing and normalization", () => {
     it("accepts established bootstrap failure receipt and returns canonical form", () => {
@@ -136,35 +212,67 @@ describe("Stage 2 failure receipt parsing and normalization", () => {
         }
     });
 
-    it("exercises the real generated worker script from buildWindowsMsiSetupCompleteActivation", () => {
-        const activation = buildWindowsMsiSetupCompleteActivation({
-            repository: "i7Gamer/MySpeed",
-            sourceSha: "046219c3e1702fbef9a34dfbbb2220ab3ab9bb86",
-            eventSha: "046219c3e1702fbef9a34dfbbb2220ab3ab9bb86",
-            runId: "35183245912",
-            runAttempt: "1",
-            nonce: NONCE
-        });
-        const dispatcherText = Buffer.from(activation.files.dispatcher.bytesBase64, "base64").toString("utf8");
-        assert.ok(dispatcherText.includes("function Write-MyspeedPostSetupFailure"));
-        assert.ok(dispatcherText.includes("hostNonce=$EXPECTED_HOST_NONCE"));
-        assert.ok(dispatcherText.includes("stage='post-setup-completion'"));
-        assert.ok(dispatcherText.includes("result.json"));
+    /*
+     * The generated worker's failure writer, executed rather than described. On Windows the real
+     * PowerShell runs the real dispatcher in library mode and calls Write-MyspeedPostSetupFailure
+     * with only Get-Volume and Join-Path shadowed, so the record shape, the control-character
+     * sanitisation, the bounded truncation, the UTF-8 encoding and the exclusive CreateNew write
+     * are the production ones. The bytes it produces are committed as a fixture, so every platform
+     * parses and retains what the guest actually writes instead of a hand-built object.
+     */
+    it("executes the real generated worker failure writer and matches the retained fixture", async t => {
+        const powerShell = process.platform === "win32"
+            ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "WindowsPowerShell", "v1.0",
+                "powershell.exe")
+            : null;
+        if (powerShell === null || !fs.existsSync(powerShell)) {
+            t.skip("the generated worker is Windows PowerShell; the fixture it wrote is asserted below");
+            return;
+        }
+        const activation = buildWindowsMsiSetupCompleteActivation(WORKER_FIXTURE_CONTEXT);
+        const directory = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-worker-receipt-"));
+        try {
+            const dispatcher = path.join(directory, "myspeed-msi-setupcomplete.ps1");
+            fs.writeFileSync(dispatcher, Buffer.from(activation.files.dispatcher.bytesBase64, "base64"));
+            const output = path.join(directory, "output");
+            fs.mkdirSync(output);
+            const run = spawnSync(powerShell, ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy",
+                "Bypass", "-File", WORKER_WRITER_SCRIPT, dispatcher, output, WORKER_FIXTURE_MESSAGE],
+            {encoding: "utf8"});
+            assert.equal(run.status, 0, `worker writer failed: ${run.stderr}`);
+            assert.deepEqual(fs.readFileSync(path.join(output, "result.json")), workerFixtureBytes());
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
+    });
 
-        // Match the exact JSON record structure emitted by Write-MyspeedPostSetupFailure
-        const simulatedGuestFailureMessage = "Windows setup did not complete within the bounded observation interval";
-        const generatedRecord = {
-            schemaVersion: 1,
-            status: "failed",
-            hostNonce: NONCE,
-            stage: "post-setup-completion",
-            failure: simulatedGuestFailureMessage
-        };
-        const bytes = Buffer.from(JSON.stringify(generatedRecord), "utf8");
-        const parsed = parseGuestFailure(bytes, NONCE);
-        assert.equal(parsed.stage, "post-setup-completion");
-        assert.equal(parsed.nonce, NONCE);
-        assert.equal(parsed.failure, simulatedGuestFailureMessage);
+    it("retains the real worker receipt through the hosted extractor and the core diagnostic", async () => {
+        const bytes = workerFixtureBytes();
+        assert.equal(sha256(bytes), WORKER_FIXTURE_SHA256);
+        const raw = JSON.parse(bytes.toString("utf8"));
+        assert.deepEqual(Object.keys(raw).sort(),
+            ["failure", "hostNonce", "schemaVersion", "stage", "status"]);
+        assert.equal(raw.hostNonce, NONCE);
+
+        const canonical = parseGuestFailure(bytes, NONCE);
+        assert.deepEqual(canonical, {schemaVersion: 1, status: "failed", nonce: NONCE,
+            stage: "post-setup-completion", failure: WORKER_FIXTURE_MESSAGE});
+
+        const extracted = await extractGuestReceiptDiagnostic(
+            {validateOutputDisk() {}, monotonicMilliseconds: () => 0,
+                runOwned: async () => ({process: OK_EXTRACTION_PROCESS, stdout: bytes, stderr: Buffer.alloc(0)})},
+            receiptInput(), {nonce: NONCE}, {process: {cleanupProven: true, treeGone: true}}, null, {dev: 1n});
+        assert.equal(extracted.diagnostic.status, "valid-failure");
+        assert.equal(extracted.diagnostic.source, "result.json");
+        assert.deepEqual(extracted.diagnostic.receipt, canonical);
+        assert.deepEqual(extracted.guestFailure, canonical);
+
+        const diagnostic = validateQemuLaunchDiagnostic(
+            {...launchDiagnosticFixture(), receipt: extracted.diagnostic}, launchProcessFixture(), NONCE);
+        assert.deepEqual(diagnostic.receipt.receipt, canonical);
+        assert.throws(() => validateQemuLaunchDiagnostic(
+            {...launchDiagnosticFixture(), receipt: extracted.diagnostic}, launchProcessFixture(), OTHER_NONCE),
+        /guest failure evidence is invalid/u);
     });
 });
 
@@ -269,7 +377,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                 source,
                 receipt: canonical
             };
-            const validated = validateReceiptDiagnostic(receipt);
+            const validated = validateReceiptDiagnostic(receipt, NONCE);
             assert.deepEqual(validated, receipt);
         }
     });
@@ -287,14 +395,14 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
             status: "valid-failure",
             source: "unauthorized.json",
             receipt: canonical
-        }), /QEMU receipt diagnostic is invalid/);
+        }, NONCE), /QEMU receipt diagnostic is invalid/);
 
         assert.throws(() => validateReceiptDiagnostic({
             schemaVersion: 1,
             status: "valid-failure",
             source: "result.json",
             receipt: {...canonical, nonce: "invalid-hex-nonce"}
-        }), /receipt nonce is invalid/);
+        }, NONCE), /receipt nonce is invalid/);
     });
 
     it("accepts valid-success receipt with result.json only", () => {
@@ -305,14 +413,14 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
             bytes: "2048",
             sha256: "0".repeat(64)
         };
-        const validated = validateReceiptDiagnostic(receipt);
+        const validated = validateReceiptDiagnostic(receipt, NONCE);
         assert.deepEqual(validated, receipt);
 
         // Codex Point 8: success on unexpected fallback source is not legitimate
         assert.throws(() => validateReceiptDiagnostic({
             ...receipt,
             source: "bootstrap-failure.json"
-        }), /QEMU receipt diagnostic is invalid/);
+        }, NONCE), /QEMU receipt diagnostic is invalid/);
     });
 
     it("rejects valid-success receipt with invalid bytes or sha256", () => {
@@ -323,7 +431,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                 source: "result.json",
                 bytes: badBytes,
                 sha256: "0".repeat(64)
-            }), /QEMU receipt diagnostic/);
+            }, NONCE), /QEMU receipt diagnostic/);
         }
         assert.throws(() => validateReceiptDiagnostic({
             schemaVersion: 1,
@@ -331,11 +439,11 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
             source: "result.json",
             bytes: "100",
             sha256: "not-a-sha256"
-        }), /QEMU receipt diagnostic sha256 is invalid/);
+        }, NONCE), /QEMU receipt diagnostic sha256 is invalid/);
     });
 
     it("accepts malformed receipt with closed set of reason codes and valid sources", () => {
-        for (const reason of ["json-syntax-error", "nonce-mismatch", "schema-invalid", "read-cap-exceeded"]) {
+        for (const reason of ["json-syntax-error", "nonce-mismatch", "schema-invalid"]) {
             for (const source of ["result.json", "bootstrap-failure.json"]) {
                 const receipt = {
                     schemaVersion: 1,
@@ -345,7 +453,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                     bytes: "512",
                     sha256: "a".repeat(64)
                 };
-                const validated = validateReceiptDiagnostic(receipt);
+                const validated = validateReceiptDiagnostic(receipt, NONCE);
                 assert.deepEqual(validated, receipt);
             }
         }
@@ -359,7 +467,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
             reason: "unexpected-parser-crash",
             bytes: "100",
             sha256: "a".repeat(64)
-        }), /QEMU receipt diagnostic is invalid/);
+        }, NONCE), /QEMU receipt diagnostic is invalid/);
     });
 
     it("accepts unavailable receipt with closed set of reason codes", () => {
@@ -377,7 +485,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                 status: "unavailable",
                 reason
             };
-            const validated = validateReceiptDiagnostic(receipt);
+            const validated = validateReceiptDiagnostic(receipt, NONCE);
             assert.deepEqual(validated, receipt);
         }
     });
@@ -387,20 +495,20 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
             schemaVersion: 1,
             status: "unavailable",
             reason: "unknown-reason"
-        }), /QEMU receipt diagnostic is invalid/);
+        }, NONCE), /QEMU receipt diagnostic is invalid/);
 
         assert.throws(() => validateReceiptDiagnostic({
             schemaVersion: 1,
             status: "unavailable",
             reason: "cleanup-unproven",
             extraKey: true
-        }), /QEMU receipt diagnostic keys are invalid/);
+        }, NONCE), /QEMU receipt diagnostic keys are invalid/);
     });
 
     it("validates diagnostic in validateQemuLaunchDiagnostic with or without receipt", () => {
         const proc = validProcess();
         const withoutReceipt = baseDiagnostic();
-        const validatedWithout = validateQemuLaunchDiagnostic(withoutReceipt, proc);
+        const validatedWithout = validateQemuLaunchDiagnostic(withoutReceipt, proc, NONCE);
         assert.deepEqual(validatedWithout, withoutReceipt);
 
         const withReceipt = {
@@ -411,7 +519,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                 reason: "receipt-not-retrieved"
             }
         };
-        const validatedWith = validateQemuLaunchDiagnostic(withReceipt, proc);
+        const validatedWith = validateQemuLaunchDiagnostic(withReceipt, proc, NONCE);
         assert.deepEqual(validatedWith, withReceipt);
 
         const withBadReceipt = {
@@ -422,7 +530,7 @@ describe("Receipt diagnostic validation (validateReceiptDiagnostic & validateQem
                 reason: "whatever"
             }
         };
-        assert.throws(() => validateQemuLaunchDiagnostic(withBadReceipt, proc), /QEMU receipt diagnostic is invalid/);
+        assert.throws(() => validateQemuLaunchDiagnostic(withBadReceipt, proc, NONCE), /QEMU receipt diagnostic is invalid/);
     });
 });
 
@@ -451,6 +559,8 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
         cleanupProven: true,
         treeGone: true
     });
+
+    const receiptIo = io => ({monotonicMilliseconds: () => 0, ...io});
 
     const okProcess = Object.freeze({
         exitCode: 0,
@@ -502,7 +612,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
         const io = {
             validateOutputDisk() { throw new Error("disk identity changed"); }
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.deepEqual(res, {
             diagnostic: {schemaVersion: 1, status: "unavailable", reason: "disk-identity-mismatch"},
             guestFailure: null
@@ -523,7 +633,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 return {process: okProcess, stdout: rawBytes, stderr: Buffer.alloc(0)};
             }
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.equal(res.diagnostic.status, "valid-failure");
         assert.equal(res.diagnostic.source, "result.json");
         assert.deepEqual(res.diagnostic.receipt, {
@@ -582,7 +692,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
             validateOutputDisk() { return true; },
             runOwned: async () => ({process: okProcess, stdout: rawBytes, stderr: Buffer.alloc(0)})
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.equal(res.diagnostic.status, "valid-success");
         assert.equal(res.diagnostic.source, "result.json");
         assert.equal(res.diagnostic.bytes, String(rawBytes.length));
@@ -605,7 +715,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 return {process: okProcess, stdout: badJsonBytes, stderr: Buffer.alloc(0)};
             }
         };
-        const res1 = await extractGuestReceiptDiagnostic(io1, input, context, launched, null, {dev: 1n});
+        const res1 = await extractGuestReceiptDiagnostic(receiptIo(io1), input, context, launched, null, {dev: 1n});
         assert.equal(fallbackCalled, false);
         assert.equal(res1.diagnostic.status, "malformed");
         assert.equal(res1.diagnostic.source, "result.json");
@@ -621,7 +731,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 return {process: okProcess, stdout: wrongNonceBytes, stderr: Buffer.alloc(0)};
             }
         };
-        const res2 = await extractGuestReceiptDiagnostic(io2, input, context, launched, null, {dev: 1n});
+        const res2 = await extractGuestReceiptDiagnostic(receiptIo(io2), input, context, launched, null, {dev: 1n});
         assert.equal(fallbackCalled, false);
         assert.equal(res2.diagnostic.status, "malformed");
         assert.equal(res2.diagnostic.source, "result.json");
@@ -637,7 +747,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 stderr: Buffer.alloc(0)
             })
         };
-        const res3 = await extractGuestReceiptDiagnostic(io3, input, context, launched, null, {dev: 1n});
+        const res3 = await extractGuestReceiptDiagnostic(receiptIo(io3), input, context, launched, null, {dev: 1n});
         assert.equal(res3.diagnostic.status, "malformed");
         assert.equal(res3.diagnostic.source, "result.json");
         assert.equal(res3.diagnostic.reason, "read-cap-exceeded");
@@ -667,7 +777,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 throw new Error("unexpected command");
             }
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.deepEqual(calls, ["result.json", "bootstrap-failure.json"]);
         assert.equal(res.diagnostic.status, "valid-failure");
         assert.equal(res.diagnostic.source, "bootstrap-failure.json");
@@ -691,7 +801,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 return {process: okProcess, stdout: successBytes, stderr: Buffer.alloc(0)};
             }
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.equal(res.diagnostic.status, "malformed");
         assert.equal(res.diagnostic.source, "bootstrap-failure.json");
         assert.equal(res.diagnostic.reason, "schema-invalid");
@@ -711,7 +821,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 stderr: Buffer.from("File not found\n")
             })
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.deepEqual(res, {
             diagnostic: {schemaVersion: 1, status: "unavailable", reason: "receipt-not-retrieved"},
             guestFailure: null
@@ -731,7 +841,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 stderr: Buffer.alloc(0)
             })
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.deepEqual(res, {
             diagnostic: {schemaVersion: 1, status: "unavailable", reason: "extraction-timeout"},
             guestFailure: null
@@ -751,7 +861,7 @@ describe("extractGuestReceiptDiagnostic bounded stream extraction & deterministi
                 stderr: Buffer.alloc(0)
             })
         };
-        const res = await extractGuestReceiptDiagnostic(io, input, context, launched, null, {dev: 1n});
+        const res = await extractGuestReceiptDiagnostic(receiptIo(io), input, context, launched, null, {dev: 1n});
         assert.deepEqual(res, {
             diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"},
             guestFailure: null
@@ -1031,9 +1141,239 @@ describe("launchOwnedQemu and runWindowsCpuFloorStage2 receipt observability int
         // Now verify rejection preservation through validateQemuLaunchDiagnostic:
         // Even with a valid-success receipt, the diagnostic proves failure and QEMU launch error is thrown
         assert.throws(() => {
-            const diag = validateQemuLaunchDiagnostic(launch.failureDiagnostic, launch.process);
+            const diag = validateQemuLaunchDiagnostic(launch.failureDiagnostic, launch.process, NONCE);
             throw new QemuLaunchError(diag, launch.earlyBoot, launch.guestFailure, null);
         }, QemuLaunchError);
     });
 });
 
+/*
+ * The cases root reproduced against the candidate, plus the neighbours each of them has. Every one
+ * of these is a way for a diagnostic to claim more than the extraction actually proved, so each
+ * asserts the refusal rather than the happy path.
+ */
+describe("Receipt diagnostic adversarial cases", () => {
+    const io = overrides => ({validateOutputDisk() {}, monotonicMilliseconds: () => 0, ...overrides});
+    const launched = () => ({process: {cleanupProven: true, treeGone: true}});
+    const extract = (overrides, context = {nonce: NONCE}) => extractGuestReceiptDiagnostic(
+        io(overrides), receiptInput(), context, launched(), null, {dev: 1n});
+    const single = observed => {
+        let calls = 0;
+        return {calls: () => calls, runOwned: async () => { calls += 1; return observed; }};
+    };
+
+    it("refuses every unsafe extraction outcome and never falls back after one", async () => {
+        const unsafe = [
+            [{timedOut: true}, "extraction-timeout"],
+            [{errorObserved: true}, "tool-error"],
+            [{stderrOverflow: true}, "extraction-unsafe"],
+            [{cleanupProven: false}, "extraction-unsafe"],
+            [{exitCode: null, signal: "SIGKILL"}, "tool-error"]
+        ];
+        for (const [flags, reason] of unsafe) {
+            const probe = single({process: {...OK_EXTRACTION_PROCESS, ...flags},
+                stdout: Buffer.from(JSON.stringify(validBootstrapReceipt())), stderr: Buffer.alloc(0)});
+            const result = await extract({runOwned: probe.runOwned});
+            assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "unavailable", reason},
+                `unsafe outcome ${reason} must not publish a receipt`);
+            assert.equal(result.guestFailure, null);
+            assert.equal(probe.calls(), 1, "an unsafe extraction must stop the sequence");
+        }
+    });
+
+    it("never substitutes a preexisting host file for streamed bytes", async () => {
+        let reads = 0;
+        const result = await extract({
+            runOwned: async () => ({process: OK_EXTRACTION_PROCESS, stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)}),
+            readOwnedVerified: () => { reads += 1; return {bytes: Buffer.from(JSON.stringify(validBootstrapReceipt()))}; }
+        });
+        assert.equal(reads, 0);
+        assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "malformed", source: "result.json",
+            reason: "json-syntax-error", bytes: "0", sha256: sha256(Buffer.alloc(0))});
+        assert.equal(result.guestFailure, null);
+    });
+
+    it("records a partial primary read instead of letting a clean fallback stand in for it", async () => {
+        let calls = 0;
+        const partial = Buffer.from("{\"schemaVersion\":1,\"status\":\"fai");
+        const result = await extract({runOwned: async () => {
+            calls += 1;
+            return calls === 1
+                ? {process: {...OK_EXTRACTION_PROCESS, exitCode: 1}, stdout: partial, stderr: Buffer.alloc(0)}
+                : {process: OK_EXTRACTION_PROCESS,
+                    stdout: Buffer.from(JSON.stringify(validBootstrapReceipt())), stderr: Buffer.alloc(0)};
+        }});
+        assert.equal(calls, 1);
+        assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "malformed", source: "result.json",
+            reason: "partial-read", bytes: String(partial.length), sha256: sha256(partial)});
+        assert.equal(result.guestFailure, null);
+    });
+
+    it("distinguishes a receipt that was not retrieved from an extraction that was not safe", async () => {
+        let calls = 0;
+        const absent = await extract({runOwned: async () => {
+            calls += 1;
+            return {process: {...OK_EXTRACTION_PROCESS, exitCode: 1}, stdout: Buffer.alloc(0),
+                stderr: Buffer.alloc(0)};
+        }});
+        assert.equal(calls, 2, "an empty non-zero primary is the one case that reaches the fallback");
+        assert.deepEqual(absent.diagnostic, {schemaVersion: 1, status: "unavailable",
+            reason: "receipt-not-retrieved"});
+        const unsafe = await extract({runOwned: async () => ({
+            process: {...OK_EXTRACTION_PROCESS, cleanupProven: false}, stdout: Buffer.alloc(0),
+            stderr: Buffer.alloc(0)})});
+        assert.notEqual(unsafe.diagnostic.reason, absent.diagnostic.reason);
+    });
+
+    it("publishes an overflowed read as a capped prefix and refuses any other extent for it", async () => {
+        const capped = Buffer.alloc(262_144, 0x7b);
+        const result = await extract({runOwned: async () => ({
+            process: {...OK_EXTRACTION_PROCESS, exitCode: null, signal: "SIGKILL", stdoutOverflow: true},
+            stdout: capped, stderr: Buffer.alloc(0)})});
+        assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "malformed", source: "result.json",
+            reason: "read-cap-exceeded", bytes: "262144", sha256: sha256(capped)});
+        validateReceiptDiagnostic(result.diagnostic, NONCE);
+        assert.throws(() => validateReceiptDiagnostic({...result.diagnostic, bytes: "262143"}, NONCE),
+            /bytes is invalid/u);
+        assert.throws(() => validateReceiptDiagnostic({...result.diagnostic, bytes: "262145"}, NONCE),
+            /bytes is invalid/u);
+    });
+
+    it("refuses a receipt written by another run", async () => {
+        for (const key of ["nonce", "hostNonce"]) {
+            const foreign = key === "nonce"
+                ? {...validBootstrapReceipt(), nonce: OTHER_NONCE}
+                : {...validWorkerReceipt(), hostNonce: OTHER_NONCE};
+            const bytes = Buffer.from(JSON.stringify(foreign));
+            const result = await extract({runOwned: async () => ({process: OK_EXTRACTION_PROCESS, stdout: bytes,
+                stderr: Buffer.alloc(0)})});
+            assert.equal(result.diagnostic.status, "malformed");
+            assert.equal(result.diagnostic.reason, "nonce-mismatch");
+            assert.equal(result.guestFailure, null);
+        }
+    });
+
+    it("refuses a receipt carrying extra or missing fields", async () => {
+        const shapes = [
+            {...validBootstrapReceipt(), extra: 1},
+            {...validBootstrapReceipt(), nonce: undefined},
+            {...validWorkerReceipt(), nonce: NONCE},
+            {schemaVersion: 2, status: "failed", nonce: NONCE, stage: "guest-bootstrap", failure: "x"},
+            {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "specialize", failure: "x"}
+        ];
+        for (const shape of shapes) {
+            const bytes = Buffer.from(JSON.stringify(shape));
+            const result = await extract({runOwned: async () => ({process: OK_EXTRACTION_PROCESS, stdout: bytes,
+                stderr: Buffer.alloc(0)})});
+            assert.equal(result.diagnostic.status, "malformed");
+            assert.equal(result.guestFailure, null);
+        }
+    });
+
+    it("binds the retained diagnostic to the run's own nonce", () => {
+        const receipt = {schemaVersion: 1, status: "valid-failure", source: "result.json",
+            receipt: {...validBootstrapReceipt()}};
+        validateReceiptDiagnostic(receipt, NONCE);
+        assert.throws(() => validateReceiptDiagnostic(receipt, OTHER_NONCE),
+            /guest failure evidence is invalid/u);
+        assert.throws(() => validateReceiptDiagnostic(receipt, "not-a-nonce"),
+            /expected nonce is invalid/u);
+    });
+
+    it("bounds every published byte count at the extraction ceiling", () => {
+        const digest = "a".repeat(64);
+        validateReceiptDiagnostic({schemaVersion: 1, status: "valid-success", source: "result.json",
+            bytes: "262144", sha256: digest}, NONCE);
+        for (const bytes of ["262145", "999999999999999999999"])
+            assert.throws(() => validateReceiptDiagnostic({schemaVersion: 1, status: "valid-success",
+                source: "result.json", bytes, sha256: digest}, NONCE), /bytes is invalid/u);
+        assert.throws(() => validateReceiptDiagnostic({schemaVersion: 1, status: "malformed",
+            source: "result.json", reason: "partial-read", bytes: "0", sha256: digest}, NONCE),
+        /bytes is invalid/u);
+    });
+
+    it("retains an unexpected extraction failure instead of throwing over the launch failure", async () => {
+        const collected = await collectGuestReceiptDiagnostic({validateOutputDisk() {}}, receiptInput(),
+            {nonce: NONCE}, launched(), null, {dev: 1n});
+        assert.equal(collected.diagnostic.status, "unavailable");
+        assert.equal(collected.diagnostic.reason, "tool-error");
+        assert.ok(collected.diagnostic.failure.length > 0);
+        assert.equal(collected.guestFailure, null);
+        const diagnostic = validateQemuLaunchDiagnostic(
+            {...launchDiagnosticFixture(), receipt: collected.diagnostic}, launchProcessFixture(), NONCE);
+        assert.deepEqual(diagnostic.process, launchProcessFixture());
+        assert.throws(() => validateReceiptDiagnostic({...collected.diagnostic, failure: "a".repeat(257)}, NONCE),
+            /QEMU receipt diagnostic is invalid/u);
+        assert.throws(() => validateReceiptDiagnostic({...collected.diagnostic, failure: "badtext"}, NONCE),
+            /QEMU receipt diagnostic is invalid/u);
+    });
+
+    it("refuses to spend fallback time the primary already used", async () => {
+        let clock = 0;
+        const observedTimeouts = [];
+        const result = await extractGuestReceiptDiagnostic({
+            validateOutputDisk() {},
+            monotonicMilliseconds: () => clock,
+            runOwned: async (command, argv, options) => {
+                observedTimeouts.push(options.timeoutMs);
+                clock += 45_000;
+                return {process: {...OK_EXTRACTION_PROCESS, exitCode: 1}, stdout: Buffer.alloc(0),
+                    stderr: Buffer.alloc(0)};
+            }
+        }, receiptInput(), {nonce: NONCE}, launched(), null, {dev: 1n});
+        assert.deepEqual(observedTimeouts, [30_000, 15_000]);
+        assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "unavailable",
+            reason: "receipt-not-retrieved"});
+    });
+
+    it("refuses a fallback whose admission the budget has already expired", async () => {
+        let clock = 0;
+        let calls = 0;
+        const result = await extractGuestReceiptDiagnostic({
+            validateOutputDisk() {},
+            monotonicMilliseconds: () => clock,
+            runOwned: async () => {
+                calls += 1;
+                clock += 60_000;
+                return {process: {...OK_EXTRACTION_PROCESS, exitCode: 1}, stdout: Buffer.alloc(0),
+                    stderr: Buffer.alloc(0)};
+            }
+        }, receiptInput(), {nonce: NONCE}, launched(), null, {dev: 1n});
+        assert.equal(calls, 1);
+        assert.deepEqual(result.diagnostic, {schemaVersion: 1, status: "unavailable",
+            reason: "extraction-budget-exhausted"});
+    });
+
+    it("keeps a well-formed success receipt after an unclean stop out of the calibration path", async () => {
+        const success = Buffer.from(JSON.stringify({schemaVersion: 1, nonce: NONCE, runs: []}));
+        const result = await extract({runOwned: async () => ({process: OK_EXTRACTION_PROCESS, stdout: success,
+            stderr: Buffer.alloc(0)})});
+        assert.notEqual(result.diagnostic.status, "valid-failure");
+        assert.equal(result.guestFailure, null, "no receipt found after an unclean stop may become a guest outcome");
+        assert.ok(!Object.hasOwn(result.diagnostic, "receipt"));
+    });
+
+    it("refuses a success payload published from the fallback name", async () => {
+        let calls = 0;
+        const success = Buffer.from(JSON.stringify({schemaVersion: 1, nonce: NONCE, runs: []}));
+        const result = await extract({runOwned: async () => {
+            calls += 1;
+            return calls === 1
+                ? {process: {...OK_EXTRACTION_PROCESS, exitCode: 1}, stdout: Buffer.alloc(0),
+                    stderr: Buffer.alloc(0)}
+                : {process: OK_EXTRACTION_PROCESS, stdout: success, stderr: Buffer.alloc(0)};
+        }});
+        assert.equal(calls, 2);
+        assert.equal(result.diagnostic.status, "malformed");
+        assert.equal(result.diagnostic.source, "bootstrap-failure.json");
+        assert.equal(result.diagnostic.reason, "schema-invalid");
+    });
+
+    it("replays historical diagnostics that carry no receipt at all", () => {
+        const historical = launchDiagnosticFixture();
+        assert.ok(!Object.hasOwn(historical, "receipt"));
+        const validated = validateQemuLaunchDiagnostic(historical, launchProcessFixture(), NONCE);
+        assert.deepEqual(validated, historical);
+    });
+});

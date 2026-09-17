@@ -1577,14 +1577,20 @@ describe("hosted Stage 2 native adapter preparation", () => {
                     processGroupGone: treeGone,
                     qmp: qmpObservation()
                 }),
+                /*
+                 * The receipt is read from the extraction's own streamed stdout, so the mock hands
+                 * the bytes back the way mcopy does. A fixture that left stdout empty and planted
+                 * the receipt in the task root instead would only be testing a substitution the
+                 * host must not make.
+                 */
                 runOwned: async (cmd, argv) => {
                     if (argv.includes("mcopy") || argv.includes(`${paths().portableRoot}/usr/bin/mtools`)) {
                         mcopyCalled = true;
                         if (mcopyThrows) throw new Error("mcopy failed");
+                        return {process: okProcess, stdout: receiptBytes, stderr: Buffer.alloc(0)};
                     }
                     return {process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)};
-                },
-                readOwnedVerified: () => ({bytes: receiptBytes, identity: {path: "dummy", bytes: String(receiptBytes.length), sha256: "e".repeat(64)}})
+                }
             }});
         };
 

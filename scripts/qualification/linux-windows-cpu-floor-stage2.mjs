@@ -1351,6 +1351,8 @@ export const RECEIPT_UNAVAILABLE_REASONS = deepFreeze([
     "output-disk-unverified",
     "disk-identity-mismatch",
     "extraction-timeout",
+    "extraction-unsafe",
+    "extraction-budget-exhausted",
     "tool-error",
     "receipt-not-retrieved"
 ]);
@@ -1358,14 +1360,33 @@ export const RECEIPT_MALFORMED_REASONS = deepFreeze([
     "json-syntax-error",
     "nonce-mismatch",
     "schema-invalid",
+    "partial-read",
     "read-cap-exceeded"
 ]);
+export const MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS = 256;
 
-export function validateReceiptDiagnostic(value) {
+/*
+ * The receipt diagnostic is the one place a failed run says what it found on the guest's output
+ * disk, so every branch of it is bound to the run it belongs to. The expected nonce is threaded in
+ * from the retained result rather than read back out of the record: a diagnostic that validates its
+ * own nonce proves only that some run wrote something, which is exactly the claim this evidence is
+ * not allowed to make.
+ *
+ * Byte counts are bound to the extraction ceiling the host actually reads with. `read-cap-exceeded`
+ * is the capped-prefix case and must carry exactly that cap, because any other extent is one the
+ * extraction could not have produced.
+ */
+export function validateReceiptDiagnostic(value, expectedNonce) {
+    exactString(expectedNonce, /^[a-f0-9]{32}$/u, "receipt diagnostic expected nonce");
     if (value === null || typeof value !== "object" || Array.isArray(value))
         throw new TypeError("QEMU receipt diagnostic is invalid");
     if (!RECEIPT_STATUSES.includes(value.status))
         throw new TypeError("QEMU receipt diagnostic is invalid");
+    const boundedBytes = (bytesValue, {positive = false} = {}) => {
+        const parsed = decimal(bytesValue, "QEMU receipt diagnostic bytes", {positive});
+        if (parsed > BigInt(MAX_GUEST_BYTES)) throw new TypeError("QEMU receipt diagnostic bytes is invalid");
+        return parsed;
+    };
 
     if (value.status === "valid-failure") {
         assertKeys(value, ["receipt", "schemaVersion", "source", "status"], "QEMU receipt diagnostic");
@@ -1374,14 +1395,14 @@ export function validateReceiptDiagnostic(value) {
         if (value.receipt === null || typeof value.receipt !== "object" || Array.isArray(value.receipt))
             throw new TypeError("QEMU receipt diagnostic is invalid");
         exactString(value.receipt.nonce, /^[a-f0-9]{32}$/u, "receipt nonce");
-        validateGuestFailure(value.receipt, value.receipt.nonce);
+        validateGuestFailure(value.receipt, expectedNonce);
         return deepFreeze(structuredClone(value));
     }
     if (value.status === "valid-success") {
         assertKeys(value, ["bytes", "schemaVersion", "sha256", "source", "status"], "QEMU receipt diagnostic");
         if (value.schemaVersion !== SCHEMA_VERSION || value.source !== "result.json")
             throw new TypeError("QEMU receipt diagnostic is invalid");
-        decimal(value.bytes, "QEMU receipt diagnostic bytes", {positive: true});
+        boundedBytes(value.bytes, {positive: true});
         exactString(value.sha256, SHA256_PATTERN, "QEMU receipt diagnostic sha256");
         return deepFreeze(structuredClone(value));
     }
@@ -1390,19 +1411,33 @@ export function validateReceiptDiagnostic(value) {
         if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_SOURCES.includes(value.source) ||
             !RECEIPT_MALFORMED_REASONS.includes(value.reason))
             throw new TypeError("QEMU receipt diagnostic is invalid");
-        decimal(value.bytes, "QEMU receipt diagnostic bytes");
+        const observed = boundedBytes(value.bytes);
+        if (value.reason === "read-cap-exceeded" && observed !== BigInt(MAX_GUEST_BYTES))
+            throw new TypeError("QEMU receipt diagnostic bytes is invalid");
+        if (value.reason === "partial-read" && observed === 0n)
+            throw new TypeError("QEMU receipt diagnostic bytes is invalid");
         exactString(value.sha256, SHA256_PATTERN, "QEMU receipt diagnostic sha256");
         return deepFreeze(structuredClone(value));
     }
-    if (value.status === "unavailable") {
-        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU receipt diagnostic");
-        if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_UNAVAILABLE_REASONS.includes(value.reason))
-            throw new TypeError("QEMU receipt diagnostic is invalid");
-        return deepFreeze(structuredClone(value));
-    }
+    /*
+     * An unavailable record may carry the bounded reason the extraction itself gave, so an
+     * unexpected failure inside this optional diagnostic is retained next to the launch failure it
+     * was collected for instead of replacing it. The text stays optional so records retained before
+     * it existed still replay.
+     */
+    const unavailableKeys = ["reason", "schemaVersion", "status"];
+    if (Object.hasOwn(value, "failure")) unavailableKeys.push("failure");
+    assertKeys(value, unavailableKeys, "QEMU receipt diagnostic");
+    if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_UNAVAILABLE_REASONS.includes(value.reason))
+        throw new TypeError("QEMU receipt diagnostic is invalid");
+    if (value.failure !== undefined && (typeof value.failure !== "string" || value.failure.length < 1 ||
+        value.failure.length > MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS ||
+        /[\x00-\x1f\x7f]/u.test(value.failure)))
+        throw new TypeError("QEMU receipt diagnostic is invalid");
+    return deepFreeze(structuredClone(value));
 }
 
-export function validateQemuLaunchDiagnostic(value, process) {
+export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
      * that no text was captured. The field stays optional so records retained before capture existed
@@ -1449,7 +1484,7 @@ export function validateQemuLaunchDiagnostic(value, process) {
     }
     validateDiagnosticStream(value.stderr, "stderr");
     if (value.serialLog !== undefined) validateSerialDiagnostic(value.serialLog);
-    if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt);
+    if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt, expectedNonce);
     return deepFreeze(structuredClone(value));
 }
 
@@ -1631,9 +1666,10 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
             launchObservation.process.terminationReason !== null ||
             launchObservation.process.qemuPidAbsentAfter !== true)
             throw new QemuLaunchError(validateQemuLaunchDiagnostic(launchObservation.failureDiagnostic,
-                launchObservation.process), earlyBoot, guestFailure, lateBoot);
+                launchObservation.process, context.nonce), earlyBoot, guestFailure, lateBoot);
         if (earlyBoot === null) throw new QemuLaunchError(validateQemuLaunchDiagnostic(
-            launchObservation.failureDiagnostic, launchObservation.process), earlyBoot, guestFailure, lateBoot);
+            launchObservation.failureDiagnostic, launchObservation.process, context.nonce),
+        earlyBoot, guestFailure, lateBoot);
         if (guestFailure !== null) {
             throw new GuestBootstrapError(guestFailure, earlyBoot, lateBoot);
         }
