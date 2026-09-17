@@ -17,6 +17,17 @@ const OPEN_GRAPH_DEADLINE_MILLISECONDS = 120_000;
 const EXECUTOR_TIMEOUT_MILLISECONDS = (BASELINE_SCENARIO_COUNT * CONTROLLER_HARD_DEADLINE_MILLISECONDS) +
     GUARD_TIMEOUT_MILLISECONDS + OPEN_GRAPH_DEADLINE_MILLISECONDS;
 const EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
+/*
+ * How long the Job may keep draining after the executor's own process handle has signaled before a
+ * remaining member counts as a leaked descendant. The executor's hidden console host and any child
+ * it terminated on its way out leave the Job asynchronously, milliseconds after the executor
+ * itself; judging the Job at the very instant the executor exits reported a plain `node -e 0` as
+ * "left an owned descendant" (run 35273132053). A member that outlives the whole window is still
+ * forced and still fails the run.
+ */
+const EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS = 5_000;
+const SHUTDOWN_OUTCOME_NAME = "baseline-shutdown-outcome.json";
+const SHUTDOWN_STAGE = "guest-shutdown";
 const SUCCESS_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
 
@@ -69,7 +80,7 @@ namespace MySpeed.Qualification {
     static uint Active(IntPtr job){ACCOUNTING value=new ACCOUNTING();if(!QueryAccounting(job,JOB_OBJECT_BASIC_ACCOUNTING_INFORMATION,ref value,(uint)Marshal.SizeOf(typeof(ACCOUNTING)),IntPtr.Zero))throw Error("QueryInformationJobObject accounting");return value.active;}
     static void Close(ref IntPtr handle,List<Exception> failures){if(handle==IntPtr.Zero||handle.ToInt64()==-1){handle=IntPtr.Zero;return;}if(!CloseHandle(handle))failures.Add(Error("CloseHandle"));else handle=IntPtr.Zero;}
     static bool WaitForZero(IntPtr job,uint timeout){Stopwatch watch=Stopwatch.StartNew();while(true){if(Active(job)==0)return true;long remaining=(long)timeout-watch.ElapsedMilliseconds;if(remaining<=0)return false;System.Threading.Thread.Sleep((int)Math.Max(1,Math.Min(CLEANUP_POLL_MILLISECONDS,remaining)));}}
-    public static BaselineJobResult Run(string executable,string[] arguments,string cwd,string stdoutPath,string stderrPath,uint timeout,uint cleanupTimeout){
+    public static BaselineJobResult Run(string executable,string[] arguments,string cwd,string stdoutPath,string stderrPath,uint timeout,uint cleanupTimeout,uint drainTimeout){
       IntPtr job=IntPtr.Zero,input=IntPtr.Zero,output=IntPtr.Zero,error=IntPtr.Zero,list=IntPtr.Zero,values=IntPtr.Zero;PROCESS_INFORMATION pi=new PROCESS_INFORMATION();bool listInitialized=false,created=false,assigned=false,resumed=false,forced=false;Exception primary=null;int exitCode=0;bool timedOut=false,tree=false;
       try{
         SECURITY_ATTRIBUTES sa=new SECURITY_ATTRIBUTES();sa.nLength=(uint)Marshal.SizeOf(typeof(SECURITY_ATTRIBUTES));sa.bInheritHandle=true;
@@ -79,7 +90,7 @@ namespace MySpeed.Qualification {
         STARTUPINFOEX startup=new STARTUPINFOEX();startup.StartupInfo.cb=(uint)Marshal.SizeOf(typeof(STARTUPINFOEX));startup.StartupInfo.dwFlags=STARTF_USESHOWWINDOW|STARTF_USESTDHANDLES;startup.StartupInfo.hStdInput=input;startup.StartupInfo.hStdOutput=output;startup.StartupInfo.hStdError=error;startup.lpAttributeList=list;StringBuilder command=new StringBuilder(Quote(executable));foreach(string argument in arguments)command.Append(' ').Append(Quote(argument));
         if(!CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,CREATE_SUSPENDED|CREATE_NO_WINDOW|EXTENDED_STARTUPINFO_PRESENT,IntPtr.Zero,cwd,ref startup,out pi))throw Error("CreateProcessW");created=true;if(!AssignProcessToJobObject(job,pi.hProcess))throw Error("AssignProcessToJobObject");assigned=true;bool member;if(!IsProcessInJob(pi.hProcess,job,out member)||!member)throw Error("IsProcessInJob");if(ResumeThread(pi.hThread)==UInt32.MaxValue)throw Error("ResumeThread");resumed=true;
         List<Exception> launchCleanup=new List<Exception>();Close(ref pi.hThread,launchCleanup);Close(ref input,launchCleanup);Close(ref output,launchCleanup);Close(ref error,launchCleanup);if(listInitialized){DeleteProcThreadAttributeList(list);listInitialized=false;}if(list!=IntPtr.Zero){Marshal.FreeHGlobal(list);list=IntPtr.Zero;}if(values!=IntPtr.Zero){Marshal.FreeHGlobal(values);values=IntPtr.Zero;}if(launchCleanup.Count>0)throw new AggregateException("Launch handle cleanup failed",launchCleanup);
-        uint wait=WaitForSingleObject(pi.hProcess,timeout);if(wait!=WAIT_OBJECT_0&&wait!=WAIT_TIMEOUT)throw Error("WaitForSingleObject");timedOut=wait==WAIT_TIMEOUT;if(timedOut||Active(job)!=0){forced=true;if(!TerminateJobObject(job,FAILURE_EXIT_CODE))throw Error("TerminateJobObject");}if(WaitForSingleObject(pi.hProcess,cleanupTimeout)!=WAIT_OBJECT_0||!WaitForZero(job,cleanupTimeout))throw new InvalidOperationException("Owned executor process tree cleanup is unproven");tree=true;if(!timedOut){uint code;if(!GetExitCodeProcess(pi.hProcess,out code))throw Error("GetExitCodeProcess");exitCode=unchecked((int)code);}else exitCode=(int)FAILURE_EXIT_CODE;
+        uint wait=WaitForSingleObject(pi.hProcess,timeout);if(wait!=WAIT_OBJECT_0&&wait!=WAIT_TIMEOUT)throw Error("WaitForSingleObject");timedOut=wait==WAIT_TIMEOUT;if(timedOut||!WaitForZero(job,drainTimeout)){forced=true;if(!TerminateJobObject(job,FAILURE_EXIT_CODE))throw Error("TerminateJobObject");}if(WaitForSingleObject(pi.hProcess,cleanupTimeout)!=WAIT_OBJECT_0||!WaitForZero(job,cleanupTimeout))throw new InvalidOperationException("Owned executor process tree cleanup is unproven");tree=true;if(!timedOut){uint code;if(!GetExitCodeProcess(pi.hProcess,out code))throw Error("GetExitCodeProcess");exitCode=unchecked((int)code);}else exitCode=(int)FAILURE_EXIT_CODE;
       }catch(Exception failure){primary=failure;}
       List<Exception> cleanupFailures=new List<Exception>();if(primary!=null&&created){try{if(assigned){if(!TerminateJobObject(job,FAILURE_EXIT_CODE))throw Error("TerminateJobObject failure cleanup");}else if(!TerminateProcess(pi.hProcess,FAILURE_EXIT_CODE))throw Error("TerminateProcess unassigned failure cleanup");if(WaitForSingleObject(pi.hProcess,cleanupTimeout)!=WAIT_OBJECT_0)throw new InvalidOperationException("Executor failure cleanup deadline expired");if(assigned&&!WaitForZero(job,cleanupTimeout))throw new InvalidOperationException("Executor failure Job did not become empty");tree=true;}catch(Exception cleanup){cleanupFailures.Add(cleanup);}}
       Close(ref pi.hThread,cleanupFailures);Close(ref pi.hProcess,cleanupFailures);Close(ref input,cleanupFailures);Close(ref output,cleanupFailures);Close(ref error,cleanupFailures);if(listInitialized){try{DeleteProcThreadAttributeList(list);}catch(Exception cleanup){cleanupFailures.Add(cleanup);}listInitialized=false;}if(list!=IntPtr.Zero){Marshal.FreeHGlobal(list);list=IntPtr.Zero;}if(values!=IntPtr.Zero){Marshal.FreeHGlobal(values);values=IntPtr.Zero;}Close(ref job,cleanupFailures);
@@ -120,6 +131,7 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$BASELINE_MAX_FAILURE_CHARACTERS=${MAX_FAILURE_CHARACTERS}\r\n` +
         `$BASELINE_EXECUTOR_TIMEOUT=${EXECUTOR_TIMEOUT_MILLISECONDS}\r\n` +
         `$BASELINE_EXECUTOR_CLEANUP_TIMEOUT=${EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS}\r\n` +
+        `$BASELINE_EXECUTOR_DRAIN_TIMEOUT=${EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS}\r\n` +
         `$BASELINE_JOB_SOURCE=@'\r\n${BASELINE_JOB_SOURCE}\r\n'@\r\n` +
         `function Get-MyspeedBaselineOutputAuthority{` +
         `$output=@(Get-Volume -FileSystemLabel MYSPEEDOUT -ErrorAction Stop);if($output.Count -ne 1 -or ` +
@@ -220,7 +232,11 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$length=$stream.Length;if($length -gt $Maximum -or (-not $AllowEmpty -and $length -lt 2)){` +
         `throw 'Baseline diagnostic size differs'};$bytes=[byte[]]::new([int]$length);$offset=0;while($offset-lt$bytes.Length){` +
         `$count=$stream.Read($bytes,$offset,$bytes.Length-$offset);if($count-lt 1){throw 'Baseline diagnostic read was short'};` +
-        `$offset+=$count};if($stream.Length-ne$length){throw 'Baseline diagnostic changed while reading'};return $bytes}` +
+        /*
+         * `,$bytes`, not `$bytes`: a bare byte[] is unrolled by the pipeline and reaches the caller as
+         * Object[] (or a lone Byte, or nothing), which every later `-is [byte[]]` check then refuses.
+         */
+        `$offset+=$count};if($stream.Length-ne$length){throw 'Baseline diagnostic changed while reading'};return ,$bytes}` +
         `finally{$stream.Dispose()}}\r\n` +
         `function Get-MyspeedBaselineDiagnosticText([byte[]]$Bytes){if($null-eq$Bytes-or$Bytes.Length-eq 0){return $null};` +
         `try{$text=[Text.UTF8Encoding]::new($false,$true).GetString($Bytes)}catch{return $null};` +
@@ -235,7 +251,7 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `[scriptblock]$ResolveTaskRoot={Join-Path $env:SystemRoot ('Temp\\myspeed-baseline-executor-'+$EXPECTED_NONCE)},` +
         `[scriptblock]$Launch={param($Node,$Arguments,$Working,$Stdout,$Stderr)Initialize-MyspeedBaselineJobType;` +
         `[MySpeed.Qualification.BaselineJob]::Run($Node,[string[]]$Arguments,$Working,$Stdout,$Stderr,` +
-        `[uint32]$BASELINE_EXECUTOR_TIMEOUT,[uint32]$BASELINE_EXECUTOR_CLEANUP_TIMEOUT)}){` +
+        `[uint32]$BASELINE_EXECUTOR_TIMEOUT,[uint32]$BASELINE_EXECUTOR_CLEANUP_TIMEOUT,[uint32]$BASELINE_EXECUTOR_DRAIN_TIMEOUT)}){` +
         `$taskRoot=& $ResolveTaskRoot;if($taskRoot-isnot[string]-or-not[IO.Path]::IsPathRooted($taskRoot)-or` +
         `[IO.Path]::GetFullPath($taskRoot)-cne$taskRoot){throw 'Baseline executor root path differs'};` +
         `if([IO.Directory]::Exists($taskRoot)-or[IO.File]::Exists($taskRoot)){throw 'Baseline executor root is not fresh'};` +
@@ -360,12 +376,27 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$bytes=[Text.UTF8Encoding]::new($false).GetBytes(($record|ConvertTo-Json -Compress -Depth 4));` +
         `try{& $Publish (Join-Path $publicationOutput '${CPU_RESULT_NAME}') $bytes}catch{` +
         `try{& $Publish (Join-Path $publicationOutput 'bootstrap-failure.json') $bytes}catch{}}}}}` +
-        `finally{try{& $Shutdown}catch{if($null-eq$failure){$failure=$_;$failureStage='shutdown'}}}}}};` +
+        /*
+         * One marker, written only after the shutdown call has returned or thrown, on the output
+         * volume the receipts already went to. A call that never returns leaves no marker; a call
+         * that throws records its bounded message. Run 35273132053 stayed up for 41 minutes after
+         * publishing its receipt and left nothing that said whether the call was even reached.
+         */
+        `finally{$shutdownOutcome='failed';$shutdownFailure=$null;try{& $Shutdown;$shutdownOutcome='returned'}catch{` +
+        `$shutdownFailure=[string]$_.Exception.Message;if($null-eq$failure){$failure=$_;$failureStage='shutdown'}};` +
+        `if($publicationOutput-is[string]-and$publicationOutput.Length-gt 0){try{` +
+        `if($null-ne$shutdownFailure){$shutdownFailure=[regex]::Replace($shutdownFailure,'[\\x00-\\x1f\\x7f]+',' ');` +
+        `if($shutdownFailure.Length-gt$BASELINE_MAX_FAILURE_CHARACTERS){` +
+        `$shutdownFailure=$shutdownFailure.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)}};` +
+        `$shutdownRecord=[ordered]@{schemaVersion=1;nonce=$EXPECTED_NONCE;stage='${SHUTDOWN_STAGE}';` +
+        `outcome=$shutdownOutcome;failure=$shutdownFailure};& $Publish (Join-Path $publicationOutput '${SHUTDOWN_OUTCOME_NAME}') ` +
+        `([Text.UTF8Encoding]::new($false).GetBytes(($shutdownRecord|ConvertTo-Json -Compress -Depth 4)))}catch{}}}}}};` +
         `if($null -ne $failure){throw $failure}}\r\n` +
         `if(-not $LibraryMode){Invoke-MyspeedBaselineBootstrap}\r\n`;
     return Buffer.from(script, "utf8");
 }
 
 export const WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS = Object.freeze({CPU_RESULT_NAME, EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS,
+    EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS, SHUTDOWN_OUTCOME_NAME, SHUTDOWN_STAGE,
     EXECUTOR_TIMEOUT_MILLISECONDS, MAX_CANDIDATE_BYTES, MAX_FAILURE_CHARACTERS, MAX_FIXTURE_BYTES, MAX_RESULT_BYTES,
     MAX_STREAM_BYTES, PROFILE, RESULT_NAME});

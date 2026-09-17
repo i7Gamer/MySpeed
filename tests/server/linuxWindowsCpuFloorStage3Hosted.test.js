@@ -270,6 +270,36 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
             stage2: stage2(), toolchain: toolchain()}), /QEMU cleanup was not proven/u);
         assert.equal(value.calls.some(call => call[0] === "run"), false);
     });
+
+    it("carries the guest's own failure receipt into the launch refusal instead of discarding it", async () => {
+        const guestFailure = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
+            failure: "executor-invocation: Baseline executor left an owned descendant"};
+        const launched = guest => fixture({stage2Factory: _input => ({
+            async prepareOfflineMedia() { throw new Error("not used"); },
+            async launchOwnedQemu(request) { return {argv: request.argv, process: processProof(),
+                earlyBoot: structuredClone(EARLY_BOOT), ...guest}; }
+        })});
+        const withReceipt = launched({guest: structuredClone(guestFailure), guestFailure: structuredClone(guestFailure)});
+        await withReceipt.operations.replayStage2({identity: withReceipt.stage2ResultIdentity,
+            guestIdentity: withReceipt.stage2GuestResultIdentity});
+        await assert.rejects(withReceipt.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(),
+            paths: paths(), stage2: stage2(), toolchain: toolchain()}), {
+            message: "baseline guest did not return the CPU calibration envelope: " +
+                "executor-invocation: Baseline executor left an owned descendant"
+        });
+        const withoutReceipt = launched({guest: null});
+        await withoutReceipt.operations.replayStage2({identity: withoutReceipt.stage2ResultIdentity,
+            guestIdentity: withoutReceipt.stage2GuestResultIdentity});
+        await assert.rejects(withoutReceipt.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(),
+            paths: paths(), stage2: stage2(), toolchain: toolchain()}),
+        {message: "baseline guest did not return the CPU calibration envelope"});
+        const malformed = launched({guest: null, guestFailure: {failure: 42}});
+        await malformed.operations.replayStage2({identity: malformed.stage2ResultIdentity,
+            guestIdentity: malformed.stage2GuestResultIdentity});
+        await assert.rejects(malformed.operations.launchBaselineGuest({argv: ["-nic", "none"], budget: budget(),
+            paths: paths(), stage2: stage2(), toolchain: toolchain()}),
+        {message: "baseline guest did not return the CPU calibration envelope"});
+    });
 });
 
 describe("hosted Windows CPU-floor Stage 3 seed contract", () => {

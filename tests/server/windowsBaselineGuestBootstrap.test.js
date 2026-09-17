@@ -6,7 +6,8 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {describe, it} from "node:test";
 
-import {renderWindowsBaselineGuestBootstrap} from "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
+import {WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS, renderWindowsBaselineGuestBootstrap} from
+    "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsBaselineGuestSeedDocuments} from "../../scripts/qualification/windows-baseline-guest-seed-documents.mjs";
 import {WINDOWS_SYSTEM_TOOL_PATHS, renderGuestBootstrap} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -23,6 +24,13 @@ const TEST_TIMEOUT_MILLISECONDS = 30_000;
 const TEST_STREAM_BYTES = 1024 * 1024;
 const ASCII_CONTROL_MAX = 31;
 const ASCII_DELETE = 127;
+const DESCENDANT_DRAIN_MILLISECONDS = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS.EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS;
+const BRIEF_DESCENDANT_MILLISECONDS = 400;
+const LEAKED_DESCENDANT_MILLISECONDS = 20_000;
+const SHUTDOWN_OUTCOME_NAME = "baseline-shutdown-outcome.json";
+const psString = value => `'${String(value).replaceAll("'", "''")}'`;
+const lingeringDescendant = milliseconds => "require('child_process').spawn(process.execPath,['-e'," +
+    `'setTimeout(()=>{},${milliseconds})'],{detached:true,stdio:'ignore'}).unref();process.exitCode=0`;
 const hostedContext = () => ({schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA,
     eventSha: "2".repeat(40), runId: "123", runAttempt: "1", nonce: NONCE,
     environment: {GITHUB_ACTIONS: "true", CI: "true", RUNNER_OS: "Linux", RUNNER_ARCH: "X64",
@@ -159,7 +167,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `$events|ConvertTo-Json -Compress\r\n`;
             const events = runLibraryHarness("myspeed-baseline-publication-fallback-", body);
             assert.deepEqual(events.map(event => event.name),
-                ["baseline-result.json", "result.json", "bootstrap-failure.json", "shutdown"]);
+                ["baseline-result.json", "result.json", "bootstrap-failure.json", "shutdown", SHUTDOWN_OUTCOME_NAME]);
             const fallback = JSON.parse(events[2].text);
             assert.equal(fallback.status, "failed");
             assert.equal(fallback.stage, "guest-bootstrap");
@@ -183,7 +191,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `-Publish {param($Path,$Bytes)$script:published+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
                 `-Shutdown {}}catch{}\r\n$published|ConvertTo-Json -Compress\r\n`;
             const records = runLibraryHarness("myspeed-baseline-semantic-failure-", body);
-            assert.deepEqual(records.map(record => record.name), ["baseline-result.json", "result.json"]);
+            assert.deepEqual(records.map(record => record.name), ["baseline-result.json", "result.json", SHUTDOWN_OUTCOME_NAME]);
             assert.deepEqual(JSON.parse(records[0].text), JSON.parse(baseline));
             const overall = JSON.parse(records[1].text);
             assert.equal(overall.status, "failed");
@@ -211,7 +219,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `$events|ConvertTo-Json -Compress\r\n`;
             assert.deepEqual(runLibraryHarness("myspeed-baseline-diagnostic-publish-", body),
                 ["baseline-result.raw.json", "baseline-executor.stdout", "baseline-executor.stderr",
-                    "result.json", "shutdown"]);
+                    "result.json", "shutdown", SHUTDOWN_OUTCOME_NAME]);
         });
 
     it("rejects forced descendant cleanup and retains only bounded task-owned result diagnostics",
@@ -223,10 +231,92 @@ describe("Windows baseline guest bootstrap", () => {
                 `[pscustomobject]@{ExitCode=[int]0;TimedOut=$false;Forced=$true;AssignedBeforeResume=$true;` +
                 `Resumed=$true;ProcessTreeExitProven=$true;HandlesClosed=$true}}}catch{` +
                 `[pscustomobject]@{message=$_.Exception.Message;names=@($_.Exception.Data['MyspeedDiagnostics']|` +
-                `ForEach-Object{$_.name})}|ConvertTo-Json -Compress}\r\n`;
+                `ForEach-Object{$_.name});typed=@($_.Exception.Data['MyspeedDiagnostics']|` +
+                `ForEach-Object{$_.bytes -is [byte[]]})}|ConvertTo-Json -Compress}\r\n`;
             const failure = runLibraryHarness("myspeed-baseline-forced-", body);
             assert.match(failure.message, /left an owned descendant/u);
             assert.deepEqual(failure.names, ["baseline-result.raw.json"]);
+            assert.deepEqual(failure.typed, [true]);
+        });
+
+    it("returns an observed executor result as typed bytes the bootstrap accepts",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const observed = '{"schemaVersion":1,"profile":"baseline-cpu","status":"observed","cleanupProven":true}';
+            const body = `$value=Invoke-MyspeedBaselineExecutor 'C:\\runtime' 'D:\\' -ResolveTaskRoot {$env:MYSPEED_BASELINE_TEST_ROOT} -Launch {` +
+                `param($Node,$Arguments,$Working,$Stdout,$Stderr)[IO.File]::WriteAllBytes($Stdout,[byte[]]@());` +
+                `[IO.File]::WriteAllBytes($Stderr,[byte[]]@());$result=Join-Path ([IO.Path]::GetDirectoryName($Stdout)) 'result.json';` +
+                `[IO.File]::WriteAllText($result,'${observed}');` +
+                `[pscustomobject]@{ExitCode=[int]0;TimedOut=$false;Forced=$false;AssignedBeforeResume=$true;` +
+                `Resumed=$true;ProcessTreeExitProven=$true;HandlesClosed=$true}}\r\n` +
+                `[pscustomobject]@{status=$value.status;typed=($value.bytes -is [byte[]]);length=$value.bytes.Length;` +
+                `text=[Text.Encoding]::UTF8.GetString($value.bytes);diagnostics=@($value.diagnostics).Count}|ConvertTo-Json -Compress\r\n`;
+            assert.deepEqual(runLibraryHarness("myspeed-baseline-observed-", body),
+                {status: "observed", typed: true, length: observed.length, text: observed, diagnostics: 0});
+        });
+
+    it("lets asynchronous descendant teardown drain before judging the Job and still forces a real leak",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const source = render().toString("utf8");
+            assert.match(source, /\[uint32\]\$BASELINE_EXECUTOR_CLEANUP_TIMEOUT,\[uint32\]\$BASELINE_EXECUTOR_DRAIN_TIMEOUT\)/u);
+            assert.equal(DESCENDANT_DRAIN_MILLISECONDS, 5_000);
+            const body = `Initialize-MyspeedBaselineJobType\r\n$root=$env:MYSPEED_BASELINE_TEST_ROOT;$null=[IO.Directory]::CreateDirectory($root)\r\n` +
+                `function Invoke-Run([string]$Name,[string]$Script){$dir=Join-Path $root $Name;$null=[IO.Directory]::CreateDirectory($dir);` +
+                `$watch=[Diagnostics.Stopwatch]::StartNew();$run=[MySpeed.Qualification.BaselineJob]::Run(${psString(process.execPath)},` +
+                `[string[]]@('-e',$Script),$dir,(Join-Path $dir 'stdout'),(Join-Path $dir 'stderr'),[uint32]60000,[uint32]30000,` +
+                `[uint32]$BASELINE_EXECUTOR_DRAIN_TIMEOUT);[pscustomobject]@{name=$Name;forced=$run.Forced;timedOut=$run.TimedOut;` +
+                `exitCode=$run.ExitCode;tree=$run.ProcessTreeExitProven;elapsedMs=$watch.ElapsedMilliseconds}}\r\n` +
+                `@((Invoke-Run 'plain-1' 'process.exitCode=0'),(Invoke-Run 'plain-2' 'process.exitCode=0'),` +
+                `(Invoke-Run 'plain-3' 'process.exitCode=0'),` +
+                `(Invoke-Run 'brief-descendant' ${psString(lingeringDescendant(BRIEF_DESCENDANT_MILLISECONDS))}),` +
+                `(Invoke-Run 'leaked-descendant' ${psString(lingeringDescendant(LEAKED_DESCENDANT_MILLISECONDS))}))|` +
+                `ConvertTo-Json -Compress\r\n`;
+            const runs = runLibraryHarness("myspeed-baseline-drain-", body);
+            assert.deepEqual(runs.map(run => run.name),
+                ["plain-1", "plain-2", "plain-3", "brief-descendant", "leaked-descendant"]);
+            for (const run of runs) {
+                assert.equal(run.timedOut, false, run.name);
+                assert.equal(run.exitCode, 0, run.name);
+                assert.equal(run.tree, true, run.name);
+            }
+            for (const run of runs.slice(0, 4)) assert.equal(run.forced, false, run.name);
+            const leaked = runs[4];
+            assert.equal(leaked.forced, true);
+            assert.ok(leaked.elapsedMs >= DESCENDANT_DRAIN_MILLISECONDS, String(leaked.elapsedMs));
+            assert.ok(leaked.elapsedMs < LEAKED_DESCENDANT_MILLISECONDS, String(leaked.elapsedMs));
+        });
+
+    it("publishes a bounded shutdown outcome marker after the shutdown call returns or throws",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const run = shutdown => {
+                const body = `$events=@();try{Invoke-MyspeedBaselineBootstrap ` +
+                    `-ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} -ResolveInputRoot {'C:\\owned'} ` +
+                    `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                    `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+                    `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
+                    `CollectEvidence={param($Seed)[ordered]@{schemaVersion=1;status='observed'}};` +
+                    `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
+                    `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[byte[]](1,2);status='observed';diagnostics=@()}} ` +
+                    `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
+                    `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
+                    `-Publish {param($Path,$Bytes)$script:events+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
+                    `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''});${shutdown}}}catch{` +
+                    `$script:events+=([pscustomobject]@{name='thrown';text=$_.Exception.Message})}\r\n` +
+                    `$events|ConvertTo-Json -Compress\r\n`;
+                return runLibraryHarness("myspeed-baseline-shutdown-marker-", body);
+            };
+            const returned = run("");
+            assert.deepEqual(returned.map(event => event.name),
+                ["baseline-result.json", "result.json", "shutdown", SHUTDOWN_OUTCOME_NAME]);
+            assert.deepEqual(JSON.parse(returned[3].text), {schemaVersion: 1, nonce: NONCE, stage: "guest-shutdown",
+                outcome: "returned", failure: null});
+            const refused = run(`throw ('shutdown refused'+[char]10+('x'*600))`);
+            assert.deepEqual(refused.map(event => event.name),
+                ["baseline-result.json", "result.json", "shutdown", SHUTDOWN_OUTCOME_NAME, "thrown"]);
+            const marker = JSON.parse(refused[3].text);
+            assert.equal(marker.outcome, "failed");
+            assert.match(marker.failure, /^shutdown refused x+$/u);
+            assert.equal(marker.failure.length, WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS.MAX_FAILURE_CHARACTERS);
+            assert.match(refused[4].text, /^shutdown refused/u);
         });
 
     it("sanitizes stderr context without accepting malformed result bytes",
@@ -319,7 +409,7 @@ describe("Windows baseline guest bootstrap", () => {
             assert.notEqual(result.stdout.trim(), "", result.stderr);
             assert.deepEqual(JSON.parse(result.stdout), ["guard", "stage-inputs", "install", "load-cpu:4194304", "mode:3",
                 "cpu", "activation", "system-tools", "executor", "cleanup", "cleanup-inputs", "mode:7",
-                "publish:baseline-result.json", "publish:result.json", "shutdown"]);
+                "publish:baseline-result.json", "publish:result.json", "shutdown", `publish:${SHUTDOWN_OUTCOME_NAME}`]);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
@@ -348,7 +438,7 @@ describe("Windows baseline guest bootstrap", () => {
             assert.equal(result.stderr, "");
             assert.notEqual(result.stdout.trim(), "", result.stderr);
             const events = JSON.parse(result.stdout);
-            assert.deepEqual(events.map(value => value.name), ["result.json", "shutdown"]);
+            assert.deepEqual(events.map(value => value.name), ["result.json", "shutdown", SHUTDOWN_OUTCOME_NAME]);
             const failure = JSON.parse(events[0].text);
             assert.equal(failure.status, "failed"); assert.equal(failure.stage, "guest-bootstrap");
             assert.match(failure.failure, /^error-mode-restore:/u);
@@ -647,7 +737,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
 
     it("publishes bytes the real Stage 2 parser accepts", {skip: !HAS_INBOX_POWERSHELL}, () => {
         const produced = runProducer();
-        assert.deepEqual(produced.names.sort(), ["baseline-result.json", "result.json"]);
+        assert.deepEqual(produced.names.sort(), ["baseline-result.json", SHUTDOWN_OUTCOME_NAME, "result.json"]);
         const parsed = parseGuestOutcome(produced.published, NONCE);
         assert.deepEqual(parsed.cpu, {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false});
         assert.deepEqual(parsed.instructions, {sse42: "completed", popcnt: "completed",
@@ -677,7 +767,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
                 ["system-tool-observation", {systemTools: "throw 'system tool unavailable'"}]
             ]) {
                 const produced = runProducer(overrides);
-                assert.deepEqual(produced.names, ["result.json"]);
+                assert.deepEqual(produced.names, [SHUTDOWN_OUTCOME_NAME, "result.json"]);
                 const parsed = parseGuestOutcome(produced.published, NONCE);
                 assert.equal(parsed.status, "failed");
                 assert.equal(parsed.stage, "guest-bootstrap");
@@ -692,7 +782,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
                 "$cleanup=[pscustomobject]@{cleanupProven=$false};");
             assert.notEqual(mutated, source);
             const produced = runProducer({script: Buffer.from(mutated, "utf8")});
-            assert.deepEqual(produced.names, ["result.json"]);
+            assert.deepEqual(produced.names, [SHUTDOWN_OUTCOME_NAME, "result.json"]);
             const parsed = parseGuestOutcome(produced.published, NONCE);
             assert.equal(parsed.status, "failed");
             assert.match(parsed.failure, /^runtime-cleanup: /u);
