@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {describe, it} from "node:test";
+import {EventEmitter} from "node:events";
+import {PassThrough} from "node:stream";
 
 import {
     runEarlyBootQmpSession,
@@ -22,6 +24,7 @@ import {
 import {
     collectPredeadlineFrameDiagnostic,
     createHostedStage2Operations,
+    runHostedOwnedProcess,
     runMonitoredQemu
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
 
@@ -554,110 +557,143 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
 });
 
 describe("Monitored QEMU watchdog & stalled screendump non-blocking", () => {
-    it("terminates QEMU on watchdog deadline without awaiting stalled screendump write", async () => {
-        let groupAlive = true;
-        let finish;
-        let terminated = false;
-        let cancelCalled = false;
-        const operation = new Promise(resolve => { finish = resolve; });
+    const PROCESS_PID = 2300;
+    const QEMU_PID = 2345;
+    const EXECUTION_DEADLINE_MILLISECONDS = 1_500_000;
+    const PROCESS_TIMEOUT_MILLISECONDS = 1_000;
+    const MAX_STREAM_BYTES = 65_536;
+    const INITIAL_QMP_MESSAGES = Object.freeze([
+        {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+        {return: {}, id: "capabilities"},
+        {return: {running: true, status: "running"}, id: "status"},
+        {return: {}, id: "screenshot-1"},
+        {return: {}, id: "screenshot-2"},
+        {return: {running: true, status: "running"}, id: "late-status-1"},
+        {return: {}, id: "late-screenshot-1"},
+        {return: {running: true, status: "running"}, id: "late-status-2"},
+        {return: {}, id: "late-screenshot-2"}
+    ]);
 
-        const fakeIo = {
-            runOwned: (_command, _argv, options) => {
-                options.onSpawn(2300);
-                options.onQmpSessionHandle?.({cancel: () => { cancelCalled = true; }});
-                options.onQmpSession?.(new Promise(() => {})); // Stalled write: never completes
-                options.onLateObservation?.(Promise.resolve(null));
-                options.onTerminationReady(() => {
-                    groupAlive = false;
-                    finish({
-                        process: {exitCode: 137, signal: null, timedOut: true, stdoutOverflow: false,
-                            stderrOverflow: false, cleanupProven: true, errorObserved: false},
-                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)
-                    });
-                });
-                return operation;
+    function createAdapterHarness(stallKind) {
+        const stdout = new PassThrough();
+        const stderr = new PassThrough();
+        const child = new EventEmitter();
+        let groupAlive = true;
+        let terminated = false;
+        let qmpTime = 0;
+        let predeadlineWriteAttempts = 0;
+        let predeadlineWriteCallbackCalls = 0;
+        let predeadlineWriteCallbackCallsAtTermination = null;
+        let pendingPredeadlineWriteCallback = null;
+        const qmpWriteIds = [];
+        let resolveInitialSession;
+        let resolvePredeadlineWrite;
+        const initialSession = new Promise(resolve => { resolveInitialSession = resolve; });
+        const predeadlineWrite = new Promise(resolve => { resolvePredeadlineWrite = resolve; });
+        let lateObservationPromise = null;
+        child.pid = PROCESS_PID;
+        child.stdout = stdout;
+        child.stderr = stderr;
+        child.unref = () => undefined;
+        child.stdin = {
+            destroyed: false,
+            destroy() {
+                this.destroyed = true;
+                pendingPredeadlineWriteCallback?.(new Error("stdin closed during monitor cleanup"));
             },
+            write(bytes, callback) {
+                const message = JSON.parse(Buffer.from(bytes).toString("utf8"));
+                qmpWriteIds.push(message.id);
+                if (message.id === "screenshot-2") resolveInitialSession();
+                if (message.id !== "predeadline-screenshot") return callback();
+                predeadlineWriteAttempts += 1;
+                resolvePredeadlineWrite();
+                if (stallKind === "response") {
+                    predeadlineWriteCallbackCalls += 1;
+                    callback();
+                } else pendingPredeadlineWriteCallback = () => {
+                    predeadlineWriteCallbackCalls += 1;
+                    callback(new Error("stdin closed during monitor cleanup"));
+                };
+            }
+        };
+        for (const message of INITIAL_QMP_MESSAGES) stdout.write(`${JSON.stringify(message)}\n`);
+
+        const inertTimer = () => Object.freeze({});
+        const qmpDependencies = {
+            now: () => qmpTime,
+            wait: async milliseconds => { qmpTime += milliseconds; }
+        };
+        const fakeIo = {
+            runOwned: (command, argv, options) => runHostedOwnedProcess(command, argv, options, {
+                spawnImpl: () => child,
+                setTimer: inertTimer,
+                clearTimer: () => undefined,
+                isGroupAlive: () => groupAlive
+            }),
             pathExists: () => true,
-            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
-            readQemuProcessIdentity: async () => (terminated
-                ? {state: "absent"}
-                : {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: "/owned/loader"}),
-            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000", effectiveMemoryBytes: "4294967295"}),
-            monotonicMilliseconds: () => 1_500_001,
+            readOwnedVerified: () => ({bytes: Buffer.from(`${QEMU_PID}\n`)}),
+            readQemuProcessIdentity: async () => {
+                if (!terminated) await initialSession;
+                return terminated ? {state: "absent"} : {
+                    state: "present", pid: QEMU_PID, processGroupId: PROCESS_PID,
+                    startTicks: "77", executablePath: "/owned/loader"
+                };
+            },
+            observeRuntimeResources: async () => {
+                await predeadlineWrite;
+                await lateObservationPromise;
+                return {taskBytes: "1", freeBytes: "90000000000", effectiveMemoryBytes: "4294967295"};
+            },
+            monotonicMilliseconds: () => predeadlineWriteAttempts > 0 ?
+                EXECUTION_DEADLINE_MILLISECONDS + 1 : 0,
             wait: async () => undefined,
             isProcessGroupAlive: () => groupAlive,
-            terminateQemuGroup: async () => { terminated = true; groupAlive = false; return true; }
+            terminateQemuGroup: async () => {
+                terminated = true;
+                groupAlive = false;
+                predeadlineWriteCallbackCallsAtTermination = predeadlineWriteCallbackCalls;
+                stdout.destroy(new Error("QEMU process group stopped"));
+                child.emit("close", 137, null);
+                return true;
+            }
         };
-
-        const result = await runMonitoredQemu(fakeIo, {
+        const request = {
             command: "/owned/qemu",
             argv: [],
-            timeoutMs: 1_000,
-            maxStreamBytes: 65_536,
+            timeoutMs: PROCESS_TIMEOUT_MILLISECONDS,
+            maxStreamBytes: MAX_STREAM_BYTES,
             pidPath: `${ROOT}/qemu.pid`,
             expectedExecutable: "/owned/loader",
-            executionDeadline: 1_500_000,
+            executionDeadline: EXECUTION_DEADLINE_MILLISECONDS,
             resources: {taskPath: ROOT, roots: [ROOT]},
-            qmp: {screenshotPaths: SCREENSHOTS, predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000}}
-        });
-
-        assert.equal(result.terminationReason, "deadline");
-        assert.equal(result.processGroupGone, true);
-        assert.equal(result.absentAfter, true);
-        assert.equal(cancelCalled, true);
-    });
-
-    it("terminates QEMU on watchdog deadline without awaiting stalled screendump response", async () => {
-        let groupAlive = true;
-        let finish;
-        let terminated = false;
-        let cancelCalled = false;
-        const operation = new Promise(resolve => { finish = resolve; });
-
-        const fakeIo = {
-            runOwned: (_command, _argv, options) => {
-                options.onSpawn(2300);
-                options.onQmpSessionHandle?.({cancel: () => { cancelCalled = true; }});
-                options.onQmpSession?.(new Promise(() => {})); // Stalled response: never completes
-                options.onLateObservation?.(Promise.resolve(null));
-                options.onTerminationReady(() => {
-                    groupAlive = false;
-                    finish({
-                        process: {exitCode: 137, signal: null, timedOut: true, stdoutOverflow: false,
-                            stderrOverflow: false, cleanupProven: true, errorObserved: false},
-                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)
-                    });
-                });
-                return operation;
+            qmp: {
+                screenshotPaths: SCREENSHOTS,
+                lateScreenshotPaths: LATE_SCREENSHOTS,
+                predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: EXECUTION_DEADLINE_MILLISECONDS}
             },
-            pathExists: () => true,
-            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
-            readQemuProcessIdentity: async () => (terminated
-                ? {state: "absent"}
-                : {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: "/owned/loader"}),
-            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000", effectiveMemoryBytes: "4294967295"}),
-            monotonicMilliseconds: () => 1_500_001,
-            wait: async () => undefined,
-            isProcessGroupAlive: () => groupAlive,
-            terminateQemuGroup: async () => { terminated = true; groupAlive = false; return true; }
+            qmpDependencies,
+            onLateObservation: promise => { lateObservationPromise = promise; }
         };
+        return {fakeIo, request, predeadlineWriteAttempts: () => predeadlineWriteAttempts,
+            predeadlineWriteCallbackCallsAtTermination: () => predeadlineWriteCallbackCallsAtTermination, qmpWriteIds};
+    }
 
-        const result = await runMonitoredQemu(fakeIo, {
-            command: "/owned/qemu",
-            argv: [],
-            timeoutMs: 1_000,
-            maxStreamBytes: 65_536,
-            pidPath: `${ROOT}/qemu.pid`,
-            expectedExecutable: "/owned/loader",
-            executionDeadline: 1_500_000,
-            resources: {taskPath: ROOT, roots: [ROOT]},
-            qmp: {screenshotPaths: SCREENSHOTS, predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000}}
+    for (const [stallKind, expectedCallback] of [["write", false], ["response", true]]) {
+        it(`terminates through the real hosted QMP adapter when the predeadline ${stallKind} stalls`, async () => {
+            const harness = createAdapterHarness(stallKind);
+            const result = await runMonitoredQemu(harness.fakeIo, harness.request);
+
+            assert.equal(harness.predeadlineWriteAttempts(), 1);
+            assert.ok(harness.qmpWriteIds.includes("predeadline-screenshot"));
+            assert.equal(harness.predeadlineWriteCallbackCallsAtTermination(), expectedCallback ? 1 : 0);
+            assert.equal(result.terminationReason, "deadline");
+            assert.equal(result.processGroupGone, true);
+            assert.equal(result.absentAfter, true);
+            assert.equal(expectedCallback, stallKind === "response");
+            assert.equal(result.lateBoot?.milestones.length, 2);
         });
-
-        assert.equal(result.terminationReason, "deadline");
-        assert.equal(result.processGroupGone, true);
-        assert.equal(cancelCalled, true);
-    });
+    }
 });
 
 describe("Hosted launcher end-to-end propagation & unified clock", () => {

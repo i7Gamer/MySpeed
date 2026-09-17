@@ -5,7 +5,7 @@ import path from "node:path";
 
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
-import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES,
+import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, RECEIPT_REJECTION_CODES,
     MAX_PREDEADLINE_FRAME_BYTES,
     PREDEADLINE_FRAME_SKIPPED_REASONS,
     PREDEADLINE_FRAME_UNAVAILABLE_REASONS,
@@ -452,6 +452,37 @@ function parseJson(bytes, label) {
     try { return JSON.parse(text); } catch { throw new TypeError(`${label} is not JSON`); }
 }
 
+/*
+ * Which region of the receipt parsers refused a receipt, recorded beside the rejection instead of
+ * on it. A WeakMap keyed by the thrown error keeps the error itself byte-identical to the one this
+ * module has always thrown - same class, same message, same own properties - so callers that match
+ * on either are unaffected, and nothing new can leak into anything that serializes an error.
+ *
+ * It is also the provenance boundary. A code is only ever read back out of this map, so an error
+ * that merely carries a `code` property, a copy of a genuine rejection, or any value a guest could
+ * influence resolves to null and is published as the historical `schema-invalid`. The allowlist is
+ * checked on the way out as well, so a typo inside this module cannot publish an unknown reason.
+ */
+const RECEIPT_REJECTIONS = new WeakMap();
+
+export function receiptRejectionCode(error) {
+    const code = RECEIPT_REJECTIONS.get(error);
+    return typeof code === "string" && RECEIPT_REJECTION_CODES.includes(code) ? code : null;
+}
+
+/*
+ * Wrap an existing check region without touching what it checks. The innermost region wins, so a
+ * nested wrapper can never relabel a rejection a more specific one already accounted for.
+ */
+function rejectIn(code, region) {
+    try {
+        return region();
+    } catch (error) {
+        if (error instanceof Error && !RECEIPT_REJECTIONS.has(error)) RECEIPT_REJECTIONS.set(error, code);
+        throw error;
+    }
+}
+
 function requireKeys(value, keys, label) {
     if (!value || typeof value !== "object" || Array.isArray(value) ||
         JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...keys].sort()))
@@ -494,57 +525,81 @@ export function parseGuestOutput(bytes, expectedNonce) {
     if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > MAX_GUEST_BYTES)
         throw new TypeError("guest result exceeded its bound");
     const value = parseJson(bytes, "guest result");
-    requireKeys(value, ["activation", "network", "nonce", "runs", "schemaVersion", "systemTools"], "guest result");
-    if (value.schemaVersion !== 1 || value.nonce !== expectedNonce || !Array.isArray(value.runs) ||
-        value.runs.length !== REQUIRED_PROBE_ROLES.length) throw new TypeError("guest result header is invalid");
-    const runs = new Map();
-    for (const run of value.runs) {
-        requireKeys(run, ["exitCode", "role", "stderrBase64", "stdoutBase64"], "guest probe run");
-        if (!REQUIRED_PROBE_ROLES.includes(run.role) || runs.has(run.role) || !Number.isInteger(run.exitCode) ||
-            run.exitCode < 0 || run.exitCode > 0xffff_ffff) throw new TypeError("guest probe run is invalid");
-        runs.set(run.role, run);
-    }
+    rejectIn("result-header-invalid", () => {
+        requireKeys(value, ["activation", "network", "nonce", "runs", "schemaVersion", "systemTools"], "guest result");
+        if (value.schemaVersion !== 1 || value.nonce !== expectedNonce || !Array.isArray(value.runs) ||
+            value.runs.length !== REQUIRED_PROBE_ROLES.length) throw new TypeError("guest result header is invalid");
+    });
+    const runs = rejectIn("probe-run-invalid", () => {
+        const collected = new Map();
+        for (const run of value.runs) {
+            requireKeys(run, ["exitCode", "role", "stderrBase64", "stdoutBase64"], "guest probe run");
+            if (!REQUIRED_PROBE_ROLES.includes(run.role) || collected.has(run.role) ||
+                !Number.isInteger(run.exitCode) || run.exitCode < 0 || run.exitCode > 0xffff_ffff)
+                throw new TypeError("guest probe run is invalid");
+            collected.set(run.role, run);
+        }
+        return collected;
+    });
     const cpuidRun = runs.get("cpuid");
-    if (cpuidRun.exitCode !== 0 || decodeBase64(cpuidRun.stderrBase64, "CPUID stderr").length !== 0)
-        throw new TypeError("CPUID run failed");
-    const cpuid = parseJson(decodeBase64(cpuidRun.stdoutBase64, "CPUID stdout"), "CPUID output");
-    requireKeys(cpuid, ["features", "kind", "leaf1", "leaf7Subleaf0", "maxBasicLeaf", "schemaVersion", "xcr0"],
-        "CPUID output");
-    requireKeys(cpuid.features, ["avx", "avx2", "osxsave", "popcnt", "sse42"], "CPUID features");
-    requireKeys(cpuid.leaf1, ["eax", "ebx", "ecx", "edx"], "CPUID leaf1");
-    requireKeys(cpuid.leaf7Subleaf0, ["eax", "ebx", "ecx", "edx"], "CPUID leaf7");
-    const register = /^0x[a-f0-9]{8}$/u;
-    for (const item of [...Object.values(cpuid.leaf1), ...Object.values(cpuid.leaf7Subleaf0)])
-        if (typeof item !== "string" || !register.test(item)) throw new TypeError("CPUID register is invalid");
-    const leaf1 = Number.parseInt(cpuid.leaf1.ecx.slice(2), 16);
-    const leaf7 = Number.parseInt(cpuid.leaf7Subleaf0.ebx.slice(2), 16);
-    if (!Number.isInteger(cpuid.maxBasicLeaf) || cpuid.maxBasicLeaf < 7 || cpuid.maxBasicLeaf > 0xffff_ffff)
-        throw new TypeError("CPUID maximum basic leaf is invalid");
-    const recomputed = {sse42: ((leaf1 >>> 20) & 1) === 1, popcnt: ((leaf1 >>> 23) & 1) === 1,
-        osxsave: ((leaf1 >>> 27) & 1) === 1, avx: ((leaf1 >>> 28) & 1) === 1,
-        avx2: ((leaf7 >>> 5) & 1) === 1};
-    if (cpuid.schemaVersion !== 1 || cpuid.kind !== "cpuid" ||
-        Object.keys(recomputed).some(key => cpuid.features[key] !== recomputed[key]) ||
-        recomputed.sse42 !== true || recomputed.popcnt !== true || recomputed.osxsave !== false ||
-        recomputed.avx !== false || recomputed.avx2 !== false || cpuid.xcr0 !== null)
-        throw new TypeError("CPUID target floor is invalid");
-    parseControl(runs.get("known-good"), "known-good", 0, 42);
-    parseControl(runs.get("known-bad"), "known-bad", 19, 13);
-    parseControl(runs.get("sse42"), "sse42", 0, 2_276_049_685);
-    parseControl(runs.get("popcnt"), "popcnt", 0, 32);
-    for (const role of ["illegal", "avx", "avx2"]) {
-        const run = runs.get(role);
-        if (run.exitCode !== ILLEGAL_INSTRUCTION_EXIT || decodeBase64(run.stdoutBase64, `${role} stdout`).length !== 0 ||
-            decodeBase64(run.stderrBase64, `${role} stderr`).length !== 0)
-            throw new TypeError(`${role.toUpperCase()} did not terminate with illegal instruction`);
-    }
-    requireKeys(value.network, ["enabledNonLoopbackInterfaces", "hardwareNics", "nonLoopbackRoutes"], "guest network");
-    if (![value.network.hardwareNics, value.network.enabledNonLoopbackInterfaces,
-        value.network.nonLoopbackRoutes].every(item => item === 0)) throw new TypeError("guest network was not isolated");
-    return {activation: parseGuestActivation(value.activation), cpu: recomputed,
+    rejectIn("cpuid-run-failed", () => {
+        if (cpuidRun.exitCode !== 0 || decodeBase64(cpuidRun.stderrBase64, "CPUID stderr").length !== 0)
+            throw new TypeError("CPUID run failed");
+    });
+    const cpuid = rejectIn("cpuid-output-invalid", () => {
+        const observed = parseJson(decodeBase64(cpuidRun.stdoutBase64, "CPUID stdout"), "CPUID output");
+        requireKeys(observed, ["features", "kind", "leaf1", "leaf7Subleaf0", "maxBasicLeaf", "schemaVersion", "xcr0"],
+            "CPUID output");
+        requireKeys(observed.features, ["avx", "avx2", "osxsave", "popcnt", "sse42"], "CPUID features");
+        requireKeys(observed.leaf1, ["eax", "ebx", "ecx", "edx"], "CPUID leaf1");
+        requireKeys(observed.leaf7Subleaf0, ["eax", "ebx", "ecx", "edx"], "CPUID leaf7");
+        const register = /^0x[a-f0-9]{8}$/u;
+        for (const item of [...Object.values(observed.leaf1), ...Object.values(observed.leaf7Subleaf0)])
+            if (typeof item !== "string" || !register.test(item)) throw new TypeError("CPUID register is invalid");
+        if (!Number.isInteger(observed.maxBasicLeaf) || observed.maxBasicLeaf < 7 ||
+            observed.maxBasicLeaf > 0xffff_ffff) throw new TypeError("CPUID maximum basic leaf is invalid");
+        return observed;
+    });
+    const recomputed = rejectIn("cpu-floor-unmet", () => {
+        const leaf1 = Number.parseInt(cpuid.leaf1.ecx.slice(2), 16);
+        const leaf7 = Number.parseInt(cpuid.leaf7Subleaf0.ebx.slice(2), 16);
+        const observed = {sse42: ((leaf1 >>> 20) & 1) === 1, popcnt: ((leaf1 >>> 23) & 1) === 1,
+            osxsave: ((leaf1 >>> 27) & 1) === 1, avx: ((leaf1 >>> 28) & 1) === 1,
+            avx2: ((leaf7 >>> 5) & 1) === 1};
+        if (cpuid.schemaVersion !== 1 || cpuid.kind !== "cpuid" ||
+            Object.keys(observed).some(key => cpuid.features[key] !== observed[key]) ||
+            observed.sse42 !== true || observed.popcnt !== true || observed.osxsave !== false ||
+            observed.avx !== false || observed.avx2 !== false || cpuid.xcr0 !== null)
+            throw new TypeError("CPUID target floor is invalid");
+        return observed;
+    });
+    rejectIn("control-probe-mismatch", () => {
+        parseControl(runs.get("known-good"), "known-good", 0, 42);
+        parseControl(runs.get("known-bad"), "known-bad", 19, 13);
+        parseControl(runs.get("sse42"), "sse42", 0, 2_276_049_685);
+        parseControl(runs.get("popcnt"), "popcnt", 0, 32);
+    });
+    rejectIn("fault-probe-not-illegal", () => {
+        for (const role of ["illegal", "avx", "avx2"]) {
+            const run = runs.get(role);
+            if (run.exitCode !== ILLEGAL_INSTRUCTION_EXIT ||
+                decodeBase64(run.stdoutBase64, `${role} stdout`).length !== 0 ||
+                decodeBase64(run.stderrBase64, `${role} stderr`).length !== 0)
+                throw new TypeError(`${role.toUpperCase()} did not terminate with illegal instruction`);
+        }
+    });
+    rejectIn("network-not-isolated", () => {
+        requireKeys(value.network, ["enabledNonLoopbackInterfaces", "hardwareNics", "nonLoopbackRoutes"],
+            "guest network");
+        if (![value.network.hardwareNics, value.network.enabledNonLoopbackInterfaces,
+            value.network.nonLoopbackRoutes].every(item => item === 0))
+            throw new TypeError("guest network was not isolated");
+    });
+    return {activation: rejectIn("activation-invalid", () => parseGuestActivation(value.activation)),
+        cpu: recomputed,
         instructions: {sse42: "completed", popcnt: "completed", avx: "illegal-instruction",
             avx2: "illegal-instruction"}, network: structuredClone(value.network),
-        systemTools: validateWindowsSystemTools(value.systemTools)};
+        systemTools: rejectIn("system-tools-invalid", () => validateWindowsSystemTools(value.systemTools))};
 }
 
 export function parseGuestFailure(bytes, expectedNonce) {
@@ -2169,7 +2224,7 @@ export async function extractGuestReceiptDiagnostic(io, input, context, launched
                 const canonical = parseGuestFailure(stdout, context.nonce);
                 return {guestFailure: canonical,
                     diagnostic: {schemaVersion: 1, status: "valid-failure", source, receipt: canonical}};
-            } catch { return malformed(nonceMismatch ? "nonce-mismatch" : "schema-invalid"); }
+            } catch { return malformed(nonceMismatch ? "nonce-mismatch" : "failure-receipt-invalid"); }
         }
         /*
          * A success receipt is only ever published from the primary name, and only as metadata. It
@@ -2181,7 +2236,10 @@ export async function extractGuestReceiptDiagnostic(io, input, context, launched
             parseGuestOutput(stdout, context.nonce);
             return {guestFailure: null,
                 diagnostic: {schemaVersion: 1, status: "valid-success", source, bytes, sha256: digest}};
-        } catch { return malformed(nonceMismatch ? "nonce-mismatch" : "schema-invalid"); }
+        } catch (error) {
+            /* The code is read back out of the parser's own record; anything else stays historical. */
+            return malformed(nonceMismatch ? "nonce-mismatch" : receiptRejectionCode(error) ?? "schema-invalid");
+        }
     };
 
     const capped = (source, stdout) => ({guestFailure: null,
