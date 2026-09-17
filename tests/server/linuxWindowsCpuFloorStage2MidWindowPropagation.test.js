@@ -7,10 +7,11 @@ import {fileURLToPath} from "node:url";
 
 import {buildWindowsMsiStage2Request} from "../../scripts/qualification/windows-msi-stage2-request.mjs";
 import {runHostedStage2Controller} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
-import {runWindowsCpuFloorStage2} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
-import {createHostedStage2Operations, runMonitoredQemu} from
-    "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
-import {MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES} from
+import {runWindowsCpuFloorStage2, PREDEADLINE_FRAME_UNAVAILABLE_REASONS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {createHostedStage2Operations, runMonitoredQemu, collectPredeadlineFrameDiagnostic,
+    collectMidWindowFramesDiagnostic} from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES, WINPE_DIAGNOSTIC_CONFIRMATION} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -151,6 +152,18 @@ describe("Real Stage 2 runner propagation to the launcher input", () => {
             /mid-window/iu);
         assert.equal(captured, null);
     });
+
+    it("rejects midWindowFrames combined with a WinPE diagnostic authorization before touching any operation", async () => {
+        let touched = false;
+        await assert.rejects(runWindowsCpuFloorStage2({context, admission: {admitted: true}, paths: paths(),
+            probeArtifact: {}, midWindowFrames: true,
+            winpeDiagnostic: {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: context.nonce},
+            admitWinpeDiagnostic: () => ({reservation: {label: "windows-msi-winpe-diagnostic",
+                executionMilliseconds: 120_000, cleanupMilliseconds: 30_000}, collectionDeadlineMilliseconds: 1_000})},
+            {resolveSignedPackageClosure: async () => { touched = true; throw new Error("must not be reached"); }}),
+            /mid-window frames cannot combine/u);
+        assert.equal(touched, false);
+    });
 });
 
 describe("Real hosted launcher: isMidWindowActive gate and QMP scheduling wiring", () => {
@@ -223,6 +236,15 @@ describe("Real hosted launcher: isMidWindowActive gate and QMP scheduling wiring
             privilegeMode: "ordinary-kvm", deadlines: {executionMinutes: 25, cleanupMinutes: 5}, midWindowFrames: "yes"}),
             /mid-window/iu);
     });
+
+    it("rejects midWindowFrames combined with a WinPE diagnostic authorization at the launcher boundary too", async () => {
+        const capture = {};
+        const ops = createHostedStage2Operations({context: contextObj, paths: pathsObj, dependencies: fakeIoFor(capture)});
+        await assert.rejects(ops.launchOwnedQemu({toolchain: toolchainObj, paths: pathsObj, argv: ["-m", "4G"],
+            privilegeMode: "ordinary-kvm", midWindowFrames: true,
+            winpeDiagnostic: {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: contextObj.nonce}}),
+            /mid-window frames cannot combine/u);
+    });
 });
 
 describe("Enabled-state finalization: session-unavailable fallback when the callback never arrives", () => {
@@ -250,6 +272,46 @@ describe("Enabled-state finalization: session-unavailable fallback when the call
             assert.deepEqual(entry, {schemaVersion: 1, status: "unavailable",
                 nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[index], reason: "session-unavailable"});
         }
+        assert.equal(Object.isFrozen(monitored.midWindowFrames), true);
+        for (const entry of monitored.midWindowFrames) assert.equal(Object.isFrozen(entry), true);
+    });
+
+    it("retains a slot already captured when the process settles before the other slot reports, and " +
+        "closes only the unresolved slot as session-unavailable", async () => {
+        let lateArrival = null;
+        const monitored = await runMonitoredQemu({
+            monotonicMilliseconds: () => 0,
+            createOwnedPidFile: () => null,
+            runOwned: async (command, argv, options) => {
+                lateArrival = options.onMidWindowFrame;
+                // Slot 1 reports before the process settles; slot 2 never gets the chance to.
+                options.onMidWindowFrame(0, {schemaVersion: 1, status: "captured", nominalOffsetMs: 600_000,
+                    offsetMs: 600_000, screenshotPath: "mid-window-frame-1.png"});
+                return {process: {exitCode: 0, signal: null, timedOut: false, stdoutOverflow: false,
+                    stderrOverflow: false, cleanupProven: true, errorObserved: false},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)};
+            },
+            isProcessGroupAlive: () => false,
+            readQemuProcessIdentity: async () => ({state: "absent"}),
+            wait: async () => undefined
+        }, {
+            command: "/bin/true", argv: [], timeoutMs: 1_000, pidPath: "/tmp/does-not-exist.pid",
+            expectedExecutable: "/tmp/tools/ld.so", maxStreamBytes: 1_024,
+            qmp: {screenshotPaths: ["a", "b"], midWindow: {screenshotPaths: MID_WINDOW_FRAME_FILENAMES,
+                executionDeadline: 1_500_000}}
+        });
+
+        assert.deepEqual(monitored.midWindowFrames[0], {schemaVersion: 1, status: "captured",
+            nominalOffsetMs: 600_000, offsetMs: 600_000, screenshotPath: "mid-window-frame-1.png"});
+        assert.deepEqual(monitored.midWindowFrames[1], {schemaVersion: 1, status: "unavailable",
+            nominalOffsetMs: 900_000, reason: "session-unavailable"});
+
+        // A late callback for the already-closed slot, arriving after finalization, must be dropped:
+        // nothing about the returned snapshot may change.
+        lateArrival(1, {schemaVersion: 1, status: "captured", nominalOffsetMs: 900_000,
+            offsetMs: 900_000, screenshotPath: "mid-window-frame-2.png"});
+        assert.deepEqual(monitored.midWindowFrames[1], {schemaVersion: 1, status: "unavailable",
+            nominalOffsetMs: 900_000, reason: "session-unavailable"});
     });
 
     it("returns null (not a fallback array) when mid-window was never requested at all", async () => {
@@ -265,5 +327,36 @@ describe("Enabled-state finalization: session-unavailable fallback when the call
         }, {command: "/bin/true", argv: [], timeoutMs: 1_000, pidPath: "/tmp/does-not-exist.pid",
             expectedExecutable: "/tmp/tools/ld.so", maxStreamBytes: 1_024});
         assert.equal(monitored.midWindowFrames, null);
+    });
+});
+
+describe("Predeadline's collected/replay reason contract preserves reader-unavailable", () => {
+    it("collectPredeadlineFrameDiagnostic returns the disclosed reader-unavailable reason unchanged", () => {
+        const result = collectPredeadlineFrameDiagnostic({}, {paths: paths()},
+            {status: "unavailable", reason: "reader-unavailable"}, true);
+        assert.deepEqual(result, {schemaVersion: 1, status: "unavailable", reason: "reader-unavailable"});
+    });
+
+    it("the replay-accepted reason enum includes reader-unavailable", () => {
+        assert.equal(PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes("reader-unavailable"), true);
+    });
+});
+
+describe("Mid-window collector fails closed on a byte-count/identity mismatch", () => {
+    it("reports malformed/read-cap-exceeded when the reported byte identity does not match what was read", () => {
+        const targetPath = `${paths().root}/${MID_WINDOW_FRAME_FILENAMES[0]}`;
+        const io = {
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("hello"),
+                identity: {path: targetPath, bytes: "999", sha256: "0".repeat(64)}})
+        };
+        const midWindowState = [
+            {status: "captured", screenshotPath: targetPath, offsetMs: 600_000},
+            {status: "skipped", reason: "insufficient-time"}
+        ];
+        const result = collectMidWindowFramesDiagnostic(io, {paths: paths()}, midWindowState, true);
+        assert.equal(result[0].status, "malformed");
+        assert.equal(result[0].reason, "read-cap-exceeded");
+        assert.equal(result[0].bytes, "5");
     });
 });

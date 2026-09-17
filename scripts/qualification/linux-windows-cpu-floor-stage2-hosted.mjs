@@ -223,9 +223,16 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                     options.onPredeadlineObservation?.(observation);
                     options.qmp.onPredeadlineObservation?.(observation);
                 },
-                onMidWindowObservation: observation => {
-                    options.onMidWindowObservation?.(observation);
-                    options.qmp.onMidWindowObservation?.(observation);
+                onMidWindowFrame: (index, record) => {
+                    /*
+                     * One handler fires, never both: a caller that happens to populate both the
+                     * top-level and the nested `qmp.onMidWindowFrame` location must not receive the
+                     * same frame twice. The nested location wins when present, matching the other
+                     * dual-hop hooks in this options object.
+                     */
+                    const handler = options.qmp.onMidWindowFrame ?? options.onMidWindowFrame;
+                    try { handler?.(index, record); }
+                    catch { /* hosted forwarding must not throw back into the QMP session */ }
                 }
             }, options.qmpDependencies);
             qmpSession.catch(() => undefined);
@@ -1474,8 +1481,8 @@ export async function runMonitoredQemu(io, request) {
     let lateBootObservation = null;
     let lateBootSettled = false;
     let predeadlineObservation = null;
-    let midWindowObservation = null;
-    let midWindowSettled = false;
+    let midWindowSlots = null;
+    let midWindowFinalized = false;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
     const cancelQmp = () => {
@@ -1517,16 +1524,17 @@ export async function runMonitoredQemu(io, request) {
                     predeadlineObservation = observation;
                     request.onPredeadlineObservation?.(observation);
                 },
-                onMidWindowObservation: observation => {
+                onMidWindowFrame: (index, record) => {
                     /*
-                     * At most once, non-throwing: the QMP layer already reports this exactly once as
-                     * one frozen two-slot array, but this boundary does not trust that guarantee
-                     * blindly - a late/duplicate call must not overwrite an already-finalized snapshot.
+                     * At most once per slot, non-throwing, and never after finalization: the settled
+                     * guard is also set at finalization itself (not only inside this handler), so a
+                     * late/duplicate slot arriving after the process has already settled is dropped
+                     * rather than mutating the snapshot already returned to the caller.
                      */
-                    if (midWindowSettled) return;
-                    midWindowSettled = true;
-                    midWindowObservation = observation;
-                    try { request.onMidWindowObservation?.(observation); } catch { /* non-throwing boundary */ }
+                    if (midWindowFinalized) return;
+                    midWindowSlots ??= [null, null];
+                    midWindowSlots[index] = record;
+                    try { request.onMidWindowFrame?.(index, record); } catch { /* non-throwing boundary */ }
                 },
                 onQmpSession: value => {
                     qmpSession = value;
@@ -1642,13 +1650,20 @@ export async function runMonitoredQemu(io, request) {
     const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
     /*
      * Enabled-state finalization: when mid-window capture was requested, its two-slot state is never
-     * silently omitted. If the callback never arrived at all by the time the process/QMP session has
-     * fully settled here - the early QMP phase failed before the optional phase could even start -
-     * each slot gets an explicit closed "session-unavailable" record rather than staying absent.
+     * silently omitted, and a slot already captured before the process settled is never discarded in
+     * favor of a synthetic fallback. The settled guard is set here, before the snapshot is built, so
+     * any callback that fires afterward (a background continuation still resolving a slot the process
+     * did not wait for) is dropped rather than accepted. Each slot that never reported at all - the
+     * early QMP phase failed before the optional phase could even start, or the process settled
+     * between slots - gets an explicit closed "session-unavailable" record instead of staying absent.
+     * Both the array and every entry are frozen: no late report can mutate what has already been
+     * returned.
      */
+    midWindowFinalized = true;
     const finalMidWindow = request.qmp?.midWindow ?
-        (midWindowObservation ?? MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(nominalOffsetMs =>
-            Object.freeze({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "session-unavailable"}))) :
+        Object.freeze(MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map((nominalOffsetMs, index) =>
+            Object.freeze(midWindowSlots?.[index] ??
+                {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "session-unavailable"}))) :
         null;
     const finish = value => {
         const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow};
@@ -1999,6 +2014,13 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
      */
     if (input.midWindowFrames !== undefined && input.midWindowFrames !== true)
         throw new TypeError("QEMU mid-window frames flag is invalid");
+    /*
+     * Rejected explicitly, not just silently disabled by `isPredeadlineActive`'s own WinPE exclusion:
+     * a caller that opted in to both almost certainly made a mistake, and silent disablement would
+     * hide it.
+     */
+    if (input.midWindowFrames === true && winpeDiagnostic !== undefined)
+        throw new TypeError("QEMU mid-window frames cannot combine with a WinPE diagnostic authorization");
     const isMidWindowActive = isPredeadlineActive && input.midWindowFrames === true;
     const midWindowScreenshotPaths = isMidWindowActive ?
         MID_WINDOW_FRAME_FILENAMES.map(name => `${input.paths.root}/${name}`) : null;
@@ -2606,6 +2628,21 @@ function collectMidWindowFrameEntry(io, input, entryState, index, cleanupProven)
             if (observed.identity.path !== targetPath) {
                 return {
                     schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "path-mismatch",
+                    bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+                };
+            }
+            /*
+             * The returned byte identity/count is not trusted blindly: it must equal the actual bytes
+             * read, and it must fit the declared cap, before anything is checked about their content.
+             * A dependency (real or injected) that reports a count out of step with what it actually
+             * handed back - or a count that overruns the cap - fails closed on the same reason the PNG
+             * and hash checks already use, rather than publishing evidence this collector cannot vouch
+             * for.
+             */
+            if (observed.identity.bytes !== String(observed.bytes.length) ||
+                observed.bytes.length > MAX_MID_WINDOW_FRAME_BYTES) {
+                return {
+                    schemaVersion: 1, status: "malformed", nominalOffsetMs, reason: "read-cap-exceeded",
                     bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
                 };
             }

@@ -83,9 +83,16 @@ const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
 export const PREDEADLINE_FRAME_SKIPPED_REASONS = Object.freeze(["insufficient-time", "guest-already-exited", "disabled"]);
+/*
+ * "reader-unavailable" belongs here too: the stop-optional-continuation policy reports it for
+ * predeadline whenever an earlier optional QMP command (a legacy milestone or a mid-window sample)
+ * has already made the shared reader unsafe to reuse. Omitting it here silently rewrote a disclosed,
+ * meaningful reason down to "command-failed" during collection and replay.
+ */
 export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze([
     "command-timeout", "command-failed", "qmp-write-failed", "qmp-stream-ended",
-    "qmp-error-response", "qmp-id-mismatch", "file-missing", "cleanup-unproven", "read-error"
+    "qmp-error-response", "qmp-id-mismatch", "file-missing", "cleanup-unproven", "read-error",
+    "reader-unavailable"
 ]);
 export const PREDEADLINE_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
 export const MAX_PREDEADLINE_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
@@ -1851,6 +1858,8 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
     if (diagnosticAuthorization !== undefined && (diagnosticAuthorization.nonce !== context.nonce ||
         typeof admitWinpeDiagnostic !== "function"))
         throw new TypeError("WinPE diagnostic authorization is not bound to this run");
+    if (midWindowFrames === true && diagnosticAuthorization !== undefined)
+        throw new TypeError("Stage 2 mid-window frames cannot combine with a WinPE diagnostic authorization");
     /*
      * One extra argument that reaches every validly authorized exit, so a diagnostic run can never
      * fall back to the calibration classification on any path - including the admission refusal

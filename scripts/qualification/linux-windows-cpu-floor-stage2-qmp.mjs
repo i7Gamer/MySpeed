@@ -72,7 +72,9 @@ export function validateMidWindowScreenshotPaths(value) {
         if (typeof item !== "string" || !MID_WINDOW_FRAME_PATH_PATTERNS[index].test(item))
             throw new TypeError("QMP mid-window screenshot paths are invalid");
     });
-    return value;
+    // A defensive copy: the validated array must not change shape if the caller mutates its own
+    // array after this call returns.
+    return [...value];
 }
 
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
@@ -362,6 +364,18 @@ function withDeadline(promise, dependencies, milliseconds = QMP_MESSAGE_TIMEOUT_
 }
 
 const QMP_ERROR_PROVENANCE = new WeakMap();
+/*
+ * A distinct marker (not a QMP_ERROR_PROVENANCE reason) for the mid-window write-boundary admission
+ * recheck: it means no command was ever issued, so the loop must record `insufficient-time` and must
+ * NOT taint the shared reader - unlike every other rejection in this loop, which was issued and so
+ * leaves the reader's state uncertain.
+ */
+const MID_WINDOW_ADMISSION_ABORT_ERRORS = new WeakSet();
+function createMidWindowAdmissionAbortError() {
+    const error = new Error("QMP mid-window admission window closed");
+    MID_WINDOW_ADMISSION_ABORT_ERRORS.add(error);
+    return error;
+}
 
 function createMessageReader(readable, dependencies, bounds = {}) {
     if (!readable || typeof readable[Symbol.asyncIterator] !== "function")
@@ -458,6 +472,14 @@ async function runSession(input, dependencies, session) {
             const root = path.slice(0, -`/${MID_WINDOW_FRAME_FILENAMES[index]}`.length);
             if (root !== screenshotRoot) throw new TypeError("QMP mid-window root is invalid");
         });
+        /*
+         * Rejected here too, not only at the controller's authorization boundary: a WinPE diagnostic
+         * session runs on its own reservation-bound session, never the fixed 25/5 diagnostic deadlines
+         * mid-window is scoped to, and this callable must never silently disable one in favor of the
+         * other.
+         */
+        if (winpeDiagnostic !== undefined)
+            throw new TypeError("QMP mid-window frames cannot combine with a WinPE diagnostic authorization");
     }
     if (bootConfirmation !== undefined && !INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN.test(screenshotRoot))
         throw new TypeError("QMP installer boot confirmation root is invalid");
@@ -720,7 +742,18 @@ async function runSession(input, dependencies, session) {
             resolveLateBoot(lateBootRecord);
 
             if (midWindow !== null) {
-                const records = [];
+                /*
+                 * One precise callback signature, used at every hop: `onMidWindowFrame(index, record)`,
+                 * fired at most once per slot, immediately once that slot's own outcome is decided.
+                 * This (not a single end-of-loop array) is what lets a caller retain a slot that
+                 * finished before the process settled while correctly closing a slot that never got
+                 * the chance to run - a single combined report cannot represent that split. A throwing
+                 * callback must never suppress the predeadline finalization that follows this loop.
+                 */
+                const reportMidWindowFrame = (index, record) => {
+                    try { input.onMidWindowFrame?.(index, Object.freeze(record)); }
+                    catch { /* a throwing callback must not suppress predeadline finalization */ }
+                };
                 for (let i = 0; i < MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.length; i += 1) {
                     const nominalOffsetMs = MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[i];
                     /*
@@ -729,37 +762,39 @@ async function runSession(input, dependencies, session) {
                      * timeout, jitter, and cleanup headroom). A mid-window sample may only start when
                      * it - plus its own command timeout and its own named scheduling margin - fits
                      * entirely before that boundary, so an overdue sample can never eat into
-                     * predeadline's reserved window. This is evaluated fresh before waiting and again
-                     * after waking, per the runtime-admission decision.
+                     * predeadline's reserved window. This is evaluated fresh before waiting, again
+                     * after waking, and once more immediately before the write itself (the actual
+                     * writeBytes boundary, via `write`'s `beforeWrite` hook), per the runtime-admission
+                     * decision.
                      */
                     const protectedStart = midWindow.executionDeadline - PREDEADLINE_FRAME_LEAD_MILLISECONDS;
                     const fits = now => now + MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS +
                         MID_WINDOW_SCHEDULING_MARGIN_MILLISECONDS < protectedStart;
                     if (optionalContinuationUnsafe) {
-                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
                         continue;
                     }
                     if (session.cancelled || session.expired) {
-                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
                         continue;
                     }
                     const preWaitNow = Math.max(getTime(), sessionStartTime + nominalOffsetMs);
                     if (!fits(preWaitNow)) {
-                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
                         continue;
                     }
                     const remaining = Math.max(0, nominalOffsetMs - (getTime() - sessionStartTime));
                     await cancellableDelay(remaining, dependencies, session);
                     if (session.cancelled || session.expired) {
-                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "session-closed"});
                         continue;
                     }
                     if (!fits(getTime())) {
-                        records.push({schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
                         continue;
                     }
                     if (optionalContinuationUnsafe) {
-                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "reader-unavailable"});
                         continue;
                     }
                     try {
@@ -769,25 +804,42 @@ async function runSession(input, dependencies, session) {
                                 execute: "screendump",
                                 arguments: {filename: midWindow.screenshotPaths[i], format: "png"},
                                 id: screenshotId
+                            }, () => {
+                                // The actual writeBytes boundary: a command never issued here must
+                                // never taint the reader, unlike every other rejection in this loop.
+                                if (!fits(getTime())) throw createMidWindowAdmissionAbortError();
                             });
+                            /*
+                             * The write landed. Taint may have arrived while it was still in flight -
+                             * this very operation's own outer deadline below can lose a race against a
+                             * real late resolution of `input.writeBytes`. Once tainted, this losing
+                             * write must not start a *new* read: the one already-pending delayed
+                             * response that a still-outstanding write could owe is unavoidable and
+                             * stays isolated to this abandoned chain, but nothing here may issue
+                             * another competing read.
+                             */
+                            if (optionalContinuationUnsafe) return;
                             await expectResponse(readMessage, screenshotId);
                         })();
                         await withDeadline(commandOperation, dependencies, MID_WINDOW_COMMAND_TIMEOUT_MILLISECONDS);
                         const observedOffsetMs = Math.round(getTime() - sessionStartTime);
-                        records.push({schemaVersion: 1, status: "captured", nominalOffsetMs,
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "captured", nominalOffsetMs,
                             offsetMs: observedOffsetMs, screenshotPath: midWindow.screenshotPaths[i]});
                     } catch (error) {
+                        if (error instanceof Error && MID_WINDOW_ADMISSION_ABORT_ERRORS.has(error)) {
+                            reportMidWindowFrame(i, {schemaVersion: 1, status: "skipped", nominalOffsetMs, reason: "insufficient-time"});
+                            continue;
+                        }
                         optionalContinuationUnsafe = true;
                         const observedOffsetMs = Math.round(getTime() - sessionStartTime);
                         const isTimeout = error?.message?.includes("deadline");
                         const provenance = (error && typeof error === "object") ?
                             QMP_ERROR_PROVENANCE.get(error) : undefined;
                         const reason = isTimeout ? "command-timeout" : (provenance ?? "command-failed");
-                        records.push({schemaVersion: 1, status: "unavailable", nominalOffsetMs,
+                        reportMidWindowFrame(i, {schemaVersion: 1, status: "unavailable", nominalOffsetMs,
                             offsetMs: observedOffsetMs, reason});
                     }
                 }
-                input.onMidWindowObservation?.(Object.freeze(records.map(record => Object.freeze(record))));
             }
 
             if (predeadline !== null) {
