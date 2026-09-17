@@ -11,6 +11,7 @@ import {
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
 import {
     WINDOWS_SYSTEM_TOOL_PATHS,
+    canonicalShutdownMarker,
     renderGuestBootstrap
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 import {
@@ -158,7 +159,7 @@ describe("Stage 2 guest activation path contract", () => {
                 `UserId='${quote(task.principal)}';RunLevel='${quote(task.runLevel)}'}}};` +
                 `$native=& {. '${quote(scriptPath)}' -LibraryMode;New-MyspeedGuestNativeOperations};` +
                 `. '${quote(scriptPath)}' -LibraryMode;` +
-                `$events=[Collections.Generic.List[string]]::new();$script:captured=$null;` +
+                `$events=[Collections.Generic.List[string]]::new();$script:captured=@{};` +
                 `function global:New-MyspeedTestList([string]$Json){` +
                 `$list=[Collections.Generic.List[object]]::new();` +
                 `foreach($item in ($Json|ConvertFrom-Json)){$list.Add($item)};return ,$list}` +
@@ -170,13 +171,14 @@ describe("Stage 2 guest activation path contract", () => {
                 `ObserveActivation={$events.Add('activation');& $native.ObserveActivation};` +
                 `ObserveSystemTools={$events.Add('system-tools');` +
                 `New-MyspeedTestList '${JSON.stringify(systemToolsRecord())}'};` +
-                `WriteExclusive={param([string]$Path,[byte[]]$Bytes)` +
-                `$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
-                `$script:captured=[Convert]::ToBase64String($Bytes)}};` +
+                `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$name=[IO.Path]::GetFileName($Path);` +
+                `$events.Add('write:'+$name);` +
+                `$script:captured[$name]=[Convert]::ToBase64String($Bytes)}};` +
                 `$caught=$null;try{Invoke-MyspeedGuestBootstrap -Operations $ops ` +
                 `-Shutdown {$events.Add('shutdown')}}catch{$caught=[string]$_.Exception.Message};` +
                 `[Console]::Out.Write(([ordered]@{events=($events -join ',');caught=$caught;` +
-                `bytes=$script:captured}|ConvertTo-Json -Compress))`;
+                `bytes=$script:captured['result.json'];` +
+                `marker=$script:captured['shutdown-outcome.json']}|ConvertTo-Json -Compress))`;
             try {
                 const result = spawnSync(POWERSHELL,
                     ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
@@ -184,9 +186,14 @@ describe("Stage 2 guest activation path contract", () => {
                 assert.equal(result.status, 0, result.stderr);
                 const emitted = JSON.parse(result.stdout);
                 assert.equal(emitted.caught, null);
-                /* The success path writes the receipt and then always invokes shutdown, in that order. */
+                /*
+                 * The success path writes the receipt, then always invokes shutdown, then records
+                 * the outcome of that invocation - in that order, with nothing new before the call.
+                 */
                 assert.equal(emitted.events, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation," +
-                    "system-tools,mode:77,write:result.json,shutdown");
+                    "system-tools,mode:77,write:result.json,shutdown,write:shutdown-outcome.json");
+                assert.deepEqual(Buffer.from(emitted.marker, "base64"),
+                    canonicalShutdownMarker(NONCE, "returned"));
                 const bytes = Buffer.from(emitted.bytes, "base64");
                 const parsed = parseGuestOutput(bytes, NONCE);
                 assert.equal(parsed.activation.files.setupComplete.path, DECLARED_SETUP_COMPLETE_PATH);
@@ -197,22 +204,22 @@ describe("Stage 2 guest activation path contract", () => {
 
     /*
      * Run 35208529749 left a complete result.json and a guest that never powered off. These pin
-     * what the guest does when the injected shutdown itself fails, because that outcome is
-     * indistinguishable, from the host, from a shutdown that was invoked and never completed: the
-     * receipt is already on the output volume before shutdown is reached, and nothing the host can
-     * read afterwards records that the shutdown call refused. The ordering guarantee - receipt
-     * first, shutdown always, on every path - is what makes "QEMU is still running" no evidence at
-     * all about whether the shutdown command was invoked.
+     * what the guest does when the injected shutdown itself fails. The receipt is already on the
+     * output volume before shutdown is reached, so its presence says nothing about the invocation -
+     * the ordering guarantee is what makes "QEMU is still running" no evidence at all about whether
+     * the shutdown command was invoked. Only the marker written after the call separates the two,
+     * and a shutdown that threw and one that was invoked and never completed stay distinguishable
+     * from the host solely by whether that marker is there and which outcome it carries.
      */
     it("writes the receipt before shutdown and invokes shutdown even when shutdown itself fails",
         {skip: SKIP_WITHOUT_POWERSHELL}, () => {
             const cases = [
                 ["success", "[ordered]@{ok=$true}", "synthetic shutdown failure",
                     "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,system-tools,mode:77," +
-                    "write:result.json,shutdown"],
+                    "write:result.json,shutdown,write:shutdown-outcome.json"],
                 ["observation failure", "throw 'synthetic activation failure'", "synthetic shutdown failure",
                     "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,mode:77," +
-                    "write:result.json,shutdown"]
+                    "write:result.json,shutdown,write:shutdown-outcome.json"]
             ];
             const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-stage2-shutdown-"));
             const scriptPath = path.join(root, "bootstrap.ps1");
@@ -220,20 +227,21 @@ describe("Stage 2 guest activation path contract", () => {
             try {
                 for (const [label, activationBody, shutdownFailure, expectedEvents] of cases) {
                     const harness = `$ErrorActionPreference='Stop';. '${quote(scriptPath)}' -LibraryMode;` +
-                        `$events=[Collections.Generic.List[string]]::new();$script:written=$null;` +
+                        `$events=[Collections.Generic.List[string]]::new();$script:written=@{};` +
                         `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);[uint32]77};` +
                         `ResolveVolume={param([string]$Label)$events.Add('resolve:'+$Label);'C:\\Output\\'};` +
                         `CollectEvidence={param([string]$Seed)$events.Add('collect');[ordered]@{ok=$true}};` +
                         `ObserveActivation={$events.Add('activation');${activationBody}};` +
                         `ObserveSystemTools={$events.Add('system-tools');@()};` +
-                        `WriteExclusive={param([string]$Path,[byte[]]$Bytes)` +
-                        `$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
-                        `$script:written=[Text.Encoding]::UTF8.GetString($Bytes)}};` +
+                        `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$name=[IO.Path]::GetFileName($Path);` +
+                        `$events.Add('write:'+$name);` +
+                        `$script:written[$name]=[Text.Encoding]::UTF8.GetString($Bytes)}};` +
                         `$caught=$null;try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {` +
                         `$events.Add('shutdown');throw '${shutdownFailure}'}}` +
                         `catch{$caught=[string]$_.Exception.Message};` +
                         `[Console]::Out.Write(([ordered]@{events=($events -join ',');caught=$caught;` +
-                        `written=$script:written}|ConvertTo-Json -Compress))`;
+                        `written=$script:written['result.json'];` +
+                        `marker=$script:written['shutdown-outcome.json']}|ConvertTo-Json -Compress))`;
                     const result = spawnSync(POWERSHELL,
                         ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
                         {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
@@ -242,8 +250,10 @@ describe("Stage 2 guest activation path contract", () => {
                     assert.equal(observed.events, expectedEvents, label);
                     /* The receipt is on the volume before shutdown is reached, on both paths. */
                     assert.ok(observed.written !== null, label);
-                    /* The shutdown failure is all the caller sees; the host is told nothing of it. */
+                    /* The shutdown failure is all the caller sees, exactly as before the marker. */
                     assert.equal(observed.caught, shutdownFailure, label);
+                    /* The failed marker is the one record that says the call itself threw. */
+                    assert.equal(observed.marker, canonicalShutdownMarker(NONCE, "failed").toString("utf8"), label);
                 }
             } finally { fs.rmSync(root, {recursive: true, force: true}); }
         });

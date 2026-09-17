@@ -917,6 +917,14 @@ export function renderGuestBootstrap(context) {
         `$EXPECTED_SETUP_COMPLETE_SHA = '${setupComplete.sha256}'\r\n` +
         `$EXPECTED_DISPATCHER_BYTES = ${dispatcher.bytes}\r\n` +
         `$EXPECTED_DISPATCHER_SHA = '${dispatcher.sha256}'\r\n` +
+        /*
+         * The two shutdown marker bodies, rendered from the same function the host reconstructs them
+         * with, so the bytes on the disk and the bytes the host compares against have one source.
+         * JSON carries no apostrophe, which is what makes a single-quoted literal byte-exact here.
+         */
+        `$SHUTDOWN_OUTCOME_NAME = '${SHUTDOWN_OUTCOME_SOURCE}'\r\n` +
+        `$SHUTDOWN_RETURNED_JSON = '${canonicalShutdownMarker(nonce, "returned").toString("utf8")}'\r\n` +
+        `$SHUTDOWN_FAILED_JSON = '${canonicalShutdownMarker(nonce, "failed").toString("utf8")}'\r\n` +
         `function Get-MyspeedGuestFileSha([IO.Stream]$Stream) {\r\n` +
         `  $sha = [Security.Cryptography.SHA256]::Create()\r\n` +
         `  try { return ([BitConverter]::ToString($sha.ComputeHash($Stream))).Replace('-','').ToLowerInvariant() } ` +
@@ -1079,7 +1087,20 @@ export function renderGuestBootstrap(context) {
         `      if ($null -eq $bootstrapFailure -and $null -ne $successBytes) {\r\n        try { ` +
         `& $Operations.WriteExclusive (Join-Path $outputRoot 'result.json') $successBytes } ` +
         `catch { $bootstrapFailure = $_ }\r\n      }\r\n` +
-        `    } finally {\r\n      & $Shutdown\r\n    }\r\n  }\r\n` +
+        /*
+         * One marker, written only after the shutdown call has returned or thrown. Nothing new runs
+         * before the invocation, so nothing new can delay or prevent reaching it; a call that never
+         * returns simply leaves no marker. There is no catch around `& $Shutdown`, so the exception
+         * the caller observes is exactly the one it observed before this existed, and the write
+         * reuses the receipt write's own guard so an unresolved output root writes nothing.
+         */
+        `    } finally {\r\n      $outcomeJson = $SHUTDOWN_FAILED_JSON\r\n      try {\r\n` +
+        `        & $Shutdown\r\n        $outcomeJson = $SHUTDOWN_RETURNED_JSON\r\n` +
+        `      } finally {\r\n` +
+        `        if ($null -ne $outputRoot -and $Operations['WriteExclusive'] -is [scriptblock]) {\r\n` +
+        `          try { & $Operations.WriteExclusive (Join-Path $outputRoot $SHUTDOWN_OUTCOME_NAME) ` +
+        `([Text.UTF8Encoding]::new($false).GetBytes($outcomeJson)) } catch { }\r\n` +
+        `        }\r\n      }\r\n    }\r\n  }\r\n` +
         `  if ($null -ne $bootstrapFailure) { throw $bootstrapFailure }\r\n}\r\n` +
         `if (-not $LibraryMode) { Invoke-MyspeedGuestBootstrap }\r\n`;
     return Buffer.from(script, "utf8");
@@ -1471,6 +1492,84 @@ export function validateReceiptDiagnostic(value, expectedNonce) {
     return deepFreeze(structuredClone(value));
 }
 
+/*
+ * The one file the guest writes after its shutdown scriptblock has returned or thrown, and the only
+ * evidence in this module permitted to say anything about that invocation. No receipt state - the
+ * success receipt, the bootstrap failure receipt, or the worker's own `post-setup-completion`
+ * record - locates execution relative to it: `result.json` has two writers on two different code
+ * paths, and the worker's writer can fire both before the bootstrap is entered and after the
+ * shutdown call has already returned.
+ *
+ * The marker is bytes, not a shape. Host and guest build it from this one function, so a record is
+ * bound to its run by reconstruction rather than by a field the record carries about itself: a
+ * marker from another nonce, or an outcome switched after the fact, cannot survive replay.
+ */
+export const SHUTDOWN_OUTCOME_SOURCE = "shutdown-outcome.json";
+export const MAX_GUEST_SHUTDOWN_BYTES = 4_096;
+const GUEST_SHUTDOWN_STAGE = "guest-shutdown";
+export const SHUTDOWN_OUTCOMES = deepFreeze(["returned", "failed"]);
+export const SHUTDOWN_STATUSES = deepFreeze(["observed", "not-retrieved", "malformed", "unavailable"]);
+export const SHUTDOWN_MALFORMED_REASONS = deepFreeze([
+    "json-syntax-error",
+    "nonce-mismatch",
+    "schema-invalid",
+    "partial-read",
+    "read-cap-exceeded"
+]);
+/*
+ * The receipt's own unavailable vocabulary minus `receipt-not-retrieved`, which names the receipt
+ * file and is the one outcome after which this read is still authorized. A marker that was not
+ * retrieved is a status of its own, never an unavailable reason.
+ */
+export const SHUTDOWN_UNAVAILABLE_REASONS = deepFreeze(
+    RECEIPT_UNAVAILABLE_REASONS.filter(reason => reason !== "receipt-not-retrieved"));
+
+export function canonicalShutdownMarker(nonce, outcome) {
+    exactString(nonce, /^[a-f0-9]{32}$/u, "guest shutdown marker nonce");
+    if (!SHUTDOWN_OUTCOMES.includes(outcome))
+        throw new TypeError("guest shutdown marker outcome is invalid");
+    return Buffer.from(JSON.stringify({schemaVersion: SCHEMA_VERSION, nonce, stage: GUEST_SHUTDOWN_STAGE,
+        event: outcome}), "utf8");
+}
+
+export function validateShutdownDiagnostic(value, expectedNonce) {
+    exactString(expectedNonce, /^[a-f0-9]{32}$/u, "QEMU shutdown diagnostic expected nonce");
+    if (value === null || typeof value !== "object" || Array.isArray(value) ||
+        !SHUTDOWN_STATUSES.includes(value.status) || value.schemaVersion !== SCHEMA_VERSION)
+        throw new TypeError("QEMU shutdown diagnostic is invalid");
+
+    if (value.status === "observed") {
+        assertKeys(value, ["bytes", "outcome", "schemaVersion", "sha256", "status"], "QEMU shutdown diagnostic");
+        if (!SHUTDOWN_OUTCOMES.includes(value.outcome))
+            throw new TypeError("QEMU shutdown diagnostic is invalid");
+        /* The retained extent and digest are load-bearing: they are re-derived, never trusted. */
+        const canonical = canonicalShutdownMarker(expectedNonce, value.outcome);
+        if (value.bytes !== String(canonical.length) || value.sha256 !== sha256(canonical))
+            throw new TypeError("QEMU shutdown diagnostic identity is invalid");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "not-retrieved") {
+        assertKeys(value, ["schemaVersion", "status"], "QEMU shutdown diagnostic");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "malformed") {
+        assertKeys(value, ["bytes", "reason", "schemaVersion", "sha256", "status"], "QEMU shutdown diagnostic");
+        if (!SHUTDOWN_MALFORMED_REASONS.includes(value.reason))
+            throw new TypeError("QEMU shutdown diagnostic is invalid");
+        const observed = decimal(value.bytes, "QEMU shutdown diagnostic bytes");
+        if (observed > BigInt(MAX_GUEST_SHUTDOWN_BYTES) ||
+            (value.reason === "read-cap-exceeded" && observed !== BigInt(MAX_GUEST_SHUTDOWN_BYTES)) ||
+            (value.reason === "partial-read" && observed === 0n))
+            throw new TypeError("QEMU shutdown diagnostic bytes is invalid");
+        exactString(value.sha256, SHA256_PATTERN, "QEMU shutdown diagnostic sha256");
+        return deepFreeze(structuredClone(value));
+    }
+    assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU shutdown diagnostic");
+    if (!SHUTDOWN_UNAVAILABLE_REASONS.includes(value.reason))
+        throw new TypeError("QEMU shutdown diagnostic is invalid");
+    return deepFreeze(structuredClone(value));
+}
+
 export function validatePredeadlineFrameDiagnostic(value, expectedRoot) {
     if (value === null || typeof value !== "object" || Array.isArray(value))
         throw new TypeError("QEMU predeadline frame diagnostic is invalid");
@@ -1536,6 +1635,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
     if (Object.hasOwn(value ?? {}, "receipt")) diagnosticKeys.push("receipt");
     if (Object.hasOwn(value ?? {}, "predeadlineFrame")) diagnosticKeys.push("predeadlineFrame");
+    if (Object.hasOwn(value ?? {}, "shutdown")) diagnosticKeys.push("shutdown");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
@@ -1577,6 +1677,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt, expectedNonce);
     if (value.predeadlineFrame !== undefined)
         validatePredeadlineFrameDiagnostic(value.predeadlineFrame, expectedNonce ? `/home/runner/work/_temp/myspeed-windows-cpu-floor-${expectedNonce}` : undefined);
+    if (value.shutdown !== undefined) validateShutdownDiagnostic(value.shutdown, expectedNonce);
     return deepFreeze(structuredClone(value));
 }
 

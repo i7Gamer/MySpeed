@@ -5,8 +5,8 @@ import path from "node:path";
 
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
-import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, RECEIPT_REJECTION_CODES,
-    MAX_PREDEADLINE_FRAME_BYTES,
+import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, RECEIPT_REJECTION_CODES,
+    MAX_PREDEADLINE_FRAME_BYTES, SHUTDOWN_OUTCOMES, SHUTDOWN_OUTCOME_SOURCE, canonicalShutdownMarker,
     PREDEADLINE_FRAME_SKIPPED_REASONS,
     PREDEADLINE_FRAME_UNAVAILABLE_REASONS,
     PREDEADLINE_FRAME_MALFORMED_REASONS,
@@ -30,7 +30,7 @@ const TIMEOUT = "/usr/bin/timeout";
 
 const STAT = "/usr/bin/stat";
 const UBUNTU_KEYRING = "/usr/share/keyrings/ubuntu-archive-keyring.gpg";
-const COMMAND_TIMEOUT_MILLISECONDS = 30_000;
+export const COMMAND_TIMEOUT_MILLISECONDS = 30_000;
 const PRIVILEGED_COMMAND_TIMEOUT_SECONDS = 25;
 const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
@@ -55,6 +55,12 @@ const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
  * budget shrinks across the pair so the fallback can never spend time the primary already used.
  */
 const RECEIPT_EXTRACTION_BUDGET_MILLISECONDS = 2 * COMMAND_TIMEOUT_MILLISECONDS;
+/*
+ * The cleanup half of the deadlines pair this stage declares to every caller, restated as a
+ * millisecond interval so the launch-anchored collection deadline is the declared 25 + 5 minutes
+ * and not one millisecond more.
+ */
+const STAGE2_CLEANUP_ALLOWANCE_MILLISECONDS = DIAGNOSTIC_CLEANUP_MINUTES * 60 * 1_000;
 const CLEANUP_AUTHORITY_FILENAME = "cleanup-authority.json";
 const CLEANUP_AUTHORITY_KIND = "myspeed-windows-cpu-floor-cleanup-authority";
 const MAX_GUEST_ACTIVATION_FILE_BYTES = 1_048_576;
@@ -67,7 +73,7 @@ const DEFAULT_STAGE2_STREAM_BYTES = 2_097_152;
 const QEMU_STREAM_BYTES = 65_536;
 const MAX_EARLY_BOOT_SCREENSHOT_BYTES = 1_048_576;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const PROCESS_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
+export const PROCESS_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const QEMU_IDENTITY_TIMEOUT_MILLISECONDS = 30_000;
 const QEMU_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
 const MAX_MONITOR_FAILURE_MESSAGE_CHARACTERS = 512;
@@ -1925,6 +1931,17 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         (launchTime + timeoutSeconds * 1_000) :
         Math.min(launchTime + timeoutSeconds * 1_000, stageStartedMilliseconds + timeoutSeconds * 1_000);
     if (executionDeadline <= launchTime) throw new Error("Stage 2 execution budget expired before QEMU launch");
+    /*
+     * The instant by which all post-execution collection must be finished, anchored at launch so
+     * that every millisecond after it is charged: the kill escalation, the reap, the process-group
+     * proof, the early and late frame reads, the serial capture, the receipt extraction and the
+     * optional marker read all fall inside it. It is exactly the deadlines pair this stage already
+     * declares to its callers, so no ceiling moves. A sample taken after this launcher returns would
+     * exclude everything the launcher itself spends, which is the defect this anchor exists to
+     * prevent. It stays null on every path where the optional read is gated off anyway.
+     */
+    const stageCollectionDeadlineMilliseconds = isDiagnostic ?
+        launchTime + DIAGNOSTIC_TIMEOUT_SECONDS * 1_000 + STAGE2_CLEANUP_ALLOWANCE_MILLISECONDS : null;
     const screenshotPaths = [`${input.paths.root}/early-boot-1.png`, `${input.paths.root}/early-boot-2.png`];
     if (screenshotPaths.some(target => io.pathExists(target)))
         throw new Error("early-boot screenshot target already exists");
@@ -2058,7 +2075,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         processFlags,
         winpeDiagnosticInput,
         predeadline: monitored.predeadline,
-        cleanupProven
+        cleanupProven,
+        stageCollectionDeadlineMilliseconds
     };
 }
 
@@ -2275,6 +2293,121 @@ export async function collectGuestReceiptDiagnostic(io, input, context, launched
         return await extractGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity);
     } catch {
         return {guestFailure: null, diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}};
+    }
+}
+
+/*
+ * The receipt outcomes after which one further bounded read of the same disk is authorized.
+ * Derived from classifyReceiptExtraction: every status below is reachable only past an attempt that
+ * satisfied state.cleanupProven === true, so the previous mcopy child is known to have been reaped.
+ * Anything not listed - including any reason added to the receipt vocabulary later - is not safe,
+ * because an unsafe extraction is returned as a diagnostic rather than thrown and would otherwise
+ * read as "nothing found, carry on". Checking launched.process.cleanupProven cannot substitute:
+ * that is the QEMU process, not the extraction child.
+ */
+const RECEIPT_SAFE_TO_CONTINUE = Object.freeze({
+    statuses: Object.freeze(["valid-success", "valid-failure", "malformed"]),
+    unavailableReasons: Object.freeze(["receipt-not-retrieved"])
+});
+
+function receiptSafeToContinue(receiptDiagnostic) {
+    if (receiptDiagnostic === null || typeof receiptDiagnostic !== "object" || Array.isArray(receiptDiagnostic))
+        return false;
+    if (receiptDiagnostic.status === "unavailable")
+        return RECEIPT_SAFE_TO_CONTINUE.unavailableReasons.includes(receiptDiagnostic.reason);
+    return RECEIPT_SAFE_TO_CONTINUE.statuses.includes(receiptDiagnostic.status);
+}
+
+/*
+ * One bounded read of the one file the guest writes after its shutdown scriptblock returned or
+ * threw. It can never make a run acceptable: it exists only on the branch where the launch has
+ * already failed, and every state it can publish leaves the run non-qualifying.
+ *
+ * Bytes come from the extraction's own stdout and nowhere else, and are accepted only when they are
+ * byte-identical to the canonical marker this host rebuilds from the run's own nonce. A marker from
+ * another run, a re-encoded one, or one whose outcome was edited is malformed, not observed.
+ *
+ * The command is admitted against the launch-anchored stage deadline with the process adapter's own
+ * post-timeout cleanup grace reserved first, because runHostedOwnedProcess can spend that grace
+ * after the execution timer has already fired. A sub-millisecond remainder is floored away rather
+ * than rounded up, and no time at all means no command.
+ */
+export async function extractShutdownOutcomeDiagnostic(io, input, context, launched, taskOwner,
+    preLaunchDiskIdentity, receiptDiagnostic, stageCollectionDeadlineMilliseconds) {
+    const unavailable = reason => ({schemaVersion: 1, status: "unavailable", reason});
+    if (!Number.isFinite(stageCollectionDeadlineMilliseconds)) return unavailable("extraction-budget-exhausted");
+    if (!receiptSafeToContinue(receiptDiagnostic)) return unavailable("extraction-unsafe");
+    if (launched.process?.cleanupProven !== true || launched.process?.treeGone !== true)
+        return unavailable("cleanup-unproven");
+    if (preLaunchDiskIdentity === null || preLaunchDiskIdentity === undefined)
+        return unavailable("output-disk-unverified");
+    try {
+        io.validateOutputDisk(input.paths.outputDisk, preLaunchDiskIdentity, taskOwner);
+    } catch {
+        return unavailable("disk-identity-mismatch");
+    }
+
+    let allowedMilliseconds;
+    try {
+        const budget = createWinpeDiagnosticCollectionBudget(
+            stageCollectionDeadlineMilliseconds - PROCESS_CLEANUP_TIMEOUT_MILLISECONDS,
+            () => io.monotonicMilliseconds());
+        allowedMilliseconds = Math.floor(budget.admit(COMMAND_TIMEOUT_MILLISECONDS));
+    } catch {
+        return unavailable("extraction-budget-exhausted");
+    }
+    if (allowedMilliseconds < 1) return unavailable("extraction-budget-exhausted");
+
+    const invocation = portableInvocation(input.toolchain, input.toolchain.mcopy,
+        ["-i", input.paths.outputDisk, "::" + SHUTDOWN_OUTCOME_SOURCE, "-"]);
+    let observed;
+    try {
+        observed = await io.runOwned(invocation.command, invocation.argv,
+            {timeoutMs: allowedMilliseconds, maxStreamBytes: MAX_GUEST_SHUTDOWN_BYTES});
+    } catch {
+        return unavailable("tool-error");
+    }
+
+    const classified = classifyReceiptExtraction(observed);
+    if (classified.kind === "unsafe") return unavailable(classified.reason);
+    /* A non-zero exit with no bytes is a read that retrieved nothing, never a proven absent file. */
+    if (classified.kind === "not-retrieved") return {schemaVersion: 1, status: "not-retrieved"};
+
+    const stdout = classified.stdout;
+    const bytes = String(stdout.length);
+    const digest = sha256(stdout);
+    const malformed = reason => ({schemaVersion: 1, status: "malformed", reason, bytes, sha256: digest});
+    if (classified.kind === "capped") return malformed("read-cap-exceeded");
+    if (classified.kind === "partial") return malformed("partial-read");
+
+    const match = SHUTDOWN_OUTCOMES.find(outcome =>
+        stdout.equals(canonicalShutdownMarker(context.nonce, outcome)));
+    if (match !== undefined)
+        return {schemaVersion: 1, status: "observed", outcome: match, bytes, sha256: digest};
+    let parsed;
+    try { parsed = parseJson(stdout, "guest shutdown marker"); }
+    catch { return malformed("json-syntax-error"); }
+    /*
+     * Only `nonce`, unlike the receipt: result.json has two writers and one of them keys its run by
+     * `hostNonce`, but this file has exactly one writer and one key. A record carrying any other
+     * key for its run is a different schema, not a mismatched nonce, and is recorded as such.
+     */
+    if (typeof parsed?.nonce === "string" && parsed.nonce !== context.nonce) return malformed("nonce-mismatch");
+    return malformed("schema-invalid");
+}
+
+/*
+ * As with the receipt, anything unexpected inside the optional collection is retained as a bounded
+ * unavailable reason rather than thrown: throwing here would replace the QEMU failure and the
+ * cleanup proof that are the run's primary evidence.
+ */
+export async function collectShutdownOutcomeDiagnostic(io, input, context, launched, taskOwner,
+    preLaunchDiskIdentity, receiptDiagnostic, stageCollectionDeadlineMilliseconds) {
+    try {
+        return await extractShutdownOutcomeDiagnostic(io, input, context, launched, taskOwner,
+            preLaunchDiskIdentity, receiptDiagnostic, stageCollectionDeadlineMilliseconds);
+    } catch {
+        return {schemaVersion: 1, status: "unavailable", reason: "tool-error"};
     }
 }
 
@@ -2683,11 +2816,21 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                         preLaunchDiskIdentity);
                 const predeadlineDiagnostic = collectPredeadlineFrameDiagnostic(
                     io, input, monitoredLaunch.predeadline, monitoredLaunch.cleanupProven);
+                /*
+                 * The optional marker read runs after the receipt collector, only on the fixed
+                 * diagnostic deadlines this stage declares, and only for a launch that already
+                 * carries a failure diagnostic to attach it to.
+                 */
+                const shutdownDiagnostic = input.deadlines === undefined || !launched.failureDiagnostic ? null :
+                    await collectShutdownOutcomeDiagnostic(io, input, context, launched, taskOwner,
+                        preLaunchDiskIdentity, receiptDiagnostic,
+                        monitoredLaunch.stageCollectionDeadlineMilliseconds);
                 const failureDiagnostic = launched.failureDiagnostic ?
                     {
                         ...launched.failureDiagnostic,
                         receipt: receiptDiagnostic,
-                        ...(predeadlineDiagnostic !== null ? {predeadlineFrame: predeadlineDiagnostic} : {})
+                        ...(predeadlineDiagnostic !== null ? {predeadlineFrame: predeadlineDiagnostic} : {}),
+                        ...(shutdownDiagnostic !== null ? {shutdown: shutdownDiagnostic} : {})
                     } : undefined;
                 return {
                     ...launched,

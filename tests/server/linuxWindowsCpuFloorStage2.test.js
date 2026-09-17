@@ -432,7 +432,14 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.ok(bootstrap.indexOf("ObserveActivation") < bootstrap.indexOf("successBytes"));
         assert.match(bootstrap, /\[IO\.File\]::Move\(\$temporaryPath,\$Path\)/u);
         assert.match(bootstrap, /finally \{\r\n\s+try \{\r\n\s+if \(\$errorModeChanged\)/u);
-        assert.match(bootstrap, /\} finally \{\r\n\s+& \$Shutdown\r\n\s+\}/u);
+        /*
+         * The shutdown call keeps its own try/finally and no catch, so exception precedence is
+         * unchanged; the outcome literal is selected before the call and the marker is written only
+         * in the inner finally, after the call has returned or thrown.
+         */
+        assert.match(bootstrap, /\} finally \{\r\n\s+\$outcomeJson = \$SHUTDOWN_FAILED_JSON\r\n\s+try \{\r\n\s+& \$Shutdown\r\n\s+\$outcomeJson = \$SHUTDOWN_RETURNED_JSON\r\n\s+\} finally \{/u);
+        assert.ok(bootstrap.indexOf("& $Shutdown") <
+            bootstrap.indexOf("$Operations.WriteExclusive (Join-Path $outputRoot $SHUTDOWN_OUTCOME_NAME)"));
         assert.equal((bootstrap.match(/Stop-Computer -Force/gu) ?? []).length, 1);
         assert.ok(bootstrap.indexOf("Stop-Computer -Force") > bootstrap.indexOf("finally {"));
         assert.ok(bootstrap.indexOf("Operations.SetErrorMode $previousErrorMode") < bootstrap.indexOf("& $Shutdown"));
@@ -590,7 +597,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
                 {encoding: "utf8", timeout: POWERSHELL_TEST_TIMEOUT_MILLISECONDS});
             assert.equal(result.status, 0, result.stderr);
             assert.equal(result.stdout, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,system-tools,mode:77," +
-                "write:result.json,shutdown,caught");
+                "write:result.json,shutdown,write:shutdown-outcome.json,caught");
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
@@ -599,7 +606,7 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const script = path.join(root, "bootstrap.ps1");
         fs.writeFileSync(script, renderGuestBootstrap(context()));
         const harness = `$ErrorActionPreference='Stop';. '${script.replaceAll("'", "''")}' -LibraryMode;` +
-            `$events=[Collections.Generic.List[string]]::new();$script:writtenBytes=$null;` +
+            `$events=[Collections.Generic.List[string]]::new();$script:writtenBytes=@{};` +
             `$ops=@{SetErrorMode={param([uint32]$Mode)$events.Add('mode:'+$Mode);` +
             `if($Mode -eq 3){return [uint32]77}else{throw 'restore failed'}};` +
             `ResolveVolume={param([string]$Label)$events.Add('resolve:'+$Label);'C:\\Output\\'};` +
@@ -607,11 +614,14 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             `ObserveActivation={$events.Add('activation');'${JSON.stringify(activationReceipt())}'|` +
             `ConvertFrom-Json};` +
             `ObserveSystemTools={$events.Add('system-tools');'${JSON.stringify(SYSTEM_TOOLS)}'|ConvertFrom-Json};` +
-            `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$events.Add('write:'+[IO.Path]::GetFileName($Path));` +
-            `$script:writtenBytes=[byte[]]$Bytes.Clone()}};` +
+            `WriteExclusive={param([string]$Path,[byte[]]$Bytes)$name=[IO.Path]::GetFileName($Path);` +
+            `$events.Add('write:'+$name);$script:writtenBytes[$name]=[byte[]]$Bytes.Clone()}};` +
             `try{Invoke-MyspeedGuestBootstrap -Operations $ops -Shutdown {$events.Add('shutdown')}}` +
-            `catch{$events.Add('caught')};$outcome=[Text.Encoding]::UTF8.GetString($script:writtenBytes)|ConvertFrom-Json;` +
-            `[Console]::Out.Write(([ordered]@{events=($events -join ',');outcome=$outcome}|ConvertTo-Json -Compress))`;
+            `catch{$events.Add('caught')};` +
+            `$outcome=[Text.Encoding]::UTF8.GetString($script:writtenBytes['result.json'])|ConvertFrom-Json;` +
+            `$marker=[Text.Encoding]::UTF8.GetString($script:writtenBytes['shutdown-outcome.json'])|ConvertFrom-Json;` +
+            `[Console]::Out.Write(([ordered]@{events=($events -join ',');outcome=$outcome;marker=$marker}|` +
+            `ConvertTo-Json -Compress))`;
         try {
             const result = spawnSync("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
                 ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", harness],
@@ -619,9 +629,11 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             assert.equal(result.status, 0, result.stderr);
             const observed = JSON.parse(result.stdout);
             assert.equal(observed.events, "mode:3,resolve:MYSPEEDSEED,resolve:MYSPEEDOUT,collect,activation,system-tools,mode:77," +
-                "write:result.json,shutdown,caught");
+                "write:result.json,shutdown,write:shutdown-outcome.json,caught");
             assert.deepEqual(observed.outcome, {schemaVersion: 1, status: "failed", nonce: NONCE,
                 stage: "guest-bootstrap", failure: "restore failed"});
+            assert.deepEqual(observed.marker, {schemaVersion: 1, nonce: NONCE, stage: "guest-shutdown",
+                event: "returned"});
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
 
