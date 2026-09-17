@@ -5,7 +5,7 @@ import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
 import {validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput, winpeDiagnosticScriptName,
-    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES} from
+    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES, QMP_SHUTDOWN_CAUSES} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
@@ -1718,6 +1718,22 @@ export function validateMidWindowFramesDiagnostic(value, expectedRoot) {
     return deepFreeze(value.map((entry, index) => validateMidWindowFrameEntry(entry, index, expectedRoot)));
 }
 
+/*
+ * The one continuous-pump capture this stage retains: at most one validated `SHUTDOWN` event, present
+ * only when the pump actually observed one and always attached beside an existing failure diagnostic.
+ * Absence means the field is omitted entirely - never a synthetic "absent"/"unavailable" status - so
+ * every historical failure diagnostic retained before this capture existed still replays unchanged.
+ */
+export function validateQmpShutdownEventDiagnostic(value) {
+    assertKeys(value, ["guest", "offsetMs", "reason", "schemaVersion", "status"], "QMP shutdown event diagnostic");
+    if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "captured" ||
+        typeof value.guest !== "boolean" || typeof value.reason !== "string" ||
+        !QMP_SHUTDOWN_CAUSES.includes(value.reason) ||
+        !Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0)
+        throw new TypeError("QMP shutdown event diagnostic is invalid");
+    return deepFreeze(structuredClone(value));
+}
+
 export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
@@ -1730,6 +1746,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (Object.hasOwn(value ?? {}, "predeadlineFrame")) diagnosticKeys.push("predeadlineFrame");
     if (Object.hasOwn(value ?? {}, "midWindowFrames")) diagnosticKeys.push("midWindowFrames");
     if (Object.hasOwn(value ?? {}, "shutdown")) diagnosticKeys.push("shutdown");
+    if (Object.hasOwn(value ?? {}, "qmpShutdownEvent")) diagnosticKeys.push("qmpShutdownEvent");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
@@ -1774,6 +1791,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (value.midWindowFrames !== undefined)
         validateMidWindowFramesDiagnostic(value.midWindowFrames, expectedNonce ? `/home/runner/work/_temp/myspeed-windows-cpu-floor-${expectedNonce}` : undefined);
     if (value.shutdown !== undefined) validateShutdownDiagnostic(value.shutdown, expectedNonce);
+    if (value.qmpShutdownEvent !== undefined) validateQmpShutdownEventDiagnostic(value.qmpShutdownEvent);
     return deepFreeze(structuredClone(value));
 }
 

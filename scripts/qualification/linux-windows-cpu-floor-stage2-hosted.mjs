@@ -16,6 +16,7 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     MID_WINDOW_FRAME_MALFORMED_REASONS,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
+    validateQmpShutdownEventDiagnostic,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
@@ -232,6 +233,11 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                      */
                     const handler = options.qmp.onMidWindowFrame ?? options.onMidWindowFrame;
                     try { handler?.(index, record); }
+                    catch { /* hosted forwarding must not throw back into the QMP session */ }
+                },
+                onShutdownEvent: record => {
+                    const handler = options.qmp.onShutdownEvent ?? options.onShutdownEvent;
+                    try { handler?.(record); }
                     catch { /* hosted forwarding must not throw back into the QMP session */ }
                 }
             }, options.qmpDependencies);
@@ -1484,6 +1490,8 @@ export async function runMonitoredQemu(io, request) {
     let midWindowSlots = null;
     let midWindowReported = null;
     let midWindowFinalized = false;
+    let qmpShutdownRecord = null;
+    let qmpShutdownFinalized = false;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
     const cancelQmp = () => {
@@ -1541,6 +1549,19 @@ export async function runMonitoredQemu(io, request) {
                     midWindowSlots ??= MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map(() => null);
                     midWindowSlots[index] = record;
                     try { request.onMidWindowFrame?.(index, record); } catch { /* non-throwing boundary */ }
+                },
+                onShutdownEvent: record => {
+                    /*
+                     * At most once, non-throwing, and never after finalization - the same pattern as
+                     * the mid-window frame handler above. Revalidate and copy at this trust boundary
+                     * even though the in-process QMP producer already freezes its own record.
+                     */
+                    if (qmpShutdownFinalized || qmpShutdownRecord !== null) return;
+                    let validated;
+                    try { validated = validateQmpShutdownEventDiagnostic(record); }
+                    catch { return; }
+                    qmpShutdownRecord = validated;
+                    try { request.onShutdownEvent?.(validated); } catch { /* non-throwing boundary */ }
                 },
                 onQmpSession: value => {
                     qmpSession = value;
@@ -1666,13 +1687,15 @@ export async function runMonitoredQemu(io, request) {
      * returned.
      */
     midWindowFinalized = true;
+    qmpShutdownFinalized = true;
     const finalMidWindow = request.qmp?.midWindow ?
         Object.freeze(MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS.map((nominalOffsetMs, index) =>
             Object.freeze(midWindowSlots?.[index] ??
                 {schemaVersion: 1, status: "unavailable", nominalOffsetMs, reason: "session-unavailable"}))) :
         null;
     const finish = value => {
-        const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow};
+        const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow,
+            ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord})};
         if (pidfile && io.pathExists(request.pidPath)) {
             if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
                 return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
@@ -2141,7 +2164,14 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         stdoutOverflow: processRecord.stdoutOverflow, stderrOverflow: processRecord.stderrOverflow};
     if (!guestParsingAllowed) result.failureDiagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
         process: structuredClone(result.process), processFlags: structuredClone(processFlags),
-        monitorFailure: monitored.monitorFailure ?? null, stderr: {
+        monitorFailure: monitored.monitorFailure ?? null,
+        /*
+         * Failure-only, and only when the continuous QMP pump actually captured one: a successful
+         * launch never reaches this branch at all, and a launch that never authorized mid-window
+         * capture (so never ran the pump) never has a value here to attach.
+         */
+        ...(monitored.qmpShutdownEvent ? {qmpShutdownEvent: monitored.qmpShutdownEvent} : {}),
+        stderr: {
             bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
             bytesBase64: observation.stderr.toString("base64")},
         ...readSerialConsole(io, input.paths.serialLog)};

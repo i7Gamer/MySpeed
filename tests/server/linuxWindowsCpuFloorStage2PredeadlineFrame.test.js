@@ -15,6 +15,7 @@ import {
 import {
     validatePredeadlineFrameDiagnostic,
     validateQemuLaunchDiagnostic,
+    MID_WINDOW_FRAME_UNAVAILABLE_REASONS,
     PREDEADLINE_FRAME_STATUSES,
     PREDEADLINE_FRAME_SKIPPED_REASONS,
     PREDEADLINE_FRAME_UNAVAILABLE_REASONS,
@@ -155,6 +156,14 @@ describe("Predeadline frame diagnostic schema validation", () => {
             const diagWith = {schemaVersion: 1, status: "unavailable", reason, offsetMs: 1_480_000};
             const validatedWith = validatePredeadlineFrameDiagnostic(diagWith);
             assert.deepEqual(validatedWith, diagWith);
+        }
+    });
+
+    it("keeps continuous-dispatcher provenance internal to preserve diagnostic schemas", () => {
+        const reasons = ["qmp-shutdown-malformed", "qmp-unexpected-response", "dispatcher-terminal"];
+        for (const reason of reasons) {
+            assert.equal(PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(reason), false);
+            assert.equal(MID_WINDOW_FRAME_UNAVAILABLE_REASONS.includes(reason), false);
         }
     });
 
@@ -1079,6 +1088,8 @@ describe("Hosted launcher end-to-end propagation & unified clock", () => {
                     absentAfter: true,
                     processGroupGone: true,
                     terminationReason: "deadline",
+                    qmpShutdownEvent: {schemaVersion: 1, status: "captured", guest: true,
+                        reason: "guest-shutdown", offsetMs: 900_000},
                     predeadline: {
                         status: "captured",
                         offsetMs: 1_480_000,
@@ -1093,7 +1104,8 @@ describe("Hosted launcher end-to-end propagation & unified clock", () => {
             toolchain: toolchainObj,
             paths: pathsObj,
             argv: ["-m", "4G"],
-            privilegeMode: "ordinary-kvm"
+            privilegeMode: "ordinary-kvm",
+            midWindowFrames: true
         });
 
         // Verify end-to-end propagation: launched.failureDiagnostic.predeadlineFrame is populated!
@@ -1102,6 +1114,8 @@ describe("Hosted launcher end-to-end propagation & unified clock", () => {
         assert.equal(launched.failureDiagnostic.predeadlineFrame.status, "captured");
         assert.equal(launched.failureDiagnostic.predeadlineFrame.offsetMs, 1_480_000);
         assert.equal(launched.failureDiagnostic.predeadlineFrame.screenshot.path, PREDEADLINE_PATH);
+        assert.deepEqual(launched.failureDiagnostic.qmpShutdownEvent, {schemaVersion: 1, status: "captured",
+            guest: true, reason: "guest-shutdown", offsetMs: 900_000});
     });
 
     it("unifies host monotonic clock authority with QMP dependencies through real adapter path", async () => {
