@@ -11,6 +11,8 @@ import {WINDOWS_MSI_CONTROLLER_CLOSURE, WINDOWS_MSI_CONTROLLER_ENTRY, WINDOWS_MS
 import {WINDOWS_MSI_LIFECYCLE_BUDGET, WINDOWS_MSI_LIFECYCLE_JOB_LIMITS} from "../../scripts/qualification/windows-msi-lifecycle-budget.mjs";
 import {deriveActualHostedContext} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
+import {POST_RELEASE_MSI_VERIFICATION_CONSTANTS}
+    from "../../scripts/release/post-release-msi-verification.mjs";
 
 const PATH = ".github/workflows/post-release-msi-lifecycle.yml";
 const TEXT = fs.readFileSync(PATH, "utf8");
@@ -19,6 +21,7 @@ const PREPARE_PATH = ".github/workflows/post-release-msi-prepare.yml";
 const PREPARE_TEXT = fs.readFileSync(PREPARE_PATH, "utf8");
 const PREPARE = parse(PREPARE_TEXT);
 const MINUTE_MILLISECONDS = 60_000;
+const EVIDENCE_MANIFEST_FILE = "evidence-manifest.json";
 
 const steps = job => WORKFLOW.jobs[job].steps;
 const stepNamed = (job, fragment) => steps(job).find(step => step.name.includes(fragment));
@@ -254,6 +257,40 @@ describe("post-release v1.6.1 MSI lifecycle workflow", () => {
         assert.equal(gate.if, "always()");
         assert.match(gate.run, /steps\.bound\.outputs\.accepted/u);
         assert.doesNotMatch(TEXT, /qualifying: true|releaseGateCleared: true/u);
+    });
+
+    /*
+     * Nothing else binds what this workflow uploads to what the independent consumer will look for. Both
+     * lists are literal text in their own file, so a rename or an added member on either side would only
+     * surface on a hosted run, where the evidence is already spent.
+     */
+    it("packages exactly the member set the independent evidence consumer accepts", () => {
+        const {ALL_ALLOWED_FILES, REQUIRED_FILES} = POST_RELEASE_MSI_VERIFICATION_CONSTANTS;
+        const upload = steps("execute").find(step => typeof step.uses === "string"
+            && step.uses.startsWith("actions/upload-artifact")
+            && step.with?.name === "post-release-v1.6.1-msi-lifecycle-evidence");
+        assert.ok(upload, "the lifecycle evidence upload step must exist");
+        assert.equal(upload.with["if-no-files-found"], "error");
+        const uploaded = String(upload.with.path).split("\n").map(line => line.trim()).filter(Boolean)
+            .map(line => path.posix.basename(line));
+        assert.equal(uploaded.length, new Set(uploaded).size);
+        // Every member is uploaded from one directory, so each lands at the archive root under the bare
+        // name the consumer looks for.
+        const transport = String(upload.with.path).split("\n").map(line => line.trim()).filter(Boolean)
+            .map(line => path.posix.dirname(line));
+        assert.equal(new Set(transport).size, 1);
+        assert.deepEqual([...uploaded].sort(), [...ALL_ALLOWED_FILES].sort());
+        for (const required of REQUIRED_FILES) assert.ok(uploaded.includes(required), required);
+
+        // The retained inventory must be able to name every uploaded member except itself; a member the
+        // manifest cannot describe reaches the consumer unbound to what this job wrote.
+        const bound = bodyOf("execute", "Bound the retained text evidence");
+        const inventory = /const inventory = \[([\s\S]*?)\]\.flatMap/u.exec(bound);
+        assert.ok(inventory, "the packaging step must build a named inventory");
+        const inventoryNames = [...inventory[1].matchAll(/"([^"]+)"/gu)].map(match => match[1]);
+        assert.equal(inventoryNames.length, new Set(inventoryNames).size);
+        assert.deepEqual([...inventoryNames].sort(),
+            ALL_ALLOWED_FILES.filter(name => name !== EVIDENCE_MANIFEST_FILE).sort());
     });
 
     it("seals every declared closure member and nothing else", () => {

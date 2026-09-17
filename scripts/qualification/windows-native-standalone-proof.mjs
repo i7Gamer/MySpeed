@@ -38,6 +38,13 @@ const DIAGNOSTIC_READ_BUDGET_MILLISECONDS = 1_000;
 const CONTROLLER_STDERR_DRAIN_GRACE_MILLISECONDS = 1_000;
 const MAXIMUM_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAXIMUM_CONTROLLER_STDERR_BYTES = 8 * 1024;
+const MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS = 4;
+const MAXIMUM_LISTENER_DIAGNOSTIC_BYTES = 2_048;
+const MAXIMUM_LISTENER_ROWS = 65_535;
+const MAXIMUM_LISTENER_PROCESS_ID = 4_294_967_295;
+const LISTENER_PROCESS_STATES = Object.freeze(["present", "exited", "unavailable"]);
+const LISTENER_JOB_MEMBERSHIPS = Object.freeze(["in-job", "not-in-job", "unavailable"]);
+const LISTENER_CREATION_FILE_TIME = /[0-9a-f]{16}/u;
 const CONTROLLER_TIMEOUT_CODE = "ERR_MYSPEED_CONTROLLER_TIMEOUT";
 const CONTROLLER_STDERR_TRUNCATED_MARKER = "[stderr truncated]";
 const CONTROLLER_STDERR_UNAVAILABLE_MARKER = "[stderr unavailable]";
@@ -92,6 +99,67 @@ const windowsPath = (value, label) => {
     if (!path.win32.isAbsolute(value) || path.win32.normalize(value) !== value || /[\0\r\n]/u.test(value))
         throw new Error(`${label} must be a canonical absolute Windows path`);
     return value;
+};
+
+// Failure-only listener evidence. It never relaxes the Boolean acceptance rule; it only renders the bounded
+// owner records the observer retained into the one channel a failed run keeps: the failure message, which the
+// adapter normalizes and truncates to MAXIMUM_FAILURE_MESSAGE_CHARACTERS. Field labels are abbreviated so the
+// actual creation file times of every retained owner fit that budget alongside the expected one.
+const listenerDiagnosticSummary = (value, expectedCreationFileTime, label) => {
+    exactKeys(value, ["schemaVersion", "matchingListenerCount", "distinctOwnerCount", "expectedOwnerListenerCount",
+        "retainedOwnerCount", "ownersTruncated", "owners"], label);
+    if (value.schemaVersion !== 1) throw new Error(`${label} schema differs`);
+    integer(value.matchingListenerCount, `${label} listener count`, 0, MAXIMUM_LISTENER_ROWS);
+    integer(value.distinctOwnerCount, `${label} owner count`, 0, value.matchingListenerCount);
+    integer(value.expectedOwnerListenerCount, `${label} expected owner listener count`, 0,
+        value.matchingListenerCount);
+    integer(value.retainedOwnerCount, `${label} retained owner count`, 0,
+        Math.min(value.distinctOwnerCount, MAXIMUM_LISTENER_DIAGNOSTIC_OWNERS));
+    strictBoolean(value.ownersTruncated, `${label} truncation flag`);
+    if (value.ownersTruncated !== (value.retainedOwnerCount < value.distinctOwnerCount))
+        throw new Error(`${label} truncation flag differs`);
+    if (!Array.isArray(value.owners) || value.owners.length !== value.retainedOwnerCount)
+        throw new Error(`${label} owner records differ`);
+    if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAXIMUM_LISTENER_DIAGNOSTIC_BYTES)
+        throw new Error(`${label} exceeds its retained byte budget`);
+    const observed = new Set();
+    let retainedListeners = 0;
+    let expectedOwnerListeners = 0;
+    let expectedOwners = 0;
+    const rendered = value.owners.map(owner => {
+        exactKeys(owner, ["owningProcessId", "expectedOwner", "listenerCount", "processState", "creationFileTime",
+            "creationTimeMatches", "jobMembership"], `${label} owner`);
+        integer(owner.owningProcessId, `${label} owner PID`, 0, MAXIMUM_LISTENER_PROCESS_ID);
+        if (observed.has(owner.owningProcessId)) throw new Error(`${label} owner records repeat`);
+        observed.add(owner.owningProcessId);
+        strictBoolean(owner.expectedOwner, `${label} owner expectation`);
+        integer(owner.listenerCount, `${label} owner listener count`, 1, value.matchingListenerCount);
+        retainedListeners += owner.listenerCount;
+        if (owner.expectedOwner) { expectedOwners += 1; expectedOwnerListeners += owner.listenerCount; }
+        if (!LISTENER_PROCESS_STATES.includes(owner.processState))
+            throw new Error(`${label} owner process state differs`);
+        if (!LISTENER_JOB_MEMBERSHIPS.includes(owner.jobMembership))
+            throw new Error(`${label} owner Job membership differs`);
+        let creation = "none";
+        if (owner.processState === "present") {
+            creation = string(owner.creationFileTime, `${label} owner creation time`, LISTENER_CREATION_FILE_TIME);
+            strictBoolean(owner.creationTimeMatches, `${label} owner creation match`);
+            if (owner.creationTimeMatches !== (creation === expectedCreationFileTime))
+                throw new Error(`${label} owner creation match differs`);
+        } else if (owner.creationFileTime !== null || owner.creationTimeMatches !== null)
+            throw new Error(`${label} unavailable owner identity differs`);
+        return `pid=${owner.owningProcessId} exp=${owner.expectedOwner} rows=${owner.listenerCount}`
+            + ` state=${owner.processState} ct=${creation} job=${owner.jobMembership}`;
+    });
+    if (expectedOwners > 1) throw new Error(`${label} expected owner records repeat`);
+    if (retainedListeners > value.matchingListenerCount) throw new Error(`${label} owner listener counts differ`);
+    if (!value.ownersTruncated && (retainedListeners !== value.matchingListenerCount
+        || expectedOwnerListeners !== value.expectedOwnerListenerCount))
+        throw new Error(`${label} owner listener counts differ`);
+    return `rows=${value.matchingListenerCount} owners=${value.distinctOwnerCount}`
+        + ` expectedRows=${value.expectedOwnerListenerCount} retained=${value.retainedOwnerCount}`
+        + ` trunc=${value.ownersTruncated} expectedCt=${expectedCreationFileTime}`
+        + `${rendered.length === 0 ? "" : `; ${rendered.join("; ")}`}`;
 };
 
 const jsonBytes = value => Buffer.from(JSON.stringify(value), "utf8");
@@ -1029,8 +1097,14 @@ export const createWindowsNativeStandaloneRuntime = (input, overrides = {}) => {
                 const listener = await dependencies.observeListener({schemaVersion: 1, mode: "owned",
                     address: "127.0.0.1", port, candidatePid: state.ready.candidatePid,
                     candidateCreationTime: state.ready.candidateCreationTime}, remaining("owned listener observation"));
+                if (listener?.listenerOwned !== true) {
+                    exactKeys(listener, ["listenerOwned", "diagnostic"], "Owned listener observation");
+                    strictBoolean(listener.listenerOwned, "Owned listener proof");
+                    throw new Error("Owned candidate listener was not proven ["
+                        + `${listenerDiagnosticSummary(listener.diagnostic,
+                            state.ready.candidateCreationTime, "Owned candidate listener diagnostic")}]`);
+                }
                 exactKeys(listener, ["listenerOwned"], "Owned listener observation");
-                if (listener.listenerOwned !== true) throw new Error("Owned candidate listener was not proven");
                 summary = await dependencies.checkPopulated(`http://127.0.0.1:${port}`);
             } else if (state.scenario === "fresh-no-config-reset") {
                 summary = await dependencies.checkResetDatabase(path.join(state.request.workingDirectory,

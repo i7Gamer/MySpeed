@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import {execFileSync} from "node:child_process";
 import {createHash} from "node:crypto";
 import {EventEmitter} from "node:events";
 import fs from "node:fs";
@@ -28,6 +29,50 @@ const retainJson = value => { const bytes = Buffer.from(JSON.stringify(value), "
 const candidateNonce = (alias, scenario) => createHash("sha256").update(`${alias}\0${scenario}`)
     .digest("hex").slice(0, 32);
 const windowsIt = process.platform === "win32" ? it : it.skip;
+const READY_PID = 9001;
+const READY_CREATION = "1".repeat(16);
+const HOST_SCRIPT = path.resolve(import.meta.dirname, "../../scripts/qualification/windows-native-standalone-host.ps1");
+const HOST_POWERSHELL = process.platform === "win32"
+    ? `${process.env.SystemRoot}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+    : null;
+
+const listenerDiagnostic = () => ({schemaVersion: 1, matchingListenerCount: 2, distinctOwnerCount: 2,
+    expectedOwnerListenerCount: 1, retainedOwnerCount: 2, ownersTruncated: false,
+    owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1, processState: "present",
+        creationFileTime: READY_CREATION, creationTimeMatches: true, jobMembership: "in-job"},
+    {owningProcessId: 4711, expectedOwner: false, listenerCount: 1, processState: "exited",
+        creationFileTime: null, creationTimeMatches: null, jobMembership: "unavailable"}]});
+
+const observeThroughHost = async owners => JSON.parse(execFileSync(HOST_POWERSHELL,
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", HOST_SCRIPT,
+        "-Mode", "TestObservationCore", "-InputJson", JSON.stringify({
+            offlineRequest: {schemaVersion: 1, alias: "default", scenario: null, phase: "before-launch",
+                canaryPath: "C:\\runner\\closure\\windows-winsw-offline-canary.ps1", canarySha256: "2".repeat(64)},
+            snapshot: {inventory: [{loopback: false, enabled: false}]},
+            ipState: [{kind: "interface", loopback: false, routable: false},
+                {kind: "address", loopback: false, routable: false},
+                {kind: "route", loopback: false, routable: false}],
+            listenerRequest: {schemaVersion: 1, mode: "owned", address: "127.0.0.1", port: 45_000,
+                candidatePid: READY_PID, candidateCreationTime: READY_CREATION},
+            connections: owners.map(([owningProcess]) => ({State: "Listen", LocalAddress: "127.0.0.1",
+                LocalPort: 45_000, OwningProcess: owningProcess})),
+            processObservations: Object.fromEntries(owners)})],
+    {encoding: "utf8", timeout: 20_000}).trim()).listener;
+
+const runOwnedListenerAssertion = async observation => {
+    const proof = proofRequest();
+    const harness = makeActualRuntimeDependencies(proof);
+    harness.dependencies.observeListener = async value => value.mode === "owned" ? observation : {listenerGone: true};
+    const runtime = createWindowsNativeStandaloneRuntime(proof, harness.dependencies);
+    const candidate = proof.candidates[0];
+    const ownership = {sessionId: "listener-diagnostic", alias: candidate.alias, scenario: "populated-first-boot"};
+    const fixtureState = {populated: {root: proof.fixtures[0].populatedWork, nonce: NONCE},
+        reset: {root: proof.fixtures[0].resetWork, nonce: NONCE}, expected: {}};
+    const opened = await runtime.openSession({alias: candidate.alias, scenario: ownership.scenario,
+        artifactLogicalName: candidate.artifactLogicalName, ownership, fixtureState});
+    await runtime.launchSession(opened);
+    return runtime.runAssertions({state: opened.state, stage: "running"});
+};
 const OFFLINE_TARGETS = [
     {interfaceGuid: "{11111111-1111-1111-1111-111111111111}", netLuid: "0000000000000001"},
     {interfaceGuid: "{22222222-2222-2222-2222-222222222222}", netLuid: "0000000000000002"}
@@ -612,6 +657,169 @@ describe("Windows native standalone proof operation factory", () => {
             await runtime.launchSession(opened);
             assert.equal((await runtime.closeSession({state: opened.state, ownership})).candidateExited, true);
         } finally { fs.rmSync(parent, {recursive: true, force: true}); }
+    });
+
+    it("retains bounded owner evidence, including creation times, when owned-listener proof fails", async () => {
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false, diagnostic: listenerDiagnostic()}),
+            error => {
+                assert.match(error.message,
+                    /rows=2 owners=2 expectedRows=1 retained=2 trunc=false expectedCt=1111111111111111/u);
+                assert.match(error.message,
+                    /pid=9001 exp=true rows=1 state=present ct=1111111111111111 job=in-job/u);
+                assert.match(error.message,
+                    /pid=4711 exp=false rows=1 state=exited ct=none job=unavailable/u);
+                assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+                return true;
+            });
+    });
+
+    it("rejects malformed listener diagnostics and keeps proven ownership diagnostic-free", async () => {
+        const malformed = {listenerOwned: false, diagnostic: listenerDiagnostic()};
+        malformed.diagnostic.owners[0].creationTimeMatches = false;
+        await assert.rejects(runOwnedListenerAssertion(malformed), /Owned candidate listener diagnostic/u);
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: true, diagnostic: listenerDiagnostic()}),
+            /Owned listener observation keys differ/u);
+        assert.equal(typeof (await runOwnedListenerAssertion({listenerOwned: true})).summarySha256, "string");
+    });
+
+    it("keeps the fullest retained listener diagnostic inside the failure-message bound", async () => {
+        const owners = Array.from({length: 4}, (unused, index) => ({owningProcessId: 4_294_967_295 - index,
+            expectedOwner: false, listenerCount: 16_383, processState: "present",
+            creationFileTime: "f".repeat(16), creationTimeMatches: false, jobMembership: "unavailable"}));
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 65_535, distinctOwnerCount: 65_535,
+                expectedOwnerListenerCount: 65_535, retainedOwnerCount: owners.length, ownersTruncated: true,
+                owners}}),
+        error => {
+            assert.equal(error.message.split("pid=").length - 1, owners.length);
+            assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            return true;
+        });
+    });
+
+    it("carries every retained owner creation time and renders PID zero without inventing an owner", async () => {
+        const competingCreation = "abcdef0123456789";
+        const diagnostic = listenerDiagnostic();
+        diagnostic.owners[1] = {owningProcessId: 4711, expectedOwner: false, listenerCount: 1,
+            processState: "present", creationFileTime: competingCreation, creationTimeMatches: false,
+            jobMembership: "not-in-job"};
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false, diagnostic}), error => {
+            assert.match(error.message, new RegExp(`expectedCt=${READY_CREATION}`, "u"));
+            assert.match(error.message, new RegExp(`ct=${competingCreation}`, "u"));
+            return true;
+        });
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 1, distinctOwnerCount: 1,
+                expectedOwnerListenerCount: 0, retainedOwnerCount: 1, ownersTruncated: false,
+                owners: [{owningProcessId: 0, expectedOwner: false, listenerCount: 1,
+                    processState: "unavailable", creationFileTime: null, creationTimeMatches: null,
+                    jobMembership: "unavailable"}]}}),
+        /pid=0 exp=false rows=1 state=unavailable ct=none job=unavailable/u);
+        await assert.rejects(runOwnedListenerAssertion({listenerOwned: false,
+            diagnostic: {schemaVersion: 1, matchingListenerCount: 0, distinctOwnerCount: 0,
+                expectedOwnerListenerCount: 0, retainedOwnerCount: 0, ownersTruncated: false, owners: []}}),
+        /rows=0 owners=0 expectedRows=0 retained=0 trunc=false/u);
+    });
+
+    it("retains real owner creation times through the proof adapter failure record", async () => {
+        const competingCreation = "abcdef0123456789";
+        const retain = async diagnostic => {
+            const input = proofRequest();
+            const harness = makeActualRuntimeDependencies(input);
+            harness.dependencies.observeListener = async value => value.mode === "owned"
+                ? {listenerOwned: false, diagnostic} : {listenerGone: true};
+            const result = await runWindowsNativeStandaloneProof(input,
+                createWindowsNativeStandaloneRuntime(input, harness.dependencies));
+            assert.equal(result.status, "failed");
+            assert.equal(result.qualifying, false);
+            const [recorded] = result.adapter.failures;
+            assert.equal(recorded.stage, "running-assertions");
+            assert.equal(recorded.classification, "failed");
+            assert.ok(recorded.detail.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            return recorded.detail;
+        };
+        const detail = await retain({schemaVersion: 1, matchingListenerCount: 2, distinctOwnerCount: 2,
+            expectedOwnerListenerCount: 1, retainedOwnerCount: 2, ownersTruncated: false,
+            owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1,
+                processState: "present", creationFileTime: READY_CREATION, creationTimeMatches: true,
+                jobMembership: "in-job"},
+            {owningProcessId: 4711, expectedOwner: false, listenerCount: 1, processState: "present",
+                creationFileTime: competingCreation, creationTimeMatches: false, jobMembership: "not-in-job"}]});
+        assert.match(detail, new RegExp(`expectedCt=${READY_CREATION}`, "u"));
+        assert.match(detail, new RegExp(`pid=${READY_PID} exp=true rows=1 state=present ct=${READY_CREATION}`, "u"));
+        assert.match(detail, new RegExp(`pid=4711 exp=false rows=1 state=present ct=${competingCreation}`, "u"));
+        const truncated = await retain({schemaVersion: 1, matchingListenerCount: 9, distinctOwnerCount: 9,
+            expectedOwnerListenerCount: 1, retainedOwnerCount: 4, ownersTruncated: true,
+            owners: [{owningProcessId: READY_PID, expectedOwner: true, listenerCount: 1,
+                processState: "present", creationFileTime: READY_CREATION, creationTimeMatches: true,
+                jobMembership: "in-job"},
+            ...Array.from({length: 3}, (unused, index) => ({owningProcessId: 5000 + index,
+                expectedOwner: false, listenerCount: 1, processState: "present",
+                creationFileTime: competingCreation, creationTimeMatches: false, jobMembership: "not-in-job"}))]});
+        assert.match(truncated, /rows=9 owners=9 expectedRows=1 retained=4 trunc=true/u);
+        assert.match(truncated,
+            new RegExp(`pid=${READY_PID} exp=true rows=1 state=present ct=${READY_CREATION}`, "u"));
+        assert.equal(truncated.split(`ct=${competingCreation}`).length - 1, 3);
+        assert.equal(truncated.split("pid=").length - 1, 4);
+    });
+
+    it("rejects all inconsistent listener diagnostic bounds and records", async () => {
+        for (const mutate of [
+            value => { delete value.diagnostic; },
+            value => { value.diagnostic.schemaVersion = 2; },
+            value => { value.diagnostic.owners[0].processState = "running"; },
+            value => { value.diagnostic.owners[0].jobMembership = "maybe"; },
+            value => { value.diagnostic.owners[0].creationTimeMatches = "true"; },
+            value => { value.diagnostic.owners[0].creationFileTime = "e".repeat(16); },
+            value => { value.diagnostic.owners[0].creationTimeMatches = false; },
+            value => { value.diagnostic.owners[0].creationFileTime = "z".repeat(16); },
+            value => { value.diagnostic.owners[1].creationFileTime = READY_CREATION; },
+            value => { value.diagnostic.owners[0].extra = true; },
+            value => { delete value.diagnostic.ownersTruncated; },
+            value => { value.diagnostic.retainedOwnerCount = 1; },
+            value => { value.diagnostic.distinctOwnerCount = 1; },
+            value => { value.diagnostic.owners[0].listenerCount = 0; },
+            value => {
+                value.diagnostic.owners = Array.from({length: 5}, (unused, index) =>
+                    ({...value.diagnostic.owners[0], owningProcessId: 5000 + index,
+                        expectedOwner: false, creationTimeMatches: false}));
+                Object.assign(value.diagnostic, {matchingListenerCount: 5, distinctOwnerCount: 5,
+                    expectedOwnerListenerCount: 0, retainedOwnerCount: 5});
+            },
+            value => { value.diagnostic.extra = true; },
+            value => { value.extra = true; }
+        ]) {
+            const observation = {listenerOwned: false, diagnostic: listenerDiagnostic()};
+            mutate(observation);
+            await assert.rejects(runOwnedListenerAssertion(observation),
+                /Owned listener observation|Owned candidate listener diagnostic/u);
+        }
+    });
+
+    windowsIt("accepts only the diagnostics the observer host actually produces", async () => {
+        const recycled = await observeThroughHost([
+            [READY_PID, {processState: "present", creationFileTime: "e".repeat(16), jobMembership: "in-job"}],
+            [4711, {processState: "exited", creationFileTime: null, jobMembership: "unavailable"}]]);
+        assert.equal(recycled.listenerOwned, false);
+        await assert.rejects(runOwnedListenerAssertion(recycled), error => {
+            assert.match(error.message,
+                /rows=2 owners=2 expectedRows=1 retained=2 trunc=false expectedCt=1111111111111111/u);
+            assert.match(error.message, /pid=9001 exp=true rows=1 state=present ct=eeeeeeeeeeeeeeee job=in-job/u);
+            assert.match(error.message, /pid=4711 exp=false rows=1 state=exited ct=none job=unavailable/u);
+            assert.ok(error.message.length <= MAXIMUM_FAILURE_MESSAGE_CHARACTERS);
+            return true;
+        });
+        const truncated = await observeThroughHost([
+            [READY_PID, {processState: "present", creationFileTime: READY_CREATION, jobMembership: "in-job"}],
+            ...Array.from({length: 6}, (unused, index) => [5000 + index,
+                {processState: "unavailable", creationFileTime: null, jobMembership: "unavailable"}])]);
+        assert.equal(truncated.diagnostic.ownersTruncated, true);
+        await assert.rejects(runOwnedListenerAssertion(truncated), error => {
+            assert.match(error.message, /rows=7 owners=7 expectedRows=1 retained=4 trunc=true/u);
+            assert.match(error.message, /pid=9001 exp=true rows=1 state=present ct=1111111111111111 job=in-job/u);
+            assert.equal(error.message.split("pid=").length - 1, 4);
+            return true;
+        });
     });
 
     it("blocks fixture deletion and later work when a launched controller never publishes ready", async () => {

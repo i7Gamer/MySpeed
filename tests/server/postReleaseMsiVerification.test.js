@@ -682,6 +682,77 @@ describe("v1.6.1 post-release MSI evidence verification", () => {
         );
     });
 
+    /*
+     * The shared fixture builds evidence-manifest.json before mutateFiles runs, so a test that adds
+     * msi-lifecycle-progress.json to the archive produces a manifest that does not name it. The workflow
+     * never packages that shape: its inventory is built from the files actually present in the transport
+     * root. These cases package the way the workflow does, so the consumer's progress rules are proven on a
+     * well-formed producer archive rather than on one an earlier member-set check would reject first.
+     */
+    const packageLikeWorkflow = (fixture, {includeResult = true, progressBytes = null} = {}) => {
+        const present = new Map();
+        for (const name of ["msi-host-request.json", "controller.stdout", "controller.stderr",
+            "transport-summary.json", "msi-execution-closure.json"])
+            present.set(name, fixture.files.get(name));
+        if (includeResult)
+            present.set("msi-lifecycle-result.json", fixture.files.get("msi-lifecycle-result.json"));
+        if (progressBytes) present.set("msi-lifecycle-progress.json", progressBytes);
+        // The workflow's own inventory candidate order, kept in step with it by the lifecycle workflow test.
+        const inventory = ["msi-host-request.json", "msi-lifecycle-result.json",
+            "msi-lifecycle-progress.json", "transport-summary.json", "msi-execution-closure.json",
+            "controller.stdout", "controller.stderr"].flatMap(name => present.has(name)
+            ? [{name, bytes: String(present.get(name).length), sha256: sha256(present.get(name))}] : []);
+        present.set("evidence-manifest.json", Buffer.from(`${JSON.stringify({schemaVersion: 1,
+            kind: "myspeed-windows-msi-lifecycle-evidence-manifest", status: "observed", qualifying: false,
+            repository: fixture.expectedExecution.repository, sourceSha: fixture.expectedExecution.sourceSha,
+            runId: fixture.expectedExecution.runId, runAttempt: fixture.expectedExecution.runAttempt,
+            nonce: fixture.request.context.nonce, files: inventory, releaseGatesCleared: []})}\n`));
+        const archiveBytes = createZipBuffer([...present].map(([name, data]) => ({name, data})));
+        return {archiveBytes, inventoryNames: inventory.map(entry => entry.name),
+            artifactMetadata: {...fixture.artifactMetadata, size_in_bytes: archiveBytes.length,
+                digest: `sha256:${sha256(archiveBytes)}`}};
+    };
+
+    const failureProgressBytes = Buffer.from(`${JSON.stringify({schemaVersion: 1,
+        kind: "myspeed-windows-msi-lifecycle-progress", status: "failed", qualifying: false,
+        releaseGatesCleared: [], stage: "row", budget: {status: "refused", rowsCompleted: 3}})}\n`);
+
+    it("accepts the member set the lifecycle workflow actually packages for a completed matrix", async () => {
+        const fixture = await createPostReleaseMsiEvidenceFixture({includeEvidenceManifest: true});
+        const packed = packageLikeWorkflow(fixture);
+        // A completed matrix writes the result and no progress, so the inventory names six members.
+        assert.deepEqual(packed.inventoryNames, ["msi-host-request.json", "msi-lifecycle-result.json",
+            "transport-summary.json", "msi-execution-closure.json", "controller.stdout", "controller.stderr"]);
+        // The mandatory empty streams reach the consumer as zero-byte members rather than being dropped.
+        for (const stream of ["controller.stdout", "controller.stderr"])
+            assert.equal(fixture.files.get(stream).length, 0, stream);
+        const inspection = await verifyV161PostReleaseMsiEvidence({archiveBytes: packed.archiveBytes,
+            artifactMetadata: packed.artifactMetadata, expectedExecution: fixture.expectedExecution});
+        assert.equal(inspection.status, "accepted");
+        assert.equal(inspection.rows.length, EXPECTED_SCENARIO_COUNT);
+    });
+
+    it("refuses a workflow-packaged run that retained progress instead of a finished matrix", async () => {
+        const fixture = await createPostReleaseMsiEvidenceFixture({includeEvidenceManifest: true});
+
+        // An unsuccessful run writes progress and never a result, so the inventory names progress in the
+        // result's place. The consumer must say the finished matrix is missing, not accept the archive.
+        const unfinished = packageLikeWorkflow(fixture,
+            {includeResult: false, progressBytes: failureProgressBytes});
+        assert.ok(unfinished.inventoryNames.includes("msi-lifecycle-progress.json"));
+        assert.ok(!unfinished.inventoryNames.includes("msi-lifecycle-result.json"));
+        await assert.rejects(() => verifyV161PostReleaseMsiEvidence({archiveBytes: unfinished.archiveBytes,
+            artifactMetadata: unfinished.artifactMetadata, expectedExecution: fixture.expectedExecution}),
+        /members differ: missing msi-lifecycle-result\.json/iu);
+
+        // A result beside failure progress is contradictory; the rule must fire on a well-formed archive.
+        const contradictory = packageLikeWorkflow(fixture, {progressBytes: failureProgressBytes});
+        assert.equal(contradictory.inventoryNames.length, 7);
+        await assert.rejects(() => verifyV161PostReleaseMsiEvidence({archiveBytes: contradictory.archiveBytes,
+            artifactMetadata: contradictory.artifactMetadata, expectedExecution: fixture.expectedExecution}),
+        /completed evidence must not retain failure progress/iu);
+    });
+
     it("rejects contradictory progress in msi-lifecycle-progress.json", async () => {
         const fixture = await createPostReleaseMsiEvidenceFixture();
 
