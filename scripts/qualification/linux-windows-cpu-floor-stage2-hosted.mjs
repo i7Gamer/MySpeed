@@ -5,7 +5,7 @@ import path from "node:path";
 
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
-import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS,
+import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
@@ -2076,11 +2076,6 @@ function classifyReceiptExtraction(observed) {
     return {kind: "not-retrieved"};
 }
 
-function boundedReceiptFailure(value) {
-    return String(value).replace(/[\x00-\x1f\x7f]+/gu, " ")
-        .slice(0, MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS) || "unspecified";
-}
-
 /*
  * The bounded, authenticated look at whatever the guest left on its output disk after an unclean
  * stop. It can never make a run acceptable: every record it produces is diagnostic only, and a
@@ -2091,9 +2086,8 @@ function boundedReceiptFailure(value) {
  * produced, which is the opposite of what this evidence exists for.
  */
 export async function extractGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity) {
-    const unavailable = (reason, failure) => ({guestFailure: null,
-        diagnostic: {schemaVersion: 1, status: "unavailable", reason,
-            ...(failure === undefined ? {} : {failure})}});
+    const unavailable = reason => ({guestFailure: null,
+        diagnostic: {schemaVersion: 1, status: "unavailable", reason}});
     if (launched.process?.cleanupProven !== true || launched.process?.treeGone !== true)
         return unavailable("cleanup-unproven");
     if (preLaunchDiskIdentity === null || preLaunchDiskIdentity === undefined)
@@ -2118,9 +2112,8 @@ export async function extractGuestReceiptDiagnostic(io, input, context, launched
         try {
             observed = await io.runOwned(invocation.command, invocation.argv,
                 {timeoutMs: Math.max(1, Math.floor(allowedMilliseconds)), maxStreamBytes: MAX_GUEST_BYTES});
-        } catch (error) {
-            return {kind: "unsafe", reason: "tool-error",
-                failure: boundedReceiptFailure(error instanceof Error ? error.message : error)};
+        } catch {
+            return {kind: "unsafe", reason: "tool-error"};
         }
         return classifyReceiptExtraction(observed);
     };
@@ -2163,13 +2156,13 @@ export async function extractGuestReceiptDiagnostic(io, input, context, launched
             bytes: String(stdout.length), sha256: sha256(stdout)}});
 
     const primary = await attempt("result.json");
-    if (primary.kind === "unsafe") return unavailable(primary.reason, primary.failure);
+    if (primary.kind === "unsafe") return unavailable(primary.reason);
     if (primary.kind === "capped") return capped("result.json", primary.stdout);
     if (primary.kind === "partial") return partial("result.json", primary.stdout);
     if (primary.kind === "read") return publish("result.json", primary.stdout);
 
     const fallback = await attempt(GUEST_FAILURE_FALLBACK_NAME);
-    if (fallback.kind === "unsafe") return unavailable(fallback.reason, fallback.failure);
+    if (fallback.kind === "unsafe") return unavailable(fallback.reason);
     if (fallback.kind === "capped") return capped(GUEST_FAILURE_FALLBACK_NAME, fallback.stdout);
     if (fallback.kind === "partial") return partial(GUEST_FAILURE_FALLBACK_NAME, fallback.stdout);
     if (fallback.kind === "read") return publish(GUEST_FAILURE_FALLBACK_NAME, fallback.stdout);
@@ -2186,9 +2179,8 @@ export async function extractGuestReceiptDiagnostic(io, input, context, launched
 export async function collectGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity) {
     try {
         return await extractGuestReceiptDiagnostic(io, input, context, launched, taskOwner, preLaunchDiskIdentity);
-    } catch (error) {
-        return {guestFailure: null, diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error",
-            failure: boundedReceiptFailure(error instanceof Error ? error.message : error)}};
+    } catch {
+        return {guestFailure: null, diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}};
     }
 }
 

@@ -1363,7 +1363,6 @@ export const RECEIPT_MALFORMED_REASONS = deepFreeze([
     "partial-read",
     "read-cap-exceeded"
 ]);
-export const MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS = 256;
 
 /*
  * The receipt diagnostic is the one place a failed run says what it found on the guest's output
@@ -1419,20 +1418,9 @@ export function validateReceiptDiagnostic(value, expectedNonce) {
         exactString(value.sha256, SHA256_PATTERN, "QEMU receipt diagnostic sha256");
         return deepFreeze(structuredClone(value));
     }
-    /*
-     * An unavailable record may carry the bounded reason the extraction itself gave, so an
-     * unexpected failure inside this optional diagnostic is retained next to the launch failure it
-     * was collected for instead of replacing it. The text stays optional so records retained before
-     * it existed still replay.
-     */
-    const unavailableKeys = ["reason", "schemaVersion", "status"];
-    if (Object.hasOwn(value, "failure")) unavailableKeys.push("failure");
-    assertKeys(value, unavailableKeys, "QEMU receipt diagnostic");
+    // Fixed reasons preserve the failure category without publishing potentially secret exception text.
+    assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU receipt diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || !RECEIPT_UNAVAILABLE_REASONS.includes(value.reason))
-        throw new TypeError("QEMU receipt diagnostic is invalid");
-    if (value.failure !== undefined && (typeof value.failure !== "string" || value.failure.length < 1 ||
-        value.failure.length > MAX_RECEIPT_DIAGNOSTIC_FAILURE_CHARACTERS ||
-        /[\x00-\x1f\x7f]/u.test(value.failure)))
         throw new TypeError("QEMU receipt diagnostic is invalid");
     return deepFreeze(structuredClone(value));
 }

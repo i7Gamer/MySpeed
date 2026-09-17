@@ -1298,15 +1298,33 @@ describe("Receipt diagnostic adversarial cases", () => {
             {nonce: NONCE}, launched(), null, {dev: 1n});
         assert.equal(collected.diagnostic.status, "unavailable");
         assert.equal(collected.diagnostic.reason, "tool-error");
-        assert.ok(collected.diagnostic.failure.length > 0);
+        assert.equal(Object.hasOwn(collected.diagnostic, "failure"), false);
         assert.equal(collected.guestFailure, null);
         const diagnostic = validateQemuLaunchDiagnostic(
             {...launchDiagnosticFixture(), receipt: collected.diagnostic}, launchProcessFixture(), NONCE);
         assert.deepEqual(diagnostic.process, launchProcessFixture());
-        assert.throws(() => validateReceiptDiagnostic({...collected.diagnostic, failure: "a".repeat(257)}, NONCE),
-            /QEMU receipt diagnostic is invalid/u);
+        assert.throws(() => validateReceiptDiagnostic({...collected.diagnostic, failure: "synthetic-secret"}, NONCE),
+            /QEMU receipt diagnostic keys are invalid/u);
         assert.throws(() => validateReceiptDiagnostic({...collected.diagnostic, failure: "badtext"}, NONCE),
-            /QEMU receipt diagnostic is invalid/u);
+            /QEMU receipt diagnostic keys are invalid/u);
+    });
+
+    it("never publishes exception contents from either extraction failure boundary", async () => {
+        const syntheticSecret = "credential=receipt-test-secret-do-not-publish";
+        for (const failurePoint of ["clock", "extractor"]) {
+            const result = await collectGuestReceiptDiagnostic({
+                validateOutputDisk() {},
+                monotonicMilliseconds() {
+                    if (failurePoint === "clock") throw new Error(syntheticSecret);
+                    return 0;
+                },
+                runOwned() { throw new Error(syntheticSecret); }
+            }, receiptInput(), {nonce: NONCE}, launched(), null, {dev: 1n});
+            assert.deepEqual(result, {guestFailure: null,
+                diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}});
+            assert.equal(JSON.stringify(result).includes(syntheticSecret), false);
+            validateReceiptDiagnostic(result.diagnostic, NONCE);
+        }
     });
 
     it("refuses to spend fallback time the primary already used", async () => {
