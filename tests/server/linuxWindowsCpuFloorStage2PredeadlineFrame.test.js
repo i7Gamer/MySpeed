@@ -7,6 +7,7 @@ import {PassThrough} from "node:stream";
 import {
     runEarlyBootQmpSession,
     validatePredeadlineScreenshotPath,
+    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS,
     PREDEADLINE_FRAME_LEAD_MILLISECONDS,
     PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS,
     PREDEADLINE_FRAME_TICK_JITTER_MILLISECONDS,
@@ -14,6 +15,7 @@ import {
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {
     validatePredeadlineFrameDiagnostic,
+    validateMidWindowFramesDiagnostic,
     validateQemuLaunchDiagnostic,
     MID_WINDOW_FRAME_UNAVAILABLE_REASONS,
     PREDEADLINE_FRAME_STATUSES,
@@ -23,6 +25,7 @@ import {
     MAX_PREDEADLINE_FRAME_BYTES
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 import {
+    collectMidWindowFramesDiagnostic,
     collectPredeadlineFrameDiagnostic,
     createHostedStage2Operations,
     runHostedOwnedProcess,
@@ -164,6 +167,33 @@ describe("Predeadline frame diagnostic schema validation", () => {
         for (const reason of reasons) {
             assert.equal(PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(reason), false);
             assert.equal(MID_WINDOW_FRAME_UNAVAILABLE_REASONS.includes(reason), false);
+        }
+    });
+
+    it("maps internal dispatcher provenance to the disclosed command-failed reason at the hosted boundary", () => {
+        // The QMP session reports its raw provenance; the hosted collectors are the only consumers
+        // and must publish a vocabulary reason so the failure diagnostic still validates.
+        const offsetMs = 1_480_000;
+        const reasons = ["qmp-shutdown-malformed", "qmp-unexpected-response", "dispatcher-terminal"];
+        for (const reason of reasons) {
+            const predeadline = collectPredeadlineFrameDiagnostic({}, {paths: {root: ROOT}},
+                {status: "unavailable", reason, offsetMs}, true);
+            assert.deepEqual(predeadline, {schemaVersion: 1, status: "unavailable", reason: "command-failed", offsetMs});
+            assert.deepEqual(validatePredeadlineFrameDiagnostic(predeadline, ROOT), predeadline);
+
+            const midWindow = collectMidWindowFramesDiagnostic({}, {paths: {root: ROOT}}, [
+                {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[0],
+                    offsetMs, reason},
+                {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[1],
+                    reason: "reader-unavailable"}
+            ], true);
+            assert.deepEqual(midWindow, [
+                {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[0],
+                    reason: "command-failed", offsetMs},
+                {schemaVersion: 1, status: "unavailable", nominalOffsetMs: MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS[1],
+                    reason: "reader-unavailable"}
+            ]);
+            assert.deepEqual(validateMidWindowFramesDiagnostic(midWindow, ROOT), midWindow);
         }
     });
 
