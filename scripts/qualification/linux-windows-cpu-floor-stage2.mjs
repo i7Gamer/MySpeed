@@ -80,6 +80,13 @@ const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREE
 const MAX_LATE_BOOT_MILESTONES = 2;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
+export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
+export const PREDEADLINE_FRAME_SKIPPED_REASONS = Object.freeze(["insufficient-time", "guest-already-exited", "disabled"]);
+export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze(["command-timeout", "command-failed", "file-missing", "cleanup-unproven", "read-error"]);
+export const PREDEADLINE_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
+export const MAX_PREDEADLINE_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
+export const MAX_PREDEADLINE_FRAME_BASE64_CHARACTERS = Math.ceil(MAX_PREDEADLINE_FRAME_BYTES / 3) * 4;
+
 export const TOP_LEVEL_PACKAGE_PINS = deepFreeze([
     {name: "7zip", version: "23.01+dfsg-11", architecture: "amd64",
         filename: "pool/universe/7/7zip/7zip_23.01+dfsg-11_amd64.deb", bytes: "1846156",
@@ -1425,6 +1432,57 @@ export function validateReceiptDiagnostic(value, expectedNonce) {
     return deepFreeze(structuredClone(value));
 }
 
+export function validatePredeadlineFrameDiagnostic(value, expectedRoot) {
+    if (value === null || typeof value !== "object" || Array.isArray(value))
+        throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+    if (!PREDEADLINE_FRAME_STATUSES.includes(value.status))
+        throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+    if (value.schemaVersion !== SCHEMA_VERSION)
+        throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+
+    if (value.status === "captured") {
+        assertKeys(value, ["offsetMs", "schemaVersion", "screenshot", "status"], "QEMU predeadline frame diagnostic");
+        if (!Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0)
+            throw new TypeError("QEMU predeadline frame diagnostic offset is invalid");
+        assertKeys(value.screenshot, ["bytes", "bytesBase64", "path", "sha256"], "QEMU predeadline frame screenshot");
+        if (expectedRoot !== undefined && value.screenshot.path !== `${expectedRoot}/predeadline-frame.png`)
+            throw new TypeError("QEMU predeadline frame screenshot path is invalid");
+        const byteCount = decimal(value.screenshot.bytes, "QEMU predeadline frame screenshot bytes", {positive: true});
+        if (byteCount > BigInt(MAX_PREDEADLINE_FRAME_BYTES))
+            throw new TypeError("QEMU predeadline frame screenshot bytes is invalid");
+        exactString(value.screenshot.sha256, SHA256_PATTERN, "QEMU predeadline frame screenshot hash");
+        if (typeof value.screenshot.bytesBase64 !== "string" ||
+            value.screenshot.bytesBase64.length > MAX_PREDEADLINE_FRAME_BASE64_CHARACTERS ||
+            !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value.screenshot.bytesBase64))
+            throw new TypeError("QEMU predeadline frame screenshot is invalid");
+        const bytes = Buffer.from(value.screenshot.bytesBase64, "base64");
+        if (bytes.length !== Number(byteCount) || !bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
+            crypto.createHash("sha256").update(bytes).digest("hex") !== value.screenshot.sha256)
+            throw new TypeError("QEMU predeadline frame screenshot content is invalid");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "skipped") {
+        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU predeadline frame diagnostic");
+        if (!PREDEADLINE_FRAME_SKIPPED_REASONS.includes(value.reason))
+            throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+        return deepFreeze(structuredClone(value));
+    }
+    if (value.status === "unavailable") {
+        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU predeadline frame diagnostic");
+        if (!PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(value.reason))
+            throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+        return deepFreeze(structuredClone(value));
+    }
+    assertKeys(value, ["bytes", "reason", "schemaVersion", "sha256", "status"], "QEMU predeadline frame diagnostic");
+    if (!PREDEADLINE_FRAME_MALFORMED_REASONS.includes(value.reason))
+        throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+    const parsedBytes = decimal(value.bytes, "QEMU predeadline frame diagnostic bytes");
+    if (parsedBytes > BigInt(MAX_PREDEADLINE_FRAME_BYTES))
+        throw new TypeError("QEMU predeadline frame diagnostic bytes is invalid");
+    exactString(value.sha256, SHA256_PATTERN, "QEMU predeadline frame diagnostic sha256");
+    return deepFreeze(structuredClone(value));
+}
+
 export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
@@ -1434,6 +1492,7 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     const diagnosticKeys = ["kind", "monitorFailure", "process", "processFlags", "schemaVersion", "stderr"];
     if (Object.hasOwn(value ?? {}, "serialLog")) diagnosticKeys.push("serialLog");
     if (Object.hasOwn(value ?? {}, "receipt")) diagnosticKeys.push("receipt");
+    if (Object.hasOwn(value ?? {}, "predeadlineFrame")) diagnosticKeys.push("predeadlineFrame");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
@@ -1473,6 +1532,8 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     validateDiagnosticStream(value.stderr, "stderr");
     if (value.serialLog !== undefined) validateSerialDiagnostic(value.serialLog);
     if (value.receipt !== undefined) validateReceiptDiagnostic(value.receipt, expectedNonce);
+    if (value.predeadlineFrame !== undefined)
+        validatePredeadlineFrameDiagnostic(value.predeadlineFrame, expectedNonce ? `/home/runner/work/_temp/myspeed-windows-cpu-floor-${expectedNonce}` : undefined);
     return deepFreeze(structuredClone(value));
 }
 

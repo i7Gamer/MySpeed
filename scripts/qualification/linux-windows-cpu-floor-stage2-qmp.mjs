@@ -26,6 +26,23 @@ const EARLY_ONLY_ROOT_SUFFIX = "/containment-preflight";
 const SCREENSHOT_PATH_PATTERN = /^(\/home\/runner\/work\/_temp\/myspeed-(?:windows-(?:cpu-floor-[a-f0-9]{32}(?:\/post-release-baseline)?|msi-[a-f0-9]{32}\/(?:row-(?:0[0-9]|1[0-3])-[a-f0-9]{32}|containment-preflight))|stage3-[a-f0-9]{32}))\/(early|late)-boot-([12])\.png$/u;
 const isEarlyOnlyRoot = root => root.endsWith(EARLY_ONLY_ROOT_SUFFIX) || STAGE3_ROOT_PATTERN.test(root);
 
+const PREDEADLINE_FRAME_PATH_PATTERN =
+    /^\/home\/runner\/work\/_temp\/myspeed-windows-cpu-floor-[a-f0-9]{32}\/predeadline-frame\.png$/u;
+export const PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS = QMP_MESSAGE_TIMEOUT_MILLISECONDS;
+export const PREDEADLINE_FRAME_TICK_JITTER_MILLISECONDS = 5_000;
+export const PREDEADLINE_FRAME_CLEANUP_HEADROOM_MILLISECONDS = 5_000;
+export const PREDEADLINE_FRAME_LEAD_MILLISECONDS =
+    PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS +
+    PREDEADLINE_FRAME_TICK_JITTER_MILLISECONDS +
+    PREDEADLINE_FRAME_CLEANUP_HEADROOM_MILLISECONDS;
+export const PREDEADLINE_FRAME_FILENAME = "predeadline-frame.png";
+
+export function validatePredeadlineScreenshotPath(value) {
+    if (typeof value !== "string" || !PREDEADLINE_FRAME_PATH_PATTERN.test(value))
+        throw new TypeError("QMP predeadline screenshot path is invalid");
+    return value;
+}
+
 export const LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS = Object.freeze([120_000, 300_000]);
 export const MAX_LATE_BOOT_MILESTONES = 2;
 export const INSTALLER_BOOT_CONFIRMATION = "single-enter-before-setup-v1";
@@ -366,7 +383,20 @@ async function runSession(input, dependencies, session) {
         validateLateScreenshots(input.lateScreenshotPaths) : null;
     const bootConfirmation = validateInstallerBootConfirmation(input?.bootConfirmation);
     const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input?.winpeDiagnostic);
+    const predeadline = input?.predeadline !== undefined ? {
+        screenshotPath: validatePredeadlineScreenshotPath(input.predeadline.screenshotPath),
+        executionDeadline: input.predeadline.executionDeadline
+    } : null;
     const screenshotRoot = screenshotPaths[0].slice(0, -"/early-boot-1.png".length);
+    if (predeadline !== null) {
+        if (lateScreenshotPaths === null)
+            throw new TypeError("QMP predeadline requires late screenshot paths");
+        if (!Number.isFinite(predeadline.executionDeadline))
+            throw new TypeError("QMP predeadline execution deadline is invalid");
+        const predeadlineRoot = predeadline.screenshotPath.slice(0, -`/${PREDEADLINE_FRAME_FILENAME}`.length);
+        if (predeadlineRoot !== screenshotRoot)
+            throw new TypeError("QMP predeadline root is invalid");
+    }
     if (bootConfirmation !== undefined && !INSTALLER_BOOT_CONFIRMATION_ROOT_PATTERN.test(screenshotRoot))
         throw new TypeError("QMP installer boot confirmation root is invalid");
     /*
@@ -544,6 +574,12 @@ async function runSession(input, dependencies, session) {
         const runLateMilestones = async () => {
             const milestones = [];
             let winpeDiagnosticRecord = null;
+            let predeadlineSettled = false;
+            const reportPredeadline = record => {
+                if (predeadlineSettled) return;
+                predeadlineSettled = true;
+                input.onPredeadlineObservation?.(record);
+            };
             try {
                 for (let i = 0; i < MAX_LATE_BOOT_MILESTONES; i += 1) {
                     if (session.cancelled || session.expired) break;
@@ -584,8 +620,51 @@ async function runSession(input, dependencies, session) {
                         try { winpeDiagnosticRecord = await runWinpeDiagnostic(); }
                         catch { winpeDiagnosticRecord = null; }
                 }
-            } catch {
-                // Non-blocking failure handled gracefully
+                if (predeadline !== null) {
+                    if (session.cancelled || session.expired) {
+                        reportPredeadline({status: "skipped", reason: "guest-already-exited"});
+                    } else {
+                        const targetOffset = Math.round(predeadline.executionDeadline - sessionStartTime - PREDEADLINE_FRAME_LEAD_MILLISECONDS);
+                        const elapsed = getTime() - sessionStartTime;
+                        const remaining = targetOffset - elapsed;
+                        if (targetOffset <= LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS[1] || remaining <= 0) {
+                            reportPredeadline({status: "skipped", reason: "insufficient-time"});
+                        } else {
+                            await cancellableDelay(remaining, dependencies, session);
+                            if (session.cancelled || session.expired) {
+                                reportPredeadline({status: "skipped", reason: "guest-already-exited"});
+                            } else {
+                                try {
+                                    const screenshotId = "predeadline-screenshot";
+                                    await withDeadline(write({execute: "screendump", arguments: {
+                                        filename: predeadline.screenshotPath, format: "png"
+                                    }, id: screenshotId}), dependencies, PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS);
+                                    await withDeadline(expectResponse(readMessage, screenshotId), dependencies,
+                                        PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS);
+                                    reportPredeadline({
+                                        status: "captured",
+                                        offsetMs: targetOffset,
+                                        screenshotPath: predeadline.screenshotPath
+                                    });
+                                } catch (error) {
+                                    const isTimeout = error?.message?.includes("deadline");
+                                    reportPredeadline({
+                                        status: "unavailable",
+                                        reason: isTimeout ? "command-timeout" : "command-failed"
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                if (predeadline !== null) {
+                    const isTimeout = error?.message?.includes("deadline");
+                    reportPredeadline({
+                        status: "unavailable",
+                        reason: isTimeout ? "command-timeout" : "command-failed"
+                    });
+                }
             }
             if (milestones.length === 0 && winpeDiagnosticRecord === null) return null;
             return Object.freeze({

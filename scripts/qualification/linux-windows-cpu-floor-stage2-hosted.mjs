@@ -6,11 +6,13 @@ import path from "node:path";
 import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
 import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES,
+    MAX_PREDEADLINE_FRAME_BYTES,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
-    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput} from
+    validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
+    validatePredeadlineScreenshotPath, PREDEADLINE_FRAME_FILENAME} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const APT_GET = "/usr/bin/apt-get";
@@ -192,6 +194,7 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 ...(options.qmp.lateScreenshotPaths ? {lateScreenshotPaths: options.qmp.lateScreenshotPaths} : {}),
                 ...(options.qmp.winpeDiagnostic === undefined ? {} :
                     {winpeDiagnostic: options.qmp.winpeDiagnostic}),
+                ...(options.qmp.predeadline ? {predeadline: options.qmp.predeadline} : {}),
                 onSession: handle => {
                     qmpCancelHandle = handle;
                     options.onQmpSessionHandle?.(handle);
@@ -200,6 +203,10 @@ export async function runHostedOwnedProcess(command, argv, options = {}, depende
                 onLateObservation: promise => {
                     options.onLateObservation?.(promise);
                     options.qmp.onLateObservation?.(promise);
+                },
+                onPredeadlineObservation: observation => {
+                    options.onPredeadlineObservation?.(observation);
+                    options.qmp.onPredeadlineObservation?.(observation);
                 }
             }, options.qmpDependencies);
             qmpSession.catch(() => undefined);
@@ -1392,6 +1399,7 @@ export async function runMonitoredQemu(io, request) {
     let qmpSessionHandle = null;
     let lateBootObservation = null;
     let lateBootSettled = false;
+    let predeadlineObservation = null;
     let qmpState = request.qmp ? "missing" : "unused";
     let monitorFailure = null;
     const cancelQmp = () => {
@@ -1428,6 +1436,10 @@ export async function runMonitoredQemu(io, request) {
                             lateBootObservation = null;
                         }
                     ).catch(() => undefined);
+                },
+                onPredeadlineObservation: observation => {
+                    predeadlineObservation = observation;
+                    request.onPredeadlineObservation?.(observation);
                 },
                 onQmpSession: value => {
                     qmpSession = value;
@@ -1542,12 +1554,13 @@ export async function runMonitoredQemu(io, request) {
     }
     const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
     const finish = value => {
+        const enriched = {...value, predeadline: predeadlineObservation};
         if (pidfile && io.pathExists(request.pidPath)) {
-            if (value.absentAfter !== true || value.processGroupGone !== true)
-                return {...value, terminationReason: value.terminationReason ?? "pidfile-cleanup-deferred"};
+            if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
+                return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
             io.removeOwnedPidFile(request.pidPath, pidfile);
         }
-        return value;
+        return enriched;
     };
     if (monitorFailed || identity === null || !teardownProven)
         return finish({observation, identity, qmp: qmpObservation, lateBoot: finalLateBoot, monitorFailure, absentAfter: false, processGroupGone: false,
@@ -1867,6 +1880,10 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         [`${input.paths.root}/late-boot-1.png`, `${input.paths.root}/late-boot-2.png`] : null;
     if (lateScreenshotPaths !== null && lateScreenshotPaths.some(target => io.pathExists(target)))
         throw new Error("late-boot screenshot target already exists");
+    const isPredeadlineActive = isDiagnostic && winpeDiagnostic === undefined && !isReserved;
+    const predeadlineScreenshotPath = isPredeadlineActive ? `${input.paths.root}/predeadline-frame.png` : null;
+    if (predeadlineScreenshotPath !== null && io.pathExists(predeadlineScreenshotPath))
+        throw new Error("predeadline screenshot target already exists");
     const monitored = await io.runMonitoredQemu({command: launcher.command, argv: launcher.argv,
         timeoutMs: outerTimeoutMs, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
@@ -1874,6 +1891,9 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
+            ...(predeadlineScreenshotPath !== null ? {
+                predeadline: {screenshotPath: predeadlineScreenshotPath, executionDeadline}
+            } : {}),
             ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation}),
             ...(winpeDiagnostic === undefined ? {} : {winpeDiagnostic})}});
     const observation = monitored.observation;
@@ -2182,6 +2202,67 @@ export async function collectGuestReceiptDiagnostic(io, input, context, launched
     } catch {
         return {guestFailure: null, diagnostic: {schemaVersion: 1, status: "unavailable", reason: "tool-error"}};
     }
+}
+
+/*
+ * The optional predeadline frame is collected strictly after proven owned cleanup.
+ * Missing capture, command failure or corruption are retained with fixed status and reasons.
+ */
+export function collectPredeadlineFrameDiagnostic(io, input, predeadlineState, cleanupProven) {
+    if (!predeadlineState) return null;
+    if (cleanupProven !== true) {
+        return {schemaVersion: 1, status: "unavailable", reason: "cleanup-unproven"};
+    }
+    if (predeadlineState.status === "skipped") {
+        return {schemaVersion: 1, status: "skipped", reason: predeadlineState.reason};
+    }
+    if (predeadlineState.status === "unavailable") {
+        return {schemaVersion: 1, status: "unavailable", reason: predeadlineState.reason};
+    }
+    if (predeadlineState.status === "captured") {
+        const targetPath = predeadlineState.screenshotPath;
+        if (!io.pathExists(targetPath)) {
+            return {schemaVersion: 1, status: "unavailable", reason: "file-missing"};
+        }
+        let observed;
+        try {
+            observed = io.readOwnedVerified(targetPath, MAX_PREDEADLINE_FRAME_BYTES);
+        } catch {
+            return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
+        }
+        if (observed.identity.path !== targetPath) {
+            return {
+                schemaVersion: 1, status: "malformed", reason: "path-mismatch",
+                bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+            };
+        }
+        if (observed.bytes.length < PNG_SIGNATURE.length ||
+            !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+            return {
+                schemaVersion: 1, status: "malformed", reason: "invalid-png-signature",
+                bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+            };
+        }
+        const fileSha = sha256(observed.bytes);
+        if (fileSha !== observed.identity.sha256) {
+            return {
+                schemaVersion: 1, status: "malformed", reason: "hash-mismatch",
+                bytes: String(observed.bytes.length), sha256: fileSha
+            };
+        }
+        return {
+            schemaVersion: 1,
+            status: "captured",
+            offsetMs: predeadlineState.offsetMs,
+            screenshot: {
+                path: targetPath,
+                bytes: observed.identity.bytes,
+                sha256: observed.identity.sha256,
+                bytesBase64: observed.bytes.toString("base64")
+            }
+        };
+    }
+    return {schemaVersion: 1, status: "unavailable", reason: "command-failed"};
 }
 
 export function createHostedStage2Operations({context, paths: pathsValue, dependencies = {}}) {
@@ -2493,8 +2574,14 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 const {diagnostic: receiptDiagnostic, guestFailure} =
                     await collectGuestReceiptDiagnostic(io, input, context, launched, taskOwner,
                         preLaunchDiskIdentity);
+                const predeadlineDiagnostic = collectPredeadlineFrameDiagnostic(
+                    io, input, monitoredLaunch.predeadline, monitoredLaunch.cleanupProven);
                 const failureDiagnostic = launched.failureDiagnostic ?
-                    {...launched.failureDiagnostic, receipt: receiptDiagnostic} : undefined;
+                    {
+                        ...launched.failureDiagnostic,
+                        receipt: receiptDiagnostic,
+                        ...(predeadlineDiagnostic !== null ? {predeadlineFrame: predeadlineDiagnostic} : {})
+                    } : undefined;
                 return {
                     ...launched,
                     ...(failureDiagnostic !== undefined ? {failureDiagnostic} : {}),
