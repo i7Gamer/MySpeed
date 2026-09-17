@@ -329,6 +329,8 @@ function withDeadline(promise, dependencies, milliseconds = QMP_MESSAGE_TIMEOUT_
     return Promise.race([promise, deadline]).finally(() => clearTimer(timer));
 }
 
+const QMP_ERROR_PROVENANCE = new WeakMap();
+
 function createMessageReader(readable, dependencies, bounds = {}) {
     if (!readable || typeof readable[Symbol.asyncIterator] !== "function")
         throw new TypeError("QMP readable stream is invalid");
@@ -358,7 +360,11 @@ function createMessageReader(readable, dependencies, bounds = {}) {
                 }
             }
             const next = await withDeadline(iterator.next(), dependencies);
-            if (next.done) throw new Error("QMP stream ended before response");
+            if (next.done) {
+                const streamEndError = new Error("QMP stream ended before response");
+                QMP_ERROR_PROVENANCE.set(streamEndError, "qmp-stream-ended");
+                throw streamEndError;
+            }
             const chunk = Buffer.from(next.value);
             totalBytes += chunk.length;
             if (totalBytes > maximumTranscriptBytes) throw new Error("QMP transcript bound exceeded");
@@ -371,7 +377,17 @@ async function expectResponse(readMessage, id) {
     while (true) {
         const value = await readMessage();
         if (value.event !== undefined) continue;
-        if (value.id !== id || value.error !== undefined || value.return === undefined)
+        if (value.id !== id) {
+            const err = new Error("QMP response is invalid");
+            QMP_ERROR_PROVENANCE.set(err, "qmp-id-mismatch");
+            throw err;
+        }
+        if (value.error !== undefined) {
+            const err = new Error("QMP response is invalid");
+            QMP_ERROR_PROVENANCE.set(err, "qmp-error-response");
+            throw err;
+        }
+        if (value.return === undefined)
             throw new Error("QMP response is invalid");
         return value.return;
     }
@@ -435,10 +451,17 @@ async function runSession(input, dependencies, session) {
         throw new Error("QMP greeting is invalid");
     const write = (value, beforeWrite = () => undefined) => {
         if (session.expired || session.cancelled) return Promise.reject(new Error("QMP session deadline exceeded"));
-        return withDeadline(Promise.resolve().then(() => {
+        return withDeadline(Promise.resolve().then(async () => {
             if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
             beforeWrite();
-            return input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
+            try {
+                return await input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
+            } catch (error) {
+                if (error && typeof error === "object" && !QMP_ERROR_PROVENANCE.has(error)) {
+                    QMP_ERROR_PROVENANCE.set(error, "qmp-write-failed");
+                }
+                throw error;
+            }
         }), dependencies);
     };
     await write({execute: "qmp_capabilities", id: "capabilities"});
@@ -680,10 +703,15 @@ async function runSession(input, dependencies, session) {
                                             screenshotPath: predeadline.screenshotPath
                                         });
                                     } catch (error) {
+                                        const observedOffsetMs = Math.round(getTime() - sessionStartTime);
                                         const isTimeout = error?.message?.includes("deadline");
+                                        const provenance = (error && typeof error === "object") ?
+                                            QMP_ERROR_PROVENANCE.get(error) : undefined;
+                                        const reason = isTimeout ? "command-timeout" : (provenance ?? "command-failed");
                                         reportPredeadline({
                                             status: "unavailable",
-                                            reason: isTimeout ? "command-timeout" : "command-failed"
+                                            reason,
+                                            offsetMs: observedOffsetMs
                                         });
                                     }
                                 }
@@ -691,10 +719,15 @@ async function runSession(input, dependencies, session) {
                         }
                     }
                 } catch (error) {
+                    const observedOffsetMs = Math.round(getTime() - sessionStartTime);
                     const isTimeout = error?.message?.includes("deadline");
+                    const provenance = (error && typeof error === "object") ?
+                        QMP_ERROR_PROVENANCE.get(error) : undefined;
+                    const reason = isTimeout ? "command-timeout" : (provenance ?? "command-failed");
                     reportPredeadline({
                         status: "unavailable",
-                        reason: isTimeout ? "command-timeout" : "command-failed"
+                        reason,
+                        offsetMs: observedOffsetMs
                     });
                 }
             }

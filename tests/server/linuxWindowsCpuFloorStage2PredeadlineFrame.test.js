@@ -146,12 +146,31 @@ describe("Predeadline frame diagnostic schema validation", () => {
         assert.throws(() => validatePredeadlineFrameDiagnostic({schemaVersion: 1, status: "skipped", reason: "insufficient-time", extra: true}));
     });
 
-    it("accepts all valid unavailable reasons", () => {
+    it("accepts all valid unavailable reasons with optional offsetMs and preserves backward compatibility", () => {
         for (const reason of PREDEADLINE_FRAME_UNAVAILABLE_REASONS) {
-            const diag = {schemaVersion: 1, status: "unavailable", reason};
-            const validated = validatePredeadlineFrameDiagnostic(diag);
-            assert.deepEqual(validated, diag);
+            const diagWithout = {schemaVersion: 1, status: "unavailable", reason};
+            const validatedWithout = validatePredeadlineFrameDiagnostic(diagWithout);
+            assert.deepEqual(validatedWithout, diagWithout);
+
+            const diagWith = {schemaVersion: 1, status: "unavailable", reason, offsetMs: 1_480_000};
+            const validatedWith = validatePredeadlineFrameDiagnostic(diagWith);
+            assert.deepEqual(validatedWith, diagWith);
         }
+    });
+
+    it("rejects invalid offsetMs or unexpected keys on unavailable frame", () => {
+        assert.throws(() => validatePredeadlineFrameDiagnostic({
+            schemaVersion: 1, status: "unavailable", reason: "command-failed", offsetMs: -1
+        }), /offset/u);
+        assert.throws(() => validatePredeadlineFrameDiagnostic({
+            schemaVersion: 1, status: "unavailable", reason: "command-failed", offsetMs: 1.5
+        }), /offset/u);
+        assert.throws(() => validatePredeadlineFrameDiagnostic({
+            schemaVersion: 1, status: "unavailable", reason: "command-failed", offsetMs: "1480000"
+        }), /offset/u);
+        assert.throws(() => validatePredeadlineFrameDiagnostic({
+            schemaVersion: 1, status: "unavailable", reason: "command-failed", extraKey: true
+        }), /keys/u);
     });
 
     it("accepts all valid malformed reasons with bytes and sha256", () => {
@@ -510,7 +529,7 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
         });
     });
 
-    it("handles screendump command failure or timeout gracefully without crashing", async () => {
+    it("handles screendump fallback command failure gracefully and records offsetMs", async () => {
         let simulatedTime = 0;
         let predeadlineObservation = null;
         let lateObservationPromise = null;
@@ -528,7 +547,53 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
                 {return: {}, id: "late-screenshot-1"},
                 {return: {running: true, status: "running"}, id: "late-status-2"},
                 {return: {}, id: "late-screenshot-2"},
-                // QMP screendump error
+                // Unexpected response format without return or error
+                {id: "predeadline-screenshot"}
+            ]),
+            writeBytes: () => undefined,
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.deepEqual(predeadlineObservation, {
+            status: "unavailable",
+            reason: "command-failed",
+            offsetMs: 1_480_000
+        });
+    });
+
+    it("distinguishes qmp-error-response when screendump returns explicit QMP error and records offsetMs", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"},
                 {error: {class: "GenericError", desc: "Device not found"}, id: "predeadline-screenshot"}
             ]),
             writeBytes: () => undefined,
@@ -546,13 +611,267 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
         });
 
         assert.ok(lateObservationPromise !== null);
-        await lateObservationPromise;
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
         await predeadlinePromise;
 
         assert.deepEqual(predeadlineObservation, {
             status: "unavailable",
-            reason: "command-failed"
+            reason: "qmp-error-response",
+            offsetMs: 1_480_000
         });
+    });
+
+    it("distinguishes qmp-id-mismatch when screendump returns unexpected response ID and records offsetMs", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"},
+                {return: {}, id: "unmatched-id"}
+            ]),
+            writeBytes: () => undefined,
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.deepEqual(predeadlineObservation, {
+            status: "unavailable",
+            reason: "qmp-id-mismatch",
+            offsetMs: 1_480_000
+        });
+    });
+
+    it("distinguishes qmp-stream-ended when readable stream ends before screendump response and records offsetMs", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        // Stream ends after late milestones without responding to predeadline screenshot
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"}
+            ]),
+            writeBytes: () => undefined,
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.deepEqual(predeadlineObservation, {
+            status: "unavailable",
+            reason: "qmp-stream-ended",
+            offsetMs: 1_480_000
+        });
+    });
+
+    it("distinguishes qmp-write-failed when write fails during screendump and records offsetMs", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"},
+                {return: {}, id: "predeadline-screenshot"}
+            ]),
+            writeBytes: bytes => {
+                const message = JSON.parse(bytes.toString("utf8"));
+                if (message.id === "predeadline-screenshot") {
+                    throw new Error("EPIPE: broken pipe");
+                }
+            },
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.deepEqual(predeadlineObservation, {
+            status: "unavailable",
+            reason: "qmp-write-failed",
+            offsetMs: 1_480_000
+        });
+    });
+
+    it("distinguishes command-timeout when screendump exceeds deadline and records offsetMs", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        await runEarlyBootQmpSession({
+            readable: (async function* () {
+                const initial = [
+                    {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                    {return: {}, id: "capabilities"},
+                    {return: {running: true, status: "running"}, id: "status"},
+                    {return: {}, id: "screenshot-1"},
+                    {return: {}, id: "screenshot-2"},
+                    {return: {running: true, status: "running"}, id: "late-status-1"},
+                    {return: {}, id: "late-screenshot-1"},
+                    {return: {running: true, status: "running"}, id: "late-status-2"},
+                    {return: {}, id: "late-screenshot-2"}
+                ];
+                for (const item of initial) yield Buffer.from(`${JSON.stringify(item)}\n`);
+                // Wait forever on predeadline response (triggering command timeout)
+                await new Promise(() => {});
+            })(),
+            writeBytes: () => undefined,
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            setTimer: (callback, ms) => {
+                // Advance simulated clock when deadline fires
+                return setTimeout(() => {
+                    simulatedTime += ms;
+                    callback();
+                }, 10);
+            },
+            clearTimer: id => clearTimeout(id),
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.equal(predeadlineObservation.status, "unavailable");
+        assert.equal(predeadlineObservation.reason, "command-timeout");
+        assert.ok(Number.isSafeInteger(predeadlineObservation.offsetMs));
+        assert.ok(predeadlineObservation.offsetMs >= 1_480_000);
+    });
+
+    it("handles asynchronous QMP events during long idle interval and captures screendump successfully", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+        const writes = [];
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"},
+                // Asynchronous events during the ~20-minute gap
+                {event: "RTC_CHANGE", data: {offset: 0}, timestamp: {seconds: 1726567200, microseconds: 0}},
+                {event: "NIC_RX_FILTER_CHANGED", data: {name: "nic0"}, timestamp: {seconds: 1726567300, microseconds: 0}},
+                {event: "SUSPEND_DISK", timestamp: {seconds: 1726567400, microseconds: 0}},
+                {return: {}, id: "predeadline-screenshot"}
+            ]),
+            writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))),
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        assert.ok(lateObservationPromise !== null);
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        await predeadlinePromise;
+
+        assert.deepEqual(predeadlineObservation, {
+            status: "captured",
+            offsetMs: 1_480_000,
+            screenshotPath: PREDEADLINE_PATH
+        });
+        assert.ok(writes.some(w => w.id === "predeadline-screenshot"));
     });
 });
 
@@ -960,6 +1279,27 @@ describe("Post-cleanup collection & verification", () => {
                 sha256: sha256(DUMMY_PNG),
                 bytesBase64: DUMMY_PNG.toString("base64")
             }
+        });
+    });
+
+    it("preserves optional offsetMs when collecting unavailable diagnostic", () => {
+        const diagWith = collectPredeadlineFrameDiagnostic({}, {paths: {root: ROOT}}, {
+            status: "unavailable", reason: "qmp-error-response", offsetMs: 1_480_000
+        }, true);
+        assert.deepEqual(diagWith, {
+            schemaVersion: 1,
+            status: "unavailable",
+            reason: "qmp-error-response",
+            offsetMs: 1_480_000
+        });
+
+        const diagWithout = collectPredeadlineFrameDiagnostic({}, {paths: {root: ROOT}}, {
+            status: "unavailable", reason: "command-timeout"
+        }, true);
+        assert.deepEqual(diagWithout, {
+            schemaVersion: 1,
+            status: "unavailable",
+            reason: "command-timeout"
         });
     });
 });

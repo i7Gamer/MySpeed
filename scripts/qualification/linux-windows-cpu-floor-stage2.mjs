@@ -82,7 +82,10 @@ const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
 export const PREDEADLINE_FRAME_SKIPPED_REASONS = Object.freeze(["insufficient-time", "guest-already-exited", "disabled"]);
-export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze(["command-timeout", "command-failed", "file-missing", "cleanup-unproven", "read-error"]);
+export const PREDEADLINE_FRAME_UNAVAILABLE_REASONS = Object.freeze([
+    "command-timeout", "command-failed", "qmp-write-failed", "qmp-stream-ended",
+    "qmp-error-response", "qmp-id-mismatch", "file-missing", "cleanup-unproven", "read-error"
+]);
 export const PREDEADLINE_FRAME_MALFORMED_REASONS = Object.freeze(["invalid-png-signature", "read-cap-exceeded", "hash-mismatch", "path-mismatch"]);
 export const MAX_PREDEADLINE_FRAME_BYTES = MAX_LATE_BOOT_SCREENSHOT_BYTES;
 export const MAX_PREDEADLINE_FRAME_BASE64_CHARACTERS = Math.ceil(MAX_PREDEADLINE_FRAME_BYTES / 3) * 4;
@@ -1490,9 +1493,13 @@ export function validatePredeadlineFrameDiagnostic(value, expectedRoot) {
         return deepFreeze(structuredClone(value));
     }
     if (value.status === "unavailable") {
-        assertKeys(value, ["reason", "schemaVersion", "status"], "QEMU predeadline frame diagnostic");
+        const allowedKeys = ["reason", "schemaVersion", "status"];
+        if (Object.hasOwn(value, "offsetMs")) allowedKeys.push("offsetMs");
+        assertKeys(value, allowedKeys, "QEMU predeadline frame diagnostic");
         if (!PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(value.reason))
             throw new TypeError("QEMU predeadline frame diagnostic is invalid");
+        if (value.offsetMs !== undefined && (!Number.isSafeInteger(value.offsetMs) || value.offsetMs < 0))
+            throw new TypeError("QEMU predeadline frame diagnostic offset is invalid");
         return deepFreeze(structuredClone(value));
     }
     assertKeys(value, ["bytes", "reason", "schemaVersion", "sha256", "status"], "QEMU predeadline frame diagnostic");
