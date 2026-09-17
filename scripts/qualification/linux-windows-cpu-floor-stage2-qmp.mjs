@@ -571,6 +571,11 @@ async function runSession(input, dependencies, session) {
             }
             return validateWinpeDiagnosticInput(record, winpeDiagnostic);
         };
+        let resolveLateBoot;
+        const latePromise = new Promise(resolve => { resolveLateBoot = resolve; });
+        latePromise.catch(() => undefined);
+        input.onLateObservation?.(latePromise);
+
         const runLateMilestones = async () => {
             const milestones = [];
             let winpeDiagnosticRecord = null;
@@ -620,7 +625,21 @@ async function runSession(input, dependencies, session) {
                         try { winpeDiagnosticRecord = await runWinpeDiagnostic(); }
                         catch { winpeDiagnosticRecord = null; }
                 }
-                if (predeadline !== null) {
+            } catch {
+                /* any milestone failure terminates the milestone loop */
+            }
+
+            // Late boot observation settles promptly at Milestone 2 (300s) - never held hostage by predeadline!
+            const lateBootRecord = (milestones.length === 0 && winpeDiagnosticRecord === null) ? null : Object.freeze({
+                schemaVersion: 1,
+                kind: "qemu-late-boot-observation",
+                milestones: Object.freeze([...milestones]),
+                ...(winpeDiagnosticRecord === null ? {} : {winpeDiagnostic: winpeDiagnosticRecord})
+            });
+            resolveLateBoot(lateBootRecord);
+
+            if (predeadline !== null) {
+                try {
                     if (session.cancelled || session.expired) {
                         reportPredeadline({status: "skipped", reason: "guest-already-exited"});
                     } else {
@@ -634,31 +653,44 @@ async function runSession(input, dependencies, session) {
                             if (session.cancelled || session.expired) {
                                 reportPredeadline({status: "skipped", reason: "guest-already-exited"});
                             } else {
-                                try {
-                                    const screenshotId = "predeadline-screenshot";
-                                    await withDeadline(write({execute: "screendump", arguments: {
-                                        filename: predeadline.screenshotPath, format: "png"
-                                    }, id: screenshotId}), dependencies, PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS);
-                                    await withDeadline(expectResponse(readMessage, screenshotId), dependencies,
-                                        PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS);
-                                    reportPredeadline({
-                                        status: "captured",
-                                        offsetMs: targetOffset,
-                                        screenshotPath: predeadline.screenshotPath
-                                    });
-                                } catch (error) {
-                                    const isTimeout = error?.message?.includes("deadline");
-                                    reportPredeadline({
-                                        status: "unavailable",
-                                        reason: isTimeout ? "command-timeout" : "command-failed"
-                                    });
+                                const wakeupTime = getTime();
+                                const remainingBeforeDeadline = Math.round(predeadline.executionDeadline - wakeupTime);
+                                if (remainingBeforeDeadline <= PREDEADLINE_FRAME_CLEANUP_HEADROOM_MILLISECONDS) {
+                                    reportPredeadline({status: "skipped", reason: "insufficient-time"});
+                                } else {
+                                    const totalCommandBudget = Math.min(
+                                        PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS,
+                                        Math.max(0, remainingBeforeDeadline - PREDEADLINE_FRAME_CLEANUP_HEADROOM_MILLISECONDS)
+                                    );
+                                    try {
+                                        const screenshotId = "predeadline-screenshot";
+                                        const commandOperation = (async () => {
+                                            await write({
+                                                execute: "screendump",
+                                                arguments: {filename: predeadline.screenshotPath, format: "png"},
+                                                id: screenshotId
+                                            });
+                                            await expectResponse(readMessage, screenshotId);
+                                        })();
+                                        await withDeadline(commandOperation, dependencies, totalCommandBudget);
+                                        const observedOffsetMs = Math.round(getTime() - sessionStartTime);
+                                        reportPredeadline({
+                                            status: "captured",
+                                            offsetMs: observedOffsetMs,
+                                            screenshotPath: predeadline.screenshotPath
+                                        });
+                                    } catch (error) {
+                                        const isTimeout = error?.message?.includes("deadline");
+                                        reportPredeadline({
+                                            status: "unavailable",
+                                            reason: isTimeout ? "command-timeout" : "command-failed"
+                                        });
+                                    }
                                 }
                             }
                         }
                     }
-                }
-            } catch (error) {
-                if (predeadline !== null) {
+                } catch (error) {
                     const isTimeout = error?.message?.includes("deadline");
                     reportPredeadline({
                         status: "unavailable",
@@ -666,17 +698,8 @@ async function runSession(input, dependencies, session) {
                     });
                 }
             }
-            if (milestones.length === 0 && winpeDiagnosticRecord === null) return null;
-            return Object.freeze({
-                schemaVersion: 1,
-                kind: "qemu-late-boot-observation",
-                milestones: Object.freeze(milestones),
-                ...(winpeDiagnosticRecord === null ? {} : {winpeDiagnostic: winpeDiagnosticRecord})
-            });
         };
-        const latePromise = runLateMilestones();
-        latePromise.catch(() => undefined);
-        input.onLateObservation?.(latePromise);
+        runLateMilestones().catch(() => undefined);
     }
 
     return earlyResult;

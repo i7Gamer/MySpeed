@@ -20,7 +20,9 @@ import {
     MAX_PREDEADLINE_FRAME_BYTES
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
 import {
-    collectPredeadlineFrameDiagnostic
+    collectPredeadlineFrameDiagnostic,
+    createHostedStage2Operations,
+    runMonitoredQemu
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
 
 const NONCE = "c92cbf717ee04ed4948ed011060743bb";
@@ -192,12 +194,14 @@ describe("Predeadline frame diagnostic schema validation", () => {
 });
 
 describe("QMP predeadline frame sequencing & scheduling", () => {
-    it("schedules screendump at executionDeadline minus lead milliseconds", async () => {
+    it("schedules screendump at executionDeadline minus lead milliseconds and settles late milestones promptly", async () => {
         let simulatedTime = 0;
         const delays = [];
         const writes = [];
         let predeadlineObservation = null;
         let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
 
         const fakeWait = async ms => {
             delays.push(ms);
@@ -224,7 +228,10 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
             screenshotPaths: SCREENSHOTS,
             lateScreenshotPaths: LATE_SCREENSHOTS,
             predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline},
-            onPredeadlineObservation: obs => { predeadlineObservation = obs; },
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
             onLateObservation: promise => { lateObservationPromise = promise; }
         }, {
             wait: fakeWait,
@@ -233,12 +240,14 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
 
         assert.equal(result.running, true);
         assert.ok(lateObservationPromise !== null);
-        await lateObservationPromise;
 
-        // Early boot completed at 35s (5s + 30s)
-        // Late milestone 1 at 120s (waited 85s)
-        // Late milestone 2 at 300s (waited 180s)
-        // Predeadline target at 1480s (waited 1480s - 300s = 1180s = 1,180,000 ms)
+        // Late boot observation resolves promptly at T+300s with 2 milestones (NOT held hostage by predeadline)
+        const lateResult = await lateObservationPromise;
+        assert.equal(lateResult.milestones.length, 2);
+        assert.deepEqual(delays.slice(0, 4), [5_000, 30_000, 85_000, 180_000]);
+
+        // Predeadline completes at target offset
+        await predeadlinePromise;
         assert.deepEqual(delays, [5_000, 30_000, 85_000, 180_000, 1_180_000]);
         assert.equal(simulatedTime, 1_480_000);
 
@@ -261,10 +270,67 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
         });
     });
 
+    it("preserves already captured 120/300s observations when guest exits before predeadline", async () => {
+        let sessionControl = null;
+        let predeadlineObservation = null;
+        let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        const result = await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"}
+            ]),
+            writeBytes: () => undefined,
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
+            onLateObservation: promise => { lateObservationPromise = promise; },
+            onSession: control => { sessionControl = control; }
+        }, {
+            wait: async () => undefined,
+            now: () => 300_000
+        });
+
+        assert.equal(result.running, true);
+        assert.ok(sessionControl !== null);
+        assert.ok(lateObservationPromise !== null);
+
+        // Late boot observation settled at T+300s with 2 milestones
+        const lateResult = await lateObservationPromise;
+        assert.ok(lateResult !== null);
+        assert.equal(lateResult.milestones.length, 2);
+
+        // Guest exits at 600s, triggering cancel
+        sessionControl.cancel();
+
+        // Predeadline observation settles as skipped without invalidating lateResult
+        await predeadlinePromise;
+        assert.deepEqual(predeadlineObservation, {
+            status: "skipped",
+            reason: "guest-already-exited"
+        });
+        assert.equal(lateResult.milestones.length, 2);
+    });
+
     it("safely skips capture if executionDeadline leaves insufficient time", async () => {
         let simulatedTime = 0;
         let predeadlineObservation = null;
         let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
         const writes = [];
 
         // Short deadline of 310s (target offset = 310s - 20s = 290s <= 300s)
@@ -286,7 +352,10 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
             screenshotPaths: SCREENSHOTS,
             lateScreenshotPaths: LATE_SCREENSHOTS,
             predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline},
-            onPredeadlineObservation: obs => { predeadlineObservation = obs; },
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
             onLateObservation: promise => { lateObservationPromise = promise; }
         }, {
             wait: async ms => { simulatedTime += ms; },
@@ -295,6 +364,7 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
 
         assert.ok(lateObservationPromise !== null);
         await lateObservationPromise;
+        await predeadlinePromise;
 
         assert.deepEqual(predeadlineObservation, {
             status: "skipped",
@@ -302,6 +372,94 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
         });
         // No predeadline screendump written
         assert.ok(!writes.some(w => w.id === "predeadline-screenshot"));
+    });
+
+    it("safely skips capture if wakeup delay leaves insufficient cleanup headroom", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+        const writes = [];
+
+        // Execution deadline is 1,500,000. Target offset is 1,480,000.
+        // Simulated event loop stall: wakeup occurs at 1,497,000 (remaining = 3,000 <= 5,000 headroom)
+        const executionDeadline = 1_500_000;
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"}
+            ]),
+            writeBytes: bytes => writes.push(JSON.parse(bytes.toString("utf8"))),
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            }
+        }, {
+            wait: async ms => {
+                if (ms > 500_000) simulatedTime = 1_497_000;
+                else simulatedTime += ms;
+            },
+            now: () => simulatedTime
+        });
+
+        await predeadlinePromise;
+        assert.deepEqual(predeadlineObservation, {
+            status: "skipped",
+            reason: "insufficient-time"
+        });
+        assert.ok(!writes.some(w => w.id === "predeadline-screenshot"));
+    });
+
+    it("records actual observed offset rather than planned target", async () => {
+        let simulatedTime = 0;
+        let predeadlineObservation = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
+
+        await runEarlyBootQmpSession({
+            readable: stream([
+                {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+                {return: {}, id: "capabilities"},
+                {return: {running: true, status: "running"}, id: "status"},
+                {return: {}, id: "screenshot-1"},
+                {return: {}, id: "screenshot-2"},
+                {return: {running: true, status: "running"}, id: "late-status-1"},
+                {return: {}, id: "late-screenshot-1"},
+                {return: {running: true, status: "running"}, id: "late-status-2"},
+                {return: {}, id: "late-screenshot-2"},
+                {return: {}, id: "predeadline-screenshot"}
+            ]),
+            writeBytes: () => {
+                // Command processing takes 1,500 ms
+                simulatedTime += 1_500;
+            },
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            }
+        }, {
+            wait: async ms => { simulatedTime += ms; },
+            now: () => simulatedTime
+        });
+
+        await predeadlinePromise;
+        assert.equal(predeadlineObservation.status, "captured");
+        // Observed offset is 1,481,500 (1,480,000 scheduled + 1,500 elapsed during command)
+        assert.equal(predeadlineObservation.offsetMs, 1_481_500);
     });
 
     it("safely skips capture if session is cancelled before target offset", async () => {
@@ -353,6 +511,8 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
         let simulatedTime = 0;
         let predeadlineObservation = null;
         let lateObservationPromise = null;
+        let resolvePredeadline;
+        const predeadlinePromise = new Promise(resolve => { resolvePredeadline = resolve; });
 
         await runEarlyBootQmpSession({
             readable: stream([
@@ -372,7 +532,10 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
             screenshotPaths: SCREENSHOTS,
             lateScreenshotPaths: LATE_SCREENSHOTS,
             predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
-            onPredeadlineObservation: obs => { predeadlineObservation = obs; },
+            onPredeadlineObservation: obs => {
+                predeadlineObservation = obs;
+                resolvePredeadline(obs);
+            },
             onLateObservation: promise => { lateObservationPromise = promise; }
         }, {
             wait: async ms => { simulatedTime += ms; },
@@ -381,11 +544,256 @@ describe("QMP predeadline frame sequencing & scheduling", () => {
 
         assert.ok(lateObservationPromise !== null);
         await lateObservationPromise;
+        await predeadlinePromise;
 
         assert.deepEqual(predeadlineObservation, {
             status: "unavailable",
             reason: "command-failed"
         });
+    });
+});
+
+describe("Monitored QEMU watchdog & stalled screendump non-blocking", () => {
+    it("terminates QEMU on watchdog deadline without awaiting stalled screendump write", async () => {
+        let groupAlive = true;
+        let finish;
+        let terminated = false;
+        let cancelCalled = false;
+        const operation = new Promise(resolve => { finish = resolve; });
+
+        const fakeIo = {
+            runOwned: (_command, _argv, options) => {
+                options.onSpawn(2300);
+                options.onQmpSessionHandle?.({cancel: () => { cancelCalled = true; }});
+                options.onQmpSession?.(new Promise(() => {})); // Stalled write: never completes
+                options.onLateObservation?.(Promise.resolve(null));
+                options.onTerminationReady(() => {
+                    groupAlive = false;
+                    finish({
+                        process: {exitCode: 137, signal: null, timedOut: true, stdoutOverflow: false,
+                            stderrOverflow: false, cleanupProven: true, errorObserved: false},
+                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)
+                    });
+                });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async () => (terminated
+                ? {state: "absent"}
+                : {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000", effectiveMemoryBytes: "4294967295"}),
+            monotonicMilliseconds: () => 1_500_001,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => groupAlive,
+            terminateQemuGroup: async () => { terminated = true; groupAlive = false; return true; }
+        };
+
+        const result = await runMonitoredQemu(fakeIo, {
+            command: "/owned/qemu",
+            argv: [],
+            timeoutMs: 1_000,
+            maxStreamBytes: 65_536,
+            pidPath: `${ROOT}/qemu.pid`,
+            expectedExecutable: "/owned/loader",
+            executionDeadline: 1_500_000,
+            resources: {taskPath: ROOT, roots: [ROOT]},
+            qmp: {screenshotPaths: SCREENSHOTS, predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000}}
+        });
+
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.processGroupGone, true);
+        assert.equal(result.absentAfter, true);
+        assert.equal(cancelCalled, true);
+    });
+
+    it("terminates QEMU on watchdog deadline without awaiting stalled screendump response", async () => {
+        let groupAlive = true;
+        let finish;
+        let terminated = false;
+        let cancelCalled = false;
+        const operation = new Promise(resolve => { finish = resolve; });
+
+        const fakeIo = {
+            runOwned: (_command, _argv, options) => {
+                options.onSpawn(2300);
+                options.onQmpSessionHandle?.({cancel: () => { cancelCalled = true; }});
+                options.onQmpSession?.(new Promise(() => {})); // Stalled response: never completes
+                options.onLateObservation?.(Promise.resolve(null));
+                options.onTerminationReady(() => {
+                    groupAlive = false;
+                    finish({
+                        process: {exitCode: 137, signal: null, timedOut: true, stdoutOverflow: false,
+                            stderrOverflow: false, cleanupProven: true, errorObserved: false},
+                        stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)
+                    });
+                });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: async () => (terminated
+                ? {state: "absent"}
+                : {state: "present", pid: 2345, processGroupId: 2300, startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000", effectiveMemoryBytes: "4294967295"}),
+            monotonicMilliseconds: () => 1_500_001,
+            wait: async () => undefined,
+            isProcessGroupAlive: () => groupAlive,
+            terminateQemuGroup: async () => { terminated = true; groupAlive = false; return true; }
+        };
+
+        const result = await runMonitoredQemu(fakeIo, {
+            command: "/owned/qemu",
+            argv: [],
+            timeoutMs: 1_000,
+            maxStreamBytes: 65_536,
+            pidPath: `${ROOT}/qemu.pid`,
+            expectedExecutable: "/owned/loader",
+            executionDeadline: 1_500_000,
+            resources: {taskPath: ROOT, roots: [ROOT]},
+            qmp: {screenshotPaths: SCREENSHOTS, predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000}}
+        });
+
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.processGroupGone, true);
+        assert.equal(cancelCalled, true);
+    });
+});
+
+describe("Hosted launcher end-to-end propagation & unified clock", () => {
+    const rootFileIdentity = target => ({path: target, bytes: "100", sha256: "0".repeat(64),
+        ownership: {uid: "0", gid: "0", mode: "755", ordinaryUserWritable: false}});
+    const commandIdentity = target => ({path: target, invocationPath: target, bytes: "100", sha256: "0".repeat(64),
+        ownership: {uid: "0", gid: "0", mode: "755", ordinaryUserWritable: false}});
+    const directoryIdentity = target => ({path: target, dev: "1", ino: target === "/tmp" ? "1" : "2", uid: "0",
+        gid: "0", mode: target === "/tmp" ? "1777" : "755", ordinaryUserWritable: target === "/tmp",
+        sticky: target === "/tmp"});
+
+    const contextObj = {
+        schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: "a".repeat(40), eventSha: "b".repeat(40),
+        runId: "123", runAttempt: "1", nonce: NONCE, environment: {GITHUB_ACTIONS: "true", CI: "true",
+            RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24",
+            ImageVersion: "20260907.1"}
+    };
+
+    const toolchainObj = {
+        runtime: {loader: rootFileIdentity("/tmp/tools/ld.so"), libraryPath: ["/tmp/tools"]},
+        qemu: commandIdentity("/tmp/tools/qemu-system-x86_64"),
+        firmware: {
+            searchPath: "/tmp/tools",
+            kvmvapic: rootFileIdentity("/tmp/tools/kvmvapic.bin"),
+            vga: rootFileIdentity("/tmp/tools/vgabios-stdvga.bin")
+        },
+        ovmfVarsTemplate: rootFileIdentity("/tmp/tools/OVMF_VARS.fd")
+    };
+
+    const pathsObj = {
+        root: ROOT, packageRoot: `${ROOT}/packages`, portableRoot: `/tmp/tools`,
+        qemuPid: `${ROOT}/qemu.pid`, outputDisk: `${ROOT}/output.img`, serialLog: `${ROOT}/serial.log`,
+        systemDisk: `${ROOT}/system.qcow2`, ovmfVars: `${ROOT}/OVMF_VARS.fd`
+    };
+
+    it("propagates predeadline observation end-to-end through createHostedStage2Operations failure diagnostic", async () => {
+        const fakeIo = {
+            inspectOwned: rootFileIdentity,
+            inspectDirectory: directoryIdentity,
+            monotonicMilliseconds: () => 1_000,
+            pathExists: target => target === PREDEADLINE_PATH,
+            validateOutputDisk: () => ({dev: "1", ino: "2", uid: 0n, gid: 0n, size: 67108864n, mode: "600"}),
+            readOwnedVerified: target => {
+                if (target === PREDEADLINE_PATH) {
+                    return {
+                        identity: {path: PREDEADLINE_PATH, bytes: String(DUMMY_PNG.length), sha256: sha256(DUMMY_PNG)},
+                        bytes: DUMMY_PNG
+                    };
+                }
+                return {
+                    identity: {path: target, bytes: "10", sha256: sha256(Buffer.from("0123456789"))},
+                    bytes: Buffer.from("0123456789")
+                };
+            },
+            runMonitoredQemu: async () => {
+                return {
+                    observation: {
+                        process: {exitCode: 1, signal: null, timedOut: true, cleanupProven: true,
+                            stdoutOverflow: false, stderrOverflow: false, errorObserved: false},
+                        stdout: Buffer.alloc(0),
+                        stderr: Buffer.alloc(0)
+                    },
+                    identity: {pid: 12345, startTicks: "100", executablePath: "/tmp/tools/ld.so", processGroupId: 12345},
+                    absentAfter: true,
+                    processGroupGone: true,
+                    terminationReason: "deadline",
+                    predeadline: {
+                        status: "captured",
+                        offsetMs: 1_480_000,
+                        screenshotPath: PREDEADLINE_PATH
+                    }
+                };
+            }
+        };
+
+        const ops = createHostedStage2Operations({context: contextObj, paths: pathsObj, dependencies: fakeIo});
+        const launched = await ops.launchOwnedQemu({
+            toolchain: toolchainObj,
+            paths: pathsObj,
+            argv: ["-m", "4G"],
+            privilegeMode: "ordinary-kvm"
+        });
+
+        // Verify end-to-end propagation: launched.failureDiagnostic.predeadlineFrame is populated!
+        assert.ok(launched.failureDiagnostic);
+        assert.ok(launched.failureDiagnostic.predeadlineFrame);
+        assert.equal(launched.failureDiagnostic.predeadlineFrame.status, "captured");
+        assert.equal(launched.failureDiagnostic.predeadlineFrame.offsetMs, 1_480_000);
+        assert.equal(launched.failureDiagnostic.predeadlineFrame.screenshot.path, PREDEADLINE_PATH);
+    });
+
+    it("unifies host monotonic clock authority with QMP dependencies through real adapter path", async () => {
+        let capturedQmpDeps = null;
+        let capturedExecutionDeadline = null;
+
+        const largeHostClockOffset = 100_000_000;
+        const fakeIo = {
+            inspectOwned: rootFileIdentity,
+            inspectDirectory: directoryIdentity,
+            monotonicMilliseconds: () => largeHostClockOffset,
+            pathExists: () => false,
+            validateOutputDisk: () => null,
+            runMonitoredQemu: async req => {
+                capturedQmpDeps = req.qmpDependencies;
+                capturedExecutionDeadline = req.executionDeadline;
+                return {
+                    observation: {
+                        process: {exitCode: 0, signal: null, timedOut: false, cleanupProven: true,
+                            stdoutOverflow: false, stderrOverflow: false, errorObserved: false},
+                        stdout: Buffer.alloc(0),
+                        stderr: Buffer.alloc(0)
+                    },
+                    identity: {pid: 12345, startTicks: "100", executablePath: "/tmp/tools/ld.so", processGroupId: 12345},
+                    absentAfter: true,
+                    processGroupGone: true,
+                    terminationReason: null
+                };
+            }
+        };
+
+        const ops = createHostedStage2Operations({context: contextObj, paths: pathsObj, dependencies: fakeIo});
+        await ops.launchOwnedQemu({
+            toolchain: toolchainObj,
+            paths: pathsObj,
+            argv: ["-m", "4G"],
+            privilegeMode: "ordinary-kvm",
+            deadlines: {executionMinutes: 25, cleanupMinutes: 5}
+        });
+
+        // Verify executionDeadline was computed from host clock (100_000_000 + 1500s * 1000 = 101_500_000)
+        assert.equal(capturedExecutionDeadline, largeHostClockOffset + 1_500_000);
+
+        // Verify qmpDependencies receives the SAME host clock authority
+        assert.ok(capturedQmpDeps);
+        assert.equal(typeof capturedQmpDeps.now, "function");
+        assert.equal(capturedQmpDeps.now(), largeHostClockOffset);
     });
 });
 
@@ -410,6 +818,42 @@ describe("Post-cleanup collection & verification", () => {
             status: "skipped",
             reason: "insufficient-time"
         });
+    });
+
+    it("refuses path outside task root and reports malformed without reading disk", () => {
+        const outsidePath = "/home/runner/work/_temp/myspeed-windows-cpu-floor-other/predeadline-frame.png";
+        let readAttempted = false;
+        const io = {
+            pathExists: () => { readAttempted = true; return true; },
+            readOwnedVerified: () => { readAttempted = true; return null; }
+        };
+        const diag = collectPredeadlineFrameDiagnostic(io, {paths: {root: ROOT}}, {
+            status: "captured", offsetMs: 1_480_000, screenshotPath: outsidePath
+        }, true);
+        assert.equal(readAttempted, false);
+        assert.equal(diag.status, "malformed");
+        assert.equal(diag.reason, "path-mismatch");
+    });
+
+    it("guards against exceptions thrown by io.pathExists or io.readOwnedVerified", () => {
+        const throwingIo = {
+            pathExists: () => { throw new Error("EACCES: permission denied"); }
+        };
+        const diag = collectPredeadlineFrameDiagnostic(throwingIo, {paths: {root: ROOT}}, {
+            status: "captured", offsetMs: 1_480_000, screenshotPath: PREDEADLINE_PATH
+        }, true);
+        assert.equal(diag.status, "unavailable");
+        assert.equal(diag.reason, "read-error");
+
+        const throwingReadIo = {
+            pathExists: () => true,
+            readOwnedVerified: () => { throw new Error("EIO: i/o error"); }
+        };
+        const diagRead = collectPredeadlineFrameDiagnostic(throwingReadIo, {paths: {root: ROOT}}, {
+            status: "captured", offsetMs: 1_480_000, screenshotPath: PREDEADLINE_PATH
+        }, true);
+        assert.equal(diagRead.status, "unavailable");
+        assert.equal(diagRead.reason, "read-error");
     });
 
     it("reports unavailable when file is missing from disk", () => {

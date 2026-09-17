@@ -7,6 +7,9 @@ import {readResourceObservation, resolveCgroupLayout,
     validateHostedContext} from "./linux-kvm-capability.mjs";
 import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES,
     MAX_PREDEADLINE_FRAME_BYTES,
+    PREDEADLINE_FRAME_SKIPPED_REASONS,
+    PREDEADLINE_FRAME_UNAVAILABLE_REASONS,
+    PREDEADLINE_FRAME_MALFORMED_REASONS,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
@@ -1895,7 +1898,13 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
                 predeadline: {screenshotPath: predeadlineScreenshotPath, executionDeadline}
             } : {}),
             ...(input.bootConfirmation === undefined ? {} : {bootConfirmation: input.bootConfirmation}),
-            ...(winpeDiagnostic === undefined ? {} : {winpeDiagnostic})}});
+            ...(winpeDiagnostic === undefined ? {} : {winpeDiagnostic})},
+        qmpDependencies: {
+            now: io.monotonicMilliseconds,
+            ...(io.wait ? {wait: io.wait} : {}),
+            ...(io.setTimer ? {setTimer: io.setTimer} : {}),
+            ...(io.clearTimer ? {clearTimer: io.clearTimer} : {})
+        }});
     const observation = monitored.observation;
     const cleanupProven = observation.process.cleanupProven === true && monitored.identity !== null &&
         monitored.absentAfter === true && monitored.processGroupGone === true;
@@ -1988,7 +1997,14 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
             bytes: String(observation.stderr.length), sha256: sha256(observation.stderr),
             bytesBase64: observation.stderr.toString("base64")},
         ...readSerialConsole(io, input.paths.serialLog)};
-    return {result, guestParsingAllowed, processFlags, winpeDiagnosticInput};
+    return {
+        result,
+        guestParsingAllowed,
+        processFlags,
+        winpeDiagnosticInput,
+        predeadline: monitored.predeadline,
+        cleanupProven
+    };
 }
 
 /*
@@ -2207,62 +2223,89 @@ export async function collectGuestReceiptDiagnostic(io, input, context, launched
 /*
  * The optional predeadline frame is collected strictly after proven owned cleanup.
  * Missing capture, command failure or corruption are retained with fixed status and reasons.
+ * Any thrown exception is caught and reported with a fixed status to never displace primary launch failure.
  */
 export function collectPredeadlineFrameDiagnostic(io, input, predeadlineState, cleanupProven) {
-    if (!predeadlineState) return null;
-    if (cleanupProven !== true) {
-        return {schemaVersion: 1, status: "unavailable", reason: "cleanup-unproven"};
-    }
-    if (predeadlineState.status === "skipped") {
-        return {schemaVersion: 1, status: "skipped", reason: predeadlineState.reason};
-    }
-    if (predeadlineState.status === "unavailable") {
-        return {schemaVersion: 1, status: "unavailable", reason: predeadlineState.reason};
-    }
-    if (predeadlineState.status === "captured") {
-        const targetPath = predeadlineState.screenshotPath;
-        if (!io.pathExists(targetPath)) {
-            return {schemaVersion: 1, status: "unavailable", reason: "file-missing"};
+    try {
+        if (!predeadlineState) return null;
+        if (cleanupProven !== true) {
+            return {schemaVersion: 1, status: "unavailable", reason: "cleanup-unproven"};
         }
-        let observed;
-        try {
-            observed = io.readOwnedVerified(targetPath, MAX_PREDEADLINE_FRAME_BYTES);
-        } catch {
-            return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
+        if (predeadlineState.status === "skipped") {
+            const reason = PREDEADLINE_FRAME_SKIPPED_REASONS.includes(predeadlineState.reason) ?
+                predeadlineState.reason : "disabled";
+            return {schemaVersion: 1, status: "skipped", reason};
         }
-        if (observed.identity.path !== targetPath) {
-            return {
-                schemaVersion: 1, status: "malformed", reason: "path-mismatch",
-                bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
-            };
+        if (predeadlineState.status === "unavailable") {
+            const reason = PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(predeadlineState.reason) ?
+                predeadlineState.reason : "command-failed";
+            return {schemaVersion: 1, status: "unavailable", reason};
         }
-        if (observed.bytes.length < PNG_SIGNATURE.length ||
-            !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
-            return {
-                schemaVersion: 1, status: "malformed", reason: "invalid-png-signature",
-                bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
-            };
-        }
-        const fileSha = sha256(observed.bytes);
-        if (fileSha !== observed.identity.sha256) {
-            return {
-                schemaVersion: 1, status: "malformed", reason: "hash-mismatch",
-                bytes: String(observed.bytes.length), sha256: fileSha
-            };
-        }
-        return {
-            schemaVersion: 1,
-            status: "captured",
-            offsetMs: predeadlineState.offsetMs,
-            screenshot: {
-                path: targetPath,
-                bytes: observed.identity.bytes,
-                sha256: observed.identity.sha256,
-                bytesBase64: observed.bytes.toString("base64")
+        if (predeadlineState.status === "captured") {
+            const expectedPath = `${input?.paths?.root}/predeadline-frame.png`;
+            const targetPath = predeadlineState.screenshotPath;
+            if (typeof targetPath !== "string" || targetPath !== expectedPath) {
+                return {
+                    schemaVersion: 1, status: "malformed", reason: "path-mismatch",
+                    bytes: "0", sha256: crypto.createHash("sha256").update("").digest("hex")
+                };
             }
-        };
+            let exists = false;
+            try {
+                exists = io.pathExists(targetPath);
+            } catch {
+                return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
+            }
+            if (!exists) {
+                return {schemaVersion: 1, status: "unavailable", reason: "file-missing"};
+            }
+            let observed;
+            try {
+                observed = io.readOwnedVerified(targetPath, MAX_PREDEADLINE_FRAME_BYTES);
+            } catch {
+                return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
+            }
+            if (!observed || !observed.identity || typeof observed.identity.bytes !== "string" ||
+                typeof observed.identity.sha256 !== "string" || !Buffer.isBuffer(observed.bytes)) {
+                return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
+            }
+            if (observed.identity.path !== targetPath) {
+                return {
+                    schemaVersion: 1, status: "malformed", reason: "path-mismatch",
+                    bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+                };
+            }
+            if (observed.bytes.length < PNG_SIGNATURE.length ||
+                !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+                return {
+                    schemaVersion: 1, status: "malformed", reason: "invalid-png-signature",
+                    bytes: String(observed.bytes.length), sha256: sha256(observed.bytes)
+                };
+            }
+            const fileSha = sha256(observed.bytes);
+            if (fileSha !== observed.identity.sha256) {
+                return {
+                    schemaVersion: 1, status: "malformed", reason: "hash-mismatch",
+                    bytes: String(observed.bytes.length), sha256: fileSha
+                };
+            }
+            return {
+                schemaVersion: 1,
+                status: "captured",
+                offsetMs: Number.isSafeInteger(predeadlineState.offsetMs) && predeadlineState.offsetMs >= 0 ?
+                    predeadlineState.offsetMs : 0,
+                screenshot: {
+                    path: targetPath,
+                    bytes: observed.identity.bytes,
+                    sha256: observed.identity.sha256,
+                    bytesBase64: observed.bytes.toString("base64")
+                }
+            };
+        }
+        return {schemaVersion: 1, status: "unavailable", reason: "command-failed"};
+    } catch {
+        return {schemaVersion: 1, status: "unavailable", reason: "read-error"};
     }
-    return {schemaVersion: 1, status: "unavailable", reason: "command-failed"};
 }
 
 export function createHostedStage2Operations({context, paths: pathsValue, dependencies = {}}) {
