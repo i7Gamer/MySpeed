@@ -9,7 +9,8 @@ import {
     createHostedStage2Operations,
     runHostedOwnedProcess
 } from "./linux-windows-cpu-floor-stage2-hosted.mjs";
-import {admitStage3Reservation} from "./linux-windows-cpu-floor-stage3.mjs";
+import {admitStage3Reservation, buildStage3LaunchDiagnostic, buildStage3LaunchFailure} from
+    "./linux-windows-cpu-floor-stage3.mjs";
 import {renderWindowsBaselineGuestBootstrap} from "./windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaselineCpuHandoff} from
     "./windows-msi-post-setup-activation.mjs";
@@ -283,6 +284,15 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
             const launch = await getAdapter(stage2).launchOwnedQemu({context, paths: compatible, toolchain, argv,
                 privilegeMode: stage2.privilegeMode, reservation: {...reservation},
                 ...(bootConfirmation === undefined ? {} : {bootConfirmation})});
+            /*
+             * Every refusal below carries the launcher's own bounded failure evidence with it. Run
+             * 35340111409 hung past the execution ceiling and was killed with the termination
+             * reason, the serial console and the accepted boot keystrokes already built and sitting
+             * on `launch`; throwing a bare sentence discarded all three and left the run blind.
+             */
+            const refuse = message => {
+                throw buildStage3LaunchFailure(message, buildStage3LaunchDiagnostic(launch));
+            };
             if (!launch.guest || launch.guest.status !== "observed") {
                 /*
                  * The shared launcher already parsed the guest's bounded failure receipt when there
@@ -290,13 +300,13 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
                  */
                 const receipt = typeof launch.guestFailure?.failure === "string" ?
                     `: ${launch.guestFailure.failure}` : "";
-                throw new Error(`baseline guest did not return the CPU calibration envelope${receipt}`);
+                refuse(`baseline guest did not return the CPU calibration envelope${receipt}`);
             }
             if (launch.earlyBoot === null || launch.earlyBoot === undefined)
-                throw new Error("baseline QEMU produced no early-boot observation");
+                refuse("baseline QEMU produced no early-boot observation");
             if (launch.process?.cleanupProven !== true || launch.process.treeGone !== true ||
                 launch.process.qemuPidAbsentAfter !== true)
-                throw new Error("baseline QEMU cleanup was not proven");
+                refuse("baseline QEMU cleanup was not proven");
             launchCleanupProven = true;
             return {argv: structuredClone(argv), process: structuredClone(launch.process),
                 earlyBoot: structuredClone(launch.earlyBoot), reservation: {...reservation},

@@ -7,6 +7,8 @@ import {
     renderBaselineAutounattend
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3-hosted.mjs";
 import {PROBE_SEED_FILES} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
+import {STAGE3_LAUNCH_CLASSIFICATIONS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 
 const NONCE = "2".repeat(32);
 const SHA = character => character.repeat(64);
@@ -452,5 +454,90 @@ describe("hosted Windows CPU-floor Stage 3 seed contract", () => {
             toolchain: toolchain(), bootConfirmation: "single-enter-before-setup-v1"});
         assert.equal(value.calls.find(call => call[0] === "launch")[1].bootConfirmation,
             "single-enter-before-setup-v1");
+    });
+});
+
+describe("hosted Windows CPU-floor Stage 3 launch diagnostic retention", () => {
+    const SERIAL_TEXT = "UEFI Interactive Shell";
+    const serialLog = () => ({status: "captured", bytes: String(SERIAL_TEXT.length),
+        sha256: crypto.createHash("sha256").update(Buffer.from(SERIAL_TEXT, "utf8")).digest("hex"),
+        bytesBase64: Buffer.from(SERIAL_TEXT, "utf8").toString("base64"),
+        observedBytes: String(SERIAL_TEXT.length), truncated: false});
+    const deadlineProcess = () => ({...processProof(), exitCode: null, signal: "SIGKILL", timedOut: true,
+        cleanupProven: false, treeGone: false, qemuPidAbsentAfter: false, terminationReason: "deadline"});
+    const failureDiagnostic = process => ({schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
+        process, processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+        monitorFailure: null, stderr: {bytes: "11", sha256: SHA("e"),
+            bytesBase64: Buffer.from("qemu stderr", "utf8").toString("base64")}, serialLog: serialLog()});
+    const launched = async (launchResult, argv = ["-nic", "none"]) => {
+        const value = fixture({stage2Factory: _input => ({
+            async prepareOfflineMedia() { throw new Error("not used"); },
+            async launchOwnedQemu(request) { return {argv: request.argv, ...launchResult}; }
+        })});
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        try {
+            await value.operations.launchBaselineGuest({argv, budget: budget(), paths: paths(),
+                stage2: stage2(), toolchain: toolchain()});
+        } catch (error) { return error; }
+        throw new Error("launchBaselineGuest resolved where a refusal was required");
+    };
+
+    it("carries the launcher's own failure diagnostic into the deadline-killed refusal", async () => {
+        const error = await launched({process: deadlineProcess(), earlyBoot: structuredClone(EARLY_BOOT),
+            guest: null, failureDiagnostic: failureDiagnostic(deadlineProcess())});
+        assert.match(error.message, /did not return the CPU calibration envelope/u);
+        assert.equal(error.qemuLaunchDiagnostic.kind, "stage3-qemu-launch-diagnostic");
+        assert.equal(error.qemuLaunchDiagnostic.classification,
+            STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline);
+        assert.equal(error.qemuLaunchDiagnostic.terminationReason, "deadline");
+        assert.equal(error.qemuLaunchDiagnostic.serialLog.bytesBase64, serialLog().bytesBase64);
+        assert.equal(error.qemuLaunchDiagnostic.stderr.sha256, SHA("e"));
+        assert.equal(error.qemuLaunchDiagnostic.process.signal, "SIGKILL");
+        // The already-resolved early-boot observation is evidence, not a casualty of the refusal.
+        assert.equal(error.qemuLaunchDiagnostic.earlyBoot.inputSent, false);
+    });
+
+    it("classifies a firmware shell fallback from the observed termination reason", async () => {
+        const process = {...deadlineProcess(), terminationReason: "efi-shell-fallback"};
+        const error = await launched({process, earlyBoot: structuredClone(EARLY_BOOT), guest: null,
+            failureDiagnostic: failureDiagnostic(process)});
+        assert.equal(error.qemuLaunchDiagnostic.classification,
+            STAGE3_LAUNCH_CLASSIFICATIONS.firmwareShellFallback);
+    });
+
+    it("retains the diagnostic when the launch produced no early-boot observation", async () => {
+        const error = await launched({process: deadlineProcess(), earlyBoot: null,
+            guest: {schemaVersion: 1, status: "observed",
+                output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}},
+            failureDiagnostic: failureDiagnostic(deadlineProcess())});
+        assert.match(error.message, /no early-boot observation/u);
+        assert.equal(error.qemuLaunchDiagnostic.terminationReason, "deadline");
+        assert.equal(Object.hasOwn(error.qemuLaunchDiagnostic, "earlyBoot"), false);
+    });
+
+    it("retains the diagnostic when the launch cleanup was not proven", async () => {
+        const process = {...processProof(), treeGone: false, terminationReason: "qmp-failed"};
+        const error = await launched({process, earlyBoot: structuredClone(EARLY_BOOT),
+            guest: {schemaVersion: 1, status: "observed",
+                output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}},
+            failureDiagnostic: failureDiagnostic(process)});
+        assert.match(error.message, /cleanup was not proven/u);
+        assert.equal(error.qemuLaunchDiagnostic.terminationReason, "qmp-failed");
+        assert.equal(error.qemuLaunchDiagnostic.classification,
+            STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable);
+    });
+
+    it("builds a diagnostic for a clean process whose guest published its own failure receipt", async () => {
+        const guestFailure = {schemaVersion: 1, status: "failed", nonce: NONCE, stage: "guest-bootstrap",
+            failure: "executor-invocation: Baseline executor left an owned descendant"};
+        const error = await launched({process: processProof(), earlyBoot: structuredClone(EARLY_BOOT),
+            guest: structuredClone(guestFailure), guestFailure: structuredClone(guestFailure)});
+        assert.match(error.message, /executor-invocation/u);
+        assert.equal(error.qemuLaunchDiagnostic.classification,
+            STAGE3_LAUNCH_CLASSIFICATIONS.guestReportedFailure);
+        assert.equal(error.qemuLaunchDiagnostic.guestFailureObserved, true);
+        assert.equal(error.qemuLaunchDiagnostic.guestFailure.failure, guestFailure.failure);
+        assert.equal(error.qemuLaunchDiagnostic.terminationReason, null);
     });
 });

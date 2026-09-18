@@ -17,10 +17,11 @@
  * through an injected `identity`, which is what the workflow's own bounded reader supplies.
  */
 
-import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
-    "./linux-windows-cpu-floor-stage2-qmp.mjs";
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 
-export {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME};
+export {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE};
 
 /* Pinned by `validateStage2Paths`, which requires exactly this hosted temp root. */
 const RUNNER_TEMP = "/home/runner/work/_temp";

@@ -13,7 +13,8 @@ import {
     inspectV161PostReleaseCpuFloorEvidence
 } from "../../scripts/release/post-release-cpu-floor.mjs";
 import {WINDOWS_MSI_STAGE2_CLOSURE} from "../../scripts/qualification/windows-msi-stage2-request.mjs";
-import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {admitStage3Reservation, validateRequest, STAGE3_BUDGET_CONSTANTS} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
@@ -214,7 +215,9 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
     describe("request builders", () => {
         it("builds a Stage 2 request the real controller admits", async () => {
             const request = buildV161PostReleaseCpuFloorStage2Request(binding(), probeArtifact(), identityOf);
-            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
+            // The installer preparation types the cadence, not the single v2 keystroke that missed
+            // the firmware prompt on two of six otherwise identical boots.
+            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_CADENCE);
             // Only this CPU-specific wrapper opts into the two optional mid-window diagnostic
             // samples; the generic MSI builder it wraps never sets this key.
             assert.equal(request.authorization.midWindowFrames, true);
@@ -280,7 +283,7 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
                 stage3ExecutionPlan());
             assert.equal(Object.hasOwn(request.authorization, "bootConfirmation"), false);
             const stage2Request = buildV161PostReleaseCpuFloorStage2Request(acquired(), probeArtifact(), identityOf);
-            assert.equal(stage2Request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME);
+            assert.equal(stage2Request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_CADENCE);
             assert.equal(validateRequest(request).bootConfirmation, undefined);
         });
 
@@ -299,6 +302,13 @@ describe("v1.6.1 post-release CPU-floor consumer", () => {
             const noInput = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
                 stage3ExecutionPlan());
             assert.equal(Object.hasOwn(noInput.authorization, "bootConfirmation"), false);
+        });
+
+        it("admits the explicit cadence Stage 3 policy the installer preparation also uses", () => {
+            const request = buildV161PostReleaseCpuFloorStage3Request(acquired(), placeholderStage2Receipts(),
+                stage3ExecutionPlan({installerConfirmation: INSTALLER_BOOT_CONFIRMATION_CADENCE}));
+            assert.equal(request.authorization.bootConfirmation, INSTALLER_BOOT_CONFIRMATION_CADENCE);
+            assert.equal(validateRequest(request).bootConfirmation, INSTALLER_BOOT_CONFIRMATION_CADENCE);
         });
 
         it("rejects an installer confirmation that is not one of the supported policies", () => {

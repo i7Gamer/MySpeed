@@ -821,12 +821,142 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     return Object.freeze({accepted: true, stage2, candidate, media});
 }
 
+/*
+ * The baseline launch's own failure evidence, retained on the failed Stage 3 result.
+ *
+ * Run 35340111409 booted past firmware, hung, and was killed at the execution ceiling; the launcher
+ * had already built a `qemu-launch-failure-diagnostic` holding the termination reason, the serial
+ * console and the guest's stderr, and `launchBaselineGuest` threw it away, leaving one sentence.
+ * What is retained here is bounded on purpose: the Stage 3 controller writes the whole result under
+ * its own 4 MiB cap, so a diagnostic that carried the captured PNG frames inline would push the
+ * result over that cap and produce no result file at all - strictly worse than the sentence. Frame
+ * identities are kept and frame bodies are dropped, because the bodies are already retained in the
+ * evidence bundle while the identities are what tie the two together.
+ *
+ * This is evidence about a failure and nothing else. It is attached only by `failure()`, never by
+ * the accepted result, and it neither sets nor relaxes any acceptance, cleanup or release flag.
+ */
+const LAUNCH_DIAGNOSTIC_KIND = "stage3-qemu-launch-diagnostic";
+const DEADLINE_TERMINATION_REASON = "deadline";
+const SHELL_FALLBACK_TERMINATION_REASON = "efi-shell-fallback";
+export const STAGE3_LAUNCH_CLASSIFICATIONS = Object.freeze({
+    hostExecutionDeadline: "host-execution-deadline",
+    firmwareShellFallback: "firmware-shell-fallback",
+    guestReportedFailure: "guest-reported-failure",
+    guestResultUnavailable: "guest-result-unavailable"
+});
+/*
+ * The one threshold that separates the two payload classes this diagnostic carries. The bounded
+ * streams worth retaining inline are the 64 KiB serial console and the 64 KiB stderr capture, which
+ * encode to 87 384 base64 characters each; the payloads that must not travel are the captured PNG
+ * frames, which run to 1 398 104 characters for a 1 MiB frame. Anything between the two is retained,
+ * and the whole-diagnostic budget below is what actually bounds the result.
+ */
+const MAX_INLINE_BASE64_CHARACTERS = 131_072;
+const MAX_DIAGNOSTIC_CHARACTERS = 1024 * 1024;
+/* The Stage 3 controller's own cap on the serialized result; the diagnostic is sized against it. */
+const MAX_RESULT_CHARACTERS = 4 * 1024 * 1024;
+const OMITTED_PAYLOAD_MARKER = "omitted-oversized-payload";
+const OMITTED_DIAGNOSTIC_MARKER = "omitted-oversized-diagnostic";
+
+function classifyLaunchFailure(terminationReason, guestFailureObserved) {
+    if (terminationReason === DEADLINE_TERMINATION_REASON)
+        return STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline;
+    if (terminationReason === SHELL_FALLBACK_TERMINATION_REASON)
+        return STAGE3_LAUNCH_CLASSIFICATIONS.firmwareShellFallback;
+    if (guestFailureObserved) return STAGE3_LAUNCH_CLASSIFICATIONS.guestReportedFailure;
+    return STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable;
+}
+
+/*
+ * A deep copy that drops oversized encoded payloads and keeps everything else, rather than copying
+ * a fixed list of members. The launcher's diagnostic has grown a predeadline frame, mid-window
+ * frames and a shutdown record over successive rounds, and an allow-list here would have silently
+ * dropped each of them on the day it was added.
+ */
+function withoutOversizedPayloads(value) {
+    if (Array.isArray(value)) return value.map(item => withoutOversizedPayloads(item));
+    if (value === null || typeof value !== "object") return value;
+    return Object.fromEntries(Object.entries(value).map(([name, item]) =>
+        [name, typeof item === "string" && item.length > MAX_INLINE_BASE64_CHARACTERS ?
+            OMITTED_PAYLOAD_MARKER : withoutOversizedPayloads(item)]));
+}
+
+export function buildStage3LaunchDiagnostic(launch) {
+    if (launch === null || typeof launch !== "object" || Array.isArray(launch)) return null;
+    const retained = launch.failureDiagnostic;
+    const carried = retained !== null && typeof retained === "object" && !Array.isArray(retained) ?
+        structuredClone(retained) : {};
+    delete carried.schemaVersion;
+    delete carried.kind;
+    const observed = carried.process ?? launch.process ?? null;
+    const terminationReason = typeof observed?.terminationReason === "string" ?
+        observed.terminationReason : null;
+    const guestFailure = launch.guestFailure !== null && typeof launch.guestFailure === "object" &&
+        !Array.isArray(launch.guestFailure) ? structuredClone(launch.guestFailure) : null;
+    return withoutOversizedPayloads({
+        ...carried,
+        schemaVersion: SCHEMA_VERSION,
+        kind: LAUNCH_DIAGNOSTIC_KIND,
+        classification: classifyLaunchFailure(terminationReason, guestFailure !== null),
+        terminationReason,
+        guestFailureObserved: guestFailure !== null,
+        ...(observed === null ? {} : {process: structuredClone(observed)}),
+        /*
+         * The early-boot observation carries `inputSent`, the only proof of which boot keystrokes
+         * the monitor accepted and at what offsets - the single piece of evidence that answers a
+         * missed "press any key" prompt. Its screenshot bodies are dropped by the transform above.
+         */
+        ...(launch.earlyBoot === null || launch.earlyBoot === undefined ? {} :
+            {earlyBoot: structuredClone(launch.earlyBoot)}),
+        ...(guestFailure === null ? {} : {guestFailure})
+    });
+}
+
+export function buildStage3LaunchFailure(message, diagnostic) {
+    const error = new Error(message);
+    if (diagnostic !== null && diagnostic !== undefined) error.qemuLaunchDiagnostic = diagnostic;
+    return error;
+}
+
+/*
+ * The last bound before the result is written. A diagnostic that is still too large after the frame
+ * bodies are gone is replaced by the few members that identify the failure, so an oversized record
+ * costs its own detail and never the result file that carries it.
+ */
+function retainedLaunchDiagnostic(value) {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+    const bounded = withoutOversizedPayloads(value);
+    if (JSON.stringify(bounded).length <= MAX_DIAGNOSTIC_CHARACTERS) return bounded;
+    const summary = {schemaVersion: SCHEMA_VERSION, kind: LAUNCH_DIAGNOSTIC_KIND,
+        classification: bounded.classification ?? STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable,
+        terminationReason: bounded.terminationReason ?? null,
+        guestFailureObserved: bounded.guestFailureObserved === true,
+        ...(bounded.process === undefined ? {} : {process: bounded.process}),
+        omitted: OMITTED_DIAGNOSTIC_MARKER};
+    /*
+     * The guest's own receipt travels with the flag that announces it. A summary saying a receipt
+     * was observed while dropping the receipt itself would be the same blackout this member exists
+     * to end, one field smaller. It is dropped only if carrying it would put the summary back over
+     * budget, and then the flag alone is what remains.
+     */
+    if (bounded.guestFailure === undefined) return summary;
+    const withReceipt = {...summary, guestFailure: bounded.guestFailure};
+    return JSON.stringify(withReceipt).length <= MAX_DIAGNOSTIC_CHARACTERS ? withReceipt : summary;
+}
+
+export const STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS = Object.freeze({LAUNCH_DIAGNOSTIC_KIND,
+    MAX_DIAGNOSTIC_CHARACTERS, MAX_INLINE_BASE64_CHARACTERS, MAX_RESULT_CHARACTERS,
+    OMITTED_DIAGNOSTIC_MARKER, OMITTED_PAYLOAD_MARKER});
+
 function failure(context, stage, error, cleanupProven) {
     const message = (error instanceof Error ? error.message : String(error)).replace(/[\x00-\x1f\x7f]+/gu, " ")
         .slice(0, MAX_FAILURE_MESSAGE_CHARACTERS);
+    const qemuLaunch = retainedLaunchDiagnostic(error?.qemuLaunchDiagnostic ?? null);
     return Object.freeze({schemaVersion: SCHEMA_VERSION, status: "failed", stage, classification: CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, baselineFullRuntimeAccepted: false, cpuFloorAccepted: false,
-        cleanupProven, context: context ? structuredClone(context) : null, failure: message || "unspecified failure"});
+        cleanupProven, context: context ? structuredClone(context) : null, failure: message || "unspecified failure",
+        ...(qemuLaunch === null ? {} : {qemuLaunch})});
 }
 
 export async function runWindowsCpuFloorStage3(input, operations) {

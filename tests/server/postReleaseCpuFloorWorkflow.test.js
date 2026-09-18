@@ -81,6 +81,11 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(step.run, /r\.status \?\? "unknown"/u);
         assert.match(step.run, /\(stage \$\{r\.stage\}\)/u);
         assert.match(step.run, /: \$\{r\.failure\}/u);
+        // The retained launch diagnostic's classification and raw termination reason ride along, so a
+        // deadline kill is distinguishable from a firmware shell fallback straight from the CI log.
+        assert.match(step.run, /const q=r\.qemuLaunch;/u);
+        assert.match(step.run, /\[launch \$\{q\.classification \?\? "unclassified"\}/u);
+        assert.match(step.run, /q\.terminationReason==="string"/u);
         // The workflow-command message must escape %, CR and LF so Actions parsing cannot be broken or truncated.
         assert.match(step.run, /escaped_reason=\$\{failure_reason\/\/'%'\/'%25'\}/u);
         assert.match(step.run, /\$'\\r'\/'%0D'/u);
@@ -184,7 +189,7 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
             "sequence requires an empty fresh transport root, not precreated log files");
     });
 
-    it("offers exactly the three supported Stage 3 installer policies and defaults to no input", () => {
+    it("offers exactly the four supported Stage 3 installer policies and defaults to no input", () => {
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
         const input = workflow.on.workflow_dispatch.inputs.stage3_installer_confirmation;
         assert.equal(input.required, true);
@@ -192,6 +197,7 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.equal(input.default, POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_NO_INPUT);
         assert.deepEqual(input.options, [...POST_RELEASE_CPU_FLOOR_CONSTANTS.STAGE3_INSTALLER_CONFIRMATIONS]);
         assert.ok(input.options.includes("single-enter-after-first-frame-v2"));
+        assert.ok(input.options.includes("cadence-enter-before-setup-v3"));
         const runSeqStep = workflow.jobs.execute.steps.find(step => step.id === "run-sequence");
         assert.match(runSeqStep.run,
             /installerConfirmation: process\.env\.STAGE3_INSTALLER_CONFIRMATION/u);

@@ -5,7 +5,8 @@ import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
 import {validateCompletedStage3Result, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS}
     from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
-import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE} from
     "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildV161WindowsExeAcquisitionPlan} from "./post-release-target.mjs";
 
@@ -53,7 +54,7 @@ const UTC_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u;
  */
 const STAGE3_NO_INPUT = "no-input";
 const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION,
-    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]);
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, INSTALLER_BOOT_CONFIRMATION_CADENCE]);
 const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
 
 const ACQUISITION_KEYS = ["artifact", "observedAt", "summaryBytes"];
@@ -271,9 +272,14 @@ export function buildV161PostReleaseCpuFloorStage2Request(binding, probeArtifact
         probe: probeArtifact,
         identity
     });
-    // Only the installer preparation opts in. MSI rows stay no-input, and Stage 3 - which installs
-    // its own Windows rather than booting an installed one - makes its own separately explicit choice.
-    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
+    /*
+     * Only the installer preparation opts in. MSI rows stay no-input, and Stage 3 - which installs
+     * its own Windows rather than booting an installed one - makes its own separately explicit
+     * choice. The cadence, not the single v2 keystroke: that keystroke lands at a fixed offset and
+     * missed the firmware's "press any key" prompt on two of six otherwise identical boots, leaving
+     * the calibration guest in the UEFI shell.
+     */
+    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION_CADENCE;
     // This CPU-specific wrapper is the one caller that opts into the two optional mid-window
     // diagnostic samples; the generic MSI builder it wraps stays unaware of the field entirely, so
     // every other caller of buildWindowsMsiStage2Request (MSI rows, containment preflight) is

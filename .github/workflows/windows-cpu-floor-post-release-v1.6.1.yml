@@ -31,8 +31,8 @@ on:
       stage3_installer_confirmation:
         description: >-
           Stage 3 installer boot policy. no-input sends nothing and is the default; the single bounded
-          Enter is a separate explicit choice from the installer preparation Stage 2 performs, and it
-          does not guarantee that the firmware boots.
+          Enter and the bounded cadence of Enters are separate explicit choices from the installer
+          preparation Stage 2 performs, and neither guarantees that the firmware boots.
         required: true
         default: no-input
         type: choice
@@ -40,6 +40,7 @@ on:
           - no-input
           - single-enter-before-setup-v1
           - single-enter-after-first-frame-v2
+          - cadence-enter-before-setup-v3
 
 permissions:
   actions: read
@@ -528,7 +529,7 @@ jobs:
             result_json="$transport_root/stage3-sequence-result.json"
             failure_reason="(stage3-sequence-result.json not found)"
             if [ -f "$result_json" ]; then
-              failure_reason=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const status=r.status ?? "unknown";const stage=(typeof r.stage==="string"&&r.stage)?` (stage ${r.stage})`:"";const failure=(typeof r.failure==="string"&&r.failure)?`: ${r.failure}`:"";process.stdout.write(`${status}${stage}${failure}`)}catch(e){process.stdout.write("unreadable result: "+e.message)}' "$result_json")
+              failure_reason=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const status=r.status ?? "unknown";const stage=(typeof r.stage==="string"&&r.stage)?` (stage ${r.stage})`:"";const failure=(typeof r.failure==="string"&&r.failure)?`: ${r.failure}`:"";const q=r.qemuLaunch;const launch=(q&&typeof q==="object")?` [launch ${q.classification ?? "unclassified"}${typeof q.terminationReason==="string"?`/${q.terminationReason}`:""}]`:"";process.stdout.write(`${status}${stage}${failure}${launch}`)}catch(e){process.stdout.write("unreadable result: "+e.message)}' "$result_json")
             fi
             # Escape %, CR and LF so the workflow-command data cannot break Actions parsing or truncate.
             escaped_reason=${failure_reason//'%'/'%25'}

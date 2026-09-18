@@ -8,6 +8,10 @@ import {
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_LATEST_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_QCODE,
@@ -710,5 +714,128 @@ describe("Stage 3 early-boot QMP authority", () => {
             requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_100, acknowledged: true}])
             assert.throws(() => validateInstallerBootInput(value, undefined), /QMP installer boot input is invalid/u);
         assert.equal(validateInstallerBootInput(false, undefined), false);
+    });
+});
+
+describe("Stage 2 early-boot QMP cadence boot confirmation", () => {
+    const CADENCE_IDS = INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS
+        .map((_offset, index) => `installer-boot-confirmation-${index + 1}`);
+    const replies = ids => [
+        {QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}},
+        {return: {}, id: "capabilities"}, {return: {running: true, status: "running"}, id: "status"},
+        ...ids.map(id => ({return: {}, id})),
+        {return: {}, id: "screenshot-1"}, {return: {}, id: "screenshot-2"}
+    ];
+    const pulse = (index, sentOffsetMilliseconds) => ({
+        requestedOffsetMilliseconds: INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS[index],
+        sentOffsetMilliseconds, acknowledged: true});
+    const cadenceInput = pulses => ({kind: "installer-boot-confirmation-cadence", qcode: "ret",
+        holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS, acknowledged: true, pulses});
+    const fullCadence = () => INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS
+        .map((offset, index) => pulse(index, offset));
+
+    it("names the cadence policy and derives both of its bounds from the offset list", () => {
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE, "cadence-enter-before-setup-v3");
+        assert.deepEqual([...INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS],
+            [2_000, 3_200, 4_400, 5_600, 6_800, 8_000]);
+        // Every gap is shorter than the firmware prompt this cadence exists to hit.
+        const gaps = INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS
+            .slice(1).map((offset, index) => offset -
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS[index]);
+        assert.deepEqual(gaps, [1_200, 1_200, 1_200, 1_200, 1_200]);
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS,
+            8_000 + INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS);
+        // The whole cadence still finishes long before the first screenshot's own +30s successor.
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS < 30_000, true);
+        assert.equal(validateInstallerBootConfirmation(INSTALLER_BOOT_CONFIRMATION_CADENCE),
+            INSTALLER_BOOT_CONFIRMATION_CADENCE);
+    });
+
+    it("sends every cadence pulse at its own offset before the first screenshot", async () => {
+        const writes = [];
+        let now = 0;
+        const result = await runEarlyBootQmpSession({readable: stream(replies(CADENCE_IDS)),
+            writeBytes: bytes => writes.push({value: JSON.parse(bytes.toString("utf8")), time: now}),
+            screenshotPaths: SCREENSHOTS, bootConfirmation: INSTALLER_BOOT_CONFIRMATION_CADENCE},
+        {now: () => now, wait: async milliseconds => { now += milliseconds; }});
+        assert.deepEqual(writes.map(({value}) => value.id),
+            ["capabilities", "status", ...CADENCE_IDS, "screenshot-1", "screenshot-2"]);
+        // Every pulse is the same single bounded Enter the other two policies send.
+        for (const id of CADENCE_IDS) {
+            assert.deepEqual(writes.find(({value}) => value.id === id).value, {execute: "send-key",
+                arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
+                    "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id});
+        }
+        assert.deepEqual(writes.slice(2, 2 + CADENCE_IDS.length).map(({time}) => time),
+            [...INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS]);
+        // The screenshots follow the cadence rather than interleaving with it.
+        assert.deepEqual(writes.slice(-2).map(({time}) => time), [8_000, 38_000]);
+        assert.deepEqual(result.inputSent, cadenceInput(fullCadence()));
+    });
+
+    it("stops the cadence at the window instead of typing past it", async () => {
+        const writes = [];
+        let now = 0;
+        const result = await runEarlyBootQmpSession({readable: stream(replies(CADENCE_IDS.slice(0, 3))),
+            writeBytes: bytes => { writes.push({value: JSON.parse(bytes.toString("utf8")), time: now});
+                now += 2_000; },
+            screenshotPaths: SCREENSHOTS, bootConfirmation: INSTALLER_BOOT_CONFIRMATION_CADENCE},
+        {now: () => now, wait: async milliseconds => { now += milliseconds; }});
+        // A session running behind schedule sends what still fits and records exactly that: a
+        // truncated cadence is evidence, not a failure that would erase the early-boot observation.
+        assert.deepEqual(result.inputSent.pulses.map(item => item.requestedOffsetMilliseconds),
+            INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS.slice(0, 3));
+        for (const item of result.inputSent.pulses) {
+            assert.equal(item.acknowledged, true);
+            assert.equal(item.sentOffsetMilliseconds <=
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS, true);
+        }
+        assert.equal(writes.filter(({value}) => value.execute === "send-key").length, 3);
+    });
+
+    it("refuses a cadence record that was not the cadence this policy authorized", () => {
+        assert.deepEqual(validateInstallerBootInput(cadenceInput(fullCadence()),
+            INSTALLER_BOOT_CONFIRMATION_CADENCE), cadenceInput(fullCadence()));
+        // A truncated but well-formed prefix stays admissible.
+        assert.equal(validateInstallerBootInput(cadenceInput(fullCadence().slice(0, 2)),
+            INSTALLER_BOOT_CONFIRMATION_CADENCE).pulses.length, 2);
+        const refused = [
+            false,
+            cadenceInput([]),
+            cadenceInput([...fullCadence(), pulse(5, 8_400)]),
+            // An offset list of the caller's own choosing, rather than the fixed one.
+            cadenceInput([pulse(0, 2_000), {requestedOffsetMilliseconds: 2_600,
+                sentOffsetMilliseconds: 2_600, acknowledged: true}]),
+            // A pulse sent before its own offset, or after the gate that admits a pulse at all:
+            // the record is taken at the write boundary, so it is held to that same gate.
+            cadenceInput([{...pulse(0, 1_999)}]),
+            cadenceInput([{...pulse(0,
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + 1)}]),
+            cadenceInput([...fullCadence().slice(0, 5),
+                pulse(5, INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + 1)]),
+            // Pulses recorded out of order.
+            cadenceInput([pulse(0, 4_000), pulse(1, 3_500)]),
+            cadenceInput([{requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_000,
+                acknowledged: false}]),
+            {...cadenceInput(fullCadence()), kind: "installer-boot-confirmation"},
+            {...cadenceInput(fullCadence()), qcode: "spc"},
+            {...cadenceInput(fullCadence()), holdMilliseconds: 30},
+            {...cadenceInput(fullCadence()), afterFirstScreenshotAck: true}
+        ];
+        for (const value of refused) {
+            assert.throws(() => validateInstallerBootInput(value, INSTALLER_BOOT_CONFIRMATION_CADENCE),
+                /installer boot input is invalid/u);
+        }
+        // The cadence record is not admissible under either single-keystroke policy, and neither of
+        // their records is admissible under the cadence.
+        for (const policy of [undefined, INSTALLER_BOOT_CONFIRMATION,
+            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]) {
+            assert.throws(() => validateInstallerBootInput(cadenceInput(fullCadence()), policy),
+                /installer boot input is invalid/u);
+        }
+        assert.throws(() => validateInstallerBootInput({kind: "installer-boot-confirmation", qcode: "ret",
+            holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
+            requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_000, acknowledged: true},
+        INSTALLER_BOOT_CONFIRMATION_CADENCE), /installer boot input is invalid/u);
     });
 });
