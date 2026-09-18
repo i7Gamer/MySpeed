@@ -25,6 +25,12 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 export const EFI_SHELL_FALLBACK_PATTERN = /EFI Internal Shell|UEFI Interactive Shell/u;
 export const EFI_SHELL_FAILURE_MESSAGE = "guest did not boot Windows (dropped to UEFI shell)";
 export const EFI_SHELL_TRUNCATED_ATTRIBUTION = "serial capture truncated before end; UEFI-shell boot-failure detection incomplete";
+// Reserve room for the attribution suffix so the trimmed message plus suffix still honours the
+// MAX_GUEST_FAILURE_MESSAGE_CHARACTERS failure-string contract, whatever the message length.
+export function attributeTruncatedSerialFailure(message) {
+    const suffix = ` (${EFI_SHELL_TRUNCATED_ATTRIBUTION})`;
+    return `${message.slice(0, MAX_GUEST_FAILURE_MESSAGE_CHARACTERS - suffix.length)}${suffix}`;
+}
 const ANSI_CSI_PATTERN = /\x1b\[[0-9;=?]*[A-Za-z]/gu;
 const ANSI_ESCAPE_CHARACTER = "\x1b";
 export function serialTextShowsEfiShellFallback(bytesBase64) {
@@ -56,7 +62,7 @@ const GUEST_OUTPUT_BYTES = "67108864";
 const GUEST_DISK_BYTES = "51539607552";
 const GUEST_PROBE_TIMEOUT_MILLISECONDS = 10_000;
 const GUEST_PROBE_CLEANUP_TIMEOUT_MILLISECONDS = 5_000;
-const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
+export const MAX_GUEST_FAILURE_MESSAGE_CHARACTERS = 512;
 const MAX_WIM_SELECTION_DIAGNOSTIC_BYTES = 131_072;
 const MAX_QEMU_DIAGNOSTIC_STREAM_BYTES = 65_536;
 const MAX_QEMU_DIAGNOSTIC_BASE64_CHARACTERS = Math.ceil(MAX_QEMU_DIAGNOSTIC_STREAM_BYTES / 3) * 4;
@@ -1353,7 +1359,7 @@ function failure(context, stage, error, cleanupProven = true, diagnosticExit = n
      */
     const genericFailure = message || "unspecified failure";
     const attributedFailure = bootFailure ?? (capturedSerial?.truncated ?
-        `${genericFailure} (${EFI_SHELL_TRUNCATED_ATTRIBUTION})` : genericFailure);
+        attributeTruncatedSerialFailure(genericFailure) : genericFailure);
     const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage,
         classification: diagnosticExit?.classification ?? CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
