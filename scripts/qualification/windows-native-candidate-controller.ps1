@@ -276,6 +276,20 @@ function Assert-MyspeedCandidateNativeShape {
     return $Value
 }
 
+function ConvertTo-MyspeedCandidateNativeResult {
+    # Windows PowerShell 5.1 does not treat a CLR object returned via a method call or property getter as
+    # [psobject], so the raw NativeResult from Session.Stop()/LastResult fails Assert-MyspeedCandidateKeys.
+    # Rebuild the shape's 13 fields as a [pscustomobject], mirroring the launch operation.
+    param([object]$Result)
+    if($null -eq $Result){return $null}
+    return [pscustomobject]@{forced=[bool]$Result.forced;preAttachIdentityMatch=[bool]$Result.preAttachIdentityMatch
+        postAttachHandleUnsignaled=[bool]$Result.postAttachHandleUnsignaled;postAttachIdentityMatch=[bool]$Result.postAttachIdentityMatch
+        postAttachJobMembership=[bool]$Result.postAttachJobMembership;consoleProcessIdsExact=[bool]$Result.consoleProcessIdsExact
+        ctrlEventGenerated=[bool]$Result.ctrlEventGenerated;candidateExited=[bool]$Result.candidateExited
+        graceExpired=[bool]$Result.graceExpired;exitCode=[int]$Result.exitCode;jobZero=[bool]$Result.jobZero
+        consoleFreeAfter=[bool]$Result.consoleFreeAfter;handlesClosed=[bool]$Result.handlesClosed}
+}
+
 function Assert-MyspeedCandidateNativeResult {
     param([object]$Value,[object]$Request)
     $Value=Assert-MyspeedCandidateNativeShape $Value
@@ -472,6 +486,7 @@ function New-MyspeedCandidateNativeOperations {
         win32CodeMask=$script:Win32CodeMask;sharingViolationCode=$script:SharingViolationCode}
     $readJson=${function:Read-MyspeedCandidateJson}
     $writeJson=${function:Write-MyspeedCandidateJson}
+    $toNativeResult=${function:ConvertTo-MyspeedCandidateNativeResult}
     $nativeState=[pscustomobject]@{session=$null}
     return [pscustomobject]@{
         elapsed={return [int64]$watch.ElapsedMilliseconds}.GetNewClosure()
@@ -497,9 +512,9 @@ function New-MyspeedCandidateNativeOperations {
         readStop={try{return (& $readJson $req.stopRequestPath '').value}catch [IO.IOException]{
                 if(($_.Exception.HResult -band $limits.win32CodeMask) -eq $limits.sharingViolationCode){return $null};throw}}.GetNewClosure()
         sleep={param($milliseconds)Start-Sleep -Milliseconds $milliseconds}
-        stop={param($session,$grace,$cleanup)if($null -eq $nativeState.session){throw 'Native candidate session is absent'};return $nativeState.session.Stop([uint32]$PID,[uint32]$grace,[uint32]$cleanup)}.GetNewClosure()
+        stop={param($session,$grace,$cleanup)if($null -eq $nativeState.session){throw 'Native candidate session is absent'};return & $toNativeResult ($nativeState.session.Stop([uint32]$PID,[uint32]$grace,[uint32]$cleanup))}.GetNewClosure()
         lastResult={param($session)if($null -eq $nativeState.session){return $null};$result=$nativeState.session.LastResult;if($null -ne $result -and $req.scenario -ceq 'fresh-no-config-reset'){
-                [MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();$result.consoleFreeAfter=$true};return $result}.GetNewClosure()
+                [MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();$result.consoleFreeAfter=$true};return & $toNativeResult $result}.GetNewClosure()
         active={param($session)if($null -eq $nativeState.session){return 0};return $nativeState.session.ActiveProcesses}.GetNewClosure()
         force={param($session,$timeout)if($null -ne $nativeState.session){$nativeState.session.Force([uint32]$timeout)}}.GetNewClosure()
         close={param($session)if($null -eq $nativeState.session){return $true};return $nativeState.session.CloseAndProve()}.GetNewClosure()}

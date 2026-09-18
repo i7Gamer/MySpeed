@@ -15,6 +15,7 @@ const POWERSHELL = (process.env.SystemRoot || "C:\\Windows")
 const TEST_TIMEOUT_MS = 30_000;
 const MAXIMUM_CANDIDATE_BYTES = 536_870_912;
 const MAXIMUM_FAILURE_CHARACTERS = 512;
+const NATIVE_RESULT_FIELD_COUNT = 13;
 const FIRST_PRINTABLE_CHARACTER_CODE = 32;
 const DELETE_CHARACTER_CODE = 127;
 const HASH = "a".repeat(64);
@@ -282,6 +283,75 @@ describe("Windows native candidate controller", () => {
         assert.equal(result.status, 0, result.stderr);
         assert.equal(result.stdout,
             "elapsed,assertConsoleFree,launch,writeReady,stopExists,readStop,sleep,stop,lastResult,active,force,close");
+    });
+
+    powershellIt("shapes native stop and lastResult results into psobject evidence in Windows PowerShell 5.1", () => {
+        // In Windows PowerShell 5.1 a CLR object returned via a method call or property getter does NOT
+        // satisfy `-is [psobject]`, so the raw NativeResult from Session.Stop()/LastResult is rejected by
+        // Assert-MyspeedCandidateNativeShape ("must be an object"). The stop/lastResult operations must
+        // rebuild the shape as a [pscustomobject], mirroring the launch operation.
+        const nativeSource = [
+            "namespace MySpeedNativeResultProof {",
+            "  public sealed class Result {",
+            "    public bool forced,preAttachIdentityMatch,postAttachHandleUnsignaled,postAttachIdentityMatch,postAttachJobMembership;",
+            "    public bool consoleProcessIdsExact,ctrlEventGenerated,candidateExited,graceExpired,jobZero,consoleFreeAfter,handlesClosed;",
+            "    public int exitCode; public uint[] consoleProcessIds; public uint candidatePid;",
+            "    public static Result Make(){",
+            "      Result r=new Result();",
+            "      r.candidateExited=true; r.jobZero=true; r.consoleFreeAfter=true; r.exitCode=0;",
+            "      r.preAttachIdentityMatch=r.postAttachHandleUnsignaled=r.postAttachIdentityMatch=true;",
+            "      r.postAttachJobMembership=r.consoleProcessIdsExact=r.ctrlEventGenerated=true;",
+            "      r.consoleProcessIds=new uint[0]; r.candidatePid=4321; return r;",
+            "    }",
+            "  }",
+            "  public sealed class Session {",
+            "    public Result Stop(uint a,uint b,uint c){return Result.Make();}",
+            "    public Result LastResult{get{return Result.Make();}}",
+            "  }",
+            "}"
+        ].join("\n");
+        const command = [
+            `$source=@'`,
+            nativeSource,
+            `'@`,
+            "Add-Type -TypeDefinition $source -Language CSharp",
+            `. '${SCRIPT.replaceAll("'", "''")}' -Mode Library`,
+            "$request=[pscustomobject]@{scenario='populated-first-boot';stopRequestPath='C:\\unused'}",
+            "$operations=New-MyspeedCandidateNativeOperations $request ([Diagnostics.Stopwatch]::StartNew())",
+            "$state=$operations.stop.Module.SessionState.PSVariable.GetValue('nativeState')",
+            "$state.session=[MySpeedNativeResultProof.Session]::new()",
+            "$stopResult=& $operations.stop $null 100 100",
+            "$lastResult=& $operations.lastResult $null",
+            "function Test-Shape($value){try{[void](Assert-MyspeedCandidateNativeShape $value);return $null}"
+                + "catch{return $_.Exception.Message}}",
+            "[pscustomobject]@{",
+            "  rawIsPsObject=([MySpeedNativeResultProof.Session]::new().Stop(1,1,1) -is [psobject]);",
+            "  stopIsPsObject=($stopResult -is [psobject]);stopKeys=@($stopResult.PSObject.Properties.Name).Count;",
+            "  stopShapeError=(Test-Shape $stopResult);",
+            "  lastIsPsObject=($lastResult -is [psobject]);lastKeys=@($lastResult.PSObject.Properties.Name).Count;",
+            "  lastShapeError=(Test-Shape $lastResult)",
+            "}|ConvertTo-Json -Compress"
+        ].join("\n");
+        const result = childProcess.spawnSync(POWERSHELL,
+            ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", command],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+        assert.equal(result.status, 0, result.stderr);
+        const observed = JSON.parse(result.stdout);
+        assert.equal(observed.rawIsPsObject, false);
+        assert.equal(observed.stopIsPsObject, true);
+        assert.equal(observed.stopKeys, NATIVE_RESULT_FIELD_COUNT);
+        assert.equal(observed.stopShapeError, null);
+        assert.equal(observed.lastIsPsObject, true);
+        assert.equal(observed.lastKeys, NATIVE_RESULT_FIELD_COUNT);
+        assert.equal(observed.lastShapeError, null);
+    });
+
+    it("routes native stop and lastResult through one shared native-result shaper", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /function ConvertTo-MyspeedCandidateNativeResult/u);
+        assert.match(source, /\$toNativeResult=\$\{function:ConvertTo-MyspeedCandidateNativeResult\}/u);
+        assert.match(source, /stop=\{[\s\S]*?& \$toNativeResult/u);
+        assert.match(source, /lastResult=\{[\s\S]*?& \$toNativeResult/u);
     });
 
     powershellIt("keeps JSON callbacks bound in script and dynamic-module callers", () => {
