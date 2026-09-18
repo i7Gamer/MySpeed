@@ -251,7 +251,11 @@ function Invoke-MyspeedBaselineGuestCandidate {
                 return [pscustomobject]@{processIds=@($native.processIds);error=[int64]$native.error}}
             detach={return [MySpeed.Qualification.CleanStop.Session]::DetachInitialConsole()}
             proveFree={[MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();return $true}}
-        [void](& $cleanModule {param($currentPid,$operations)Invoke-MyspeedCleanInitialConsoleCore $currentPid $operations} ([int64]$PID) $initialConsoleOperations)
+        # Prove the native OS process id matches PowerShell's $PID before freeing the console, exactly as the hosted
+        # candidate path does, so the wrapper never detaches a console it does not own.
+        $nativeCurrentPid=[int64][MySpeed.Qualification.CleanStop.Session]::CurrentProcessId()
+        if($nativeCurrentPid -ne [int64]$PID){throw 'Native controller PID differs'}
+        [void](& $cleanModule {param($currentPid,$operations)Invoke-MyspeedCleanInitialConsoleCore $currentPid $operations} $nativeCurrentPid $initialConsoleOperations)
         $watch=[Diagnostics.Stopwatch]::StartNew()
         $result=& $candidateModule {param($value,$clock)$operations=New-MyspeedCandidateNativeOperations $value $clock
             Invoke-MyspeedCandidateLifecycleCore $value $operations} $request $watch

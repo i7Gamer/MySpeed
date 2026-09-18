@@ -53,6 +53,15 @@ describe("Windows baseline guest candidate wrapper", () => {
             /ObserveInitialConsole[\s\S]*DetachInitialConsole[\s\S]*Invoke-MyspeedCleanInitialConsoleCore[\s\S]*Invoke-MyspeedCandidateLifecycleCore/u);
     });
 
+    it("cross-checks the native process id against $PID before detaching, matching the hosted path", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        // The hosted candidate path proves the native OS process id equals PowerShell's $PID before it detaches the
+        // console (Invoke-MyspeedCandidateInitialConsole). The baseline wrapper must apply the same identity guard so
+        // it never frees a console it does not own; reuse the hosted 'Native controller PID differs' failure text.
+        assert.match(source,
+            /CurrentProcessId\(\)[\s\S]*-ne \[int64\]\$PID[\s\S]*'Native controller PID differs'[\s\S]*Invoke-MyspeedCleanInitialConsoleCore/u);
+    });
+
     powershellIt("binds listener ownership to loopback, PID, and process creation time", () => {
         const expected = {process: {pid: 123, creationTime: "a".repeat(16), exited: false},
             listeners: [{address: "127.0.0.1", port: 41001, pid: 123}]};
