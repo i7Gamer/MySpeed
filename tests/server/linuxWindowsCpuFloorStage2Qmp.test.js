@@ -10,7 +10,6 @@ import {
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_CADENCE,
     INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS,
-    INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS,
     INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS,
@@ -746,10 +745,8 @@ describe("Stage 2 early-boot QMP cadence boot confirmation", () => {
         assert.deepEqual(gaps, [1_200, 1_200, 1_200, 1_200, 1_200]);
         assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS,
             8_000 + INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS);
-        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS >
-            INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS, true);
         // The whole cadence still finishes long before the first screenshot's own +30s successor.
-        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS < 30_000, true);
+        assert.equal(INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS < 30_000, true);
         assert.equal(validateInstallerBootConfirmation(INSTALLER_BOOT_CONFIRMATION_CADENCE),
             INSTALLER_BOOT_CONFIRMATION_CADENCE);
     });
@@ -791,7 +788,7 @@ describe("Stage 2 early-boot QMP cadence boot confirmation", () => {
         for (const item of result.inputSent.pulses) {
             assert.equal(item.acknowledged, true);
             assert.equal(item.sentOffsetMilliseconds <=
-                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS, true);
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS, true);
         }
         assert.equal(writes.filter(({value}) => value.execute === "send-key").length, 3);
     });
@@ -809,10 +806,13 @@ describe("Stage 2 early-boot QMP cadence boot confirmation", () => {
             // An offset list of the caller's own choosing, rather than the fixed one.
             cadenceInput([pulse(0, 2_000), {requestedOffsetMilliseconds: 2_600,
                 sentOffsetMilliseconds: 2_600, acknowledged: true}]),
-            // A pulse sent before its own offset, or after the recorded bound.
+            // A pulse sent before its own offset, or after the gate that admits a pulse at all:
+            // the record is taken at the write boundary, so it is held to that same gate.
             cadenceInput([{...pulse(0, 1_999)}]),
             cadenceInput([{...pulse(0,
-                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS + 1)}]),
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + 1)}]),
+            cadenceInput([...fullCadence().slice(0, 5),
+                pulse(5, INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + 1)]),
             // Pulses recorded out of order.
             cadenceInput([pulse(0, 4_000), pulse(1, 3_500)]),
             cadenceInput([{requestedOffsetMilliseconds: 2_000, sentOffsetMilliseconds: 2_000,

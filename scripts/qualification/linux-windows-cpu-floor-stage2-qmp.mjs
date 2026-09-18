@@ -131,16 +131,12 @@ export const INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS =
     INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS.at(-1) +
     INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS;
 /*
- * The bound a recorded pulse is held to. The gate above admits the start of a write, never its
- * acknowledgement, so the latest offset a record can hold is one reply timeout past it - derived
- * from the two bounds exactly as the WinPE diagnostic's recorded bound is, so neither can be
- * widened without widening this with it. Holding an acknowledged pulse to the start gate instead
- * would let ordinary monitor jitter destroy the evidence for a keystroke that was correctly sent,
- * and with it the whole launch, since an unvalidatable `inputSent` leaves no early-boot
- * observation at all.
+ * A recorded pulse is held to that same gate, and to nothing looser. The offset a record carries is
+ * taken at the write boundary rather than at the acknowledgement, so the record and the gate measure
+ * the same instant: admitting a record past the gate would authorize, after the fact, a keystroke
+ * the gate had already refused. The gate is therefore enforced at the write boundary too, so a
+ * pulse that would land late is never sent rather than sent and then refused by this bound.
  */
-export const INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS =
-    INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + QMP_MESSAGE_TIMEOUT_MILLISECONDS;
 const CADENCE_INPUT_KEYS = Object.freeze(["acknowledged", "holdMilliseconds", "kind", "pulses", "qcode"]);
 const CADENCE_PULSE_KEYS = Object.freeze(["acknowledged", "requestedOffsetMilliseconds",
     "sentOffsetMilliseconds"]);
@@ -357,7 +353,7 @@ function validateInstallerBootCadenceInput(value) {
             !Number.isFinite(pulse.sentOffsetMilliseconds) ||
             pulse.sentOffsetMilliseconds < offsets[index] ||
             pulse.sentOffsetMilliseconds >
-                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS ||
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS ||
             pulse.sentOffsetMilliseconds < previousSentOffsetMilliseconds)
             throw new TypeError("QMP installer boot input is invalid");
         previousSentOffsetMilliseconds = pulse.sentOffsetMilliseconds;
@@ -457,6 +453,17 @@ function withDeadline(promise, dependencies, milliseconds = QMP_MESSAGE_TIMEOUT_
 }
 
 const QMP_ERROR_PROVENANCE = new WeakMap();
+/*
+ * The boot cadence's own write-boundary abort, marked like the mid-window one below and for the same
+ * reason: it is raised before any bytes leave, so it owes no response and must not taint the shared
+ * reader. It ends the cadence where it stands, leaving the pulses already sent as the record.
+ */
+const INSTALLER_BOOT_CADENCE_ABORT_ERRORS = new WeakSet();
+function createInstallerBootCadenceAbortError() {
+    const error = new Error("QMP installer boot confirmation window elapsed");
+    INSTALLER_BOOT_CADENCE_ABORT_ERRORS.add(error);
+    return error;
+}
 /*
  * A distinct marker (not a QMP_ERROR_PROVENANCE reason) for the mid-window write-boundary admission
  * recheck: it means no command was ever issued, so the loop must record `insufficient-time` and must
@@ -714,7 +721,9 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
         /* Called when the write that was supposed to satisfy an armed `expect(id, ...)` itself failed
          * (including the mid-window admission-abort, which owes no response and must not taint). */
         function abandon(id, error) {
-            const admissionAbort = error instanceof Error && MID_WINDOW_ADMISSION_ABORT_ERRORS.has(error);
+            const admissionAbort = error instanceof Error &&
+                (MID_WINDOW_ADMISSION_ABORT_ERRORS.has(error) ||
+                    INSTALLER_BOOT_CADENCE_ABORT_ERRORS.has(error));
             if (admissionAbort) {
                 if (activeEntry !== null && activeEntry.id === id) completeEntry(activeEntry);
                 if (pending !== null && pending.id === id) rejectPending(error);
@@ -952,10 +961,27 @@ async function runSession(input, dependencies, session) {
             if (elapsed() > INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS) break;
             let sentOffsetMilliseconds = null;
             const id = `installer-boot-confirmation-${index + 1}`;
-            await sendAndAwait({execute: "send-key",
-                arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
-                    "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id},
-            id, QMP_MESSAGE_TIMEOUT_MILLISECONDS, () => { sentOffsetMilliseconds = elapsed(); });
+            try {
+                await sendAndAwait({execute: "send-key",
+                    arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
+                        "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id},
+                id, QMP_MESSAGE_TIMEOUT_MILLISECONDS, () => {
+                    /*
+                     * The gate again, at the last instant before any bytes leave. The checks above
+                     * cannot see a stall that happens after them, and this one runs while the write
+                     * is still refusable - so a pulse that has become late is dropped rather than
+                     * typed late and then refused by a record bound that would have to be looser
+                     * than the gate to admit it.
+                     */
+                    sentOffsetMilliseconds = elapsed();
+                    if (sentOffsetMilliseconds >
+                        INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS)
+                        throw createInstallerBootCadenceAbortError();
+                });
+            } catch (error) {
+                if (!(error instanceof Error) || !INSTALLER_BOOT_CADENCE_ABORT_ERRORS.has(error)) throw error;
+                break;
+            }
             pulses.push({requestedOffsetMilliseconds, sentOffsetMilliseconds, acknowledged: true});
         }
         if (pulses.length < 1) throw new Error("QMP installer boot confirmation window elapsed");

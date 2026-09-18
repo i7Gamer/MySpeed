@@ -928,12 +928,21 @@ function retainedLaunchDiagnostic(value) {
     if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
     const bounded = withoutOversizedPayloads(value);
     if (JSON.stringify(bounded).length <= MAX_DIAGNOSTIC_CHARACTERS) return bounded;
-    return {schemaVersion: SCHEMA_VERSION, kind: LAUNCH_DIAGNOSTIC_KIND,
+    const summary = {schemaVersion: SCHEMA_VERSION, kind: LAUNCH_DIAGNOSTIC_KIND,
         classification: bounded.classification ?? STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable,
         terminationReason: bounded.terminationReason ?? null,
         guestFailureObserved: bounded.guestFailureObserved === true,
         ...(bounded.process === undefined ? {} : {process: bounded.process}),
         omitted: OMITTED_DIAGNOSTIC_MARKER};
+    /*
+     * The guest's own receipt travels with the flag that announces it. A summary saying a receipt
+     * was observed while dropping the receipt itself would be the same blackout this member exists
+     * to end, one field smaller. It is dropped only if carrying it would put the summary back over
+     * budget, and then the flag alone is what remains.
+     */
+    if (bounded.guestFailure === undefined) return summary;
+    const withReceipt = {...summary, guestFailure: bounded.guestFailure};
+    return JSON.stringify(withReceipt).length <= MAX_DIAGNOSTIC_CHARACTERS ? withReceipt : summary;
 }
 
 export const STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS = Object.freeze({LAUNCH_DIAGNOSTIC_KIND,

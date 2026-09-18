@@ -1077,4 +1077,41 @@ describe("Windows CPU-floor Stage 3 launch failure diagnostics", () => {
         assert.equal(Object.hasOwn(result.qemuLaunch, "wide"), false);
         assert.ok(JSON.stringify(result).length < STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_RESULT_CHARACTERS);
     });
+
+    it("keeps the guest receipt in the bounded summary that announces it", async () => {
+        const wide = Object.fromEntries(Array.from({length: 4096}, (_value, index) =>
+            [`member-${index}`, "b".repeat(512)]));
+        const fixture = operations({async launchBaselineGuest() {
+            throw buildStage3LaunchFailure("baseline guest did not return the CPU calibration envelope",
+                buildStage3LaunchDiagnostic({...launchFailure(), guestFailure: guestReceipt(),
+                    failureDiagnostic: {...deadlineDiagnostic(), wide}}));
+        }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.qemuLaunch.omitted, STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.OMITTED_DIAGNOSTIC_MARKER);
+        // A summary that says a receipt was observed must still carry it.
+        assert.equal(result.qemuLaunch.guestFailureObserved, true);
+        assert.equal(result.qemuLaunch.guestFailure.failure, "executor-invocation");
+        assert.ok(JSON.stringify(result.qemuLaunch).length <
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_DIAGNOSTIC_CHARACTERS);
+    });
+
+    it("drops a receipt that would put the bounded summary back over budget", async () => {
+        // Wide rather than deep: a single oversized string would be dropped by the payload
+        // transform long before the budget guard below ever sees it.
+        const oversizedReceipt = {...guestReceipt(), ...Object.fromEntries(
+            Array.from({length: 4096}, (_value, index) => [`detail-${index}`, "c".repeat(512)]))};
+        const diagnostic = buildStage3LaunchDiagnostic({...launchFailure(), guestFailure: oversizedReceipt,
+            failureDiagnostic: {...deadlineDiagnostic(), wide: Object.fromEntries(
+                Array.from({length: 4096}, (_value, index) => [`member-${index}`, "b".repeat(512)]))}});
+        const fixture = operations({async launchBaselineGuest() {
+            throw buildStage3LaunchFailure("baseline guest did not return the CPU calibration envelope",
+                diagnostic);
+        }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        // The flag survives where the receipt cannot; the budget is what the result file depends on.
+        assert.equal(result.qemuLaunch.guestFailureObserved, true);
+        assert.equal(Object.hasOwn(result.qemuLaunch, "guestFailure"), false);
+        assert.ok(JSON.stringify(result.qemuLaunch).length <
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_DIAGNOSTIC_CHARACTERS);
+    });
 });
