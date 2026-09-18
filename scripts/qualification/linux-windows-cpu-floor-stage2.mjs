@@ -25,11 +25,15 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 export const EFI_SHELL_FALLBACK_PATTERN = /EFI Internal Shell|UEFI Interactive Shell/u;
 export const EFI_SHELL_FAILURE_MESSAGE = "guest did not boot Windows (dropped to UEFI shell)";
 const ANSI_CSI_PATTERN = /\x1b\[[0-9;=?]*[A-Za-z]/gu;
+const ANSI_ESCAPE_CHARACTER = "\x1b";
 export function serialTextShowsEfiShellFallback(bytesBase64) {
     if (typeof bytesBase64 !== "string") return false;
     let text;
     try { text = Buffer.from(bytesBase64, "base64").toString("latin1"); } catch { return false; }
-    return EFI_SHELL_FALLBACK_PATTERN.test(text.replace(ANSI_CSI_PATTERN, " "));
+    // Only pay for the ANSI strip when an escape sequence is actually present; a
+    // clean serial capture (the common poll-tick case) skips the full-string copy.
+    const stripped = text.includes(ANSI_ESCAPE_CHARACTER) ? text.replace(ANSI_CSI_PATTERN, " ") : text;
+    return EFI_SHELL_FALLBACK_PATTERN.test(stripped);
 }
 const MAX_SYSTEM_TOOL_BYTES = 268_435_456n;
 export const WINDOWS_SYSTEM_TOOL_PATHS = deepFreeze([
