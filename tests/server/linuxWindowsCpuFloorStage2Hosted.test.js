@@ -277,6 +277,75 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(result.observation.process.cleanupProven, false);
     });
 
+    it("terminates fast when the guest serial console shows a drop to the UEFI shell", async () => {
+        let finish;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let settlementReason = null;
+        let clock = 0;
+        const serial = Buffer.from('BdsDxe: loading Boot0003 "EFI Internal Shell"\r\nUEFI Interactive Shell v2.2\r\nShell> ');
+        const result = await runMonitoredQemu({
+            runOwned: (command, argv, options) => {
+                options.onSpawn(2300);
+                options.onTerminationReady(reason => {
+                    settlementReason = reason;
+                    finish({process: {...okProcess, exitCode: 137, cleanupProven: false}, stdout: Buffer.alloc(0),
+                        stderr: Buffer.alloc(0)});
+                });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readOwnedPrefixVerified: () => ({bytes: serial, identity: {bytes: String(serial.length),
+                sha256: "a".repeat(64), observedBytes: String(serial.length), truncated: false}}),
+            readQemuProcessIdentity: () => ({state: "present", pid: 2345, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "8589934592"}),
+            monotonicMilliseconds: () => clock,
+            wait: async milliseconds => { clock += milliseconds; },
+            isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            serialLogPath: "/owned/serial.log", resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(result.terminationReason, "efi-shell-fallback");
+        assert.equal(settlementReason, "monitor-efi-shell-fallback");
+        // Fired on the first poll tick, before any wait advanced the clock toward the deadline.
+        assert.equal(clock, 0);
+    });
+
+    it("keeps monitoring when the serial console shows an ordinary boot line", async () => {
+        let finish;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let clock = 0;
+        const serial = Buffer.from("BdsDxe: loading Boot0001 UEFI QEMU DVD-ROM\r\n");
+        const result = await runMonitoredQemu({
+            runOwned: (command, argv, options) => {
+                options.onSpawn(2300);
+                options.onTerminationReady(() => {
+                    finish({process: {...okProcess, exitCode: 137, cleanupProven: false}, stdout: Buffer.alloc(0),
+                        stderr: Buffer.alloc(0)});
+                });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readOwnedPrefixVerified: () => ({bytes: serial, identity: {bytes: String(serial.length),
+                sha256: "a".repeat(64), observedBytes: String(serial.length), truncated: false}}),
+            readQemuProcessIdentity: () => ({state: "present", pid: 2345, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "8589934592"}),
+            monotonicMilliseconds: () => clock,
+            wait: async milliseconds => { clock += milliseconds; },
+            isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => false
+        }, {command: "/usr/bin/sudo", argv: [], timeoutMs: 1_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader", executionDeadline: 100_000,
+            serialLogPath: "/owned/serial.log", resources: {taskPath: "/owned", roots: ["/owned"]}});
+        assert.equal(result.terminationReason, "deadline");
+    });
+
     it("terminates and settles when the process-group observer throws", async () => {
         let finish;
         const operation = new Promise(resolve => { finish = resolve; });

@@ -17,6 +17,7 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     validateQmpShutdownEventDiagnostic,
+    serialTextShowsEfiShellFallback,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
@@ -1637,6 +1638,18 @@ export async function runMonitoredQemu(io, request) {
             } else lowMemorySince = null;
             if (now >= request.executionDeadline) terminationReasons.push("deadline");
         } catch { terminationReasons.push("telemetry-failed"); }
+        /*
+         * Boot-liveness: if the guest firmware has dropped to the UEFI shell, Windows will never
+         * boot and the run would otherwise sit idle until the execution deadline. Detect the shell
+         * fallback from the captured serial console and abort within a poll tick. The read is
+         * best-effort (readSerialConsole never throws), so a missing or unreadable log is simply not
+         * a boot failure. Only fires when the caller supplied a serial log path.
+         */
+        if (terminationReasons.length === 0 && typeof request.serialLogPath === "string") {
+            const {serialLog} = readSerialConsole(io, request.serialLogPath);
+            if (serialLog.status === "captured" && serialTextShowsEfiShellFallback(serialLog.bytesBase64))
+                terminationReasons.push("efi-shell-fallback");
+        }
         if (!finished && terminationReasons.length === 0) await io.wait(RESOURCE_POLL_MILLISECONDS);
     }
     if (request.qmp && qmpState === "pending" && finished) {
@@ -2059,6 +2072,7 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         timeoutMs: outerTimeoutMs, pidPath: input.paths.qemuPid,
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
         executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
+        serialLogPath: input.paths.serialLog,
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
