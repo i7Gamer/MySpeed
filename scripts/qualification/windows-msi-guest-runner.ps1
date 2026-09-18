@@ -13,6 +13,12 @@ $script:RequestKind='myspeed-windows-msi-guest-launch-request'
 $script:ResultKind='myspeed-windows-msi-guest-launch-result'
 $script:CpuClass='modern-msi'
 $script:NodeSqliteFlag='--experimental-sqlite'
+# The guest runner reads the seeded SQLite database through sqlite-check.mjs, so node prints an
+# ExperimentalWarning to stderr. media-job-launcher.ps1 never captures the guest node's stdout/stderr
+# today, so that warning is currently harmless here - but the baseline guest executor was held to
+# exactly-empty streams and failed a full run on this same warning. Suppress it at the source so a
+# future stderr gate on this launch (for parity with the baseline flow) cannot reintroduce that bug.
+$script:NodeWarningSuppressionFlag='--disable-warning=ExperimentalWarning'
 $script:MaximumInputCharacters=1048576
 $script:MaximumDurationMilliseconds=86400000
 $script:MaximumStringCharacters=1024
@@ -154,7 +160,7 @@ function Assert-MyspeedMsiGuestLaunchRequest {
 
 function Get-MyspeedGuestArguments {
     param($Request)
-    return [string[]]@($script:NodeSqliteFlag,$Request.files.runner.path,'--request',
+    return [string[]]@($script:NodeSqliteFlag,$script:NodeWarningSuppressionFlag,$Request.files.runner.path,'--request',
         $Request.files.semanticRequest.path,'--request-sha256',$Request.files.semanticRequest.sha256)
 }
 

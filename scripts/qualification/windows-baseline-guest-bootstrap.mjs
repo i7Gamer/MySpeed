@@ -260,7 +260,12 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `throw 'Baseline executor root differs'};$result=Join-Path $taskRoot 'result.json';` +
         `$stdout=Join-Path $taskRoot 'stdout';$stderr=Join-Path $taskRoot 'stderr';` +
         `$executor=Join-Path $RuntimeRoot 'scripts\\qualification\\windows-baseline-guest-executor.mjs';` +
-        `$arguments=@($executor,'--request',(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',` +
+        // The executor reads the seeded SQLite database through sqlite-check.mjs' node:sqlite import,
+        // which prints a one-line ExperimentalWarning to stderr on the pinned runtime. The launch is
+        // held to exactly empty stdout and stderr below, so that benign runtime warning would read as
+        // a leak ('Baseline executor streams differ'). Suppress only that warning class here - a node
+        // option before the script - and leave the empty-stream containment proof unchanged.
+        `$arguments=@('--disable-warning=ExperimentalWarning',$executor,'--request',(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',` +
         `$EXPECTED_REQUEST_SHA,'--execution',(Join-Path $Seed '${EXECUTION_NAME}'),'--execution-sha256',` +
         `$EXPECTED_EXECUTION_SHA,'--result',$result);$launchResult=$null;$primary=$null;` +
         `$diagnostics=[Collections.Generic.List[object]]::new();try{` +
@@ -286,8 +291,14 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `if($null-ne$bytes){$diagnostics.Add([pscustomobject]@{name='baseline-result.raw.json';bytes=$bytes})};` +
         `if($null-ne$primary){Throw-MyspeedBaselineExecutorFailure $primary $diagnostics ` +
         `(Get-MyspeedBaselineDiagnosticText $stderrBytes)};if(($null-ne$stdoutBytes-and$stdoutBytes.Length-ne 0)-or` +
-        `($null-ne$stderrBytes-and$stderrBytes.Length-ne 0)){Throw-MyspeedBaselineExecutorFailure ` +
-        `'Baseline executor streams differ' $diagnostics (Get-MyspeedBaselineDiagnosticText $stderrBytes)};` +
+        `($null-ne$stderrBytes-and$stderrBytes.Length-ne 0)){$streamContext=Get-MyspeedBaselineDiagnosticText $stderrBytes;` +
+        // A benign Node runtime warning on stderr (an experimental feature, a deprecation) still trips
+        // the empty-stream containment gate. Name that case explicitly so a future recurrence from a
+        // new warning source is self-describing instead of hiding behind the generic "streams differ".
+        `$streamMessage='Baseline executor streams differ';` +
+        `if($streamContext-and$streamContext-match '^\\(node:\\d+\\)\\s+\\w+Warning:'){` +
+        `$streamMessage='Baseline executor emitted a Node runtime warning on stderr'};` +
+        `Throw-MyspeedBaselineExecutorFailure $streamMessage $diagnostics $streamContext};` +
         `try{$semantic=([Text.UTF8Encoding]::new($false,$true).GetString($bytes)|ConvertFrom-Json)}catch{` +
         `Throw-MyspeedBaselineExecutorFailure 'Baseline executor result is invalid' $diagnostics $null};` +
         `if($semantic.schemaVersion-ne 1-or$semantic.profile-cne$BASELINE_PROFILE-or` +

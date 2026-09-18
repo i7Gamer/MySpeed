@@ -67,7 +67,8 @@ const launcherResult = () => ({
     authorizesTransfer: false,
     executable: {path: "D:\\seed\\node.exe", expectedSha256: "7".repeat(64),
         beforeSha256: "7".repeat(64), afterSha256: "7".repeat(64)},
-    arguments: ["--experimental-sqlite", "D:\\seed\\windows-msi-guest-clean-row.mjs",
+    arguments: ["--experimental-sqlite", "--disable-warning=ExperimentalWarning",
+        "D:\\seed\\windows-msi-guest-clean-row.mjs",
         "--request", "D:\\seed\\request.json", "--request-sha256", "a".repeat(64)],
     workingDirectory: "E:\\output",
     creationFlags: 134217732,
@@ -91,6 +92,18 @@ const launcherResult = () => ({
 });
 
 describe("Windows MSI guest owned-Job runner", () => {
+    // Platform-independent guard: the PowerShell tests below are skipped on the Linux CI shards, so
+    // this static check is what actually enforces on every runner that the guest node launch keeps
+    // the experimental-warning suppression flag beside the node:sqlite flag, ahead of the runner
+    // script. Losing it would only resurface as a multi-minute guest failure if a stderr gate is
+    // ever added to this launch.
+    it("keeps the node:sqlite experimental-warning suppression flag in the guest launch arguments", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.match(source, /\$script:NodeWarningSuppressionFlag='--disable-warning=ExperimentalWarning'/u);
+        assert.match(source,
+            /@\(\$script:NodeSqliteFlag,\$script:NodeWarningSuppressionFlag,\$Request\.files\.runner\.path,/u);
+    });
+
     powershellIt("accepts only the exact modern-CPU MSI command and truthful launcher proof", () => {
         const result = invoke("TestInjected", {request: request(), launcher: launcherResult(),
             semanticOutput: semanticOutput()});
