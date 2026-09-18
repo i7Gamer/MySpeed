@@ -84,6 +84,22 @@ describe("Windows baseline guest bootstrap", () => {
         assert.match(source, /Get-MyspeedBaselineOutputAuthority/u);
     });
 
+    // Platform-independent guard: the executor-launch test that asserts the suppression flag through
+    // a mocked -Launch is skipped on the Linux CI shards, so this static check is what enforces on
+    // every runner that the executor node process receives --disable-warning=ExperimentalWarning
+    // ahead of the executor script. The launch is held to exactly-empty stdout and stderr, so node's
+    // node:sqlite ExperimentalWarning here would read as a leak and fail a full ~72-minute guest run.
+    it("keeps the experimental-warning suppression flag ahead of the executor script in the render", () => {
+        const source = render().toString("utf8");
+        assert.match(source, /\$arguments=@\('--disable-warning=ExperimentalWarning',\$executor,'--request',/u);
+    });
+
+    it("renders the self-describing message for a Node runtime warning on the executor stream", () => {
+        const source = render().toString("utf8");
+        assert.match(source, /Baseline executor emitted a Node runtime warning on stderr/u);
+        assert.match(source, /\$streamContext-match '\^\\\(node:\\d\+\\\)\\s\+\\w\+Warning:'/u);
+    });
+
     it("records each primary bootstrap stage before invoking its operation", () => {
         const source = render().toString("utf8");
         for (const [stage, operation] of [["guard", "$ObserveGuard"], ["input-staging", "$StageInputs"],
@@ -351,6 +367,23 @@ describe("Windows baseline guest bootstrap", () => {
             assert.match(failure.message, /streams differ; warning with controls/u);
             assert.equal([...failure.message].some(character => character.codePointAt(0) <= ASCII_CONTROL_MAX ||
                 character.codePointAt(0) === ASCII_DELETE), false);
+            assert.deepEqual(failure.names, ["baseline-executor.stderr", "baseline-result.raw.json"]);
+        });
+
+    it("names a Node runtime warning on stderr instead of the generic streams-differ message",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const body = `try{$null=Invoke-MyspeedBaselineExecutor 'C:\\runtime' 'D:\\' ` +
+                `-ResolveTaskRoot {$env:MYSPEED_BASELINE_TEST_ROOT} -Launch {` +
+                `param($Node,$Arguments,$Working,$Stdout,$Stderr)[IO.File]::WriteAllBytes($Stdout,[byte[]]@());` +
+                `[IO.File]::WriteAllText($Stderr,'(node:4242) ExperimentalWarning: SQLite is an experimental feature');` +
+                `$result=Join-Path ([IO.Path]::GetDirectoryName($Stdout)) 'result.json';[IO.File]::WriteAllText($result,'{bad');` +
+                `[pscustomobject]@{ExitCode=[int]1;TimedOut=$false;Forced=$false;AssignedBeforeResume=$true;` +
+                `Resumed=$true;ProcessTreeExitProven=$true;HandlesClosed=$true}}}catch{` +
+                `[pscustomobject]@{message=$_.Exception.Message;names=@($_.Exception.Data['MyspeedDiagnostics']|` +
+                `ForEach-Object{$_.name})}|ConvertTo-Json -Compress}\r\n`;
+            const failure = runLibraryHarness("myspeed-baseline-nodewarn-", body);
+            assert.match(failure.message,
+                /^Baseline executor emitted a Node runtime warning on stderr; \(node:4242\) ExperimentalWarning: SQLite/u);
             assert.deepEqual(failure.names, ["baseline-executor.stderr", "baseline-result.raw.json"]);
         });
 
