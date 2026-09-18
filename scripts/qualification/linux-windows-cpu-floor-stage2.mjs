@@ -24,6 +24,7 @@ const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
  */
 export const EFI_SHELL_FALLBACK_PATTERN = /EFI Internal Shell|UEFI Interactive Shell/u;
 export const EFI_SHELL_FAILURE_MESSAGE = "guest did not boot Windows (dropped to UEFI shell)";
+export const EFI_SHELL_TRUNCATED_ATTRIBUTION = "serial capture truncated before end; UEFI-shell boot-failure detection incomplete";
 const ANSI_CSI_PATTERN = /\x1b\[[0-9;=?]*[A-Za-z]/gu;
 const ANSI_ESCAPE_CHARACTER = "\x1b";
 export function serialTextShowsEfiShellFallback(bytesBase64) {
@@ -1341,12 +1342,22 @@ function failure(context, stage, error, cleanupProven = true, diagnosticExit = n
      * top-line failure says why the guest never booted instead of the generic launch message. The
      * serial evidence itself is left untouched - this only chooses the human-readable string.
      */
-    const bootFailure = stage === "qemu-launch" && diagnosticFields.qemuLaunch?.serialLog?.status === "captured" &&
-        serialTextShowsEfiShellFallback(diagnosticFields.qemuLaunch.serialLog.bytesBase64) ? EFI_SHELL_FAILURE_MESSAGE : null;
+    const capturedSerial = stage === "qemu-launch" && diagnosticFields.qemuLaunch?.serialLog?.status === "captured" ?
+        diagnosticFields.qemuLaunch.serialLog : null;
+    const bootFailure = capturedSerial && serialTextShowsEfiShellFallback(capturedSerial.bytesBase64) ?
+        EFI_SHELL_FAILURE_MESSAGE : null;
+    /*
+     * A bounded serial capture may have cut off the UEFI-shell banner before it was written, so a truncated
+     * capture that did not match cannot rule the boot failure out. Flag that on the top-line failure so a missed
+     * detection is visible instead of being reported only as the generic launch message.
+     */
+    const genericFailure = message || "unspecified failure";
+    const attributedFailure = bootFailure ?? (capturedSerial?.truncated ?
+        `${genericFailure} (${EFI_SHELL_TRUNCATED_ATTRIBUTION})` : genericFailure);
     const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage,
         classification: diagnosticExit?.classification ?? CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
-        context: structuredClone(context), failure: bootFailure ?? (message || "unspecified failure"), ...diagnosticFields};
+        context: structuredClone(context), failure: attributedFailure, ...diagnosticFields};
     if (stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) &&
         error.lateBoot !== null && error.lateBoot !== undefined) {
         const candidateResult = {...baseResult, qemuLateBoot: structuredClone(error.lateBoot)};

@@ -7,6 +7,7 @@ import path from "node:path";
 import {describe, it} from "node:test";
 
 import {
+    EFI_SHELL_TRUNCATED_ATTRIBUTION,
     GuestBootstrapError,
     MAX_STAGE2_RESULT_BYTES,
     PACKAGE_ROOTS,
@@ -783,6 +784,11 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const truncatedSerialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
             paths: paths(), probeArtifact: probeArtifact()}, truncatedSerialFixture.op);
         assert.deepEqual(truncatedSerialResult.qemuLaunch, truncatedSerial);
+        // A truncated capture may have cut off the UEFI-shell banner, so a non-matching truncated serial must flag
+        // that the boot-failure detection was incomplete rather than silently reporting only the generic message.
+        assert.ok(truncatedSerialResult.failure.includes(EFI_SHELL_TRUNCATED_ATTRIBUTION),
+            truncatedSerialResult.failure);
+        assert.doesNotMatch(serialResult.failure, /truncated/u);
         const legacySerial = structuredClone(withSerial);
         legacySerial.serialLog = {bytes: String(serial.length), sha256: HASH(serial),
             bytesBase64: serial.toString("base64")};
