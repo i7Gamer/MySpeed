@@ -521,6 +521,36 @@ jobs:
           sequence_exit=$?
           set -e
           printf 'sequence_exit=%s\n' "$sequence_exit" >> "$GITHUB_OUTPUT"
+          # On failure, surface the real reason to the CI log and step summary so triage does not require
+          # downloading the evidence bundle. The full result stays retained in the transport for the bundle.
+          if [ "$sequence_exit" -ne 0 ]; then
+            set +e
+            result_json="$transport_root/stage3-sequence-result.json"
+            failure_reason="(stage3-sequence-result.json not found)"
+            if [ -f "$result_json" ]; then
+              failure_reason=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.failure??r.status??"unknown"))}catch(e){process.stdout.write("unreadable result: "+e.message)}' "$result_json")
+            fi
+            echo "::error::Stage 3 sequence failed (exit $sequence_exit): $failure_reason"
+            echo "=== stage 3 failure reason ==="
+            echo "$failure_reason"
+            echo "=== controller.stderr (last 40 lines) ==="
+            tail -n 40 "$log_root/controller.stderr" 2>/dev/null || true
+            if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+              {
+                echo "### Stage 3 sequence failed (exit ${sequence_exit})"
+                echo ""
+                echo "**Failure:** ${failure_reason}"
+                echo ""
+                echo "<details><summary>controller.stderr (tail)</summary>"
+                echo ""
+                echo '```'
+                tail -n 40 "$log_root/controller.stderr" 2>/dev/null || true
+                echo '```'
+                echo "</details>"
+              } >> "$GITHUB_STEP_SUMMARY"
+            fi
+            set -e
+          fi
           exit "$sequence_exit"
 
       - name: Verify task-owned process cleanup
