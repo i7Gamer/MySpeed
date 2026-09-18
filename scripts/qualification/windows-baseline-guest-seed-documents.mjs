@@ -46,11 +46,8 @@ function validateContext(value) {
     return structuredClone(value);
 }
 
-function validateInputIdentity(value, maximum, label, expectedArtifactName = null) {
-    const keys = expectedArtifactName === null ? ["bytes", "sha256"] : ["artifactName", "bytes", "sha256"];
-    exactKeys(value, keys, label);
-    if (expectedArtifactName !== null && value.artifactName !== expectedArtifactName)
-        throw new TypeError(`${label} artifact name differs`);
+function validateInputIdentity(value, maximum, label) {
+    exactKeys(value, ["bytes", "sha256"], label);
     decimal(value.bytes, maximum, `${label} bytes`);
     hash(value.sha256, `${label} SHA`);
     return structuredClone(value);
@@ -68,8 +65,17 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
     exactKeys(input, ["candidate", "candidateController", "cleanStopController", "context", "fixtureBundle",
         "imageVersion", "manifestSha256"], "baseline seed input");
     const context = validateContext(input.context);
-    const candidate = validateInputIdentity(input.candidate, MAX_CANDIDATE_BYTES, "baseline seed candidate",
-        ARTIFACT_NAME);
+    exactKeys(input.candidate, ["artifactName", "bytes", "sha256", "sourceSha"], "baseline seed candidate");
+    if (input.candidate.artifactName !== ARTIFACT_NAME)
+        throw new TypeError("baseline seed candidate artifact name differs");
+    decimal(input.candidate.bytes, MAX_CANDIDATE_BYTES, "baseline seed candidate bytes");
+    hash(input.candidate.sha256, "baseline seed candidate SHA");
+    exactString(input.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline seed candidate source SHA");
+    // The candidate is a different release than the harness that stages this guest; the fixture
+    // bundle is stamped with this SHA, so it must never collapse onto the harness context SHA.
+    if (input.candidate.sourceSha === context.sourceSha)
+        throw new TypeError("baseline seed candidate source SHA differs");
+    const candidate = structuredClone(input.candidate);
     const fixture = validateInputIdentity(input.fixtureBundle, MAX_FIXTURE_BYTES, "baseline seed fixture");
     const candidateController = validateInputIdentity(input.candidateController, MAX_CONTROLLER_BYTES,
         "baseline seed candidate controller");
@@ -85,7 +91,8 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
         sha256: fixture.sha256};
     const request = {schemaVersion: SCHEMA_VERSION, kind: REQUEST_KIND, profile: PROFILE, qualifying: false,
         context, candidate: {artifactName: candidate.artifactName, path: `${taskRoot}\\MySpeed.exe`,
-            bytes: candidate.bytes, sha256: candidate.sha256}, fixture: fixtureIdentity,
+            sourceSha: candidate.sourceSha, bytes: candidate.bytes, sha256: candidate.sha256},
+        fixture: fixtureIdentity,
         paths: {taskRoot, populatedWork: `${taskRoot}\\populated`, resetWork: `${taskRoot}\\reset`},
         scenarios: structuredClone(SCENARIOS)};
     const execution = {schemaVersion: SCHEMA_VERSION, kind: EXECUTION_KIND, sourceSha: context.sourceSha,

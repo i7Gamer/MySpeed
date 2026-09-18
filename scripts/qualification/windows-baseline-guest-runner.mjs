@@ -75,8 +75,13 @@ function validateRequest(value) {
     exactString(value.context.runId, /^[1-9][0-9]{0,19}$/u, "baseline run ID");
     exactString(value.context.runAttempt, /^[1-9][0-9]{0,9}$/u, "baseline run attempt");
     exactString(value.context.nonce, /^[0-9a-f]{32}$/u, "baseline nonce");
-    exactKeys(value.candidate, ["artifactName", "bytes", "path", "sha256"], "baseline candidate");
+    exactKeys(value.candidate, ["artifactName", "bytes", "path", "sha256", "sourceSha"], "baseline candidate");
     if (value.candidate.artifactName !== ARTIFACT_NAME) throw new TypeError("baseline artifact name differs");
+    exactString(value.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline candidate source SHA");
+    // The candidate release SHA (which stamps the fixture bundle) is always a different release than
+    // the harness context SHA; equality means the seed documents were built incorrectly.
+    if (value.candidate.sourceSha === value.context.sourceSha)
+        throw new TypeError("baseline candidate source SHA differs");
     windowsPath(value.candidate.path, "baseline candidate path");
     decimal(value.candidate.bytes, "baseline candidate bytes"); sha256(value.candidate.sha256, "baseline candidate SHA");
     exactKeys(value.fixture, ["bytes", "path", "sha256"], "baseline fixture");

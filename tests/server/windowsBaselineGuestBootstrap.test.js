@@ -17,6 +17,7 @@ import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivation
 
 const NONCE = "3".repeat(32);
 const SOURCE_SHA = "1".repeat(40);
+const CANDIDATE_SHA = "9".repeat(40);
 const SHA = character => character.repeat(64);
 const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const HAS_INBOX_POWERSHELL = process.platform === "win32" && fs.existsSync(POWERSHELL);
@@ -492,7 +493,8 @@ describe("Windows baseline guest bootstrap", () => {
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
                 eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+                bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
             cleanStopController: {bytes: "131072", sha256: SHA("8")}});
@@ -548,7 +550,8 @@ describe("Windows baseline guest bootstrap", () => {
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
                 eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+                bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
             cleanStopController: {bytes: "131072", sha256: SHA("8")}});
@@ -603,7 +606,8 @@ describe("Windows baseline guest bootstrap", () => {
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
                 eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", bytes: String(candidateBytes.length),
+            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+                bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
             cleanStopController: {bytes: "131072", sha256: SHA("8")}});

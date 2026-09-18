@@ -97,8 +97,11 @@ function validateBundle(bytes, request) {
     catch { throw new TypeError("baseline fixture bundle is not valid UTF-8 JSON"); }
     exactKeys(value, ["schemaVersion", "kind", "sourceSha", "expected", "populated", "reset"],
         "baseline fixture bundle");
+    // The bundle is built and stamped with the candidate release SHA, which is a different release
+    // than the harness context SHA that stages this guest. Validate against the candidate SHA the
+    // request carries, never the harness context SHA (run 35285135433 rejected every real bundle).
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== BUNDLE_KIND ||
-        value.sourceSha !== request.context.sourceSha) throw new TypeError("baseline fixture bundle identity differs");
+        value.sourceSha !== request.candidate.sourceSha) throw new TypeError("baseline fixture bundle identity differs");
     exactKeys(value.expected, ["passwordValueSha256", "ping", "resultId"], "baseline fixture expectation");
     if (value.expected.ping !== EXPECTED_PING || value.expected.resultId !== EXPECTED_RESULT_ID)
         throw new TypeError("baseline fixture sentinels differ");
@@ -169,6 +172,8 @@ export async function materializeWindowsBaselineGuestFixture({request, execution
     if (!isObject(request) || !isObject(request.context) || !isObject(request.paths) ||
         !isObject(request.candidate) || !Array.isArray(request.scenarios))
         throw new TypeError("baseline materializer request differs");
+    // Guarded here so validateBundle's identity comparison can never pass on two absent values.
+    exactString(request.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline candidate source SHA");
     const root = path.resolve(request.paths.taskRoot);
     if (root !== request.paths.taskRoot || fs.existsSync(root)) throw new Error("baseline task root is not fresh");
     assertDirectChild(root, request.candidate.path, "MySpeed.exe");

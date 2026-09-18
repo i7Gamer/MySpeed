@@ -125,8 +125,9 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
     const sourceByPath = new Map(runtimeFiles.map(record => [record.relativePath, record.source]));
     const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: context.sourceSha,
         eventSha: context.eventSha, runId: context.runId, runAttempt: context.runAttempt, nonce: context.nonce},
-    candidate: {artifactName: input.candidate.artifactName, bytes: input.candidate.file.bytes,
-        sha256: input.candidate.file.sha256}, fixtureBundle: {bytes: String(fixtureBytes.length),
+    candidate: {artifactName: input.candidate.artifactName, sourceSha: input.candidate.sourceSha,
+        bytes: input.candidate.file.bytes, sha256: input.candidate.file.sha256},
+    fixtureBundle: {bytes: String(fixtureBytes.length),
         sha256: sha256(fixtureBytes)}, candidateController: ((source) => ({bytes: source.bytes,
             sha256: source.sha256}))(sourceByPath.get(
             "scripts/qualification/windows-native-candidate-controller.ps1")),

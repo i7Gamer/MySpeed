@@ -71,7 +71,8 @@ describe("Windows baseline guest fixture bundle builder", () => {
             const taskRoot = path.join(root, "guest-task");
             const identity = target => { const value = fs.readFileSync(target); return {path: target,
                 bytes: String(value.length), sha256: sha256(value)}; };
-            const request = {context: {sourceSha: SOURCE_SHA, nonce: NONCE}, candidate: identity(candidatePath),
+            const request = {context: {sourceSha: SOURCE_SHA, nonce: NONCE},
+                candidate: {...identity(candidatePath), sourceSha: SOURCE_SHA},
                 paths: {taskRoot, populatedWork: path.join(taskRoot, "populated"),
                     resetWork: path.join(taskRoot, "reset")}, scenarios: ["populated-first-boot",
                     "populated-restart", "fresh-no-config-reset"].map((scenario, index) => ({scenario,

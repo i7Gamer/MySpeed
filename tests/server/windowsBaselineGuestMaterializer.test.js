@@ -9,7 +9,11 @@ import {cleanupWindowsBaselineGuestFixture,
     materializeWindowsBaselineGuestFixture} from "../../scripts/qualification/windows-baseline-guest-materializer.mjs";
 
 const SHA = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
+// The harness source SHA (the run building the guest) and the candidate release SHA (the run that
+// built the fixture bundle) are always different releases in production; the bundle is stamped with
+// the candidate SHA, so the request must carry that same candidate SHA for the identity check.
 const SOURCE_SHA = "1".repeat(40);
+const CANDIDATE_SHA = "2".repeat(40);
 const NONCE = "3".repeat(32);
 const EXPECTED_FILES = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"];
@@ -28,14 +32,15 @@ function fixture() {
     fs.writeFileSync(path.join(seed, "clean.ps1"), controllerBytes, {flag: "wx"});
     const common = EXPECTED_FILES.map(name => record(name, `${name}\n`));
     const database = record("data/storage.db", "sqlite fixture\n");
-    const bundle = {schemaVersion: 1, kind: "myspeed-windows-baseline-fixture-bundle", sourceSha: SOURCE_SHA,
+    const bundle = {schemaVersion: 1, kind: "myspeed-windows-baseline-fixture-bundle", sourceSha: CANDIDATE_SHA,
         expected: {ping: "123.456", resultId: "qualification-seed-row", passwordValueSha256: "9".repeat(64)},
         populated: {files: [...common, database].sort((left, right) => left.path.localeCompare(right.path))},
         reset: {files: structuredClone(common).sort((left, right) => left.path.localeCompare(right.path))}};
     const bundleBytes = Buffer.from(`${JSON.stringify(bundle)}\n`);
     fs.writeFileSync(path.join(seed, "fixture.json"), bundleBytes, {flag: "wx"});
     const request = {context: {sourceSha: SOURCE_SHA, nonce: NONCE}, candidate: {
-        path: path.join(root, "MySpeed.exe"), bytes: String(candidateBytes.length), sha256: SHA(candidateBytes)},
+        path: path.join(root, "MySpeed.exe"), sourceSha: CANDIDATE_SHA,
+        bytes: String(candidateBytes.length), sha256: SHA(candidateBytes)},
     paths: {taskRoot: root, populatedWork: path.join(root, "populated"), resetWork: path.join(root, "reset")},
     scenarios: ["populated-first-boot", "populated-restart", "fresh-no-config-reset"].map((scenario, index) =>
         ({scenario, port: 41_001 + index}))};
@@ -67,6 +72,40 @@ describe("Windows baseline guest fixture materializer", () => {
                 {cleanupProven: true});
             assert.equal(fs.existsSync(value.root), false);
         } finally { fs.rmSync(value.parent, {recursive: true, force: true}); }
+    });
+
+    it("validates the fixture bundle against the candidate source SHA, not the harness context SHA", async () => {
+        // Regression for run 35285135433: the bundle is stamped with the candidate release SHA while
+        // request.context.sourceSha is the harness SHA. Validating against the context SHA rejected
+        // every real run with "baseline fixture bundle identity differs".
+        const value = fixture();
+        assert.notEqual(value.request.context.sourceSha, value.request.candidate.sourceSha);
+        assert.equal(value.bundle.sourceSha, value.request.candidate.sourceSha);
+        try {
+            const result = await materializeWindowsBaselineGuestFixture({request: value.request,
+                execution: value.execution,
+                dependencies: {checkPopulatedDatabase: async (_file, expected) => expected}});
+            assert.deepEqual(result, {expected: value.bundle.expected, initialDatabase: value.bundle.expected});
+        } finally { fs.rmSync(value.parent, {recursive: true, force: true}); }
+    });
+
+    it("rejects a bundle whose source SHA is not the candidate SHA, or a malformed candidate SHA", async () => {
+        for (const mutate of [
+            value => { value.bundle.sourceSha = SOURCE_SHA; },
+            value => { value.request.candidate.sourceSha = "3".repeat(40); },
+            value => { value.request.candidate.sourceSha = "not-a-sha"; }
+        ]) {
+            const value = fixture();
+            try {
+                mutate(value);
+                const bytes = Buffer.from(`${JSON.stringify(value.bundle)}\n`);
+                fs.writeFileSync(value.execution.fixtureBundle.path, bytes);
+                value.execution.fixtureBundle.bytes = String(bytes.length);
+                value.execution.fixtureBundle.sha256 = SHA(bytes);
+                await assert.rejects(materializeWindowsBaselineGuestFixture({request: value.request,
+                    execution: value.execution, dependencies: {checkPopulatedDatabase: async () => ({})}}));
+            } finally { fs.rmSync(value.parent, {recursive: true, force: true}); }
+        }
     });
 
     it("rejects traversal, stale roots, altered bytes, and an incomplete reset inventory before success", async () => {
