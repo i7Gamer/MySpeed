@@ -879,8 +879,18 @@ describe("Windows baseline guest producer-to-parser contract", () => {
          * second exclusive write and before the shutdown call it exists to precede. `'result.json'`
          * carries its quote so it cannot match inside `'baseline-result.json'`.
          */
-        assert.ok(source.indexOf(`'result.json'`) < source.indexOf("& $EmitCompletion"));
-        assert.ok(source.indexOf("& $EmitCompletion") < source.indexOf("& $Shutdown"));
+        /*
+         * Anchor on the publication call itself. A bare 'result.json' also matches the executor's
+         * own scratch path far earlier in the script, which made an earlier version of this
+         * assertion true no matter where the emission sat. The behavioural ordering test below is
+         * Windows-gated, so this is the only check of this property on PR CI.
+         */
+        const publishBaseline = source.indexOf("& $Publish (Join-Path $publicationOutput 'baseline-result.json')");
+        const publishCpu = source.indexOf("& $Publish (Join-Path $publicationOutput 'result.json')");
+        const emit = source.indexOf("& $EmitCompletion");
+        assert.ok(publishBaseline > 0 && publishCpu > publishBaseline);
+        assert.ok(publishCpu < emit);
+        assert.ok(emit < source.indexOf("& $Shutdown"));
     });
 
     it("emits exactly one nonce-bound completion record naming both published receipts",

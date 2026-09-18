@@ -19,6 +19,8 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     validateQmpShutdownEventDiagnostic,
     serialTextShowsEfiShellFallback,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
+import {COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES, parseCompletionRecord} from
+    "./windows-baseline-guest-bootstrap.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
     validatePredeadlineScreenshotPath, PREDEADLINE_FRAME_FILENAME,
@@ -1774,6 +1776,53 @@ function displayProgressVerdict(earlyBoot, milestones) {
     return digests.some((digest, index) => index > 0 && digest !== digests[index - 1]);
 }
 
+/*
+ * Bytes from an offset of a file that is still being appended to. This deliberately does not
+ * demand the size stability `defaultReadOwnedPrefixVerified` requires: the serial log grows
+ * under us by design, and treating growth as tampering is what makes that reader report
+ * "unavailable" mid-append. Every other identity check it makes is kept, so a replaced, relinked
+ * or re-owned file is still refused, and the caller is handed the observed size so it can refuse
+ * a file that shrank.
+ */
+export function defaultReadOwnedRangeVerified(target, start, maximumBytes) {
+    if (!Number.isInteger(start) || start < 0) throw new TypeError("owned range start is invalid");
+    if (!Number.isInteger(maximumBytes) || maximumBytes < 1)
+        throw new TypeError("owned range maximum is invalid");
+    const lexical = fs.lstatSync(target);
+    if (!lexical.isFile()) throw new Error("owned range path is not an ordinary file");
+    const canonical = fs.realpathSync(target);
+    const resolved = fs.lstatSync(canonical);
+    if (!resolved.isFile() || lexical.dev !== resolved.dev || lexical.ino !== resolved.ino)
+        throw new Error("owned range path identity is invalid");
+    const descriptor = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        const observed = fs.fstatSync(descriptor);
+        if (!observed.isFile() || observed.nlink !== 1) throw new Error("owned range read bound is invalid");
+        if (observed.dev !== lexical.dev || observed.ino !== lexical.ino || observed.uid !== lexical.uid ||
+            observed.gid !== lexical.gid || observed.mode !== lexical.mode)
+            throw new Error("owned range descriptor identity is invalid");
+        const from = Math.min(start, observed.size);
+        const bytes = Buffer.allocUnsafe(Math.min(observed.size - from, maximumBytes));
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, from + offset);
+            if (count <= 0) throw new Error("owned range read was truncated");
+            offset += count;
+        }
+        /*
+         * The same post-read re-verification the prefix reader performs, minus the two fields a
+         * growing log necessarily changes. Dropping size stability is the point of this reader;
+         * dropping the rest would let a same-inode chmod, chown or relink pass unnoticed.
+         */
+        const after = fs.fstatSync(descriptor);
+        if (after.dev !== observed.dev || after.ino !== observed.ino || after.uid !== observed.uid ||
+            after.gid !== observed.gid || after.mode !== observed.mode || after.nlink !== observed.nlink)
+            throw new Error("owned range changed while reading");
+        if (after.size < observed.size) throw new Error("owned range shrank while reading");
+        return {bytes, identity: {device: String(observed.dev), inode: String(observed.ino),
+            observedBytes: String(observed.size)}};
+    } finally { fs.closeSync(descriptor); }
+}
 function normalizeDependencies(value) {
     const normalized = {mkdirExclusive: value.mkdirExclusive ?? defaultMkdirExclusive,
         writeExclusive: value.writeExclusive ?? defaultWriteExclusive,
@@ -1783,6 +1832,7 @@ function normalizeDependencies(value) {
         inspectDirectory: value.inspectDirectory ?? defaultInspectDirectory,
         readOwnedVerified: value.readOwnedVerified ?? defaultReadOwnedVerified,
         readOwnedPrefixVerified: value.readOwnedPrefixVerified ?? defaultReadOwnedPrefixVerified,
+        readOwnedRangeVerified: value.readOwnedRangeVerified ?? defaultReadOwnedRangeVerified,
         createOwnedPidFile: value.createOwnedPidFile ?? defaultCreateOwnedPidFile,
         readOwnedPidFile: value.readOwnedPidFile ?? defaultReadOwnedPidFile,
         removeOwnedPidFile: value.removeOwnedPidFile ?? defaultRemoveOwnedPidFile,
@@ -3118,3 +3168,73 @@ export const HOSTED_STAGE2_NATIVE_CONSTANTS = Object.freeze({APT_GET, DPKG_DEB, 
     RESOURCE_POLL_MILLISECONDS,
     LOW_MEMORY_ABORT_MILLISECONDS, MINIMUM_RUNTIME_MEMORY_BYTES: MINIMUM_RUNTIME_MEMORY_BYTES.toString(),
     MINIMUM_FREE_DISK_BYTES: MINIMUM_FREE_DISK_BYTES.toString(), MAXIMUM_TASK_BYTES: MAXIMUM_TASK_BYTES.toString()});
+
+/*
+ * How many serial bytes the completion observer will ever read across a whole run. The channel
+ * carries firmware chatter and one bounded record: run 35358547382 produced 1196 bytes in total,
+ * so this is headroom, not a budget anyone should approach. Exhausting it fails the channel
+ * closed rather than reading unboundedly.
+ */
+export const MAX_SERIAL_OBSERVATION_BYTES = 1024 * 1024;
+export const SERIAL_COMPLETION_FAILURES = Object.freeze({
+    recordInvalid: "serial-completion-invalid",
+    channelFailed: "serial-channel-failed"
+});
+const ASCII_MAXIMUM = 0x7f;
+
+/*
+ * A bounded append observer over the serial log QEMU is still writing to. The existing prefix
+ * reader cannot serve as the trigger: it snapshots only the first 64 KiB and demands a stable
+ * size, so it reports "unavailable" whenever the guest is mid-append. This reads forward from
+ * the last consumed offset instead, and keeps only a partial trailing line between ticks.
+ *
+ * Everything here fails closed. A tick that cannot read at all is not a failure - the log may
+ * simply not exist yet - and simply yields no trigger. A log that was replaced, shrank, carried
+ * a non-ASCII byte, ran past the record bound on one line, or exhausted the total cap is a
+ * latched channel failure, and a latched failure is never cleared by a later valid record.
+ */
+export function createSerialCompletionObserver(nonce) {
+    let identity = null;
+    let offset = 0;
+    let observed = 0;
+    let carry = "";
+    let completion = null;
+    let failure = null;
+
+    const fail = reason => { failure = reason; carry = ""; completion = null; return outcome(); };
+    const outcome = () => ({completion, failure});
+
+    const classify = line => {
+        const parsed = parseCompletionRecord(line, nonce);
+        if (parsed === null) return true;
+        if (parsed.status !== "valid") { fail(SERIAL_COMPLETION_FAILURES.recordInvalid); return false; }
+        /* A second record means the channel is not what the reviewed producer emits. */
+        if (completion !== null) { fail(SERIAL_COMPLETION_FAILURES.recordInvalid); return false; }
+        completion = {record: parsed.record};
+        return true;
+    };
+
+    return {consume(read) {
+        if (failure !== null) return outcome();
+        let result = null;
+        try { result = read(offset, MAX_SERIAL_OBSERVATION_BYTES - observed + 1); }
+        catch { return outcome(); }
+        if (identity === null) identity = {device: result.identity.device, inode: result.identity.inode};
+        else if (result.identity.device !== identity.device || result.identity.inode !== identity.inode)
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        if (Number(result.identity.observedBytes) < offset)
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        observed += result.bytes.length;
+        if (observed > MAX_SERIAL_OBSERVATION_BYTES) return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        offset += result.bytes.length;
+        if (result.bytes.some(value => value > ASCII_MAXIMUM))
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+
+        const rows = `${carry}${result.bytes.toString("latin1")}`.split("\n");
+        carry = rows.pop();
+        for (const row of rows) if (!classify(row.endsWith("\r") ? row.slice(0, -1) : row)) return outcome();
+        /* A line that can never fit a record means the stream is not the one we contracted for. */
+        if (carry.length > MAX_COMPLETION_RECORD_BYTES) return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        return outcome();
+    }};
+}

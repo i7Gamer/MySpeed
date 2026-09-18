@@ -37,10 +37,10 @@ const SHUTDOWN_STAGE = "guest-shutdown";
  * The record only ever buys permission to stop waiting; the receipts it names are still extracted
  * and strictly parsed after cleanup, so a forged or premature line cannot create a success.
  */
-const COMPLETION_RECORD_PREFIX = "MYSPEED-STAGE3-COMPLETE-V1";
+export const COMPLETION_RECORD_PREFIX = "MYSPEED-STAGE3-COMPLETE-V1";
 const COMPLETION_RECORD_KIND = "myspeed-stage3-publication-complete";
 const COMPLETION_RECORD_SCHEMA_VERSION = 1;
-const MAX_COMPLETION_RECORD_BYTES = 768;
+export const MAX_COMPLETION_RECORD_BYTES = 768;
 const COMPLETION_SERIAL_DEVICE = "\\\\.\\COM1";
 const SUCCESS_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
