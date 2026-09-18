@@ -83,6 +83,14 @@ const STAGE3_REQUIRED_QEMU_DEVICES = Object.freeze(["ich9-ahci", "ide-cd", "ide-
  * while starting would spend the whole remainder proving that.
  */
 const STAGE3_RESERVATION_LABEL = "cpu-floor-stage3-baseline";
+/*
+ * The one termination the baseline launch may be accepted with besides a clean exit. The hosted
+ * monitor produces it only after observing a valid, nonce-bound publication-complete record
+ * before the execution deadline and then waiting out the exit grace, so the reason is itself the
+ * provenance: an ordinary deadline kill, a signal or a timeout can never carry it. Kept as a
+ * literal rather than imported, to leave this module's sealed closure alone; a test pins them.
+ */
+const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-timeout";
 const STAGE3_JOB_CEILING_MILLISECONDS = 90 * 60 * 1_000;
 const STAGE3_RETENTION_RESERVE_MILLISECONDS = 6 * 60 * 1_000;
 const STAGE3_EXECUTION_CEILING_MILLISECONDS = 55 * 60 * 1_000;
@@ -95,6 +103,7 @@ const STAGE3_MAX_JOB_METADATA_ENTRIES = 100;
 
 export const STAGE3_BUDGET_CONSTANTS = Object.freeze({
     RESERVATION_LABEL: STAGE3_RESERVATION_LABEL,
+    POST_COMPLETION_TERMINATION_REASON,
     JOB_CEILING_MILLISECONDS: STAGE3_JOB_CEILING_MILLISECONDS,
     RETENTION_RESERVE_MILLISECONDS: STAGE3_RETENTION_RESERVE_MILLISECONDS,
     EXECUTION_CEILING_MILLISECONDS: STAGE3_EXECUTION_CEILING_MILLISECONDS,
@@ -650,13 +659,23 @@ function validatePreparedMedia(value, pathsValue) {
     return structuredClone(value);
 }
 
-function validateProcess(value, toolchain) {
+function validateProcess(value, toolchain, completionTeardownAllowed = false) {
     keys(value, ["cleanupProven", "exitCode", "launcherExecutablePath", "processGroupId", "qemuPid",
         "qemuPidAbsentAfter", "qemuStartTicks", "signal", "terminationReason", "timedOut", "treeGone"],
     "Stage 3 QEMU process");
-    if (value.exitCode !== 0 || value.signal !== null || value.timedOut !== false || value.cleanupProven !== true ||
+    /*
+     * Either the wrapper exited cleanly by itself, or - for the baseline launch only - the host
+     * tore down the group it had already verified after the guest published and asked to power
+     * off. The second shape waives the exit status and nothing else: every cleanup proof below
+     * still applies unchanged, and the guest receipts are strictly parsed elsewhere regardless.
+     */
+    const forcedAfterCompletion = completionTeardownAllowed &&
+        value.terminationReason === POST_COMPLETION_TERMINATION_REASON;
+    if (!forcedAfterCompletion && (value.exitCode !== 0 || value.signal !== null ||
+        value.terminationReason !== null)) throw new TypeError("Stage 3 QEMU cleanup is not proven");
+    if (value.timedOut !== false || value.cleanupProven !== true ||
         value.treeGone !== true || value.qemuPidAbsentAfter !== true || value.launcherExecutablePath !==
-        toolchain.runtime.loader.path || value.terminationReason !== null || !Number.isInteger(value.qemuPid) ||
+        toolchain.runtime.loader.path || !Number.isInteger(value.qemuPid) ||
         value.qemuPid < 1 || value.qemuPid > 0x7fff_ffff || !Number.isInteger(value.processGroupId) ||
         value.processGroupId < 1 || value.processGroupId > 0x7fff_ffff ||
         !/^[1-9][0-9]{0,23}$/u.test(value.qemuStartTicks)) throw new TypeError("Stage 3 QEMU cleanup is not proven");
@@ -812,7 +831,7 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     if (!same(value.argv, argv)) throw new TypeError("completed Stage 3 QEMU vector differs");
     validateEarlyBoot(value.earlyBoot, checked.paths, checked.bootConfirmation);
     validateStage3Reservation(value.reservation);
-    validateProcess(value.qemuProcess, stage2.toolchain);
+    validateProcess(value.qemuProcess, stage2.toolchain, true);
     const outputDisk = validateIdentity(value.outputDisk, "completed Stage 3 output disk");
     if (outputDisk.path !== checked.paths.outputDisk || outputDisk.bytes !== OUTPUT_DISK_BYTES)
         throw new TypeError("completed Stage 3 output disk differs");
@@ -996,7 +1015,7 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         if (!same(launch.argv, argv)) throw new TypeError("Stage 3 observed QEMU vector differs");
         const earlyBoot = validateEarlyBoot(launch.earlyBoot, checked.paths, checked.bootConfirmation);
         const reservation = validateStage3Reservation(launch.reservation);
-        try { validateProcess(launch.process, stage2.toolchain); }
+        try { validateProcess(launch.process, stage2.toolchain, true); }
         catch (error) { cleanupProven = false; throw error; }
         cleanupProven = true;
         const outputDisk = validateIdentity(launch.outputDisk, "Stage 3 completed output disk");

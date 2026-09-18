@@ -1624,7 +1624,12 @@ export async function runMonitoredQemu(io, request) {
         terminationReasons.push("identity-observation-failed");
     }
     let lowMemorySince = null;
-    while (!finished && terminationReasons.length === 0) {
+    let deadlineReached = false;
+    let completionObservedAt = null;
+    let completionRecord = null;
+    const completionObserver = request.serialCompletion === undefined ? null :
+        createSerialCompletionObserver(request.serialCompletion.nonce);
+    while (!finished && terminationReasons.length === 0 && completionObservedAt === null) {
         if (request.qmp && (qmpState === "missing" || qmpState === "failed")) {
             terminationReasons.push("qmp-failed");
             break;
@@ -1638,7 +1643,11 @@ export async function runMonitoredQemu(io, request) {
                 lowMemorySince ??= now;
                 if (now - lowMemorySince >= LOW_MEMORY_ABORT_MILLISECONDS) terminationReasons.push("low-memory");
             } else lowMemorySince = null;
-            if (now >= request.executionDeadline) terminationReasons.push("deadline");
+            /*
+             * Deferred rather than pushed here. A completion record observed in this same tick
+             * must be able to win, and it can only be read after the serial checks below.
+             */
+            deadlineReached = now >= request.executionDeadline;
         } catch { terminationReasons.push("telemetry-failed"); }
         /*
          * Boot-liveness: if the guest firmware has dropped to the UEFI shell, Windows will never
@@ -1652,7 +1661,35 @@ export async function runMonitoredQemu(io, request) {
             if (serialLog.status === "captured" && serialTextShowsEfiShellFallback(serialLog.bytesBase64))
                 terminationReasons.push("efi-shell-fallback");
         }
-        if (!finished && terminationReasons.length === 0) await io.wait(RESOURCE_POLL_MILLISECONDS);
+        /*
+         * Last, so every existing failure above already claimed this tick. A channel failure is
+         * not a run failure: it withdraws the trigger and the run falls back to its deadline.
+         * A record first seen in a tick that already reached the deadline does not qualify -
+         * a conservative edge of at most one poll period that can never extend the budget.
+         */
+        if (terminationReasons.length === 0 && completionObserver !== null && !deadlineReached) {
+            const observed = completionObserver.consume((start, maximum) =>
+                io.readOwnedRangeVerified(request.serialCompletion.path, start, maximum));
+            if (observed.completion !== null) {
+                completionObservedAt = io.monotonicMilliseconds();
+                completionRecord = observed.completion.record;
+            }
+        }
+        if (completionObservedAt === null && deadlineReached) terminationReasons.push("deadline");
+        if (!finished && terminationReasons.length === 0 && completionObservedAt === null)
+            await io.wait(RESOURCE_POLL_MILLISECONDS);
+    }
+    /*
+     * The guest said it had published and asked Windows to power off. Give QEMU a bounded chance
+     * to exit by itself, then force the group we already verified. Run 35358547382 shows this
+     * grace expiring is the expected path, not the exception, so it gets its own reason and is
+     * never reported as an ordinary deadline kill.
+     */
+    if (completionObservedAt !== null) {
+        const graceDeadline = completionObservedAt + POST_COMPLETION_EXIT_GRACE_MILLISECONDS;
+        while (!finished && io.monotonicMilliseconds() < graceDeadline)
+            await io.wait(POST_COMPLETION_POLL_MILLISECONDS);
+        if (!finished) terminationReasons.push(POST_COMPLETION_TERMINATION_REASON);
     }
     if (request.qmp && qmpState === "pending" && finished) {
         try { qmpObservation = await qmpSession; qmpState = "complete"; }
@@ -1710,7 +1747,9 @@ export async function runMonitoredQemu(io, request) {
         null;
     const finish = value => {
         const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow,
-            ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord})};
+            ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord}),
+        ...(completionRecord === null ? {} : {serialCompletion: {record: completionRecord,
+            observedAtMs: completionObservedAt}})};
         if (pidfile && io.pathExists(request.pidPath)) {
             if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
                 return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
@@ -1999,7 +2038,7 @@ function assertPortableAncestry(io, portableRoot, fileTargets, directoryTargets 
     }
 }
 
-async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
+async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, context) {
     validateInstallerBootConfirmation(input.bootConfirmation);
     const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input.winpeDiagnostic);
     if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
@@ -2123,6 +2162,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
         executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
         serialLogPath: input.paths.serialLog,
+        ...(isReserved && input.reservation.label === STAGE3_BASELINE_RESERVATION_LABEL ?
+            {serialCompletion: {nonce: context.nonce, path: input.paths.serialLog}} : {}),
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
@@ -2221,7 +2262,19 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
         terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot,
         ...(lateBoot !== null ? {lateBoot} : {})};
-    const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
+    /*
+     * Two disjoint process shapes, never a relaxation of the first. Either QEMU exited cleanly
+     * on its own, or the host observed a valid publication-complete record before the execution
+     * deadline, waited out the exit grace, and then tore down the group it had already verified.
+     * The second shape waives only how the wrapper reported termination: every cleanup proof
+     * still has to hold, and the guest's receipts are still extracted and strictly parsed
+     * afterwards, so this cannot admit a run whose workload did not finish.
+     */
+    const completionTeardownAccepted = monitored.serialCompletion !== undefined
+        && processRecord.terminationReason === POST_COMPLETION_TERMINATION_REASON
+        && processRecord.qemuPidAbsentAfter === true && processRecord.treeGone === true;
+    const guestParsingAllowed = (( processRecord.exitCode === 0 && processRecord.signal === null )
+            || completionTeardownAccepted)
         && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
         && !processRecord.stdoutOverflow && !processRecord.stderrOverflow && earlyBoot !== null;
     const processFlags = {errorObserved: processRecord.errorObserved,
@@ -2326,7 +2379,7 @@ export function createHostedQemuProcessLauncher({context, dependencies = {}}) {
     const io = normalizeDependencies(dependencies);
     const stageStartedMilliseconds = io.monotonicMilliseconds();
     return Object.freeze(async input => {
-        const monitored = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+        const monitored = await launchHostedQemuProcess(io, stageStartedMilliseconds, input, context);
         return {...monitored.result, executionSucceeded: monitored.guestParsingAllowed,
             processFlags: monitored.processFlags};
     });
@@ -3075,7 +3128,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             } catch {
                 preLaunchDiskIdentity = null;
             }
-            const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+            const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input, context);
             const launched = monitoredLaunch.result;
             /*
              * A WinPE diagnostic run collects instead of parsing a guest receipt: the guest it was
@@ -3176,6 +3229,21 @@ export const HOSTED_STAGE2_NATIVE_CONSTANTS = Object.freeze({APT_GET, DPKG_DEB, 
  * closed rather than reading unboundedly.
  */
 export const MAX_SERIAL_OBSERVATION_BYTES = 1024 * 1024;
+/*
+ * How long QEMU may take to exit on its own after the guest published and asked to power off.
+ * This is teardown time, not guest execution time: it starts when the record is observed, which
+ * is necessarily before the execution deadline, so it cannot lengthen the admitted budget.
+ */
+export const POST_COMPLETION_EXIT_GRACE_MILLISECONDS = 30_000;
+const POST_COMPLETION_POLL_MILLISECONDS = 1_000;
+export const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-timeout";
+/*
+ * Only the Stage 3 baseline launch observes completion records, and it is bound to its own
+ * reservation label rather than to a request flag any caller could set. Kept as a literal here
+ * rather than imported from Stage 3, which would pull that whole module into this one's sealed
+ * import closures; a test pins the two strings together.
+ */
+export const STAGE3_BASELINE_RESERVATION_LABEL = "cpu-floor-stage3-baseline";
 export const SERIAL_COMPLETION_FAILURES = Object.freeze({
     recordInvalid: "serial-completion-invalid",
     channelFailed: "serial-channel-failed"

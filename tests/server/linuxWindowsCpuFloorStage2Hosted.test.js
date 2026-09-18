@@ -2153,3 +2153,117 @@ describe("owned serial range reader", () => {
         assert.throws(() => read(linked, 0, 1024), /read bound is invalid/u);
     }));
 });
+
+describe("Stage 3 monitor completion transition", () => {
+    const MONITOR_NONCE = "8a1065a48db13a3f671b2e6824507521";
+    const DIGEST = character => character.repeat(64);
+    const RECORD_LINE = `${COMPLETION_RECORD_PREFIX} ${JSON.stringify({schemaVersion: 1,
+        kind: "myspeed-stage3-publication-complete", nonce: MONITOR_NONCE,
+        baseline: {bytes: "1985", sha256: DIGEST("a")}, cpu: {bytes: "2809", sha256: DIGEST("b")}})}\r\n`;
+    const SERIAL_PATH = "/owned/serial.log";
+    const EXECUTION_DEADLINE = 100_000;
+    const monitorProcess = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
+        qemuPid: 2345, qemuPidAbsentAfter: true, qemuStartTicks: "77", processGroupId: 2300,
+        launcherExecutablePath: "/owned/loader"};
+
+    /*
+     * Drives runMonitoredQemu against a serial log whose contents change as the fake clock advances.
+     * `serialAt(clock)` is the whole log at that moment; `exitAt` is when QEMU's process settles.
+     */
+    const run = async ({serialAt, exitAt = null, exitCode = 0, serialCompletion = true}) => {
+        let finish = null;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let clock = 0;
+        let terminationReason = null;
+        const settle = () => finish({process: {...monitorProcess, exitCode,
+            cleanupProven: true, treeGone: true}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
+        const advance = () => { if (exitAt !== null && clock >= exitAt) settle(); };
+        const result = await runMonitoredQemu({
+            runOwned: (command, argv, options) => {
+                options.onSpawn(2300);
+                options.onTerminationReady(reason => { terminationReason = reason; settle(); });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: () => ({state: "present", pid: 2345, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "8589934592"}),
+            readOwnedPrefixVerified: () => {
+                const bytes = Buffer.from(serialAt(clock), "latin1");
+                return {bytes, identity: {path: SERIAL_PATH, bytes: String(bytes.length),
+                    sha256: "0".repeat(64), observedBytes: String(bytes.length), truncated: false}};
+            },
+            readOwnedRangeVerified: (target, start, maximum) => {
+                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const from = Math.min(start, bytes.length);
+                return {bytes: bytes.subarray(from, Math.min(bytes.length, from + maximum)),
+                    identity: {device: "1", inode: "1", observedBytes: String(bytes.length)}};
+            },
+            monotonicMilliseconds: () => clock,
+            wait: async milliseconds => { clock += milliseconds; advance(); },
+            isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => true
+        }, {command: "/usr/bin/qemu", argv: [], timeoutMs: 1_000_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader",
+            executionDeadline: EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
+            ...(serialCompletion ? {serialCompletion: {nonce: MONITOR_NONCE, path: SERIAL_PATH}} : {}),
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        return {result, terminationReason};
+    };
+
+    it("lets QEMU exit on its own during the grace after a completion record", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n"),
+            exitAt: 30_000});
+        assert.equal(result.terminationReason, null);
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+    });
+
+    it("forces the verified group when QEMU never exits after the record", async () => {
+        const {result, terminationReason} = await run({
+            serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        assert.notEqual(terminationReason, null);
+        /* The run must never be able to claim the guest powered itself off. */
+        assert.equal(result.qmpShutdownEvent, undefined);
+    });
+
+    it("charges the grace to cleanup rather than extending the execution budget", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.ok(result.serialCompletion.observedAtMs < EXECUTION_DEADLINE);
+    });
+
+    it("keeps the ordinary deadline when no record ever appears", async () => {
+        const {result} = await run({serialAt: () => "boot\r\n".repeat(10)});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("keeps the ordinary deadline when the launch did not opt in", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n"),
+            serialCompletion: false});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("lets the EFI shell failure win over a record in the same log", async () => {
+        const {result} = await run({
+            serialAt: () => `UEFI Interactive Shell v2.2\r\nShell> \r\n${RECORD_LINE}`});
+        assert.equal(result.terminationReason, "efi-shell-fallback");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("refuses to transition on a record first seen at or after the execution deadline", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= EXECUTION_DEADLINE ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("supplies no trigger when the completion channel itself fails", async () => {
+        const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+});
