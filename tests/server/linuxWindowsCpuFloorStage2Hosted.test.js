@@ -2135,8 +2135,11 @@ describe("owned serial range reader", () => {
         fs.writeFileSync(target, "abcdefghij");
         assert.equal(read(target, 2, 3).bytes.toString("latin1"), "cde");
         const before = read(target, 0, 1024).identity.inode;
-        fs.rmSync(target);
-        fs.writeFileSync(target, "replaced\n");
+        /* Build the replacement while the original still holds its inode, so the number cannot
+         * be recycled into it: unlinking first lets ext4 hand the same inode straight back. */
+        const replacement = path.join(root, "replacement.log");
+        fs.writeFileSync(replacement, "replaced\n");
+        fs.renameSync(replacement, target);
         assert.notEqual(read(target, 0, 1024).identity.inode, before);
     }));
 

@@ -3258,9 +3258,13 @@ const ASCII_MAXIMUM = 0x7f;
  * the last consumed offset instead, and keeps only a partial trailing line between ticks.
  *
  * Everything here fails closed. A tick that cannot read at all is not a failure - the log may
- * simply not exist yet - and simply yields no trigger. A log that was replaced, shrank, carried
- * a non-ASCII byte, ran past the record bound on one line, or exhausted the total cap is a
- * latched channel failure, and a latched failure is never cleared by a later valid record.
+ * simply not exist yet - and simply yields no trigger. A log whose device or inode changed, that
+ * shrank below what was already consumed, that carried a non-ASCII byte, that ran past the record
+ * bound on one line, or that exhausted the total cap is a latched channel failure, and a latched
+ * failure is never cleared by a later valid record. Identity is pinned on the first readable tick
+ * and compared on every later one, so a replacement is caught unless it both reuses the inode and
+ * is at least as long as the bytes already consumed. That residue cannot promote a run: the record
+ * only lets the host stop waiting, and the guest receipts are still parsed strictly afterwards.
  */
 export function createSerialCompletionObserver(nonce) {
     let identity = null;
