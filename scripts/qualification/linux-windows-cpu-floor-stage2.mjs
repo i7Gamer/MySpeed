@@ -13,6 +13,28 @@ import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHand
 const SCHEMA_VERSION = 1;
 export const MAX_STAGE2_RESULT_BYTES = 4_194_304;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
+/*
+ * The guest firmware exhausted every real boot option and BDS fell back to the UEFI shell, so
+ * Windows will never boot. The internal shell is BDS's last resort - it loads Boot000n
+ * "EFI Internal Shell" and prints its banner - and neither string appears on any successful boot
+ * path, so matching either one (after ANSI CSI stripping) is a definitive boot-failure signal and
+ * never a false positive on a slow-but-progressing boot. Both the Stage 2 monitor (to abort the run
+ * within a poll tick instead of after the ~25-minute deadline) and the failure classifier (to name
+ * the cause instead of the generic "did not complete cleanly") key off this one pattern.
+ */
+export const EFI_SHELL_FALLBACK_PATTERN = /EFI Internal Shell|UEFI Interactive Shell/u;
+export const EFI_SHELL_FAILURE_MESSAGE = "guest did not boot Windows (dropped to UEFI shell)";
+const ANSI_CSI_PATTERN = /\x1b\[[0-9;=?]*[A-Za-z]/gu;
+const ANSI_ESCAPE_CHARACTER = "\x1b";
+export function serialTextShowsEfiShellFallback(bytesBase64) {
+    if (typeof bytesBase64 !== "string") return false;
+    let text;
+    try { text = Buffer.from(bytesBase64, "base64").toString("latin1"); } catch { return false; }
+    // Only pay for the ANSI strip when an escape sequence is actually present; a
+    // clean serial capture (the common poll-tick case) skips the full-string copy.
+    const stripped = text.includes(ANSI_ESCAPE_CHARACTER) ? text.replace(ANSI_CSI_PATTERN, " ") : text;
+    return EFI_SHELL_FALLBACK_PATTERN.test(stripped);
+}
 const MAX_SYSTEM_TOOL_BYTES = 268_435_456n;
 export const WINDOWS_SYSTEM_TOOL_PATHS = deepFreeze([
     {role: "msiexec", path: "C:\\Windows\\System32\\msiexec.exe"},
@@ -1314,10 +1336,17 @@ function failure(context, stage, error, cleanupProven = true, diagnosticExit = n
                 ...(error.guestFailure === null || error.guestFailure === undefined ? {} :
                     {guestFailure: structuredClone(error.guestFailure)})
             } : {};
+    /*
+     * A UEFI-shell boot failure carries its own captured serial evidence; name it explicitly so the
+     * top-line failure says why the guest never booted instead of the generic launch message. The
+     * serial evidence itself is left untouched - this only chooses the human-readable string.
+     */
+    const bootFailure = stage === "qemu-launch" && diagnosticFields.qemuLaunch?.serialLog?.status === "captured" &&
+        serialTextShowsEfiShellFallback(diagnosticFields.qemuLaunch.serialLog.bytesBase64) ? EFI_SHELL_FAILURE_MESSAGE : null;
     const baseResult = {schemaVersion: SCHEMA_VERSION, status: "failed", stage,
         classification: diagnosticExit?.classification ?? CLASSIFICATION,
         qualifying: false, releaseGateCleared: false, cpuCalibrationAccepted: false, cleanupProven,
-        context: structuredClone(context), failure: message || "unspecified failure", ...diagnosticFields};
+        context: structuredClone(context), failure: bootFailure ?? (message || "unspecified failure"), ...diagnosticFields};
     if (stage === "qemu-launch" && (error instanceof QemuLaunchError || error instanceof GuestBootstrapError) &&
         error.lateBoot !== null && error.lateBoot !== undefined) {
         const candidateResult = {...baseResult, qemuLateBoot: structuredClone(error.lateBoot)};

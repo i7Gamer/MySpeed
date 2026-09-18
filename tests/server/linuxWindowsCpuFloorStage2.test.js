@@ -819,6 +819,38 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.equal("qemuLaunch" in rejectedResult, false);
     });
 
+    it("attributes a UEFI-shell boot failure instead of the generic QEMU message", async () => {
+        const stderr = Buffer.from("qemu-system-x86_64: warning: host feature\n");
+        const process = {exitCode: 137, signal: null, timedOut: false, cleanupProven: false, treeGone: false,
+            qemuPid: 2345, qemuStartTicks: "77", launcherExecutablePath: toolchain().runtime.loader.path,
+            processGroupId: 2300, qemuPidAbsentAfter: true, terminationReason: null};
+        const base = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic", process: structuredClone(process),
+            processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false}, monitorFailure: null,
+            stderr: {bytes: String(stderr.length), sha256: HASH(stderr), bytesBase64: stderr.toString("base64")}};
+        const withSerial = (bytes) => ({...structuredClone(base), serialLog: {status: "captured",
+            bytes: String(bytes.length), sha256: HASH(bytes), bytesBase64: bytes.toString("base64"),
+            observedBytes: String(bytes.length), truncated: false}});
+        // The guest fell to the UEFI shell (Windows never booted): the top-line names it.
+        const shellSerial = Buffer.from('BdsDxe: loading Boot0003 "EFI Internal Shell"\r\n\x1b[0mUEFI Interactive Shell v2.2\r\nShell> ');
+        const shellDiagnostic = withSerial(shellSerial);
+        const shellFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: shellDiagnostic})});
+        const shellResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, shellFixture.op);
+        assert.equal(shellResult.status, "failed");
+        assert.equal(shellResult.stage, "qemu-launch");
+        assert.equal(shellResult.failure, "guest did not boot Windows (dropped to UEFI shell)");
+        // The classifier reads the serial evidence but never mutates it.
+        assert.deepEqual(shellResult.qemuLaunch, shellDiagnostic);
+        // A benign serial capture (ordinary boot line) keeps the generic message.
+        const benignDiagnostic = withSerial(Buffer.from("BdsDxe: loading Boot0001 UEFI QEMU DVD-ROM\r\n"));
+        const benignFixture = operations({launchOwnedQemu: async input => ({process, argv: input.argv,
+            earlyBoot: earlyBoot(), guest: null, failureDiagnostic: benignDiagnostic})});
+        const benignResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
+            paths: paths(), probeArtifact: probeArtifact()}, benignFixture.op);
+        assert.equal(benignResult.failure, "QEMU process did not complete cleanly");
+    });
+
     it("rejects changed package bodies and an unbound probe artifact before media acquisition", async () => {
         const changedPackage = operations({acquirePackages: async input => {
             const result = {complete: true, packages: input.packageClosure.packages.map(value => ({reference:
