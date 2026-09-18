@@ -77,6 +77,15 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(step.run, /tail -n 40 "\$log_root\/controller\.stderr"/u);
         assert.match(step.run, />> "\$GITHUB_STEP_SUMMARY"/u);
         assert.match(step.run, /exit "\$sequence_exit"/u);
+        // The reason must retain status and stage even when failure is empty (not collapse to status alone).
+        assert.match(step.run, /r\.status \?\? "unknown"/u);
+        assert.match(step.run, /\(stage \$\{r\.stage\}\)/u);
+        assert.match(step.run, /: \$\{r\.failure\}/u);
+        // The workflow-command message must escape %, CR and LF so Actions parsing cannot be broken or truncated.
+        assert.match(step.run, /escaped_reason=\$\{failure_reason\/\/'%'\/'%25'\}/u);
+        assert.match(step.run, /\$'\\r'\/'%0D'/u);
+        assert.match(step.run, /\$'\\n'\/'%0A'/u);
+        assert.match(step.run, /::error::Stage 3 sequence failed \(exit \$sequence_exit\): \$escaped_reason/u);
     });
 
     it("authenticates and safely extracts the exact prior probe artifact", () => {

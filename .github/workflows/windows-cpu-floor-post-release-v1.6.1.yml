@@ -528,9 +528,13 @@ jobs:
             result_json="$transport_root/stage3-sequence-result.json"
             failure_reason="(stage3-sequence-result.json not found)"
             if [ -f "$result_json" ]; then
-              failure_reason=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));process.stdout.write(String(r.failure??r.status??"unknown"))}catch(e){process.stdout.write("unreadable result: "+e.message)}' "$result_json")
+              failure_reason=$(node -e 'try{const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));const status=r.status ?? "unknown";const stage=(typeof r.stage==="string"&&r.stage)?` (stage ${r.stage})`:"";const failure=(typeof r.failure==="string"&&r.failure)?`: ${r.failure}`:"";process.stdout.write(`${status}${stage}${failure}`)}catch(e){process.stdout.write("unreadable result: "+e.message)}' "$result_json")
             fi
-            echo "::error::Stage 3 sequence failed (exit $sequence_exit): $failure_reason"
+            # Escape %, CR and LF so the workflow-command data cannot break Actions parsing or truncate.
+            escaped_reason=${failure_reason//'%'/'%25'}
+            escaped_reason=${escaped_reason//$'\r'/'%0D'}
+            escaped_reason=${escaped_reason//$'\n'/'%0A'}
+            echo "::error::Stage 3 sequence failed (exit $sequence_exit): $escaped_reason"
             echo "=== stage 3 failure reason ==="
             echo "$failure_reason"
             echo "=== controller.stderr (last 40 lines) ==="
