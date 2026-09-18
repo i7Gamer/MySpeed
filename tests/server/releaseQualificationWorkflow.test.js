@@ -89,6 +89,15 @@ describe('read-only release qualification', () => {
         assert.doesNotMatch(source, /createRelease|uploadReleaseAsset|deleteRelease|docker\/login-action|push:\s*true|git\s+(?:tag|push)/);
     });
 
+    it('runs the full suite as the trusted Dependabot caller so the tests result is never skipped', () => {
+        const config = workflow('qualify-release');
+        // The qualification run owns the suite for a same-repo Dependabot PR; without this flag
+        // test.yml's Dependabot guard skips every test job and the seal step below fails on
+        // tests=skipped. It must stay set so the mandatory tests evidence is genuinely produced.
+        assert.equal(config.jobs.tests.uses, './.github/workflows/test.yml');
+        assert.equal(config.jobs.tests.with['dependabot-call'], true);
+    });
+
     it('requires every test, binary, MSI, Docker and ICE result before publishing its manifest', () => {
         const config = workflow('qualify-release');
         const summary = config.jobs.summary;
