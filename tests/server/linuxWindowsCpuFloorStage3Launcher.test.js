@@ -366,7 +366,7 @@ describe("Windows CPU-floor Stage 3 trusted launcher", () => {
                 verifyClosure: () => ({valid: true}), buildStage2Request: () => ({}),
                 buildStage3Template: () => ({}), buildStage3Request: () => ({}),
                 buildSequenceRequest: () => ({}), runSequence: async () => refused
-            }), /Stage 3 sequence did not produce an observed result/u);
+            }), /Stage 3 sequence did not produce an observed result \(stage qemu-launch\): baseline QEMU cleanup was not proven/u);
             assert.deepEqual(JSON.parse(fs.readFileSync(path.join(transportRoot,
                 STAGE3_LAUNCHER_CONSTANTS.STAGE3_RESULT_FILE), "utf8")), refused);
             const manifest = JSON.parse(fs.readFileSync(path.join(transportRoot,

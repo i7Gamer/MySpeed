@@ -342,7 +342,16 @@ export async function executeStage3Launcher(options, dependencies = {}) {
                 STAGE3_SEQUENCE_CONSTANTS.MAX_EVIDENCE_BYTES);
         }
         if (!sequenceResult || sequenceResult.status !== "observed") {
-            throw new Error("Stage 3 sequence did not produce an observed result");
+            /*
+             * The refused result carries the stage that failed and its bounded message. Surface both on the
+             * thrown error so the CI stderr tail names the real reason instead of only this generic sentence;
+             * the full result is already retained to STAGE3_RESULT_FILE above for the evidence bundle.
+             */
+            const stageDetail = sequenceResult && typeof sequenceResult.stage === "string" ?
+                ` (stage ${sequenceResult.stage})` : "";
+            const failureDetail = sequenceResult && typeof sequenceResult.failure === "string" &&
+                sequenceResult.failure ? `: ${sequenceResult.failure}` : "";
+            throw new Error(`Stage 3 sequence did not produce an observed result${stageDetail}${failureDetail}`);
         }
         const stage2Path = path.join(transportRoot, "stage2-result.json");
         const guestResultPath = path.join(transportRoot, "guest-result.json");

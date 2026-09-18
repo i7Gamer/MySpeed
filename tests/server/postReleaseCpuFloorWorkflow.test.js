@@ -64,6 +64,30 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(step.run, /privileged-result\.json/u);
     });
 
+    it("surfaces the Stage 3 failure reason to the CI log and step summary without an artifact download", () => {
+        const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
+        const step = workflow.jobs.execute.steps.find(value => value.name ===
+            "Run authenticated launcher from sealed closure");
+        // On a non-zero sequence exit the step must read the retained result, echo the reason and a
+        // controller.stderr tail to the CI log, write them to the step summary, and still exit with the
+        // real code so the diagnostics never depend on downloading the multi-gigabyte evidence bundle.
+        assert.match(step.run, /if \[ "\$sequence_exit" -ne 0 \]; then/u);
+        assert.match(step.run, /stage3-sequence-result\.json/u);
+        assert.match(step.run, /::error::Stage 3 sequence failed/u);
+        assert.match(step.run, /tail -n 40 "\$log_root\/controller\.stderr"/u);
+        assert.match(step.run, />> "\$GITHUB_STEP_SUMMARY"/u);
+        assert.match(step.run, /exit "\$sequence_exit"/u);
+        // The reason must retain status and stage even when failure is empty (not collapse to status alone).
+        assert.match(step.run, /r\.status \?\? "unknown"/u);
+        assert.match(step.run, /\(stage \$\{r\.stage\}\)/u);
+        assert.match(step.run, /: \$\{r\.failure\}/u);
+        // The workflow-command message must escape %, CR and LF so Actions parsing cannot be broken or truncated.
+        assert.match(step.run, /escaped_reason=\$\{failure_reason\/\/'%'\/'%25'\}/u);
+        assert.match(step.run, /\$'\\r'\/'%0D'/u);
+        assert.match(step.run, /\$'\\n'\/'%0A'/u);
+        assert.match(step.run, /::error::Stage 3 sequence failed \(exit \$sequence_exit\): \$escaped_reason/u);
+    });
+
     it("authenticates and safely extracts the exact prior probe artifact", () => {
         const workflow = parse(fs.readFileSync(WORKFLOW_PATH, "utf8"));
         const step = workflow.jobs.execute.steps.find(value => value.name ===
