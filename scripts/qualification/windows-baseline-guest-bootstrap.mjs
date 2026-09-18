@@ -28,6 +28,20 @@ const EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
 const EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS = 5_000;
 const SHUTDOWN_OUTCOME_NAME = "baseline-shutdown-outcome.json";
 const SHUTDOWN_STAGE = "guest-shutdown";
+/*
+ * The publication-complete serial record. It is not shutdown evidence: it says only that both
+ * exclusive publications returned and the guest is about to request a power-off, which is the one
+ * moment the host can observe live over the already-wired COM1 file chardev. Run 35358547382
+ * published a valid receipt at 15:39:52 and Windows then stayed up until the host's 16:10:52
+ * deadline, so the host needs a signal that does not depend on the power-off ever completing.
+ * The record only ever buys permission to stop waiting; the receipts it names are still extracted
+ * and strictly parsed after cleanup, so a forged or premature line cannot create a success.
+ */
+export const COMPLETION_RECORD_PREFIX = "MYSPEED-STAGE3-COMPLETE-V1";
+const COMPLETION_RECORD_KIND = "myspeed-stage3-publication-complete";
+const COMPLETION_RECORD_SCHEMA_VERSION = 1;
+export const MAX_COMPLETION_RECORD_BYTES = 768;
+const COMPLETION_SERIAL_DEVICE = "\\\\.\\COM1";
 const SUCCESS_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
 
@@ -324,6 +338,10 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$EXPECTED_NONCE $Root (Join-Path $env:SystemRoot 'Temp')},` +
         `[scriptblock]$RemoveInputs={param($Seed,$Root)Remove-MyspeedBaselineInputs $Seed $Root},` +
         `[scriptblock]$Publish={param($Path,$Bytes)Write-MyspeedExclusive $Path $Bytes},` +
+        `[scriptblock]$EmitCompletion={param([string]$Line)$serial=[IO.File]::Open('${COMPLETION_SERIAL_DEVICE}',` +
+        `[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None);try{` +
+        `$serialBytes=[Text.ASCIIEncoding]::new().GetBytes($Line+"\`r\`n");` +
+        `$serial.Write($serialBytes,0,$serialBytes.Length);$serial.Flush()}finally{$serial.Dispose()}},` +
         `[scriptblock]$Shutdown={Stop-Computer -Force}){` +
         `$failure=$null;$failureStage='guest-bootstrap';$boundary=$null;$publicationOutput=$null;` +
         `$cpuOperations=$null;$cpu=$null;$baselineBytes=$null;$baselineStatus='unavailable';` +
@@ -368,7 +386,15 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `if($publicationOutput-is[string]-and$publicationOutput.Length-gt 0){if($null-eq$failure){` +
         `try{& $Publish (Join-Path $publicationOutput '${RESULT_NAME}') $baselineBytes;` +
         `$cpuBytes=[Text.UTF8Encoding]::new($false).GetBytes(($cpu|ConvertTo-Json -Compress -Depth 8));` +
-        `& $Publish (Join-Path $publicationOutput '${CPU_RESULT_NAME}') $cpuBytes}catch{$failure=$_;$failureStage='publication'}};` +
+        `& $Publish (Join-Path $publicationOutput '${CPU_RESULT_NAME}') $cpuBytes;` +
+        `$completionDigest={param([byte[]]$Value)$completionStream=[IO.MemoryStream]::new($Value,$false);` +
+        `try{Get-MyspeedBaselineSha $completionStream}finally{$completionStream.Dispose()}};` +
+        `$completion=[ordered]@{schemaVersion=${COMPLETION_RECORD_SCHEMA_VERSION};kind='${COMPLETION_RECORD_KIND}';` +
+        `nonce=$EXPECTED_NONCE;baseline=[ordered]@{bytes=[string]$baselineBytes.Length;sha256=(& $completionDigest $baselineBytes)};` +
+        `cpu=[ordered]@{bytes=[string]$cpuBytes.Length;sha256=(& $completionDigest $cpuBytes)}};` +
+        `$completionLine='${COMPLETION_RECORD_PREFIX} '+($completion|ConvertTo-Json -Compress -Depth 4);` +
+        `if($completionLine.Length-le ${MAX_COMPLETION_RECORD_BYTES}){try{& $EmitCompletion $completionLine}catch{}}` +
+        `}catch{$failure=$_;$failureStage='publication'}};` +
         `if($null-ne$failure){if($baselineStatus-ceq'failed'-and$baselineBytes-is[byte[]]){` +
         `try{& $Publish (Join-Path $publicationOutput '${RESULT_NAME}') $baselineBytes}catch{}};` +
         `$retained=[Collections.Generic.List[string]]::new();foreach($diagnostic in @($diagnostics)){` +
@@ -408,6 +434,60 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
 }
 
 export const WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS = Object.freeze({CPU_RESULT_NAME, EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS,
+    COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, COMPLETION_RECORD_SCHEMA_VERSION,
+    COMPLETION_SERIAL_DEVICE, MAX_COMPLETION_RECORD_BYTES,
     EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS, SHUTDOWN_OUTCOME_NAME, SHUTDOWN_STAGE,
     EXECUTOR_TIMEOUT_MILLISECONDS, MAX_CANDIDATE_BYTES, MAX_FAILURE_CHARACTERS, MAX_FIXTURE_BYTES, MAX_RESULT_BYTES,
     MAX_STREAM_BYTES, PROFILE, RESULT_NAME});
+
+export const COMPLETION_RECORD_REJECTIONS = Object.freeze({
+    payloadOversized: "payload-oversized",
+    payloadMalformed: "payload-malformed",
+    schemaDiffers: "schema-differs",
+    kindDiffers: "kind-differs",
+    nonceDiffers: "nonce-differs",
+    keysDiffer: "keys-differ",
+    identityDiffers: "identity-differs"
+});
+
+const COMPLETION_RECORD_KEYS = Object.freeze(["schemaVersion", "kind", "nonce", "baseline", "cpu"]);
+const COMPLETION_IDENTITY_KEYS = Object.freeze(["bytes", "sha256"]);
+const CANONICAL_BYTE_COUNT = /^[1-9][0-9]*$/u;
+const LOWERCASE_SHA256 = /^[0-9a-f]{64}$/u;
+const PRINTABLE_ASCII = /^[\x20-\x7e]*$/u;
+
+const refuse = reason => ({status: "invalid", reason});
+const exactKeys = (value, keys) => value !== null && typeof value === "object" && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+const identityValued = value => typeof value.bytes === "string" && CANONICAL_BYTE_COUNT.test(value.bytes) &&
+    typeof value.sha256 === "string" && LOWERCASE_SHA256.test(value.sha256);
+
+/*
+ * The host side of the record the guest emits above. A line that is not prefixed is not a marker
+ * at all and is simply not ours (`null`); a prefixed line that fails any clause is a refusal, never
+ * something to skip past, so a forged or corrupted marker cannot be mistaken for silence. Nothing
+ * here decides whether the run passed: the two identities are claims, checked later against the
+ * receipts actually extracted after QEMU is gone and strictly parsed there.
+ */
+export function parseCompletionRecord(line, nonce) {
+    if (typeof line !== "string" || !line.startsWith(`${COMPLETION_RECORD_PREFIX} `)) return null;
+    if (line.length > MAX_COMPLETION_RECORD_BYTES) return refuse(COMPLETION_RECORD_REJECTIONS.payloadOversized);
+    if (!PRINTABLE_ASCII.test(line)) return refuse(COMPLETION_RECORD_REJECTIONS.payloadMalformed);
+    let record = null;
+    try { record = JSON.parse(line.slice(COMPLETION_RECORD_PREFIX.length + 1)); }
+    catch { return refuse(COMPLETION_RECORD_REJECTIONS.payloadMalformed); }
+    if (record === null || typeof record !== "object" || Array.isArray(record))
+        return refuse(COMPLETION_RECORD_REJECTIONS.payloadMalformed);
+    if (!exactKeys(record, COMPLETION_RECORD_KEYS)) return refuse(COMPLETION_RECORD_REJECTIONS.keysDiffer);
+    if (record.schemaVersion !== COMPLETION_RECORD_SCHEMA_VERSION)
+        return refuse(COMPLETION_RECORD_REJECTIONS.schemaDiffers);
+    if (record.kind !== COMPLETION_RECORD_KIND) return refuse(COMPLETION_RECORD_REJECTIONS.kindDiffers);
+    if (record.nonce !== nonce) return refuse(COMPLETION_RECORD_REJECTIONS.nonceDiffers);
+    if (!exactKeys(record.baseline, COMPLETION_IDENTITY_KEYS) ||
+        !exactKeys(record.cpu, COMPLETION_IDENTITY_KEYS)) return refuse(COMPLETION_RECORD_REJECTIONS.keysDiffer);
+    if (!identityValued(record.baseline) || !identityValued(record.cpu))
+        return refuse(COMPLETION_RECORD_REJECTIONS.identityDiffers);
+    return {status: "valid", record: {nonce: record.nonce,
+        baseline: {bytes: record.baseline.bytes, sha256: record.baseline.sha256},
+        cpu: {bytes: record.cpu.bytes, sha256: record.cpu.sha256}}};
+}

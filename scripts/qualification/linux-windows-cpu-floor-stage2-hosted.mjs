@@ -19,6 +19,8 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     validateQmpShutdownEventDiagnostic,
     serialTextShowsEfiShellFallback,
     winpeDiagnosticOutputMarker} from "./linux-windows-cpu-floor-stage2.mjs";
+import {COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES, parseCompletionRecord} from
+    "./windows-baseline-guest-bootstrap.mjs";
 import {runEarlyBootQmpSession, validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput,
     validatePredeadlineScreenshotPath, PREDEADLINE_FRAME_FILENAME,
@@ -1622,7 +1624,12 @@ export async function runMonitoredQemu(io, request) {
         terminationReasons.push("identity-observation-failed");
     }
     let lowMemorySince = null;
-    while (!finished && terminationReasons.length === 0) {
+    let deadlineReached = false;
+    let completionObservedAt = null;
+    let completionRecord = null;
+    const completionObserver = request.serialCompletion === undefined ? null :
+        createSerialCompletionObserver(request.serialCompletion.nonce);
+    while (!finished && terminationReasons.length === 0 && completionObservedAt === null) {
         if (request.qmp && (qmpState === "missing" || qmpState === "failed")) {
             terminationReasons.push("qmp-failed");
             break;
@@ -1636,7 +1643,11 @@ export async function runMonitoredQemu(io, request) {
                 lowMemorySince ??= now;
                 if (now - lowMemorySince >= LOW_MEMORY_ABORT_MILLISECONDS) terminationReasons.push("low-memory");
             } else lowMemorySince = null;
-            if (now >= request.executionDeadline) terminationReasons.push("deadline");
+            /*
+             * Deferred rather than pushed here. A completion record observed in this same tick
+             * must be able to win, and it can only be read after the serial checks below.
+             */
+            deadlineReached = now >= request.executionDeadline;
         } catch { terminationReasons.push("telemetry-failed"); }
         /*
          * Boot-liveness: if the guest firmware has dropped to the UEFI shell, Windows will never
@@ -1650,7 +1661,36 @@ export async function runMonitoredQemu(io, request) {
             if (serialLog.status === "captured" && serialTextShowsEfiShellFallback(serialLog.bytesBase64))
                 terminationReasons.push("efi-shell-fallback");
         }
-        if (!finished && terminationReasons.length === 0) await io.wait(RESOURCE_POLL_MILLISECONDS);
+        /*
+         * Last, so every existing failure above already claimed this tick. A channel failure is
+         * not a run failure: it withdraws the trigger and the run falls back to its deadline.
+         * A record first seen in a tick that already reached the deadline does not qualify -
+         * a conservative edge of at most one poll period that can never extend the budget.
+         */
+        if (terminationReasons.length === 0 && completionObserver !== null && !deadlineReached) {
+            const observed = completionObserver.consume((start, maximum) =>
+                io.readOwnedRangeVerified(request.serialCompletion.path, start, maximum));
+            if (observed.completion !== null) {
+                completionObservedAt = io.monotonicMilliseconds();
+                completionRecord = observed.completion.record;
+            }
+        }
+        if (completionObservedAt === null && deadlineReached && terminationReasons.length === 0)
+            terminationReasons.push("deadline");
+        if (!finished && terminationReasons.length === 0 && completionObservedAt === null)
+            await io.wait(RESOURCE_POLL_MILLISECONDS);
+    }
+    /*
+     * The guest said it had published and asked Windows to power off. Give QEMU a bounded chance
+     * to exit by itself, then force the group we already verified. Run 35358547382 shows this
+     * grace expiring is the expected path, not the exception, so it gets its own reason and is
+     * never reported as an ordinary deadline kill.
+     */
+    if (completionObservedAt !== null) {
+        const graceDeadline = completionObservedAt + POST_COMPLETION_EXIT_GRACE_MILLISECONDS;
+        while (!finished && io.monotonicMilliseconds() < graceDeadline)
+            await io.wait(POST_COMPLETION_POLL_MILLISECONDS);
+        if (!finished) terminationReasons.push(POST_COMPLETION_TERMINATION_REASON);
     }
     if (request.qmp && qmpState === "pending" && finished) {
         try { qmpObservation = await qmpSession; qmpState = "complete"; }
@@ -1708,7 +1748,9 @@ export async function runMonitoredQemu(io, request) {
         null;
     const finish = value => {
         const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow,
-            ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord})};
+            ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord}),
+        ...(completionRecord === null ? {} : {serialCompletion: {record: completionRecord,
+            observedAtMs: completionObservedAt}})};
         if (pidfile && io.pathExists(request.pidPath)) {
             if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
                 return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
@@ -1774,6 +1816,53 @@ function displayProgressVerdict(earlyBoot, milestones) {
     return digests.some((digest, index) => index > 0 && digest !== digests[index - 1]);
 }
 
+/*
+ * Bytes from an offset of a file that is still being appended to. This deliberately does not
+ * demand the size stability `defaultReadOwnedPrefixVerified` requires: the serial log grows
+ * under us by design, and treating growth as tampering is what makes that reader report
+ * "unavailable" mid-append. Every other identity check it makes is kept, so a replaced, relinked
+ * or re-owned file is still refused, and the caller is handed the observed size so it can refuse
+ * a file that shrank.
+ */
+export function defaultReadOwnedRangeVerified(target, start, maximumBytes) {
+    if (!Number.isInteger(start) || start < 0) throw new TypeError("owned range start is invalid");
+    if (!Number.isInteger(maximumBytes) || maximumBytes < 1)
+        throw new TypeError("owned range maximum is invalid");
+    const lexical = fs.lstatSync(target);
+    if (!lexical.isFile()) throw new Error("owned range path is not an ordinary file");
+    const canonical = fs.realpathSync(target);
+    const resolved = fs.lstatSync(canonical);
+    if (!resolved.isFile() || lexical.dev !== resolved.dev || lexical.ino !== resolved.ino)
+        throw new Error("owned range path identity is invalid");
+    const descriptor = fs.openSync(canonical, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        const observed = fs.fstatSync(descriptor);
+        if (!observed.isFile() || observed.nlink !== 1) throw new Error("owned range read bound is invalid");
+        if (observed.dev !== lexical.dev || observed.ino !== lexical.ino || observed.uid !== lexical.uid ||
+            observed.gid !== lexical.gid || observed.mode !== lexical.mode)
+            throw new Error("owned range descriptor identity is invalid");
+        const from = Math.min(start, observed.size);
+        const bytes = Buffer.allocUnsafe(Math.min(observed.size - from, maximumBytes));
+        let offset = 0;
+        while (offset < bytes.length) {
+            const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, from + offset);
+            if (count <= 0) throw new Error("owned range read was truncated");
+            offset += count;
+        }
+        /*
+         * The same post-read re-verification the prefix reader performs, minus the two fields a
+         * growing log necessarily changes. Dropping size stability is the point of this reader;
+         * dropping the rest would let a same-inode chmod, chown or relink pass unnoticed.
+         */
+        const after = fs.fstatSync(descriptor);
+        if (after.dev !== observed.dev || after.ino !== observed.ino || after.uid !== observed.uid ||
+            after.gid !== observed.gid || after.mode !== observed.mode || after.nlink !== observed.nlink)
+            throw new Error("owned range changed while reading");
+        if (after.size < observed.size) throw new Error("owned range shrank while reading");
+        return {bytes, identity: {device: String(observed.dev), inode: String(observed.ino),
+            observedBytes: String(observed.size)}};
+    } finally { fs.closeSync(descriptor); }
+}
 function normalizeDependencies(value) {
     const normalized = {mkdirExclusive: value.mkdirExclusive ?? defaultMkdirExclusive,
         writeExclusive: value.writeExclusive ?? defaultWriteExclusive,
@@ -1783,6 +1872,7 @@ function normalizeDependencies(value) {
         inspectDirectory: value.inspectDirectory ?? defaultInspectDirectory,
         readOwnedVerified: value.readOwnedVerified ?? defaultReadOwnedVerified,
         readOwnedPrefixVerified: value.readOwnedPrefixVerified ?? defaultReadOwnedPrefixVerified,
+        readOwnedRangeVerified: value.readOwnedRangeVerified ?? defaultReadOwnedRangeVerified,
         createOwnedPidFile: value.createOwnedPidFile ?? defaultCreateOwnedPidFile,
         readOwnedPidFile: value.readOwnedPidFile ?? defaultReadOwnedPidFile,
         removeOwnedPidFile: value.removeOwnedPidFile ?? defaultRemoveOwnedPidFile,
@@ -1949,7 +2039,7 @@ function assertPortableAncestry(io, portableRoot, fileTargets, directoryTargets 
     }
 }
 
-async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
+async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, context) {
     validateInstallerBootConfirmation(input.bootConfirmation);
     const winpeDiagnostic = validateWinpeDiagnosticAuthorization(input.winpeDiagnostic);
     if (input.privilegeMode !== "ordinary-kvm" && input.privilegeMode !== "reviewed-sudo-kvm")
@@ -2073,6 +2163,8 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         expectedExecutable: input.toolchain.runtime.loader.path, maxStreamBytes: QEMU_STREAM_BYTES,
         executionDeadline, precreatePidFile: input.privilegeMode === "reviewed-sudo-kvm",
         serialLogPath: input.paths.serialLog,
+        ...(isReserved && input.reservation.label === STAGE3_BASELINE_RESERVATION_LABEL ?
+            {serialCompletion: {nonce: context.nonce, path: input.paths.serialLog}} : {}),
         resources: {taskPath: path.posix.dirname(input.paths.root),
             roots: [input.paths.root, input.paths.portableRoot]},
         qmp: {screenshotPaths, ...(lateScreenshotPaths !== null ? {lateScreenshotPaths} : {}),
@@ -2171,7 +2263,19 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input) {
         qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
         terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot,
         ...(lateBoot !== null ? {lateBoot} : {})};
-    const guestParsingAllowed = processRecord.exitCode === 0 && processRecord.signal === null
+    /*
+     * Two disjoint process shapes, never a relaxation of the first. Either QEMU exited cleanly
+     * on its own, or the host observed a valid publication-complete record before the execution
+     * deadline, waited out the exit grace, and then tore down the group it had already verified.
+     * The second shape waives only how the wrapper reported termination: every cleanup proof
+     * still has to hold, and the guest's receipts are still extracted and strictly parsed
+     * afterwards, so this cannot admit a run whose workload did not finish.
+     */
+    const completionTeardownAccepted = monitored.serialCompletion !== undefined
+        && processRecord.terminationReason === POST_COMPLETION_TERMINATION_REASON
+        && processRecord.qemuPidAbsentAfter === true && processRecord.treeGone === true;
+    const guestParsingAllowed = (( processRecord.exitCode === 0 && processRecord.signal === null )
+            || completionTeardownAccepted)
         && !processRecord.timedOut && processRecord.cleanupProven && !processRecord.errorObserved
         && !processRecord.stdoutOverflow && !processRecord.stderrOverflow && earlyBoot !== null;
     const processFlags = {errorObserved: processRecord.errorObserved,
@@ -2276,7 +2380,7 @@ export function createHostedQemuProcessLauncher({context, dependencies = {}}) {
     const io = normalizeDependencies(dependencies);
     const stageStartedMilliseconds = io.monotonicMilliseconds();
     return Object.freeze(async input => {
-        const monitored = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+        const monitored = await launchHostedQemuProcess(io, stageStartedMilliseconds, input, context);
         return {...monitored.result, executionSucceeded: monitored.guestParsingAllowed,
             processFlags: monitored.processFlags};
     });
@@ -3025,7 +3129,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             } catch {
                 preLaunchDiskIdentity = null;
             }
-            const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input);
+            const monitoredLaunch = await launchHostedQemuProcess(io, stageStartedMilliseconds, input, context);
             const launched = monitoredLaunch.result;
             /*
              * A WinPE diagnostic run collects instead of parsing a guest receipt: the guest it was
@@ -3118,3 +3222,92 @@ export const HOSTED_STAGE2_NATIVE_CONSTANTS = Object.freeze({APT_GET, DPKG_DEB, 
     RESOURCE_POLL_MILLISECONDS,
     LOW_MEMORY_ABORT_MILLISECONDS, MINIMUM_RUNTIME_MEMORY_BYTES: MINIMUM_RUNTIME_MEMORY_BYTES.toString(),
     MINIMUM_FREE_DISK_BYTES: MINIMUM_FREE_DISK_BYTES.toString(), MAXIMUM_TASK_BYTES: MAXIMUM_TASK_BYTES.toString()});
+
+/*
+ * How many serial bytes the completion observer will ever read across a whole run. The channel
+ * carries firmware chatter and one bounded record: run 35358547382 produced 1196 bytes in total,
+ * so this is headroom, not a budget anyone should approach. Exhausting it fails the channel
+ * closed rather than reading unboundedly.
+ */
+export const MAX_SERIAL_OBSERVATION_BYTES = 1024 * 1024;
+/*
+ * How long QEMU may take to exit on its own after the guest published and asked to power off.
+ * This is teardown time, not guest execution time: it starts when the record is observed, which
+ * is necessarily before the execution deadline, so it cannot lengthen the admitted budget.
+ */
+export const POST_COMPLETION_EXIT_GRACE_MILLISECONDS = 30_000;
+const POST_COMPLETION_POLL_MILLISECONDS = 1_000;
+export const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-timeout";
+/*
+ * Only the Stage 3 baseline launch observes completion records, and it is bound to its own
+ * reservation label rather than to a request flag any caller could set. Kept as a literal here
+ * rather than imported from Stage 3, which would pull that whole module into this one's sealed
+ * import closures; a test pins the two strings together.
+ */
+export const STAGE3_BASELINE_RESERVATION_LABEL = "cpu-floor-stage3-baseline";
+export const SERIAL_COMPLETION_FAILURES = Object.freeze({
+    recordInvalid: "serial-completion-invalid",
+    channelFailed: "serial-channel-failed"
+});
+const ASCII_MAXIMUM = 0x7f;
+
+/*
+ * A bounded append observer over the serial log QEMU is still writing to. The existing prefix
+ * reader cannot serve as the trigger: it snapshots only the first 64 KiB and demands a stable
+ * size, so it reports "unavailable" whenever the guest is mid-append. This reads forward from
+ * the last consumed offset instead, and keeps only a partial trailing line between ticks.
+ *
+ * Everything here fails closed. A tick that cannot read at all is not a failure - the log may
+ * simply not exist yet - and simply yields no trigger. A log whose device or inode changed, that
+ * shrank below what was already consumed, that carried a non-ASCII byte, that ran past the record
+ * bound on one line, or that exhausted the total cap is a latched channel failure, and a latched
+ * failure is never cleared by a later valid record. Identity is pinned on the first readable tick
+ * and compared on every later one, so a replacement is caught unless it both reuses the inode and
+ * is at least as long as the bytes already consumed. That residue cannot promote a run: the record
+ * only lets the host stop waiting, and the guest receipts are still parsed strictly afterwards.
+ */
+export function createSerialCompletionObserver(nonce) {
+    let identity = null;
+    let offset = 0;
+    let observed = 0;
+    let carry = "";
+    let completion = null;
+    let failure = null;
+
+    const fail = reason => { failure = reason; carry = ""; completion = null; return outcome(); };
+    const outcome = () => ({completion, failure});
+
+    const classify = line => {
+        const parsed = parseCompletionRecord(line, nonce);
+        if (parsed === null) return true;
+        if (parsed.status !== "valid") { fail(SERIAL_COMPLETION_FAILURES.recordInvalid); return false; }
+        /* A second record means the channel is not what the reviewed producer emits. */
+        if (completion !== null) { fail(SERIAL_COMPLETION_FAILURES.recordInvalid); return false; }
+        completion = {record: parsed.record};
+        return true;
+    };
+
+    return {consume(read) {
+        if (failure !== null) return outcome();
+        let result = null;
+        try { result = read(offset, MAX_SERIAL_OBSERVATION_BYTES - observed + 1); }
+        catch { return outcome(); }
+        if (identity === null) identity = {device: result.identity.device, inode: result.identity.inode};
+        else if (result.identity.device !== identity.device || result.identity.inode !== identity.inode)
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        if (Number(result.identity.observedBytes) < offset)
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        observed += result.bytes.length;
+        if (observed > MAX_SERIAL_OBSERVATION_BYTES) return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        offset += result.bytes.length;
+        if (result.bytes.some(value => value > ASCII_MAXIMUM))
+            return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+
+        const rows = `${carry}${result.bytes.toString("latin1")}`.split("\n");
+        carry = rows.pop();
+        for (const row of rows) if (!classify(row.endsWith("\r") ? row.slice(0, -1) : row)) return outcome();
+        /* A line that can never fit a record means the stream is not the one we contracted for. */
+        if (carry.length > MAX_COMPLETION_RECORD_BYTES) return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        return outcome();
+    }};
+}

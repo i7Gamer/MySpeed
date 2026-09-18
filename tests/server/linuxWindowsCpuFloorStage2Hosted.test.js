@@ -31,8 +31,13 @@ import {
     observeHostedRuntimeResources,
     resolveSelectedDependencies,
     runHostedOwnedProcess,
-    runMonitoredQemu
+    runMonitoredQemu,
+    MAX_SERIAL_OBSERVATION_BYTES,
+    createSerialCompletionObserver,
+    defaultReadOwnedRangeVerified,
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
+import {COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES} from
+    "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
 import {STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, winpeDiagnosticOutputMarker} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -1963,3 +1968,305 @@ describe("hosted Stage 2 native adapter preparation", () => {
 function sha256ForTest(bytes) {
     return crypto.createHash("sha256").update(bytes).digest("hex");
 }
+
+describe("Stage 3 serial completion observer", () => {
+    const COMPLETION_NONCE = "8a1065a48db13a3f671b2e6824507521";
+    const DIGEST = character => character.repeat(64);
+    const VALID_RECORD = {schemaVersion: 1, kind: "myspeed-stage3-publication-complete", nonce: COMPLETION_NONCE,
+        baseline: {bytes: "1985", sha256: DIGEST("a")}, cpu: {bytes: "2809", sha256: DIGEST("b")}};
+    const markerLine = (record = VALID_RECORD) => `${COMPLETION_RECORD_PREFIX} ${JSON.stringify(record)}`;
+
+    /*
+     * A synthetic append-only log. `write` appends the way QEMU's file chardev does; `replace` and
+     * `shrink` stand in for a log swapped or truncated under the observer, which must fail closed.
+     * The reader mirrors the real one: bytes from an offset, plus the identity that must not change.
+     */
+    const channel = () => {
+        const state = {text: "", device: 1, inode: 1};
+        return {
+            write(value) { state.text += value; },
+            replace(value) { state.text = value; state.inode += 1; },
+            shrink(length) { state.text = state.text.slice(0, length); },
+            read(start, maximumBytes) {
+                const bytes = Buffer.from(state.text, "latin1");
+                /* A real range reader reports the smaller size; it does not refuse to read. */
+                const from = Math.min(start, bytes.length);
+                return {bytes: bytes.subarray(from, Math.min(bytes.length, from + maximumBytes)),
+                    identity: {device: String(state.device), inode: String(state.inode),
+                        observedBytes: String(bytes.length)}};
+            }};
+    };
+    const consume = (observer, source) => observer.consume((start, maximum) => source.read(start, maximum));
+
+    it("observes a record split across two poll ticks", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        const line = markerLine();
+        source.write(line.slice(0, 40));
+        assert.equal(consume(observer, source).completion, null);
+        source.write(`${line.slice(40)}\r\n`);
+        const outcome = consume(observer, source);
+        assert.equal(outcome.failure, null);
+        assert.equal(outcome.completion.record.cpu.sha256, DIGEST("b"));
+        assert.equal(outcome.completion.record.baseline.bytes, "1985");
+    });
+
+    it("ignores firmware chatter and ANSI escapes before the record", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write("[2J[01;01HBdsDxe: starting Boot0004 \"Windows Boot Manager\"\r\n".repeat(20));
+        assert.equal(consume(observer, source).completion, null);
+        assert.equal(consume(observer, source).failure, null);
+        source.write(`${markerLine()}\r\n`);
+        assert.ok(consume(observer, source).completion);
+    });
+
+    it("latches the first record and ignores repeated polling of the same bytes", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write(`${markerLine()}\r\n`);
+        const first = consume(observer, source);
+        assert.ok(first.completion);
+        const second = consume(observer, source);
+        assert.equal(second.completion, first.completion);
+        assert.equal(second.failure, null);
+    });
+
+    it("refuses a marker-shaped line that fails the contract instead of ignoring it", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write(`${markerLine({...VALID_RECORD, nonce: "0".repeat(32)})}\r\n`);
+        const outcome = consume(observer, source);
+        assert.equal(outcome.completion, null);
+        assert.equal(outcome.failure, "serial-completion-invalid");
+    });
+
+    it("refuses a second record", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write(`${markerLine()}\r\n${markerLine()}\r\n`);
+        assert.equal(consume(observer, source).failure, "serial-completion-invalid");
+    });
+
+    it("fails closed when the log is replaced or shrinks under it", () => {
+        for (const damage of [source => source.replace("fresh log\r\n"), source => source.shrink(3)]) {
+            const source = channel();
+            const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+            source.write("BdsDxe: starting\r\n");
+            assert.equal(consume(observer, source).failure, null);
+            damage(source);
+            assert.equal(consume(observer, source).failure, "serial-channel-failed");
+        }
+    });
+
+    it("fails closed on a line longer than a record may be", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write("x".repeat(MAX_COMPLETION_RECORD_BYTES + 1));
+        assert.equal(consume(observer, source).failure, "serial-channel-failed");
+    });
+
+    it("fails closed on a non-ASCII byte", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write("chatter é\r\n");
+        assert.equal(consume(observer, source).failure, "serial-channel-failed");
+    });
+
+    it("fails closed once the total observation cap is exhausted", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write("chatter\r\n".repeat(Math.ceil(MAX_SERIAL_OBSERVATION_BYTES / 9) + 1));
+        assert.equal(consume(observer, source).failure, "serial-channel-failed");
+    });
+
+    it("supplies no trigger, and no failure, when the channel cannot be read this tick", () => {
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        const outcome = observer.consume(() => { throw new Error("serial log unavailable"); });
+        assert.equal(outcome.completion, null);
+        assert.equal(outcome.failure, null);
+    });
+
+    it("keeps a latched channel failure even when a valid record arrives later", () => {
+        const source = channel();
+        const observer = createSerialCompletionObserver(COMPLETION_NONCE);
+        source.write("x".repeat(MAX_COMPLETION_RECORD_BYTES + 1));
+        assert.equal(consume(observer, source).failure, "serial-channel-failed");
+        source.write(`\r\n${markerLine()}\r\n`);
+        const outcome = consume(observer, source);
+        assert.equal(outcome.failure, "serial-channel-failed");
+        assert.equal(outcome.completion, null);
+    });
+});
+
+describe("owned serial range reader", () => {
+    const withRoot = run => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-range-"));
+        try { return run(root); } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    };
+    const read = (target, start, maximum) =>
+        defaultReadOwnedRangeVerified(target, start, maximum);
+
+    it("reads forward from an offset and follows a growing file", () => withRoot(root => {
+        const target = path.join(root, "serial.log");
+        fs.writeFileSync(target, "first\n");
+        const opening = read(target, 0, 1024);
+        assert.equal(opening.bytes.toString("latin1"), "first\n");
+        assert.equal(opening.identity.observedBytes, "6");
+
+        fs.appendFileSync(target, "second\n");
+        const appended = read(target, 6, 1024);
+        assert.equal(appended.bytes.toString("latin1"), "second\n");
+        assert.equal(appended.identity.inode, opening.identity.inode);
+        assert.equal(appended.identity.observedBytes, "13");
+    }));
+
+    it("clamps a start beyond the end instead of reading out of bounds", () => withRoot(root => {
+        const target = path.join(root, "serial.log");
+        fs.writeFileSync(target, "short\n");
+        const observed = read(target, 4096, 1024);
+        assert.equal(observed.bytes.length, 0);
+        /* The caller needs the true size to notice that the file shrank under it. */
+        assert.equal(observed.identity.observedBytes, "6");
+    }));
+
+    it("honours the maximum and reports a new identity when the file is replaced", () => withRoot(root => {
+        const target = path.join(root, "serial.log");
+        fs.writeFileSync(target, "abcdefghij");
+        assert.equal(read(target, 2, 3).bytes.toString("latin1"), "cde");
+        const before = read(target, 0, 1024).identity.inode;
+        /* Build the replacement while the original still holds its inode, so the number cannot
+         * be recycled into it: unlinking first lets ext4 hand the same inode straight back. */
+        const replacement = path.join(root, "replacement.log");
+        fs.writeFileSync(replacement, "replaced\n");
+        fs.renameSync(replacement, target);
+        assert.notEqual(read(target, 0, 1024).identity.inode, before);
+    }));
+
+    it("refuses a symlink, a hard-linked file, a directory and an invalid window", () => withRoot(root => {
+        const target = path.join(root, "serial.log");
+        fs.writeFileSync(target, "bytes\n");
+        assert.throws(() => read(path.join(root, "missing.log"), 0, 1024));
+        assert.throws(() => read(root, 0, 1024), /not an ordinary file/u);
+        assert.throws(() => read(target, -1, 1024), /start is invalid/u);
+        assert.throws(() => read(target, 0, 0), /maximum is invalid/u);
+
+        const linked = path.join(root, "linked.log");
+        try { fs.linkSync(target, linked); } catch { return; }
+        assert.throws(() => read(linked, 0, 1024), /read bound is invalid/u);
+    }));
+});
+
+describe("Stage 3 monitor completion transition", () => {
+    const MONITOR_NONCE = "8a1065a48db13a3f671b2e6824507521";
+    const DIGEST = character => character.repeat(64);
+    const RECORD_LINE = `${COMPLETION_RECORD_PREFIX} ${JSON.stringify({schemaVersion: 1,
+        kind: "myspeed-stage3-publication-complete", nonce: MONITOR_NONCE,
+        baseline: {bytes: "1985", sha256: DIGEST("a")}, cpu: {bytes: "2809", sha256: DIGEST("b")}})}\r\n`;
+    const SERIAL_PATH = "/owned/serial.log";
+    const EXECUTION_DEADLINE = 100_000;
+    const monitorProcess = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
+        qemuPid: 2345, qemuPidAbsentAfter: true, qemuStartTicks: "77", processGroupId: 2300,
+        launcherExecutablePath: "/owned/loader"};
+
+    /*
+     * Drives runMonitoredQemu against a serial log whose contents change as the fake clock advances.
+     * `serialAt(clock)` is the whole log at that moment; `exitAt` is when QEMU's process settles.
+     */
+    const run = async ({serialAt, exitAt = null, exitCode = 0, serialCompletion = true}) => {
+        let finish = null;
+        const operation = new Promise(resolve => { finish = resolve; });
+        let clock = 0;
+        let terminationReason = null;
+        const settle = () => finish({process: {...monitorProcess, exitCode,
+            cleanupProven: true, treeGone: true}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
+        const advance = () => { if (exitAt !== null && clock >= exitAt) settle(); };
+        const result = await runMonitoredQemu({
+            runOwned: (command, argv, options) => {
+                options.onSpawn(2300);
+                options.onTerminationReady(reason => { terminationReason = reason; settle(); });
+                return operation;
+            },
+            pathExists: () => true,
+            readOwnedVerified: () => ({bytes: Buffer.from("2345\n")}),
+            readQemuProcessIdentity: () => ({state: "present", pid: 2345, processGroupId: 2300,
+                startTicks: "77", executablePath: "/owned/loader"}),
+            observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
+                effectiveMemoryBytes: "8589934592"}),
+            readOwnedPrefixVerified: () => {
+                const bytes = Buffer.from(serialAt(clock), "latin1");
+                return {bytes, identity: {path: SERIAL_PATH, bytes: String(bytes.length),
+                    sha256: "0".repeat(64), observedBytes: String(bytes.length), truncated: false}};
+            },
+            readOwnedRangeVerified: (target, start, maximum) => {
+                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const from = Math.min(start, bytes.length);
+                return {bytes: bytes.subarray(from, Math.min(bytes.length, from + maximum)),
+                    identity: {device: "1", inode: "1", observedBytes: String(bytes.length)}};
+            },
+            monotonicMilliseconds: () => clock,
+            wait: async milliseconds => { clock += milliseconds; advance(); },
+            isProcessGroupAlive: () => true,
+            terminateQemuGroup: async () => true
+        }, {command: "/usr/bin/qemu", argv: [], timeoutMs: 1_000_000, maxStreamBytes: 1_024,
+            pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader",
+            executionDeadline: EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
+            ...(serialCompletion ? {serialCompletion: {nonce: MONITOR_NONCE, path: SERIAL_PATH}} : {}),
+            resources: {taskPath: "/owned", roots: ["/owned"]}});
+        return {result, terminationReason};
+    };
+
+    it("lets QEMU exit on its own during the grace after a completion record", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n"),
+            exitAt: 30_000});
+        assert.equal(result.terminationReason, null);
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+    });
+
+    it("forces the verified group when QEMU never exits after the record", async () => {
+        const {result, terminationReason} = await run({
+            serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        assert.notEqual(terminationReason, null);
+        /* The run must never be able to claim the guest powered itself off. */
+        assert.equal(result.qmpShutdownEvent, undefined);
+    });
+
+    it("charges the grace to cleanup rather than extending the execution budget", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.ok(result.serialCompletion.observedAtMs < EXECUTION_DEADLINE);
+    });
+
+    it("keeps the ordinary deadline when no record ever appears", async () => {
+        const {result} = await run({serialAt: () => "boot\r\n".repeat(10)});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("keeps the ordinary deadline when the launch did not opt in", async () => {
+        const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n"),
+            serialCompletion: false});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("lets the EFI shell failure win over a record in the same log", async () => {
+        const {result} = await run({
+            serialAt: () => `UEFI Interactive Shell v2.2\r\nShell> \r\n${RECORD_LINE}`});
+        assert.equal(result.terminationReason, "efi-shell-fallback");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("refuses to transition on a record first seen at or after the execution deadline", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= EXECUTION_DEADLINE ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("supplies no trigger when the completion channel itself fails", async () => {
+        const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.serialCompletion, undefined);
+    });
+});

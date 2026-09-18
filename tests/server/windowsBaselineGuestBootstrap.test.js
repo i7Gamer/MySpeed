@@ -6,7 +6,7 @@ import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {describe, it} from "node:test";
 
-import {WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS, renderWindowsBaselineGuestBootstrap} from
+import {WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS, parseCompletionRecord, renderWindowsBaselineGuestBootstrap} from
     "../../scripts/qualification/windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsBaselineGuestSeedDocuments} from "../../scripts/qualification/windows-baseline-guest-seed-documents.mjs";
 import {WINDOWS_SYSTEM_TOOL_PATHS, renderGuestBootstrap} from
@@ -841,4 +841,145 @@ describe("Windows baseline guest producer-to-parser contract", () => {
             assert.equal(parsed.status, "failed");
             assert.match(parsed.failure, /^runtime-cleanup: /u);
         });
+
+    const {COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES} =
+        WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
+    const OBSERVED_BASELINE = JSON.stringify({schemaVersion: 1, profile: "baseline-cpu", status: "observed",
+        cleanupProven: true, failure: null});
+    /* The identity the guest must declare for a published receipt: exact byte count and digest. */
+    const identify = text => {
+        const bytes = Buffer.from(text, "utf8");
+        return {bytes: String(bytes.length), sha256: crypto.createHash("sha256").update(bytes).digest("hex")};
+    };
+    const completionBody = publishGuard => `$events=@();try{Invoke-MyspeedBaselineBootstrap ` +
+        `-ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} -ResolveInputRoot {'C:\\owned'} ` +
+        `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+        `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
+        `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
+        `CollectEvidence={param($Seed)[ordered]@{schemaVersion=1;status='observed'}};` +
+        `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
+        `-StartExecutor {param($Root,$Seed)[pscustomobject]@{` +
+        `bytes=[Text.UTF8Encoding]::new($false).GetBytes('${OBSERVED_BASELINE}');status='observed';diagnostics=@()}} ` +
+        `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
+        `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
+        `-Publish {param($Path,$Bytes);${publishGuard};$script:events+=([pscustomobject]@{` +
+        `name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
+        `-EmitCompletion {param([string]$Line)$script:events+=([pscustomobject]@{name='completion';text=$Line})} ` +
+        `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n` +
+        `$events|ConvertTo-Json -Compress\r\n`;
+
+    it("binds the publication-complete serial record and orders it after publication, before shutdown", () => {
+        const source = render().toString("utf8");
+        assert.equal(COMPLETION_RECORD_PREFIX, "MYSPEED-STAGE3-COMPLETE-V1");
+        assert.equal(COMPLETION_RECORD_KIND, "myspeed-stage3-publication-complete");
+        assert.ok(source.includes(COMPLETION_RECORD_PREFIX));
+        assert.ok(source.includes(COMPLETION_RECORD_KIND));
+        /*
+         * The record may only claim a publication that already returned, so it is rendered after the
+         * second exclusive write and before the shutdown call it exists to precede. `'result.json'`
+         * carries its quote so it cannot match inside `'baseline-result.json'`.
+         */
+        /*
+         * Anchor on the publication call itself. A bare 'result.json' also matches the executor's
+         * own scratch path far earlier in the script, which made an earlier version of this
+         * assertion true no matter where the emission sat. The behavioural ordering test below is
+         * Windows-gated, so this is the only check of this property on PR CI.
+         */
+        const publishBaseline = source.indexOf("& $Publish (Join-Path $publicationOutput 'baseline-result.json')");
+        const publishCpu = source.indexOf("& $Publish (Join-Path $publicationOutput 'result.json')");
+        const emit = source.indexOf("& $EmitCompletion");
+        assert.ok(publishBaseline > 0 && publishCpu > publishBaseline);
+        assert.ok(publishCpu < emit);
+        assert.ok(emit < source.indexOf("& $Shutdown"));
+    });
+
+    it("emits exactly one nonce-bound completion record naming both published receipts",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const events = runLibraryHarness("myspeed-baseline-completion-", completionBody(""));
+            assert.deepEqual(events.map(event => event.name),
+                ["baseline-result.json", "result.json", "completion", "shutdown", SHUTDOWN_OUTCOME_NAME]);
+
+            const line = events[2].text;
+            assert.ok(line.length <= MAX_COMPLETION_RECORD_BYTES, `record is ${line.length} bytes`);
+            assert.ok(line.startsWith(`${COMPLETION_RECORD_PREFIX} `));
+            const record = JSON.parse(line.slice(COMPLETION_RECORD_PREFIX.length + 1));
+            assert.deepEqual(Object.keys(record), ["schemaVersion", "kind", "nonce", "baseline", "cpu"]);
+            assert.equal(record.schemaVersion, 1);
+            assert.equal(record.kind, COMPLETION_RECORD_KIND);
+            assert.equal(record.nonce, NONCE);
+            assert.deepEqual(record.baseline, identify(events[0].text));
+            assert.deepEqual(record.cpu, identify(events[1].text));
+        });
+
+    it("emits no completion record when a publication fails", {skip: !HAS_INBOX_POWERSHELL}, () => {
+        const events = runLibraryHarness("myspeed-baseline-completion-refused-",
+            completionBody(`if([IO.Path]::GetFileName($Path)-ceq'result.json'){throw 'publication refused'}`));
+        assert.equal(events.filter(event => event.name === "completion").length, 0);
+        assert.ok(events.some(event => event.name === "shutdown"));
+    });
+
+
+    const VALID_COMPLETION = {schemaVersion: 1, kind: "myspeed-stage3-publication-complete", nonce: NONCE,
+        baseline: {bytes: "1985", sha256: SHA("a")}, cpu: {bytes: "2809", sha256: SHA("b")}};
+    const completionLine = record => `${COMPLETION_RECORD_PREFIX} ${JSON.stringify(record)}`;
+    /* A copy of the valid record with one member replaced, so each case differs in exactly one way. */
+    const mutate = (route, value) => {
+        const record = structuredClone(VALID_COMPLETION);
+        const keys = route.split(".");
+        let cursor = record;
+        while (keys.length > 1) cursor = cursor[keys.shift()];
+        if (value === undefined) delete cursor[keys[0]]; else cursor[keys[0]] = value;
+        return record;
+    };
+
+    it("accepts one well-formed completion record and returns both declared identities", () => {
+        const parsed = parseCompletionRecord(completionLine(VALID_COMPLETION), NONCE);
+        assert.equal(parsed.status, "valid");
+        assert.deepEqual(parsed.record.baseline, {bytes: "1985", sha256: SHA("a")});
+        assert.deepEqual(parsed.record.cpu, {bytes: "2809", sha256: SHA("b")});
+    });
+
+    it("ignores a line that is not completion-record shaped", () => {
+        for (const line of ["", "BdsDxe: starting Boot0004", `${COMPLETION_RECORD_PREFIX}X {}`,
+            COMPLETION_RECORD_PREFIX, "MYSPEED-STAGE3-COMPLETE-V2 {}"])
+            assert.equal(parseCompletionRecord(line, NONCE), null, line);
+    });
+
+    it("rejects every marker-shaped line that does not meet the contract", () => {
+        const oversized = structuredClone(VALID_COMPLETION);
+        oversized.padding = "p".repeat(MAX_COMPLETION_RECORD_BYTES);
+        const cases = [
+            ["payload-oversized", completionLine(oversized)],
+            ["payload-malformed", `${COMPLETION_RECORD_PREFIX} {"schemaVersion":1,`],
+            ["payload-malformed", `${COMPLETION_RECORD_PREFIX} []`],
+            ["payload-malformed", `${COMPLETION_RECORD_PREFIX} null`],
+            ["schema-differs", completionLine(mutate("schemaVersion", 2))],
+            ["kind-differs", completionLine(mutate("kind", "myspeed-stage3-guest-shutdown"))],
+            ["nonce-differs", completionLine(mutate("nonce", "4".repeat(32)))],
+            ["keys-differ", completionLine({...VALID_COMPLETION, extra: 1})],
+            ["keys-differ", completionLine(mutate("cpu", undefined))],
+            ["keys-differ", completionLine(mutate("baseline", {bytes: "1985", sha256: SHA("a"), extra: 1}))],
+            ["identity-differs", completionLine(mutate("cpu.bytes", "02809"))],
+            ["identity-differs", completionLine(mutate("cpu.bytes", "0"))],
+            ["identity-differs", completionLine(mutate("cpu.bytes", "-1"))],
+            ["identity-differs", completionLine(mutate("cpu.bytes", 2809))],
+            ["identity-differs", completionLine(mutate("cpu.bytes", "2809 "))],
+            ["identity-differs", completionLine(mutate("cpu.sha256", SHA("b").toUpperCase()))],
+            ["identity-differs", completionLine(mutate("cpu.sha256", "b".repeat(63)))],
+            ["identity-differs", completionLine(mutate("baseline.sha256", `${"a".repeat(63)}g`))]
+        ];
+        for (const [reason, line] of cases) {
+            const parsed = parseCompletionRecord(line, NONCE);
+            assert.equal(parsed?.status, "invalid", line.slice(0, 90));
+            assert.equal(parsed.reason, reason, line.slice(0, 90));
+        }
+    });
+
+    it("rejects a record carrying control or non-ASCII bytes", () => {
+        for (const code of [7, ASCII_DELETE, 233, 0]) {
+            const nonce = `${NONCE.slice(1)}${String.fromCharCode(code)}`;
+            assert.equal(parseCompletionRecord(completionLine(mutate("nonce", nonce)), NONCE).status, "invalid");
+        }
+    });
+
 });

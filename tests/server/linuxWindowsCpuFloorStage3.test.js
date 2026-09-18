@@ -15,6 +15,8 @@ import {
     STAGE3_LAUNCH_CLASSIFICATIONS,
     STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
+import {POST_COMPLETION_TERMINATION_REASON, STAGE3_BASELINE_RESERVATION_LABEL} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage2-hosted.mjs";
 import {STAGE3_CONTROLLER_CONSTANTS} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs";
 import {PACKAGE_ROOTS, STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS,
@@ -1114,4 +1116,56 @@ describe("Windows CPU-floor Stage 3 launch failure diagnostics", () => {
         assert.ok(JSON.stringify(result.qemuLaunch).length <
             STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_DIAGNOSTIC_CHARACTERS);
     });
+
+    it("accepts a baseline launch torn down after a completion record, and nothing else killed", async () => {
+        const retainedStage2Bytes = Buffer.from(JSON.stringify(stage2Observation()), "utf8");
+        const input = request();
+        input.stage2.result = {...input.stage2.result, bytes: String(retainedStage2Bytes.length),
+            sha256: crypto.createHash("sha256").update(retainedStage2Bytes).digest("hex")};
+        const result = await runWindowsCpuFloorStage3(input, operations().value);
+        assert.equal(result.status, "observed", result.failure);
+
+        /* The shape the host produces when the guest published and Windows then refused to go down. */
+        const forced = {...result, qemuProcess: {...result.qemuProcess, exitCode: null, signal: null,
+            terminationReason: "post-completion-teardown-timeout"}};
+        const accepted = validateCompletedStage3Result(forced, input, retainedStage2Bytes);
+        assert.equal(accepted.accepted, true);
+        /* Waiving the exit status must not have waived what the run claims about itself. */
+        assert.equal(forced.qualifying, false);
+        assert.equal(forced.releaseGateCleared, false);
+        assert.equal(forced.qemuProcess.cleanupProven, true);
+
+        /*
+         * Every neighbouring shape stays refused: an ordinary deadline kill, an unknown reason, and
+         * the same forced teardown with any cleanup proof missing.
+         */
+        for (const qemuProcess of [
+            {...forced.qemuProcess, terminationReason: "deadline"},
+            {...forced.qemuProcess, terminationReason: "efi-shell-fallback"},
+            {...forced.qemuProcess, terminationReason: "post-completion-teardown"},
+            {...forced.qemuProcess, cleanupProven: false},
+            {...forced.qemuProcess, treeGone: false},
+            {...forced.qemuProcess, qemuPidAbsentAfter: false},
+            {...forced.qemuProcess, timedOut: true},
+            {...result.qemuProcess, exitCode: 1},
+            {...result.qemuProcess, signal: "SIGKILL"}
+        ]) assert.throws(() => validateCompletedStage3Result({...result, qemuProcess}, input, retainedStage2Bytes),
+            /Stage 3 QEMU cleanup is not proven|invalid|differs/u, JSON.stringify(qemuProcess.terminationReason));
+    });
+
+    it("never accepts a forced post-completion teardown for the replayed Stage 2 guest", async () => {
+        const fixture = operations({async replayStage2(input) { fixture.calls.push("stage2");
+            return {identity: input.identity, guestEvidence: stage2GuestEvidence(),
+                result: {...stage2Observation(), qemuProcess: {...stage2Observation().qemuProcess,
+                    exitCode: null, terminationReason: "post-completion-teardown-timeout"}}}; }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "stage2-replay");
+    });
+
+    it("pins the completion contract shared with the hosted monitor", () => {
+        assert.equal(STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL, STAGE3_BASELINE_RESERVATION_LABEL);
+        assert.equal(STAGE3_BUDGET_CONSTANTS.POST_COMPLETION_TERMINATION_REASON, POST_COMPLETION_TERMINATION_REASON);
+    });
+
 });
