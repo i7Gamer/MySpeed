@@ -7,13 +7,16 @@ import path from "node:path";
 import {describe, it} from "node:test";
 
 import {
+    EFI_SHELL_TRUNCATED_ATTRIBUTION,
     GuestBootstrapError,
+    MAX_GUEST_FAILURE_MESSAGE_CHARACTERS,
     MAX_STAGE2_RESULT_BYTES,
     PACKAGE_ROOTS,
     QemuLaunchError,
     STAGE2_DIAGNOSTIC_DEADLINES,
     STAGE2_PROVENANCE,
     TOP_LEVEL_PACKAGE_PINS,
+    attributeTruncatedSerialFailure,
     buildQemuArguments,
     renderGuestBootstrap,
     runWindowsCpuFloorStage2,
@@ -783,6 +786,11 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         const truncatedSerialResult = await runWindowsCpuFloorStage2({context: context(), admission: admission(),
             paths: paths(), probeArtifact: probeArtifact()}, truncatedSerialFixture.op);
         assert.deepEqual(truncatedSerialResult.qemuLaunch, truncatedSerial);
+        // A truncated capture may have cut off the UEFI-shell banner, so a non-matching truncated serial must flag
+        // that the boot-failure detection was incomplete rather than silently reporting only the generic message.
+        assert.ok(truncatedSerialResult.failure.includes(EFI_SHELL_TRUNCATED_ATTRIBUTION),
+            truncatedSerialResult.failure);
+        assert.doesNotMatch(serialResult.failure, /truncated/u);
         const legacySerial = structuredClone(withSerial);
         legacySerial.serialLog = {bytes: String(serial.length), sha256: HASH(serial),
             bytesBase64: serial.toString("base64")};
@@ -1386,5 +1394,15 @@ describe("hosted Windows CPU-floor Stage 2 diagnostic record reaches no calibrat
         await assert.rejects(sealSameJobInstalledBase({expectedContext: context(), paths: paths(),
             stage2Result: diagnosticResult}, sealOperations));
         assert.deepEqual(calls, [], "no sealing operation may run for a diagnostic record");
+    });
+
+    it("keeps the truncated-serial attribution within the failure-message length contract", () => {
+        const shortResult = attributeTruncatedSerialFailure("boom");
+        assert.equal(shortResult, `boom (${EFI_SHELL_TRUNCATED_ATTRIBUTION})`);
+        // A message already at the cap must not push the attributed failure past the 512-character contract that
+        // validateGuestFailure enforces; the message is trimmed to reserve room for the suffix.
+        const longResult = attributeTruncatedSerialFailure("x".repeat(MAX_GUEST_FAILURE_MESSAGE_CHARACTERS + 100));
+        assert.ok(longResult.length <= MAX_GUEST_FAILURE_MESSAGE_CHARACTERS, `length ${longResult.length}`);
+        assert.ok(longResult.endsWith(`(${EFI_SHELL_TRUNCATED_ATTRIBUTION})`));
     });
 });
