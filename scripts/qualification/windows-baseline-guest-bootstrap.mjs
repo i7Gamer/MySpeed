@@ -260,7 +260,12 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `throw 'Baseline executor root differs'};$result=Join-Path $taskRoot 'result.json';` +
         `$stdout=Join-Path $taskRoot 'stdout';$stderr=Join-Path $taskRoot 'stderr';` +
         `$executor=Join-Path $RuntimeRoot 'scripts\\qualification\\windows-baseline-guest-executor.mjs';` +
-        `$arguments=@($executor,'--request',(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',` +
+        // The executor reads the seeded SQLite database through sqlite-check.mjs' node:sqlite import,
+        // which prints a one-line ExperimentalWarning to stderr on the pinned runtime. The launch is
+        // held to exactly empty stdout and stderr below, so that benign runtime warning would read as
+        // a leak ('Baseline executor streams differ'). Suppress only that warning class here - a node
+        // option before the script - and leave the empty-stream containment proof unchanged.
+        `$arguments=@('--disable-warning=ExperimentalWarning',$executor,'--request',(Join-Path $Seed '${REQUEST_NAME}'),'--request-sha256',` +
         `$EXPECTED_REQUEST_SHA,'--execution',(Join-Path $Seed '${EXECUTION_NAME}'),'--execution-sha256',` +
         `$EXPECTED_EXECUTION_SHA,'--result',$result);$launchResult=$null;$primary=$null;` +
         `$diagnostics=[Collections.Generic.List[object]]::new();try{` +

@@ -255,6 +255,23 @@ describe("Windows baseline guest bootstrap", () => {
                 {status: "observed", typed: true, length: observed.length, text: observed, diagnostics: 0});
         });
 
+    it("launches the executor node process with the experimental-warning suppression flag before the script",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const observed = '{"schemaVersion":1,"profile":"baseline-cpu","status":"observed","cleanupProven":true}';
+            const body = `$value=Invoke-MyspeedBaselineExecutor 'C:\\runtime' 'D:\\' -ResolveTaskRoot {$env:MYSPEED_BASELINE_TEST_ROOT} -Launch {` +
+                `param($Node,$Arguments,$Working,$Stdout,$Stderr)$script:captured=@($Arguments);[IO.File]::WriteAllBytes($Stdout,[byte[]]@());` +
+                `[IO.File]::WriteAllBytes($Stderr,[byte[]]@());$result=Join-Path ([IO.Path]::GetDirectoryName($Stdout)) 'result.json';` +
+                `[IO.File]::WriteAllText($result,'${observed}');` +
+                `[pscustomobject]@{ExitCode=[int]0;TimedOut=$false;Forced=$false;AssignedBeforeResume=$true;` +
+                `Resumed=$true;ProcessTreeExitProven=$true;HandlesClosed=$true}}\r\n` +
+                `[pscustomobject]@{first=$script:captured[0];second=$script:captured[1];` +
+                `count=($script:captured -contains '--disable-warning=ExperimentalWarning')}|ConvertTo-Json -Compress\r\n`;
+            const captured = runLibraryHarness("myspeed-baseline-warnflag-", body);
+            assert.equal(captured.first, "--disable-warning=ExperimentalWarning");
+            assert.equal(captured.count, true);
+            assert.match(captured.second, /windows-baseline-guest-executor\.mjs$/u);
+        });
+
     it("lets asynchronous descendant teardown drain before judging the Job and still forces a real leak",
         {skip: !HAS_INBOX_POWERSHELL}, () => {
             const source = render().toString("utf8");
