@@ -42,6 +42,17 @@ describe("Windows baseline guest candidate wrapper", () => {
         assert.doesNotMatch(source, /GITHUB_ACTIONS|RUNNER_ENVIRONMENT|InvokeHostedCandidate/u);
     });
 
+    it("detaches the wrapper's own console before the shared lifecycle asserts console-free", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        // The guest wrapper is spawned windowsHide (CREATE_NO_WINDOW) with no console to inherit, so Windows
+        // hands it a fresh hidden console it solely owns. The shared lifecycle core opens with a bare
+        // AssertConsoleFree, so the wrapper must run the same observe -> FreeConsole -> prove detach the hosted
+        // path performs, reusing the validated Invoke-MyspeedCleanInitialConsoleCore contract, before the lifecycle.
+        assert.match(source, /Export-ModuleMember -Function[^\n]*Invoke-MyspeedCleanInitialConsoleCore/u);
+        assert.match(source,
+            /ObserveInitialConsole[\s\S]*DetachInitialConsole[\s\S]*Invoke-MyspeedCleanInitialConsoleCore[\s\S]*Invoke-MyspeedCandidateLifecycleCore/u);
+    });
+
     powershellIt("binds listener ownership to loopback, PID, and process creation time", () => {
         const expected = {process: {pid: 123, creationTime: "a".repeat(16), exited: false},
             listeners: [{address: "127.0.0.1", port: 41001, pid: 123}]};

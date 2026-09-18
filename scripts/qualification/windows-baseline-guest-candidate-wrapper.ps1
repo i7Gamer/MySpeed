@@ -234,7 +234,7 @@ function Invoke-MyspeedBaselineGuestCandidate {
         $controllerBinding=Assert-MyspeedBaselineGuestControllerBinding $request.controllerPath `
             $request.controllerSha256 $CleanPath $CleanSha
         $cleanScript=[scriptblock]::Create([Text.UTF8Encoding]::new($false,$true).GetString($controllerBinding.bytes))
-        $cleanModule=New-Module -ScriptBlock {param($trusted). $trusted -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource,Assert-MyspeedCleanPhysicalPath} -ArgumentList $cleanScript
+        $cleanModule=New-Module -ScriptBlock {param($trusted). $trusted -Mode Library;Export-ModuleMember -Function Get-MyspeedCleanNativeSource,Assert-MyspeedCleanPhysicalPath,Invoke-MyspeedCleanInitialConsoleCore} -ArgumentList $cleanScript
         foreach($entry in @(@($request.taskRoot,'Baseline task root','Directory'),@($request.candidatePath,'Baseline candidate','File'),
             @($request.workingDirectory,'Baseline work directory','Directory'),@($request.controllerPath,'Baseline clean-stop controller','File'),
             @($request.stdoutPath,'Baseline stdout','Absent'),@($request.stderrPath,'Baseline stderr','Absent'),
@@ -243,6 +243,15 @@ function Invoke-MyspeedBaselineGuestCandidate {
             & $cleanModule {param($value)Assert-MyspeedCleanPhysicalPath $value[0] $value[1] $value[2]|Out-Null} $entry
         }
         $nativeSource=& $cleanModule {Get-MyspeedCleanNativeSource};Add-Type -TypeDefinition $nativeSource -Language CSharp
+        # This wrapper is spawned windowsHide (CREATE_NO_WINDOW) with no console to inherit, so Windows hands it a
+        # fresh hidden console it solely owns. The shared lifecycle core opens with a bare AssertConsoleFree, so detach
+        # that console first via the same validated observe -> FreeConsole -> prove contract the hosted candidate uses.
+        $initialConsoleOperations=[pscustomobject]@{
+            observe={$native=[MySpeed.Qualification.CleanStop.Session]::ObserveInitialConsole()
+                return [pscustomobject]@{processIds=@($native.processIds);error=[int64]$native.error}}
+            detach={return [MySpeed.Qualification.CleanStop.Session]::DetachInitialConsole()}
+            proveFree={[MySpeed.Qualification.CleanStop.Session]::AssertConsoleFree();return $true}}
+        [void](& $cleanModule {param($currentPid,$operations)Invoke-MyspeedCleanInitialConsoleCore $currentPid $operations} ([int64]$PID) $initialConsoleOperations)
         $watch=[Diagnostics.Stopwatch]::StartNew()
         $result=& $candidateModule {param($value,$clock)$operations=New-MyspeedCandidateNativeOperations $value $clock
             Invoke-MyspeedCandidateLifecycleCore $value $operations} $request $watch
