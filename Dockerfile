@@ -25,7 +25,7 @@ RUN bun run build
 # records a failed test every run with nothing naming the cause. The crate is
 # published, so the same version is compiled against musl here and shipped in
 # bin/, where fileExists() finds it and the download is skipped.
-FROM rust:1.98.0-alpine AS cfspeedtest-build
+FROM rust:1.98.1-alpine AS cfspeedtest-build
 
 # Reviewed by the release maintainer; see CLI_MAINTENANCE.md for the dated
 # upstream check and refresh procedure. muslCloudflare.test.js keeps this in
