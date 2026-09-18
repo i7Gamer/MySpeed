@@ -16,6 +16,21 @@ const TEST_TIMEOUT_MS = 30_000;
 const MAXIMUM_CANDIDATE_BYTES = 536_870_912;
 const MAXIMUM_FAILURE_CHARACTERS = 512;
 const NATIVE_RESULT_FIELD_COUNT = 13;
+const EXPECTED_NATIVE_RESULT = {
+    forced: false,
+    preAttachIdentityMatch: true,
+    postAttachHandleUnsignaled: false,
+    postAttachIdentityMatch: true,
+    postAttachJobMembership: false,
+    consoleProcessIdsExact: true,
+    ctrlEventGenerated: false,
+    candidateExited: true,
+    graceExpired: false,
+    exitCode: 113,
+    jobZero: true,
+    consoleFreeAfter: false,
+    handlesClosed: true
+};
 const FIRST_PRINTABLE_CHARACTER_CODE = 32;
 const DELETE_CHARACTER_CODE = 127;
 const HASH = "a".repeat(64);
@@ -297,11 +312,13 @@ describe("Windows native candidate controller", () => {
             "    public bool consoleProcessIdsExact,ctrlEventGenerated,candidateExited,graceExpired,jobZero,consoleFreeAfter,handlesClosed;",
             "    public int exitCode; public uint[] consoleProcessIds; public uint candidatePid;",
             "    public static Result Make(){",
+            "      // A distinct alternating pattern so a mis-mapped or swapped projection field is caught.",
             "      Result r=new Result();",
-            "      r.candidateExited=true; r.jobZero=true; r.consoleFreeAfter=true; r.exitCode=0;",
-            "      r.preAttachIdentityMatch=r.postAttachHandleUnsignaled=r.postAttachIdentityMatch=true;",
-            "      r.postAttachJobMembership=r.consoleProcessIdsExact=r.ctrlEventGenerated=true;",
-            "      r.consoleProcessIds=new uint[0]; r.candidatePid=4321; return r;",
+            "      r.forced=false; r.preAttachIdentityMatch=true; r.postAttachHandleUnsignaled=false;",
+            "      r.postAttachIdentityMatch=true; r.postAttachJobMembership=false; r.consoleProcessIdsExact=true;",
+            "      r.ctrlEventGenerated=false; r.candidateExited=true; r.graceExpired=false; r.exitCode=113;",
+            "      r.jobZero=true; r.consoleFreeAfter=false; r.handlesClosed=true;",
+            "      r.consoleProcessIds=new uint[]{7u,9u}; r.candidatePid=4321; return r;",
             "    }",
             "  }",
             "  public sealed class Session {",
@@ -326,10 +343,10 @@ describe("Windows native candidate controller", () => {
                 + "catch{return $_.Exception.Message}}",
             "[pscustomobject]@{",
             "  rawIsPsObject=([MySpeedNativeResultProof.Session]::new().Stop(1,1,1) -is [psobject]);",
-            "  stopIsPsObject=($stopResult -is [psobject]);stopKeys=@($stopResult.PSObject.Properties.Name).Count;",
-            "  stopShapeError=(Test-Shape $stopResult);",
-            "  lastIsPsObject=($lastResult -is [psobject]);lastKeys=@($lastResult.PSObject.Properties.Name).Count;",
-            "  lastShapeError=(Test-Shape $lastResult)",
+            "  stopShapeError=(Test-Shape $stopResult);lastShapeError=(Test-Shape $lastResult);",
+            "  stopKeys=@($stopResult.PSObject.Properties.Name|Sort-Object);",
+            "  lastKeys=@($lastResult.PSObject.Properties.Name|Sort-Object);",
+            "  stop=$stopResult;last=$lastResult",
             "}|ConvertTo-Json -Compress"
         ].join("\n");
         const result = childProcess.spawnSync(POWERSHELL,
@@ -337,20 +354,25 @@ describe("Windows native candidate controller", () => {
             {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
         assert.equal(result.status, 0, result.stderr);
         const observed = JSON.parse(result.stdout);
+        // Precondition: the raw method/getter result is NOT a psobject (the PS 5.1 trap this fix defeats).
         assert.equal(observed.rawIsPsObject, false);
-        assert.equal(observed.stopIsPsObject, true);
-        assert.equal(observed.stopKeys, NATIVE_RESULT_FIELD_COUNT);
         assert.equal(observed.stopShapeError, null);
-        assert.equal(observed.lastIsPsObject, true);
-        assert.equal(observed.lastKeys, NATIVE_RESULT_FIELD_COUNT);
         assert.equal(observed.lastShapeError, null);
+        // Exactly the 13 shape fields survive — the CLR-only consoleProcessIds/candidatePid are dropped.
+        const expectedKeys = Object.keys(EXPECTED_NATIVE_RESULT).sort();
+        assert.equal(expectedKeys.length, NATIVE_RESULT_FIELD_COUNT);
+        assert.deepEqual(observed.stopKeys, expectedKeys);
+        assert.deepEqual(observed.lastKeys, expectedKeys);
+        // Every projected field carries its source value (distinct pattern catches a swap or mis-map).
+        assert.deepEqual(observed.stop, EXPECTED_NATIVE_RESULT);
+        assert.deepEqual(observed.last, EXPECTED_NATIVE_RESULT);
     });
 
     it("routes native stop and lastResult through one shared native-result shaper", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.match(source, /function ConvertTo-MyspeedCandidateNativeResult/u);
         assert.match(source, /\$toNativeResult=\$\{function:ConvertTo-MyspeedCandidateNativeResult\}/u);
-        assert.match(source, /stop=\{[\s\S]*?& \$toNativeResult/u);
+        assert.match(source, /stop=\{[^\n]*?& \$toNativeResult/u);
         assert.match(source, /lastResult=\{[\s\S]*?& \$toNativeResult/u);
     });
 
