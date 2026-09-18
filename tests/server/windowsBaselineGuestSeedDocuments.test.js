@@ -7,13 +7,14 @@ import {runWindowsBaselineGuest} from "../../scripts/qualification/windows-basel
 
 const SOURCE_SHA = "1".repeat(40);
 const EVENT_SHA = "2".repeat(40);
+const CANDIDATE_SHA = "a".repeat(40);
 const NONCE = "3".repeat(32);
 const SHA = character => character.repeat(64);
 const CONTEXT = {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "2", nonce: NONCE};
 
 const input = () => ({context: {...CONTEXT}, imageVersion: "windows-server-2025-standard-eval",
     manifestSha256: SHA("4"), candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
-        bytes: "524288", sha256: SHA("5")}, fixtureBundle: {bytes: "8192", sha256: SHA("6")},
+        sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("5")}, fixtureBundle: {bytes: "8192", sha256: SHA("6")},
     candidateController: {bytes: "65536", sha256: SHA("7")},
     cleanStopController: {bytes: "131072", sha256: SHA("8")}});
 
@@ -31,6 +32,10 @@ describe("Windows baseline guest seed documents", () => {
         assert.equal(value.executionRecord.name, "execution.json");
         assert.equal(value.request.candidate.path,
             `C:\\Windows\\Temp\\myspeed-baseline-task-${NONCE}\\MySpeed.exe`);
+        // The request carries the candidate release SHA so the guest materializer can validate the
+        // candidate-stamped fixture bundle against it rather than the harness context SHA.
+        assert.equal(value.request.candidate.sourceSha, CANDIDATE_SHA);
+        assert.notEqual(value.request.candidate.sourceSha, value.request.context.sourceSha);
         assert.equal(value.execution.candidateSource.path,
             `C:\\Windows\\Temp\\myspeed-baseline-input-${NONCE}\\MySpeed.exe`);
         assert.equal(value.execution.fixtureBundle.path,
@@ -67,7 +72,10 @@ describe("Windows baseline guest seed documents", () => {
             value => { value.candidate.artifactName = "MySpeed-windows-x64.exe"; },
             value => { value.fixtureBundle.bytes = "67108865"; },
             value => { value.context.runAttempt = "0"; },
-            value => { value.manifestSha256 = `${SHA("4")}\n`; }
+            value => { value.manifestSha256 = `${SHA("4")}\n`; },
+            value => { value.candidate.sourceSha = SOURCE_SHA; },
+            value => { value.candidate.sourceSha = "not-a-sha"; },
+            value => { delete value.candidate.sourceSha; }
         ]) {
             const value = input(); mutate(value);
             assert.throws(() => buildWindowsBaselineGuestSeedDocuments(value));

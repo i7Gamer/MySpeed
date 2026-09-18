@@ -81,6 +81,12 @@ describe("post-release CPU-floor guest preparation", () => {
             const request = JSON.parse(fs.readFileSync(requestRecord.path));
             assert.equal(request.candidate.path, `C:\\Windows\\Temp\\myspeed-baseline-task-${NONCE}\\MySpeed.exe`);
             assert.equal(requestRecord.sha256, hash(fs.readFileSync(requestRecord.path)));
+            // The request must carry the candidate release SHA (not the harness SHA) so the guest
+            // materializer validates the candidate-stamped fixture bundle against a matching identity.
+            assert.equal(request.candidate.sourceSha, CANDIDATE_SHA);
+            assert.notEqual(request.candidate.sourceSha, request.context.sourceSha);
+            const bundle = JSON.parse(fs.readFileSync(path.join(value.outputRoot, "fixture-bundle.json")));
+            assert.equal(bundle.sourceSha, request.candidate.sourceSha);
             const runtime = JSON.parse(fs.readFileSync(path.join(value.outputRoot, "guest-runtime.json")));
             assert.ok(runtime.files.some(file => file.path.endsWith("windows-baseline-guest-runner.mjs")));
         } finally { fs.rmSync(root, {recursive: true, force: true}); }

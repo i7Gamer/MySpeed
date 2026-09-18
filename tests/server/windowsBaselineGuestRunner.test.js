@@ -6,13 +6,14 @@ import {runWindowsBaselineGuest} from "../../scripts/qualification/windows-basel
 const SHA = character => character.repeat(64);
 const SOURCE_SHA = "1".repeat(40);
 const EVENT_SHA = "2".repeat(40);
+const CANDIDATE_SHA = "a".repeat(40);
 const NONCE = "3".repeat(32);
 const NUL = String.fromCodePoint(0);
 const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
 const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
     qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
         nonce: NONCE}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
-        path: "D:\\MySpeed.exe", bytes: "524288", sha256: SHA("4")}, fixture: {
+        path: "D:\\MySpeed.exe", sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")}, fixture: {
         path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")}, paths: {
         taskRoot: `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}`,
         populatedWork: `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}\\populated`,
@@ -208,6 +209,19 @@ describe("Windows baseline guest runner", () => {
         const result = await runWindowsBaselineGuest(request(), {...value.operations, extra: async () => undefined});
         assert.equal(result.status, "failed");
         assert.equal(value.calls.length, 0);
+    });
+
+    it("rejects a candidate whose source SHA is absent, malformed, or equal to the harness context SHA", async () => {
+        for (const mutate of [
+            value => { delete value.candidate.sourceSha; },
+            value => { value.candidate.sourceSha = "not-a-sha"; },
+            value => { value.candidate.sourceSha = value.context.sourceSha; }
+        ]) {
+            const input = request(); mutate(input); const value = fixture();
+            const result = await runWindowsBaselineGuest(input, value.operations);
+            assert.equal(result.status, "failed");
+            assert.equal(value.calls.length, 0);
+        }
     });
 
     it("rejects scenario labels without concrete HTTP and SQLite receipts", async () => {

@@ -7,6 +7,7 @@ import {createWindowsBaselineGuestOperations} from "../../scripts/qualification/
 const SHA = character => character.repeat(64);
 const SOURCE_SHA = "1".repeat(40);
 const EVENT_SHA = "2".repeat(40);
+const CANDIDATE_SHA = "9".repeat(40);
 const NONCE = "3".repeat(32);
 const TASK_ROOT = `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}`;
 const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
@@ -15,7 +16,7 @@ const candidateCreationTime = scenario => (SCENARIOS.indexOf(scenario) + 10).toS
 const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
     qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
         nonce: NONCE}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
-        path: `${TASK_ROOT}\\MySpeed.exe`, bytes: "524288", sha256: SHA("4")}, fixture: {
+        path: `${TASK_ROOT}\\MySpeed.exe`, sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")}, fixture: {
         path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")}, paths: {taskRoot: TASK_ROOT,
         populatedWork: `${TASK_ROOT}\\populated`, resetWork: `${TASK_ROOT}\\reset`},
     scenarios: SCENARIOS.map((scenario, index) => ({scenario, port: 41001 + index}))});
