@@ -1675,7 +1675,8 @@ export async function runMonitoredQemu(io, request) {
                 completionRecord = observed.completion.record;
             }
         }
-        if (completionObservedAt === null && deadlineReached) terminationReasons.push("deadline");
+        if (completionObservedAt === null && deadlineReached && terminationReasons.length === 0)
+            terminationReasons.push("deadline");
         if (!finished && terminationReasons.length === 0 && completionObservedAt === null)
             await io.wait(RESOURCE_POLL_MILLISECONDS);
     }
