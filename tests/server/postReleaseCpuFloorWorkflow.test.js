@@ -81,6 +81,11 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.match(step.run, /r\.status \?\? "unknown"/u);
         assert.match(step.run, /\(stage \$\{r\.stage\}\)/u);
         assert.match(step.run, /: \$\{r\.failure\}/u);
+        // The retained launch diagnostic's classification and raw termination reason ride along, so a
+        // deadline kill is distinguishable from a firmware shell fallback straight from the CI log.
+        assert.match(step.run, /const q=r\.qemuLaunch;/u);
+        assert.match(step.run, /\[launch \$\{q\.classification \?\? "unclassified"\}/u);
+        assert.match(step.run, /q\.terminationReason==="string"/u);
         // The workflow-command message must escape %, CR and LF so Actions parsing cannot be broken or truncated.
         assert.match(step.run, /escaped_reason=\$\{failure_reason\/\/'%'\/'%25'\}/u);
         assert.match(step.run, /\$'\\r'\/'%0D'/u);

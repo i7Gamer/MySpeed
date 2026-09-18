@@ -6,11 +6,17 @@ import {
     admitStage3Reservation,
     anchorStage3JobBudget,
     buildBaselineQemuArguments,
+    buildStage3LaunchDiagnostic,
+    buildStage3LaunchFailure,
     runWindowsCpuFloorStage3,
     validateBaselineGuestResult,
     validateCompletedStage3Result,
-    STAGE3_BUDGET_CONSTANTS
+    STAGE3_BUDGET_CONSTANTS,
+    STAGE3_LAUNCH_CLASSIFICATIONS,
+    STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
+import {STAGE3_CONTROLLER_CONSTANTS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage3-controller.mjs";
 import {PACKAGE_ROOTS, STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINDOWS_SYSTEM_TOOL_PATHS,
     buildQemuArguments as buildStage2QemuArguments,
     validatePackageClosure} from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -932,5 +938,143 @@ describe("Windows CPU-floor Stage 3 execution budget", () => {
         assert.throws(() => validateCompletedStage3Result({...result,
             reservation: {...reservationProof(), executionMilliseconds: 16_200_000}}, binding, retained),
         /Stage 3 reservation is invalid/u);
+    });
+});
+
+describe("Windows CPU-floor Stage 3 launch failure diagnostics", () => {
+    const serialText = "UEFI Interactive Shell";
+    const serialLog = () => ({status: "captured", bytes: String(serialText.length),
+        sha256: crypto.createHash("sha256").update(Buffer.from(serialText, "utf8")).digest("hex"),
+        bytesBase64: Buffer.from(serialText, "utf8").toString("base64"),
+        observedBytes: String(serialText.length), truncated: false});
+    const deadlineDiagnostic = () => ({schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
+        process: {...processProof(), exitCode: null, signal: "SIGKILL", timedOut: true,
+            cleanupProven: false, treeGone: false, terminationReason: "deadline"},
+        processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+        monitorFailure: null,
+        stderr: {bytes: "11", sha256: SHA("e"),
+            bytesBase64: Buffer.from("qemu stderr", "utf8").toString("base64")},
+        serialLog: serialLog()});
+    const launchFailure = (overrides = {}) => ({argv: ["-nic", "none"],
+        process: {...processProof(), exitCode: null, signal: "SIGKILL", timedOut: true,
+            cleanupProven: false, treeGone: false, terminationReason: "deadline"},
+        earlyBoot: earlyBootObservation(), guest: null, failureDiagnostic: deadlineDiagnostic(), ...overrides});
+    const guestReceipt = () => ({schemaVersion: 1, status: "failed", nonce: NONCE,
+        stage: "guest-bootstrap", failure: "executor-invocation"});
+
+    it("projects a retained launch diagnostic into the failed Stage 3 result", async () => {
+        const fixture = operations({async launchBaselineGuest(input) {
+            throw buildStage3LaunchFailure("baseline guest did not return the CPU calibration envelope",
+                buildStage3LaunchDiagnostic({...launchFailure(), argv: input.argv}));
+        }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "failed");
+        assert.equal(result.stage, "qemu-launch");
+        assert.equal(result.failure, "baseline guest did not return the CPU calibration envelope");
+        assert.equal(result.qemuLaunch.kind, "stage3-qemu-launch-diagnostic");
+        assert.equal(result.qemuLaunch.classification, STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline);
+        assert.equal(result.qemuLaunch.terminationReason, "deadline");
+        assert.equal(result.qemuLaunch.guestFailureObserved, false);
+        assert.equal(result.qemuLaunch.serialLog.bytesBase64, serialLog().bytesBase64);
+        assert.equal(result.qemuLaunch.process.signal, "SIGKILL");
+        // The keystroke proof is the only evidence that answers a missed boot confirmation.
+        assert.equal(result.qemuLaunch.earlyBoot.inputSent, false);
+        // A retained diagnostic must never make a failed result look accepted.
+        assert.equal(result.qualifying, false);
+        assert.equal(result.releaseGateCleared, false);
+        assert.equal(result.baselineFullRuntimeAccepted, false);
+        assert.equal(result.cpuFloorAccepted, false);
+        assert.equal(result.cleanupProven, false);
+    });
+
+    it("sizes the retained diagnostic against the controller's own result cap", () => {
+        assert.equal(STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_RESULT_CHARACTERS,
+            STAGE3_CONTROLLER_CONSTANTS.MAX_EVIDENCE_BYTES);
+        assert.ok(STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_DIAGNOSTIC_CHARACTERS <
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_RESULT_CHARACTERS);
+    });
+
+    it("omits the launch member for failures that carry no launch diagnostic", async () => {
+        const fixture = operations({async launchBaselineGuest() { throw new Error("adapter failure"); }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "failed");
+        assert.equal(Object.hasOwn(result, "qemuLaunch"), false);
+    });
+
+    it("classifies the observed termination reason without inferring one from the signal", () => {
+        const classificationOf = terminationReason => buildStage3LaunchDiagnostic({...launchFailure(),
+            failureDiagnostic: {...deadlineDiagnostic(),
+                process: {...deadlineDiagnostic().process, terminationReason}}}).classification;
+        assert.equal(classificationOf("deadline"), STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline);
+        assert.equal(classificationOf("efi-shell-fallback"),
+            STAGE3_LAUNCH_CLASSIFICATIONS.firmwareShellFallback);
+        assert.equal(classificationOf(null), STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable);
+        // A SIGKILL alone never proves the execution deadline: the outer timeout wrapper races it.
+        assert.equal(classificationOf("qmp-failed"), STAGE3_LAUNCH_CLASSIFICATIONS.guestResultUnavailable);
+        const reported = buildStage3LaunchDiagnostic({...launchFailure(), guestFailure: guestReceipt(),
+            failureDiagnostic: {...deadlineDiagnostic(),
+                process: {...deadlineDiagnostic().process, terminationReason: null}}});
+        assert.equal(reported.classification, STAGE3_LAUNCH_CLASSIFICATIONS.guestReportedFailure);
+        assert.equal(reported.guestFailureObserved, true);
+        assert.equal(reported.guestFailure.failure, "executor-invocation");
+        // A host deadline and a guest receipt coexist: the host observation classifies, both survive.
+        const both = buildStage3LaunchDiagnostic({...launchFailure(), guestFailure: guestReceipt()});
+        assert.equal(both.classification, STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline);
+        assert.equal(both.guestFailureObserved, true);
+        assert.equal(both.guestFailure.failure, "executor-invocation");
+    });
+
+    it("builds a diagnostic for a clean process whose guest reported its own failure", () => {
+        const diagnostic = buildStage3LaunchDiagnostic({argv: ["-nic", "none"], process: processProof(),
+            earlyBoot: earlyBootObservation(), guest: guestReceipt(), guestFailure: guestReceipt()});
+        assert.equal(diagnostic.kind, "stage3-qemu-launch-diagnostic");
+        assert.equal(diagnostic.classification, STAGE3_LAUNCH_CLASSIFICATIONS.guestReportedFailure);
+        assert.equal(diagnostic.process.exitCode, 0);
+        assert.equal(diagnostic.terminationReason, null);
+        assert.equal(diagnostic.guestFailure.failure, "executor-invocation");
+    });
+
+    it("strips oversized frame payloads and never exceeds the retained diagnostic budget", async () => {
+        const frame = () => ({path: `${ROOT}/predeadline-frame.png`, bytes: "1048576", sha256: SHA("f"),
+            bytesBase64: "A".repeat(OVERSIZED_BASE64_CHARACTERS)});
+        const diagnostic = buildStage3LaunchDiagnostic({...launchFailure(),
+            failureDiagnostic: {...deadlineDiagnostic(),
+                predeadlineFrame: {status: "captured", screenshot: frame()},
+                midWindowFrames: [{offsetMs: 600_000, screenshot: frame()}]}});
+        assert.equal(diagnostic.predeadlineFrame.screenshot.bytesBase64,
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.OMITTED_PAYLOAD_MARKER);
+        // The identity of a dropped frame stays: its bytes live on in the evidence bundle.
+        assert.equal(diagnostic.predeadlineFrame.screenshot.sha256, SHA("f"));
+        assert.equal(diagnostic.midWindowFrames[0].screenshot.bytesBase64,
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.OMITTED_PAYLOAD_MARKER);
+        // The bounded serial and stderr streams are exactly the evidence that must survive.
+        assert.equal(diagnostic.serialLog.bytesBase64, serialLog().bytesBase64);
+        assert.ok(JSON.stringify(diagnostic).length <
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_DIAGNOSTIC_CHARACTERS);
+        const fixture = operations({async launchBaselineGuest() {
+            throw buildStage3LaunchFailure("baseline guest did not return the CPU calibration envelope",
+                diagnostic);
+        }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.qemuLaunch.predeadlineFrame.screenshot.bytesBase64,
+            STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.OMITTED_PAYLOAD_MARKER);
+        assert.ok(JSON.stringify(result).length < STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_RESULT_CHARACTERS);
+    });
+
+    it("replaces a diagnostic that still exceeds the budget with its bounded summary", async () => {
+        const wide = Object.fromEntries(Array.from({length: 4096}, (_value, index) =>
+            [`member-${index}`, "b".repeat(512)]));
+        const fixture = operations({async launchBaselineGuest() {
+            throw buildStage3LaunchFailure("baseline guest did not return the CPU calibration envelope",
+                buildStage3LaunchDiagnostic({...launchFailure(),
+                    failureDiagnostic: {...deadlineDiagnostic(), wide}}));
+        }});
+        const result = await runWindowsCpuFloorStage3(request(), fixture.value);
+        assert.equal(result.status, "failed");
+        assert.equal(result.qemuLaunch.omitted, STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.OMITTED_DIAGNOSTIC_MARKER);
+        assert.equal(result.qemuLaunch.classification, STAGE3_LAUNCH_CLASSIFICATIONS.hostExecutionDeadline);
+        assert.equal(result.qemuLaunch.terminationReason, "deadline");
+        assert.equal(Object.hasOwn(result.qemuLaunch, "wide"), false);
+        assert.ok(JSON.stringify(result).length < STAGE3_LAUNCH_DIAGNOSTIC_CONSTANTS.MAX_RESULT_CHARACTERS);
     });
 });
