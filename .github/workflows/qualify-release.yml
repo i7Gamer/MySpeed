@@ -83,6 +83,12 @@ jobs:
     uses: ./.github/workflows/test.yml
     with:
       ref: ${{ needs.prepare.outputs.sha }}
+      # This qualification run is the trusted caller that owns the suite for a
+      # Dependabot pull request, exactly as merge-dependabot.yml is. Without
+      # this flag test.yml's own Dependabot guard skips every test job, leaving
+      # the seal step with tests=skipped and failing "Mandatory qualification
+      # evidence tests is not success" on every Dependabot PR.
+      dependabot-call: true
 
   binaries:
     name: Qualified binaries
