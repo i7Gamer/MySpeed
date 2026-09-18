@@ -37,11 +37,16 @@ describe("Windows baseline guest concrete process runtime", () => {
         const request = controllerRequest();
         const started = await runtime.startController({request, requestPath: `${ROOT}\\request.json`});
         assert.equal(started.child, child);
-        const argv = calls.find(call => call[0] === "spawn")[2];
+        const spawnCall = calls.find(call => call[0] === "spawn");
+        const argv = spawnCall[2];
         assert.deepEqual(argv.slice(0, 8), ["-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
             "-File", `${ROOT}\\guest-wrapper.ps1`, "-Mode"]);
         assert.equal(argv[8], "InvokeGuestCandidate");
         assert.ok(argv.includes("-ExpectedRequestSha256") && argv.includes(SHA("d")));
+        // The wrapper's console-free detach depends on being spawned windowsHide (CREATE_NO_WINDOW) with piped stdio,
+        // so it owns a private hidden console. Pin that coupling here: dropping the flag would fail the baseline guest.
+        assert.equal(spawnCall[3].windowsHide, true);
+        assert.deepEqual(spawnCall[3].stdio, ["ignore", "pipe", "pipe"]);
         const completion = runtime.waitController({started});
         child.finish();
         assert.deepEqual(await completion, {exitCode: 0, signal: null});
