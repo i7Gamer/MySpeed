@@ -7,7 +7,8 @@ import {fileURLToPath} from "node:url";
 
 import {deriveActualHostedContext, runHostedStage2Controller} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-controller.mjs";
-import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME} from
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -89,9 +90,9 @@ function fixture() {
 }
 
 describe("hosted Stage 2 controller", () => {
-    it("forwards only the two exact optional installer confirmation authorizations", async () => {
+    it("forwards only the three exact optional installer confirmation authorizations", async () => {
         for (const bootConfirmation of [INSTALLER_BOOT_CONFIRMATION,
-            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]) {
+            INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, INSTALLER_BOOT_CONFIRMATION_CADENCE]) {
             const {request, contents} = fixture();
             request.authorization.bootConfirmation = bootConfirmation;
             let forwarded;

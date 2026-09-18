@@ -31,8 +31,8 @@ on:
       stage3_installer_confirmation:
         description: >-
           Stage 3 installer boot policy. no-input sends nothing and is the default; the single bounded
-          Enter is a separate explicit choice from the installer preparation Stage 2 performs, and it
-          does not guarantee that the firmware boots.
+          Enter and the bounded cadence of Enters are separate explicit choices from the installer
+          preparation Stage 2 performs, and neither guarantees that the firmware boots.
         required: true
         default: no-input
         type: choice
@@ -40,6 +40,7 @@ on:
           - no-input
           - single-enter-before-setup-v1
           - single-enter-after-first-frame-v2
+          - cadence-enter-before-setup-v3
 
 permissions:
   actions: read

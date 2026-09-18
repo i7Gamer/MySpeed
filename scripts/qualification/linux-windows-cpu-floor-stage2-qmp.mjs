@@ -97,6 +97,55 @@ export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILL
 export const INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_LATEST_OFFSET_MILLISECONDS = 6_000;
 
 /*
+ * The cadence policy: several Enter pulses across the firmware's "press any key to boot from CD"
+ * window, in place of one keystroke at a fixed offset.
+ *
+ * v2 sends its single Enter immediately after the first screendump acknowledgement, which lands
+ * between +5000 and +6000 ms. Two of six otherwise identical boots (run 35348635051 among them)
+ * dropped straight to the UEFI shell because the runner's firmware raised that prompt outside the
+ * window: the offset is not stable across runners, while the prompt itself stays open for only a
+ * few seconds. A cadence whose gap is shorter than that prompt's own lifetime covers the span the
+ * prompt has been observed to open in, wherever inside it the prompt actually appears.
+ *
+ * What it still cannot prove: a QMP acknowledgement says the monitor accepted a `send-key` and
+ * nothing more - not that the guest read it, and not that the prompt was open when it did. The
+ * serial monitor's `efi-shell-fallback` abort remains the net that catches a boot this missed.
+ *
+ * Bounded by construction: the offsets are a fixed, closed list no request can choose, every pulse
+ * carries the same single Enter the other two policies send, and no pulse may start after the
+ * latest offset below. All of them land within the first nine seconds, long before Setup exists,
+ * so a pulse the firmware has already consumed reaches a boot manager holding one entry rather
+ * than any part of Setup.
+ */
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE = "cadence-enter-before-setup-v3";
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE_KIND = "installer-boot-confirmation-cadence";
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS =
+    Object.freeze([2_000, 3_200, 4_400, 5_600, 6_800, 8_000]);
+/* The slack one pulse may drift by before the next is due; scheduling room, not a second gap. */
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS = 500;
+/*
+ * The gate on starting a pulse, derived from the last offset rather than chosen, so the list and
+ * this bound cannot drift apart. A pulse whose turn arrives after it is not sent at all.
+ */
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS =
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS.at(-1) +
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_SLACK_MILLISECONDS;
+/*
+ * The bound a recorded pulse is held to. The gate above admits the start of a write, never its
+ * acknowledgement, so the latest offset a record can hold is one reply timeout past it - derived
+ * from the two bounds exactly as the WinPE diagnostic's recorded bound is, so neither can be
+ * widened without widening this with it. Holding an acknowledged pulse to the start gate instead
+ * would let ordinary monitor jitter destroy the evidence for a keystroke that was correctly sent,
+ * and with it the whole launch, since an unvalidatable `inputSent` leaves no early-boot
+ * observation at all.
+ */
+export const INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS =
+    INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS + QMP_MESSAGE_TIMEOUT_MILLISECONDS;
+const CADENCE_INPUT_KEYS = Object.freeze(["acknowledged", "holdMilliseconds", "kind", "pulses", "qcode"]);
+const CADENCE_PULSE_KEYS = Object.freeze(["acknowledged", "requestedOffsetMilliseconds",
+    "sentOffsetMilliseconds"]);
+
+/*
  * The WinPE answer-file diagnostic.
  *
  * This is a separate authorization, not a third installer-boot-confirmation policy. The two boot
@@ -278,8 +327,43 @@ export function validateLateScreenshots(paths) {
 
 export function validateInstallerBootConfirmation(value) {
     if (value === undefined || value === INSTALLER_BOOT_CONFIRMATION ||
-        value === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME) return value;
+        value === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME ||
+        value === INSTALLER_BOOT_CONFIRMATION_CADENCE) return value;
     throw new TypeError("QMP installer boot confirmation is invalid");
+}
+
+/*
+ * A truncated cadence is valid evidence, not a failure: the offset list is the most the host may
+ * send, and a session already running behind schedule sends the prefix that still fits. Refusing
+ * the short record would turn a boot that was merely typed at less often into a launch carrying no
+ * early-boot observation at all. What stays pinned is the list itself - a record may drop pulses
+ * from the end, never substitute an offset of its own - and the window every pulse landed in.
+ */
+function validateInstallerBootCadenceInput(value) {
+    const offsets = INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS;
+    if (!value || typeof value !== "object" || Array.isArray(value) ||
+        JSON.stringify(Object.keys(value).sort()) !== JSON.stringify([...CADENCE_INPUT_KEYS]) ||
+        value.kind !== INSTALLER_BOOT_CONFIRMATION_CADENCE_KIND ||
+        value.qcode !== INSTALLER_BOOT_CONFIRMATION_QCODE ||
+        value.holdMilliseconds !== INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS ||
+        value.acknowledged !== true || !Array.isArray(value.pulses) ||
+        value.pulses.length < 1 || value.pulses.length > offsets.length)
+        throw new TypeError("QMP installer boot input is invalid");
+    let previousSentOffsetMilliseconds = -1;
+    for (const [index, pulse] of value.pulses.entries()) {
+        if (!pulse || typeof pulse !== "object" || Array.isArray(pulse) ||
+            JSON.stringify(Object.keys(pulse).sort()) !== JSON.stringify([...CADENCE_PULSE_KEYS]) ||
+            pulse.requestedOffsetMilliseconds !== offsets[index] || pulse.acknowledged !== true ||
+            !Number.isFinite(pulse.sentOffsetMilliseconds) ||
+            pulse.sentOffsetMilliseconds < offsets[index] ||
+            pulse.sentOffsetMilliseconds >
+                INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_RECORDED_OFFSET_MILLISECONDS ||
+            pulse.sentOffsetMilliseconds < previousSentOffsetMilliseconds)
+            throw new TypeError("QMP installer boot input is invalid");
+        previousSentOffsetMilliseconds = pulse.sentOffsetMilliseconds;
+    }
+    return Object.freeze({...value,
+        pulses: Object.freeze(value.pulses.map(pulse => Object.freeze({...pulse})))});
 }
 
 export function validateInstallerBootInput(value, policy) {
@@ -288,6 +372,7 @@ export function validateInstallerBootInput(value, policy) {
         if (value === false) return false;
         throw new TypeError("QMP installer boot input is invalid");
     }
+    if (policy === INSTALLER_BOOT_CONFIRMATION_CADENCE) return validateInstallerBootCadenceInput(value);
     const afterFirstScreenshotAck = policy === INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME;
     const requestedOffsetMilliseconds = afterFirstScreenshotAck ?
         INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME_REQUESTED_OFFSET_MILLISECONDS :
@@ -846,8 +931,44 @@ async function runSession(input, dependencies, session) {
             requestedOffsetMilliseconds, sentOffsetMilliseconds, acknowledged: true,
             ...(afterFirstScreenshotAck ? {afterFirstScreenshotAck: true} : {})}, bootConfirmation);
     };
+    /*
+     * The cadence runs to completion before the first screendump rather than interleaving with it:
+     * the QMP monitor takes one command at a time, and a frame taken in the middle of the window
+     * would either delay a pulse past its offset or push the frame behind the whole cadence. The
+     * first screenshot follows immediately after the last pulse, which is why its own delay is
+     * already measured from the session start rather than from here.
+     */
+    const sendInstallerBootConfirmationCadence = async () => {
+        const offsets = INSTALLER_BOOT_CONFIRMATION_CADENCE_OFFSETS_MILLISECONDS;
+        const pulses = [];
+        const elapsed = () => getTime() - sessionStartTime;
+        for (const [index, requestedOffsetMilliseconds] of offsets.entries()) {
+            if (elapsed() > INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS) break;
+            await cancellableDelay(Math.max(0, requestedOffsetMilliseconds - elapsed()), dependencies, session);
+            if (session.cancelled || session.expired)
+                throw new Error("QMP installer boot confirmation cancelled");
+            // Re-checked after the delay, not only before it: a delay that overran is exactly what
+            // this gate exists to catch, and the pulses already sent stand as their own record.
+            if (elapsed() > INSTALLER_BOOT_CONFIRMATION_CADENCE_LATEST_OFFSET_MILLISECONDS) break;
+            let sentOffsetMilliseconds = null;
+            const id = `installer-boot-confirmation-${index + 1}`;
+            await sendAndAwait({execute: "send-key",
+                arguments: {keys: [{type: "qcode", data: INSTALLER_BOOT_CONFIRMATION_QCODE}],
+                    "hold-time": INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS}, id},
+            id, QMP_MESSAGE_TIMEOUT_MILLISECONDS, () => { sentOffsetMilliseconds = elapsed(); });
+            pulses.push({requestedOffsetMilliseconds, sentOffsetMilliseconds, acknowledged: true});
+        }
+        if (pulses.length < 1) throw new Error("QMP installer boot confirmation window elapsed");
+        // A QMP acknowledgement proves only monitor acceptance, never guest-side receipt.
+        return validateInstallerBootInput({kind: INSTALLER_BOOT_CONFIRMATION_CADENCE_KIND,
+            qcode: INSTALLER_BOOT_CONFIRMATION_QCODE,
+            holdMilliseconds: INSTALLER_BOOT_CONFIRMATION_HOLD_MILLISECONDS, acknowledged: true,
+            pulses}, bootConfirmation);
+    };
     if (bootConfirmation === INSTALLER_BOOT_CONFIRMATION)
         inputSent = await sendInstallerBootConfirmation();
+    if (bootConfirmation === INSTALLER_BOOT_CONFIRMATION_CADENCE)
+        inputSent = await sendInstallerBootConfirmationCadence();
     const wait = dependencies.wait ?? delay;
     const firstScreenshotDelay = bootConfirmation === undefined ? FIRST_SCREENSHOT_DELAY_MILLISECONDS :
         Math.max(0, FIRST_SCREENSHOT_DELAY_MILLISECONDS - (getTime() - sessionStartTime));

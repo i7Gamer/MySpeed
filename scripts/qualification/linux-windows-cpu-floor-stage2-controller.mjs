@@ -7,6 +7,7 @@ import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {assessWindowsCpuFloorAdmission} from "./linux-windows-cpu-floor-admission.mjs";
 import {runWindowsCpuFloorStage2, validateStage2Paths} from "./linux-windows-cpu-floor-stage2.mjs";
 import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE,
     validateWinpeDiagnosticAuthorization} from "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {WINPE_DIAGNOSTIC_RESERVATION_LABEL, admitWinpeDiagnosticReservation,
     collectHostedAdmissionObservations, createHostedCpuFloorCleanupOperations, createHostedStage2Operations} from
@@ -200,8 +201,8 @@ function validateRequest(request) {
     const authorizationKeys = ["confirmation", "media", "qemu", "scope"];
     if (Object.hasOwn(request.authorization ?? {}, "bootConfirmation")) {
         authorizationKeys.push("bootConfirmation");
-        if (![INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME]
-            .includes(request.authorization.bootConfirmation))
+        if (![INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+            INSTALLER_BOOT_CONFIRMATION_CADENCE].includes(request.authorization.bootConfirmation))
             throw new TypeError("Stage 2 boot confirmation is not authorized");
     }
     if (diagnosticAuthorized) {
