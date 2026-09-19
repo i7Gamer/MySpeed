@@ -71,8 +71,8 @@ function fixture(overrides = {}) {
         cleanup: input => { calls.push(["cleanup", input]); return {cleanupProven: true}; },
         ...overrides
     };
-    return {calls, operations: createWindowsBaselineGuestOperations({request: request(), execution: execution(),
-        dependencies})};
+    return {calls, dependencies, operations: createWindowsBaselineGuestOperations({request: request(),
+        execution: execution(), dependencies})};
 }
 
 describe("Windows baseline guest native operations bridge", () => {
@@ -183,6 +183,35 @@ describe("Windows baseline guest native operations bridge", () => {
             const result = await runWindowsBaselineGuest(request(), value.operations);
             assert.equal(result.status, "failed");
             assert.equal(result.cleanupProven, false);
+        }
+    });
+
+    /*
+     * The two fields the CPU floor added to the execution manifest.
+     *
+     * The probe is a binary the guest executes and the model is what the composed envelope
+     * stamps, so a manifest that names either one loosely has to be refused here rather than
+     * inside the guest, where the refusal costs an hour-long run to observe.
+     */
+    it("refuses a CPU model or a probe identity the manifest states loosely", () => {
+        /* Each refusal names the field it refused, so none of these can pass for the wrong reason. */
+        for (const [override, reason] of [
+            [{cpuModel: ""}, /CPU model differs/u], [{cpuModel: "Westmere v2"}, /CPU model differs/u],
+            [{cpuModel: "W".repeat(65)}, /CPU model differs/u], [{cpuModel: 1}, /CPU model differs/u],
+            [{cpuidProbe: null}, /CPUID probe schema differs/u],
+            [{cpuidProbe: {path: "D:\\cpuid.exe", bytes: "16384"}}, /CPUID probe schema differs/u],
+            [{cpuidProbe: {path: "cpuid.exe", bytes: "16384", sha256: SHA("9")}}, /CPUID probe path differs/u],
+            [{cpuidProbe: {path: "D:\\cpuid.exe", bytes: "0", sha256: SHA("9")}}, /CPUID probe bytes differs/u],
+            [{cpuidProbe: {path: "D:\\cpuid.exe", bytes: "16384", sha256: "nothex"}}, /CPUID probe SHA differs/u]
+        ]) assert.throws(() => createWindowsBaselineGuestOperations({request: request(),
+            execution: {...execution(), ...override}, dependencies: fixture().dependencies}),
+        error => reason.test(error.message), JSON.stringify(override));
+        /* A manifest missing either field is refused by the key set before any of the above runs. */
+        for (const name of ["cpuModel", "cpuidProbe"]) {
+            const value = {...execution()};
+            delete value[name];
+            assert.throws(() => createWindowsBaselineGuestOperations({request: request(), execution: value,
+                dependencies: fixture().dependencies}), /execution manifest schema differs/u, name);
         }
     });
 });
