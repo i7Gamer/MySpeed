@@ -1797,17 +1797,22 @@ export async function runMonitoredQemu(io, request) {
      * did not complete cleanly", where a UEFI-shell drop reports `efi-shell-fallback`, so working
      * out even roughly what had happened cost an evidence download and a screenshot extraction.
      *
-     * The name claims exactly what was observed and no more. It is tempting to read a high status
-     * as the `timeout` wrapper QEMU runs under reaching its deadline, and that reading is wrong:
-     * GNU timeout reports its own expiry as 124, whatever signal it was told to send, unless it is
-     * asked to preserve the status - and it is not asked here. A high status is therefore evidence
-     * against the wrapper's own deadline rather than for it.
+     * The name claims exactly what was observed and no more. Two things narrow what a *numeric*
+     * high status can mean here, and both are worth stating because each has been got wrong once.
      *
-     * What remains is still unattributed. 128 plus a signal is a reporting convention for a child
-     * that died some other way, and a process may return such a status deliberately; neither can be
-     * told from the other here. Attributing it would need the killer to say so itself. The elapsed
-     * time and the deadline the launcher was configured with are attached instead, so a reader can
-     * see the correlation the harness declines to assert.
+     * GNU timeout reports its own expiry as 124 for a catchable signal, but 128 plus the signal
+     * when it had to use KILL, which is what this wrapper is given - its own documentation says so,
+     * and coreutils 9.4 on the runner's image agrees. So expiry here looks like 137, not 124.
+     *
+     * A child killed by anything *else* does not arrive as a status at all: the wrapper re-raises
+     * the signal on itself and the parent sees a signalled process, which the integer check above
+     * has already excluded. An external killer - the OOM killer, the runner - therefore cannot
+     * produce this record.
+     *
+     * What is left is the wrapper's own deadline or a process returning such a status deliberately,
+     * and those two cannot be told apart from here, so the name still attributes nothing. The
+     * elapsed time and the deadline the launcher was configured with are attached instead, so a
+     * reader can see the correlation the harness declines to assert.
      */
     let launcherExit = null;
     const exitStatus = observation?.process?.exitCode;

@@ -18,6 +18,7 @@ import {
     createHostedQemuProcessLauncher,
     createHostedCpuFloorCleanupOperations,
     createHostedStage2Operations,
+    STAGE3_BASELINE_RESERVATION_LABEL,
     cpuFloorCleanupAuthorityPath,
     defaultReadOwnedPrefixVerified,
     defaultValidateOutputDisk,
@@ -1049,6 +1050,57 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.deepEqual(extracted, secondary ? ["::result.json", "::bootstrap-failure.json"] : ["::result.json"]);
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
+    });
+
+    /*
+     * The other half of the carry the Stage 3 corroboration gate depends on. The monitor believes
+     * a marker and the launcher has to hand it outward; the receipt identity is minted here from
+     * the bytes actually read. Every test of the gate itself supplies both directly, so a launcher
+     * that stopped emitting them would leave the gate seeing a run that published nothing - which
+     * a clean exit is allowed to be. Both are emitted only under the Stage 3 reservation label, so
+     * this also pins the condition that keeps ordinary Stage 2 observations unchanged.
+     */
+    it("emits the believed marker and the receipt identity under the Stage 3 reservation", async () => {
+        const produced = successfulGuestOutput();
+        const record = {nonce: "b".repeat(32), baseline: {bytes: "11", sha256: "2".repeat(64)},
+            cpu: {bytes: "13", sha256: "3".repeat(64)}};
+        const monitored = serialCompletion => ({observation: {process: okProcess,
+            stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+        identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+            executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+        qmp: qmpObservation(), absentAfter: true, processGroupGone: true, terminationReason: null,
+        ...(serialCompletion === undefined ? {} : {serialCompletion})});
+        const launch = async reservation => {
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                runOwned: async () => ({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}),
+                runMonitoredQemu: async () => monitored(reservation === undefined ? undefined :
+                    {record: structuredClone(record)}),
+                pathExists: () => false,
+                readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                    ({bytes: Buffer.from(JSON.stringify(produced)), identity: {path: target,
+                        bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)}})
+            }});
+            const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
+                `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+            return await adapter.launchOwnedQemu({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"],
+                ...(reservation === undefined ? {} : {reservation})});
+        };
+        const reserved = await launch({label: STAGE3_BASELINE_RESERVATION_LABEL,
+            executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000});
+        assert.deepEqual(reserved.serialCompletion, {record},
+            "the gate cannot corroborate a marker the launcher never emitted");
+        assert.deepEqual(reserved.cpuReceipt,
+            {bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)},
+            "the receipt identity is the bytes that were read, not a re-derivation");
+        /* An ordinary Stage 2 launch shares this code and must carry neither. */
+        const ordinary = await launch();
+        assert.equal(Object.hasOwn(ordinary, "serialCompletion"), false);
+        assert.equal(Object.hasOwn(ordinary, "cpuReceipt"), false);
     });
 
     it("retains activation and system-tool records from parsed guest output through the hosted launch", async () => {
@@ -2315,12 +2367,13 @@ describe("Stage 3 monitor completion transition", () => {
      * had happened cost an evidence download and a screenshot extraction. A UEFI-shell drop has a
      * name; an installer that wedged past a deadline had none.
      *
-     * What the status can support is narrow, and the name says only that much. A high status is
-     * not the `timeout` wrapper reaching its own deadline: GNU timeout reports that as 124 unless
-     * asked to preserve the child's status, which it is not. It is the convention for a child that
-     * died some other way, and a process may also return such a status of its own accord; the two
-     * cannot be told apart here. The timing is attached as evidence for a reader to weigh; the
-     * harness attributes nothing, and no status is treated as special.
+     * What the status can support is narrow, and the name says only that much. A numeric high
+     * status is consistent with the `timeout` wrapper reaching its own deadline, which reports
+     * 128 plus the signal when that signal is KILL, or with a process returning such a status
+     * itself; the two cannot be told apart here. A child killed by anything else arrives as a
+     * signal rather than a status and never reaches this diagnostic at all. The timing is
+     * attached as evidence for a reader to weigh; the harness attributes nothing, and no status
+     * is treated as special.
      */
     it("names a high exit status the monitor did not request, and attributes it to nothing", async () => {
         for (const exitCode of [129, 137, 143, 255]) {

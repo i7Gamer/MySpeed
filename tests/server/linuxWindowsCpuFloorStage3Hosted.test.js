@@ -134,6 +134,37 @@ const budget = () => ({label: "cpu-floor-stage3-baseline",
     wallDeadlineUnixMilliseconds: WALL_DEADLINE_MILLISECONDS});
 
 describe("hosted Windows CPU-floor Stage 3 operations", () => {
+    /*
+     * The carry itself, which every other test of the corroboration gate takes for granted: those
+     * hand the marker and the receipt straight to the gate through a fake launcher, so a launcher
+     * that quietly stopped passing them outward would leave the gate seeing a run that published
+     * nothing - and a clean exit with no marker is accepted. Nothing else here fails if this
+     * breaks, which is exactly why it needs a test of its own.
+     */
+    it("carries the completion marker and the receipt identity out of the launcher", async () => {
+        const record = {nonce: "a".repeat(32), baseline: {bytes: "2809", sha256: SHA("c")},
+            cpu: {bytes: "1024", sha256: SHA("d")}};
+        const receipt = {bytes: "2809", sha256: SHA("c")};
+        const value = fixture({stage2Factory: () => ({
+            async prepareOfflineMedia() { return {
+                seedIso: {path: paths().seedIso, bytes: "8192", sha256: SHA("9")},
+                outputDisk: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")},
+                systemDisk: {path: paths().systemDisk, bytes: "8192", sha256: SHA("b"),
+                    virtualBytes: "51539607552"}, ovmfVars: {path: paths().ovmfVars, sha256: SHA("6")}}; },
+            async launchOwnedQemu(request) { return {argv: request.argv, process: processProof(),
+                earlyBoot: structuredClone(EARLY_BOOT),
+                guest: {schemaVersion: 1, status: "observed",
+                    output: {path: paths().outputDisk, bytes: "67108864", sha256: SHA("a")}},
+                serialCompletion: {record: structuredClone(record)},
+                cpuReceipt: {...receipt}}; }
+        })});
+        const launch = await value.operations.launchBaselineGuest({argv: ["-nic", "none"],
+            budget: budget(), paths: paths(), stage2: stage2(), toolchain: toolchain()});
+        assert.deepEqual(launch.serialCompletion, {record},
+            "the gate cannot corroborate a marker the launcher did not pass on");
+        assert.deepEqual(launch.cpuReceipt, receipt);
+    });
+
     it("rejects a copied context before inspecting any file", () => {
         let inspected = false;
         assert.throws(() => createHostedStage3Operations({context: context(), paths: paths(),
