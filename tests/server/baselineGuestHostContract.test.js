@@ -24,6 +24,8 @@ import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
 import {buildWindowsBaselineGuestSeedDocuments, WINDOWS_BASELINE_GUEST_SEED_DOCUMENT_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-seed-documents.mjs";
 import {composeWindowsBaselineGuestResult} from "../../scripts/qualification/windows-baseline-guest-composer.mjs";
+import {WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS} from
+    "../../scripts/qualification/windows-baseline-guest-executor.mjs";
 import {runWindowsBaselineGuest} from "../../scripts/qualification/windows-baseline-guest-runner.mjs";
 
 const REPOSITORY_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -172,6 +174,16 @@ describe("baseline guest to Stage 3 host contract", () => {
         const published = await publishedGuestResult();
         assert.equal(published.cpu.model, WINDOWS_BASELINE_GUEST_SEED_DOCUMENT_CONSTANTS.CPU_MODEL);
         assert.doesNotThrow(() => validateBaselineGuestResult(published, hostRequest()));
+    });
+
+    /*
+     * The seed bounds the probe it declares and the executor bounds the probe it reads. They are the
+     * same file, so a raise on one side alone turns into a physical-identity refusal inside the guest
+     * rather than a rejected document; the two constants cannot see each other, so pin them here.
+     */
+    it("bounds the CPU floor probe identically on both sides", () => {
+        assert.equal(WINDOWS_BASELINE_GUEST_SEED_DOCUMENT_CONSTANTS.MAX_PROBE_BYTES,
+            WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS.MAX_PROBE_BYTES);
     });
 
     it("ships every module the guest executor imports", () => {

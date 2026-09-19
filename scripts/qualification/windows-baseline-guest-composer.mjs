@@ -16,6 +16,8 @@ const SCHEMA_VERSION = 1;
 const PROFILE = "baseline-cpu";
 const CPUID_KIND = "cpuid";
 const MAX_CPUID_BYTES = 64 * 1024;
+/* linux-windows-cpu-floor-stage3.mjs bounds every embedded evidence blob at this size. */
+const MAX_EMBEDDED_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const CPU_FEATURE_NAMES = Object.freeze(["avx", "avx2", "osxsave", "popcnt", "sse42"]);
 const NETWORK_COUNTER_NAMES = Object.freeze(["enabledNonLoopbackInterfaces", "hardwareNics", "nonLoopbackRoutes"]);
 
@@ -26,9 +28,15 @@ const exactKeys = (value, expected, label) => {
         throw new TypeError(`${label} schema differs`);
 };
 
+/*
+ * Bounded at both ends, and the upper bound is the host's own. Oversized evidence would otherwise
+ * be caught first by the envelope's size check, which can only report that the whole result was too
+ * big - this names the piece that grew, in the guest, where the summary was made.
+ */
 function encodeEvidence(value, label) {
     const bytes = Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
     if (bytes.length < 2) throw new TypeError(`${label} evidence is empty`);
+    if (bytes.length > MAX_EMBEDDED_EVIDENCE_BYTES) throw new TypeError(`${label} evidence is too large`);
     return {bytes, bytesBase64: bytes.toString("base64"), sha256: sha256(bytes)};
 }
 
@@ -106,4 +114,4 @@ export function composeWindowsBaselineGuestResult(input) {
 }
 
 export const WINDOWS_BASELINE_GUEST_COMPOSER_CONSTANTS = Object.freeze({CPUID_KIND, CPU_FEATURE_NAMES,
-    MAX_CPUID_BYTES, NETWORK_COUNTER_NAMES, PROFILE, SCHEMA_VERSION});
+    MAX_CPUID_BYTES, MAX_EMBEDDED_EVIDENCE_BYTES, NETWORK_COUNTER_NAMES, PROFILE, SCHEMA_VERSION});

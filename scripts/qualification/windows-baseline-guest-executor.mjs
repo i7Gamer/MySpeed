@@ -67,8 +67,19 @@ function readOwnedJson(identity, label) {
  */
 function measureOwnedCpuid(identity, spawnSync = spawnSyncChild) {
     readOwnedBytes(identity, MAX_PROBE_BYTES, "baseline CPUID probe");
-    const result = spawnSync(identity.path, [], {windowsHide: true, timeout: PROBE_TIMEOUT_MILLISECONDS,
-        maxBuffer: MAX_PROBE_OUTPUT_BYTES});
+    return validateWindowsBaselineGuestProbeProcessResult(spawnSync(identity.path, [],
+        {windowsHide: true, timeout: PROBE_TIMEOUT_MILLISECONDS, maxBuffer: MAX_PROBE_OUTPUT_BYTES}));
+}
+
+/*
+ * The whole judgment of the probe's process, separated from running it so it can be driven directly.
+ *
+ * `error` is what covers the cases the other fields cannot describe: on a timeout Node reports
+ * ETIMEDOUT and kills the child, and on an output overrun it reports ENOBUFS while still handing
+ * back the truncated stdout. Checking it first means neither can be mistaken for a clean exit.
+ * No `encoding` is passed to spawnSync, so both streams arrive as buffers.
+ */
+export function validateWindowsBaselineGuestProbeProcessResult(result) {
     if (!isObject(result) || result.error !== undefined || result.signal !== null ||
         result.status !== SUCCESS_EXIT_CODE || !Buffer.isBuffer(result.stdout) ||
         (result.stderr?.length ?? 0) !== 0)

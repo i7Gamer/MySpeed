@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import {describe, it} from "node:test";
 
-import {executeWindowsBaselineGuest, validateWindowsBaselineGuestGuardProcessResult} from
+import {executeWindowsBaselineGuest, validateWindowsBaselineGuestGuardProcessResult,
+    validateWindowsBaselineGuestProbeProcessResult,
+    WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-executor.mjs";
 
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
@@ -98,6 +100,35 @@ function candidateResult(scenario) {
 }
 
 describe("Windows baseline guest executable entry", () => {
+    /*
+     * The probe is a binary the guest executes to prove its own CPU floor, so every way its process
+     * can go wrong has to become a refusal rather than an empty measurement. `error` is checked
+     * first because it is the only field that describes a timeout (ETIMEDOUT) or an output overrun
+     * (ENOBUFS), and Node still hands back the truncated stdout in the overrun case.
+     */
+    it("accepts only a clean probe process and never a truncated or failed measurement", () => {
+        const stdout = Buffer.from("{}\n", "utf8");
+        const valid = {status: 0, signal: null, stdout, stderr: Buffer.alloc(0)};
+        assert.deepEqual(validateWindowsBaselineGuestProbeProcessResult(valid), stdout);
+        const timedOut = Object.assign(new Error("spawnSync ETIMEDOUT"), {code: "ETIMEDOUT"});
+        const overran = Object.assign(new Error("spawnSync ENOBUFS"), {code: "ENOBUFS"});
+        for (const result of [null, undefined, {}, {...valid, error: timedOut},
+            {...valid, error: overran}, {...valid, signal: "SIGTERM"}, {...valid, status: 1},
+            {...valid, status: null}, {...valid, stdout: "{}\n"}, {...valid, stdout: undefined},
+            {...valid, stderr: Buffer.from("probe refused", "utf8")}])
+            assert.throws(() => validateWindowsBaselineGuestProbeProcessResult(result),
+                error => assert.match(error.message, /^baseline CPUID probe failed/u) ?? true);
+    });
+
+    it("bounds the probe failure reason it reports", () => {
+        const {MAX_FAILURE_CHARACTERS} = WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS;
+        assert.throws(() => validateWindowsBaselineGuestProbeProcessResult({status: 1, signal: null,
+            stdout: Buffer.alloc(0), stderr: Buffer.from("detail".repeat(1000), "utf8")}), error => {
+            assert.ok(error.message.length <= MAX_FAILURE_CHARACTERS * 2);
+            return true;
+        });
+    });
+
     it("retains bounded sanitized guard diagnostics without accepting failed processes", () => {
         const valid = {status: 0, signal: null, stdout: JSON.stringify({accepted: true, profile: "baseline-cpu"}),
             stderr: ""};
