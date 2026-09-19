@@ -2026,6 +2026,14 @@ export async function runWindowsCpuFloorStage2({context, admission, paths: input
         }
         if (launchObservation?.failureDiagnostic !== undefined) allowedObservationKeys.push("failureDiagnostic");
         if (launchObservation?.lateBoot !== undefined) allowedObservationKeys.push("lateBoot");
+        /*
+         * Stage 3's launcher is this one. The completion marker and the raw receipt identity exist
+         * only for a launch that asked for them, and an ordinary Stage 2 run neither emits nor
+         * reads them - so they are admitted where present, exactly as every other optional key
+         * above is, rather than widened into this stage's contract unconditionally.
+         */
+        if (launchObservation?.serialCompletion !== undefined) allowedObservationKeys.push("serialCompletion");
+        if (launchObservation?.cpuReceipt !== undefined) allowedObservationKeys.push("cpuReceipt");
         assertKeys(launchObservation, allowedObservationKeys, "QEMU observation");
         if (!same(launchObservation.argv, argv)) throw new TypeError("QEMU observed argv mismatch");
         const earlyBoot = launchObservation.earlyBoot === null ? null : validateEarlyBoot(launchObservation.earlyBoot,

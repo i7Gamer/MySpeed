@@ -1217,11 +1217,24 @@ describe("Windows CPU-floor Stage 3 launch failure diagnostics", () => {
         const result = await runWindowsCpuFloorStage3(input, operations().value);
         assert.equal(result.status, "observed", result.failure);
 
-        /* The shape the host produces when the guest published and Windows then refused to go down. */
-        const forced = {...result, qemuProcess: {...result.qemuProcess, exitCode: null, signal: null,
-            terminationReason: "post-completion-teardown-timeout"}};
+        /*
+         * The shape the host produces when the guest published and Windows then refused to go
+         * down - including the marker that authorized tearing it down. Waiving the exit status
+         * rests entirely on that marker, so a forced teardown has to carry it and it has to
+         * agree with what was extracted.
+         */
+        const receipt = {bytes: "2809", sha256: SHA("c")};
+        const forcedProcess = {...result.qemuProcess, exitCode: null, signal: null,
+            terminationReason: "post-completion-teardown-timeout"};
+        const forced = {...result, qemuProcess: forcedProcess, cpuReceipt: receipt,
+            serialCompletion: {record: {nonce: input.context.nonce, cpu: {...receipt},
+                baseline: {bytes: result.guestEvidence.identity.bytes,
+                    sha256: result.guestEvidence.identity.sha256}}}};
         const accepted = validateCompletedStage3Result(forced, input, retainedStage2Bytes);
         assert.equal(accepted.accepted, true);
+        /* The same teardown without the marker that authorized it is not the same evidence. */
+        assert.throws(() => validateCompletedStage3Result({...result, qemuProcess: forcedProcess},
+            input, retainedStage2Bytes), error => /completion marker/iu.test(error.message));
         /* Waiving the exit status must not have waived what the run claims about itself. */
         assert.equal(forced.qualifying, false);
         assert.equal(forced.releaseGateCleared, false);
@@ -1260,4 +1273,132 @@ describe("Windows CPU-floor Stage 3 launch failure diagnostics", () => {
         assert.equal(STAGE3_BUDGET_CONSTANTS.POST_COMPLETION_TERMINATION_REASON, POST_COMPLETION_TERMINATION_REASON);
     });
 
+});
+
+/*
+ * The guest writes the completion marker directly from the bytes it just published, so a marker that
+ * disagrees with the receipts is not a run that went differently - it is contradictory evidence
+ * about one run, and no acceptance may be built on it. The rule is therefore unconditional in one
+ * direction: a marker that is present must match. It stays conditional in the other, because a clean
+ * QEMU exit proves the workload finished without any marker at all, while a forced teardown was
+ * authorized by the marker and cannot then be accepted without one.
+ */
+describe("Stage 3 corroborates the completion marker against what was extracted", () => {
+    const MARKER_NONCE = NONCE;
+
+    async function publishedWithMarker({marker, cpuReceipt, terminationReason = null, prepare} = {}) {
+        const input = request();
+        prepare?.(input);
+        const guest = guestResult();
+        const encodedGuest = encodedJson(guest);
+        const collected = {...collectedGuestResult(), result: guest, bytesBase64: encodedGuest.bytesBase64};
+        const baselineIdentity = {sha256: encodedGuest.sha256,
+            bytes: String(Buffer.from(encodedGuest.bytesBase64, "base64").length)};
+        collected.identity = {...collected.identity, ...baselineIdentity};
+        const fixture = operations({
+            collectBaselineGuestResult: async () => collected,
+            async launchBaselineGuest(launchInput) {
+                return {argv: launchInput.argv,
+                    process: {...processProof(), terminationReason},
+                    earlyBoot: earlyBootObservation(), reservation: reservationProof(),
+                    outputDisk: identity("baseline-output.img", "0", 67_108_864),
+                    ...(marker === undefined ? {} : {serialCompletion: marker}),
+                    ...(cpuReceipt === undefined ? {} : {cpuReceipt})};
+            }});
+        const result = await runWindowsCpuFloorStage3(input, fixture.value);
+        return {result, baselineIdentity, input};
+    }
+
+    /* What the guest would emit: the two identities it actually wrote, under this run's nonce. */
+    const agreeing = (baselineIdentity, receipt) => ({record: {nonce: MARKER_NONCE,
+        baseline: {...baselineIdentity}, cpu: {...receipt}}});
+    const RECEIPT = {bytes: "2809", sha256: SHA("c")};
+
+    it("accepts a clean exit whose marker agrees with both receipts", async () => {
+        const first = await publishedWithMarker();
+        const {result, baselineIdentity} = await publishedWithMarker({
+            marker: agreeing(first.baselineIdentity, RECEIPT), cpuReceipt: RECEIPT});
+        assert.equal(result.status, "observed", result.failure);
+        assert.deepEqual(result.serialCompletion.record.baseline, baselineIdentity);
+    });
+
+    it("accepts a clean exit that published no marker at all", async () => {
+        const {result} = await publishedWithMarker();
+        assert.equal(result.status, "observed", result.failure);
+        assert.equal(result.serialCompletion, undefined);
+    });
+
+    it("refuses every disagreement between the marker and the receipts", async () => {
+        const base = await publishedWithMarker();
+        const truthful = agreeing(base.baselineIdentity, RECEIPT);
+        const disagreements = [
+            ["baseline bytes", {...truthful.record, baseline: {...truthful.record.baseline, bytes: "1"}}],
+            ["baseline hash", {...truthful.record, baseline: {...truthful.record.baseline, sha256: SHA("f")}}],
+            ["CPU bytes", {...truthful.record, cpu: {...truthful.record.cpu, bytes: "1"}}],
+            ["CPU hash", {...truthful.record, cpu: {...truthful.record.cpu, sha256: SHA("f")}}]
+        ];
+        for (const [name, record] of disagreements) {
+            const {result} = await publishedWithMarker({marker: {record}, cpuReceipt: RECEIPT});
+            assert.equal(result.status, "failed", name);
+            assert.match(result.failure, /completion marker/iu, name);
+        }
+    });
+
+    it("refuses a marker that was emitted and could not be believed", async () => {
+        const {result} = await publishedWithMarker({
+            marker: {invalid: "serial-completion-invalid"}, cpuReceipt: RECEIPT});
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /completion marker/iu);
+    });
+
+    it("refuses a marker carrying another run's nonce", async () => {
+        const base = await publishedWithMarker();
+        const foreign = agreeing(base.baselineIdentity, RECEIPT);
+        const {result} = await publishedWithMarker({
+            marker: {record: {...foreign.record, nonce: "f".repeat(32)}}, cpuReceipt: RECEIPT});
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /completion marker/iu);
+    });
+
+    it("refuses a forced teardown that produced no marker", async () => {
+        const {result} = await publishedWithMarker({
+            terminationReason: "post-completion-teardown-timeout"});
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /completion marker/iu);
+    });
+
+    it("accepts a forced teardown whose marker agrees", async () => {
+        const base = await publishedWithMarker();
+        const {result} = await publishedWithMarker({
+            marker: agreeing(base.baselineIdentity, RECEIPT), cpuReceipt: RECEIPT,
+            terminationReason: "post-completion-teardown-timeout"});
+        assert.equal(result.status, "observed", result.failure);
+    });
+
+    /*
+     * The same four disagreements again, through the validator that replays a retained result rather
+     * than the runner that produced one. A rule enforced on only one of those two paths is a rule a
+     * replayed result can walk around.
+     */
+    it("refuses the same disagreements when replaying a retained result", async () => {
+        const retained = Buffer.from(JSON.stringify(stage2Observation()), "utf8");
+        const prepare = value => { value.stage2.result = {...value.stage2.result,
+            bytes: String(retained.length),
+            sha256: crypto.createHash("sha256").update(retained).digest("hex")}; };
+        const base = await publishedWithMarker({prepare});
+        const truthful = agreeing(base.baselineIdentity, RECEIPT);
+        const {result, input} = await publishedWithMarker({marker: truthful, cpuReceipt: RECEIPT, prepare});
+        assert.equal(result.status, "observed", result.failure);
+        assert.equal(validateCompletedStage3Result(result, input, retained).accepted, true);
+        for (const mutate of [
+            value => ({...value, baseline: {...value.baseline, sha256: SHA("f")}}),
+            value => ({...value, baseline: {...value.baseline, bytes: "1"}}),
+            value => ({...value, cpu: {...value.cpu, sha256: SHA("f")}}),
+            value => ({...value, cpu: {...value.cpu, bytes: "1"}})
+        ]) {
+            const tampered = {...result, serialCompletion: {record: mutate(truthful.record)}};
+            assert.throws(() => validateCompletedStage3Result(tampered, input, retained),
+                error => /completion marker/iu.test(error.message));
+        }
+    });
 });

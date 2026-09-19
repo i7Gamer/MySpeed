@@ -310,7 +310,16 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
             launchCleanupProven = true;
             return {argv: structuredClone(argv), process: structuredClone(launch.process),
                 earlyBoot: structuredClone(launch.earlyBoot), reservation: {...reservation},
-                outputDisk: structuredClone(launch.guest.output)};
+                outputDisk: structuredClone(launch.guest.output),
+                /*
+                 * What the guest said it published, and the identity of the receipt it published.
+                 * Both are carried rather than judged here: this launcher observes, and the gate
+                 * that compares them is the one that also holds the baseline identity.
+                 */
+                ...(launch.serialCompletion === undefined ? {} :
+                    {serialCompletion: structuredClone(launch.serialCompletion)}),
+                ...(launch.cpuReceipt === undefined ? {} :
+                    {cpuReceipt: structuredClone(launch.cpuReceipt)})};
         },
         async collectBaselineGuestResult({outputDisk}) {
             const target = `${paths.root}/${BASELINE_RESULT_NAME}`;

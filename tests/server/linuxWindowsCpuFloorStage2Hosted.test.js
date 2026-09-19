@@ -2264,6 +2264,52 @@ describe("Stage 3 monitor completion transition", () => {
         assert.equal(result.serialCompletion, undefined);
     });
 
+    /* The line ending the fixture already uses, so no test below has to spell an escape. */
+    const CRLF = RECORD_LINE.slice(-2);
+
+    /*
+     * A marker the guest emitted but that cannot be believed - malformed, or a second one where
+     * the reviewed producer emits exactly one - is not the same as a guest that emitted none.
+     * Collapsing it into absence hands Stage 3 a run that looks like an ordinary clean exit,
+     * which is the one shape its "a present marker must match" rule can never refuse. It
+     * survives as its own outcome instead, and still authorizes nothing.
+     */
+    it("reports a malformed record as an explicit invalid outcome rather than as absence", async () => {
+        const malformed = `${COMPLETION_RECORD_PREFIX} {"schemaVersion":1,"kind":"wrong"}${CRLF}`;
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 20_000 ? `boot${CRLF}${malformed}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined);
+        assert.equal(result.terminationReason, null, "an unbelievable marker triggers nothing");
+    });
+
+    it("reports a second record as invalid, since the reviewed producer emits one", async () => {
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+    });
+
+    /*
+     * The polling loop stops at process exit, so a record written in the moments before it - or
+     * one whose final newline never arrived - was previously never read at all. A bounded final
+     * drain after settlement reads it. It is evidence for corroboration only: arriving after the
+     * process is gone it can authorize no teardown, and it arms no trigger.
+     */
+    it("drains a record emitted just before exit, without arming the teardown trigger", async () => {
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+        assert.equal(result.serialCompletion.observedAtMs, undefined);
+        assert.notEqual(result.terminationReason, "post-completion-teardown-timeout");
+    });
+
+    it("finalizes a trailing record whose newline never arrived", async () => {
+        const unterminated = RECORD_LINE.slice(0, -2);
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${unterminated}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+    });
+
     it("supplies no trigger when the completion channel itself fails", async () => {
         const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
         assert.equal(result.terminationReason, "deadline");
