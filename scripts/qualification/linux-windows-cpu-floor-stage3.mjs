@@ -543,7 +543,31 @@ function validateStage2GuestEvidence(value, expectedIdentity, context, projected
         !same(replayed.activation, projectedGuest.activation) ||
         !same(replayed.systemTools, projectedGuest.systemTools))
         throw new TypeError("Stage 2 raw guest projection differs");
-    return {identity: id, bytesBase64: value.bytesBase64};
+    return {evidence: {identity: id, bytesBase64: value.bytesBase64}, cpuid: replayed.cpuid};
+}
+
+/*
+ * The two guests measured the same probe binary on the same booted CPU, so their CPUID must agree.
+ *
+ * Each side already proves the feature floor on its own, but both prove it against the same pinned
+ * booleans, so comparing those would say nothing. The raw leaves are pinned nowhere - leaf 1 EAX
+ * carries the CPU signature and the remaining registers carry words no gate reads - so they are what
+ * makes this a second opinion rather than a second copy. A probe swapped between the stages, or a
+ * Stage 3 guest booted on a CPU Stage 2 never calibrated, disagrees here and nowhere else.
+ *
+ * Compared as parsed records, not as bytes: the calibration guest's copy is re-serialized through
+ * PowerShell on its way out, so the two are never byte-identical even when they agree.
+ */
+/* The record the baseline guest published, re-read from the bytes its own validator already proved. */
+function baselineCpuidRecord(guest) {
+    return decodeEvidence(guest.cpu.cpuidBytesBase64, guest.cpu.cpuidSha256, "baseline guest CPUID").parsed;
+}
+
+function assertCorroboratedCpuid(baseline, calibration) {
+    const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf, leaf1: value.leaf1,
+        leaf7Subleaf0: value.leaf7Subleaf0, xcr0: value.xcr0});
+    if (!same(leaves(baseline), leaves(calibration)))
+        throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest");
 }
 
 function validateCandidate(value, context) {
@@ -829,7 +853,8 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
         !same(value.context, checked.context) || !same(value.stage2Result, checked.stage2Result))
         throw new TypeError("completed Stage 3 result is not accepted");
     const candidate = validateAcquiredCandidate(value.candidate, checked.candidate, checked.paths.root);
-    validateStage2GuestEvidence(value.stage2GuestEvidence, checked.stage2GuestResult, checked.context, stage2.guest);
+    const stage2Guest = validateStage2GuestEvidence(value.stage2GuestEvidence, checked.stage2GuestResult,
+        checked.context, stage2.guest);
     const media = validatePreparedMedia(value.media, checked.paths);
     const windowsIso = {path: `/home/runner/work/_temp/myspeed-windows-cpu-floor-${checked.context.nonce}/windows.iso`,
         bytes: stage2.iso.bytes, sha256: stage2.iso.sha256};
@@ -842,6 +867,7 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     if (outputDisk.path !== checked.paths.outputDisk || outputDisk.bytes !== OUTPUT_DISK_BYTES)
         throw new TypeError("completed Stage 3 output disk differs");
     const guest = validateCollectedGuest(value.guestEvidence, checked.request, checked.paths, outputDisk);
+    assertCorroboratedCpuid(baselineCpuidRecord(guest), stage2Guest.cpuid);
     if (!same(guest, value.guest)) throw new TypeError("completed Stage 3 guest evidence differs");
     return Object.freeze({accepted: true, stage2, candidate, media});
 }
@@ -1001,8 +1027,9 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         keys(replay, ["guestEvidence", "identity", "result"], "Stage 2 replay");
         if (!same(replay.identity, checked.stage2Result)) throw new TypeError("Stage 2 result identity differs");
         const stage2 = validateStage2Observation(replay.result, context);
-        const stage2GuestEvidence = validateStage2GuestEvidence(replay.guestEvidence, checked.stage2GuestResult,
+        const stage2Guest = validateStage2GuestEvidence(replay.guestEvidence, checked.stage2GuestResult,
             context, stage2.guest);
+        const stage2GuestEvidence = stage2Guest.evidence;
         const windowsIso = {path: `/home/runner/work/_temp/myspeed-windows-cpu-floor-${context.nonce}/windows.iso`,
             bytes: stage2.iso.bytes, sha256: stage2.iso.sha256};
         stage = "candidate";
@@ -1031,6 +1058,7 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         const guestEvidence = await operations.collectBaselineGuestResult({context, candidate,
             outputDisk, paths: checked.paths});
         const guest = validateCollectedGuest(guestEvidence, checked.request, checked.paths, outputDisk);
+        assertCorroboratedCpuid(baselineCpuidRecord(guest), stage2Guest.cpuid);
         return Object.freeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             baselineFullRuntimeAccepted: true, cpuFloorAccepted: true, cleanupProven: true, context,

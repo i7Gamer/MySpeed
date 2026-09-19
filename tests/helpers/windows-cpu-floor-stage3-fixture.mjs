@@ -198,7 +198,12 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
             controllerLifecyclePassed: true, candidateExited: true,
             candidateExitCode: scenario === "fresh-no-config-reset" ? 113 : 0, forced: false,
             jobActiveProcesses: 0, handlesClosed: true}))};
-    const cpuidEncoding = encode(rawCpuid); const summaryEncoding = encode(summary);
+    /*
+     * The baseline guest measures the same probe the calibration guest did, so by default both
+     * carry the identical record. An override drives them apart, which is the only way to reach
+     * the corroboration refusal - every other gate reads one side alone.
+     */
+    const cpuidEncoding = encode(overrides.baselineCpuid ?? rawCpuid); const summaryEncoding = encode(summary);
     const guest = {schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true, context,
         candidate: {sourceSha: candidate.sourceSha, sha256: candidate.file.sha256, artifactName: candidate.artifactName},
         cpu: {model: "Westmere-v2", cpuidBytesBase64: cpuidEncoding.bytesBase64,

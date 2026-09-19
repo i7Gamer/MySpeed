@@ -629,6 +629,12 @@ export function parseGuestOutput(bytes, expectedNonce) {
     });
     return {activation: rejectIn("activation-invalid", () => parseGuestActivation(value.activation)),
         cpu: recomputed,
+        /*
+         * The whole record, not just the floor recomputed from it. Stage 3's baseline guest runs this
+         * same probe a second time, and the raw leaves are the only part of the two measurements that
+         * no gate pins to a constant - which is what makes them worth comparing.
+         */
+        cpuid: structuredClone(cpuid),
         instructions: {sse42: "completed", popcnt: "completed", avx: "illegal-instruction",
             avx2: "illegal-instruction"}, network: structuredClone(value.network),
         systemTools: rejectIn("system-tools-invalid", () => validateWindowsSystemTools(value.systemTools))};
