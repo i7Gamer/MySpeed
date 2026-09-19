@@ -29,6 +29,14 @@ const EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS = 5_000;
 const SHUTDOWN_OUTCOME_NAME = "baseline-shutdown-outcome.json";
 const SHUTDOWN_STAGE = "guest-shutdown";
 /*
+ * Bumped when the record grew its `completionEmission` member. Nothing on the host parses this file
+ * - it is published to the output volume purely so the retained image says what the guest did - so
+ * the version is here to name the shape for whoever reads the image, not to gate anything.
+ */
+const SHUTDOWN_OUTCOME_SCHEMA_VERSION = 2;
+/* Deep enough for the record, its emission report, the attempt array and each attempt's members. */
+const SHUTDOWN_OUTCOME_JSON_DEPTH = 6;
+/*
  * The publication-complete serial record. It is not shutdown evidence: it says only that both
  * exclusive publications returned and the guest is about to request a power-off, which is the one
  * moment the host can observe live over the already-wired COM1 file chardev. Run 35358547382
@@ -42,6 +50,27 @@ const COMPLETION_RECORD_KIND = "myspeed-stage3-publication-complete";
 const COMPLETION_RECORD_SCHEMA_VERSION = 1;
 export const MAX_COMPLETION_RECORD_BYTES = 768;
 const COMPLETION_SERIAL_DEVICE = "\\\\.\\COM1";
+/*
+ * Run 35390872740 reached the emission - both receipts were published, `Stop-Computer` returned, and
+ * the shutdown record said so - yet the host's serial log stayed at the 1196 bytes the firmware had
+ * written. The write failed and `catch{}` destroyed the reason, so an eighty-minute window bought no
+ * diagnosis at all. Two things follow from that, and both are here rather than on the host: the
+ * emission reports what happened instead of swallowing it, and it has a second mechanism to report
+ * about. The managed port negotiates its own line settings and hands the driver an explicit DCB with
+ * no flow control, where the raw handle inherits whatever state the port was left in; they fail in
+ * different ways, so trying both and naming each failure is what makes the next run decisive.
+ */
+const COMPLETION_SERIAL_PORT_NAME = "COM1";
+const COMPLETION_SERIAL_BAUD_RATE = 115_200;
+const COMPLETION_SERIAL_DATA_BITS = 8;
+const COMPLETION_SERIAL_WRITE_TIMEOUT_MILLISECONDS = 5_000;
+const COMPLETION_EMISSION_FUNCTION = "Write-MyspeedBaselineCompletion";
+const COMPLETION_EMISSION_METHOD_PORT = "serial-port";
+const COMPLETION_EMISSION_METHOD_HANDLE = "raw-handle";
+/* The emitter itself throwing is a third outcome, and one a stub can still produce. */
+const COMPLETION_EMISSION_METHOD_INVOCATION = "invocation";
+const MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS = 160;
+const MAX_COMPLETION_EMISSION_PORT_NAMES = 8;
 const SUCCESS_EXIT_CODE = 0;
 const FAILURE_EXIT_CODE = 1;
 
@@ -322,6 +351,35 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `Throw-MyspeedBaselineExecutorFailure 'Baseline executor result identity differs' $diagnostics $null};` +
         `return [pscustomobject]@{bytes=$bytes;status=[string]$semantic.status;diagnostics=@()}}catch{` +
         `if(-not$_.Exception.Data.Contains('MyspeedDiagnostics')){$_.Exception.Data['MyspeedDiagnostics']=$diagnostics.ToArray()};throw}}\r\n` +
+        `function Get-MyspeedBoundedFailureText([string]$Text,[int]$Maximum){` +
+        `$bounded=[regex]::Replace([string]$Text,'[\\x00-\\x1f\\x7f]+',' ');` +
+        `if($bounded.Length-gt$Maximum){$bounded=$bounded.Substring(0,$Maximum)};` +
+        `if($bounded.Length-eq 0){$bounded='unspecified failure'};return $bounded}\r\n` +
+        /*
+         * Never throws: its whole purpose is to say what happened, and a thrown emitter would be the
+         * swallow all over again. The port names come from the same enumeration the mechanisms use,
+         * so an empty list is itself the answer - it says Windows has no serial port to write to,
+         * and no amount of retrying a write will change that.
+         */
+        `function ${COMPLETION_EMISSION_FUNCTION}([string]$Line,` +
+        `[string]$PortName='${COMPLETION_SERIAL_PORT_NAME}',[string]$DevicePath='${COMPLETION_SERIAL_DEVICE}'){` +
+        `$payload=[Text.ASCIIEncoding]::new().GetBytes($Line+"\`r\`n");$ports=@();` +
+        `try{$ports=@([IO.Ports.SerialPort]::GetPortNames())}catch{$ports=@()};` +
+        `if($ports.Count-gt ${MAX_COMPLETION_EMISSION_PORT_NAMES}){` +
+        `$ports=@($ports[0..${MAX_COMPLETION_EMISSION_PORT_NAMES - 1}])};` +
+        `$attempts=[Collections.Generic.List[object]]::new();$emitted=$false;` +
+        `foreach($method in @('${COMPLETION_EMISSION_METHOD_PORT}','${COMPLETION_EMISSION_METHOD_HANDLE}')){` +
+        `if($emitted){continue};$reason=$null;` +
+        `try{if($method-ceq'${COMPLETION_EMISSION_METHOD_PORT}'){` +
+        `$port=[IO.Ports.SerialPort]::new($PortName,${COMPLETION_SERIAL_BAUD_RATE},[IO.Ports.Parity]::None,` +
+        `${COMPLETION_SERIAL_DATA_BITS},[IO.Ports.StopBits]::One);try{$port.Handshake=[IO.Ports.Handshake]::None;` +
+        `$port.WriteTimeout=${COMPLETION_SERIAL_WRITE_TIMEOUT_MILLISECONDS};$port.Open();` +
+        `$port.Write($payload,0,$payload.Length)}finally{$port.Dispose()}}else{` +
+        `$stream=[IO.File]::Open($DevicePath,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None);` +
+        `try{$stream.Write($payload,0,$payload.Length);$stream.Flush()}finally{$stream.Dispose()}};$emitted=$true}catch{` +
+        `$reason=Get-MyspeedBoundedFailureText $_.Exception.Message ${MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS}};` +
+        `$attempts.Add([ordered]@{method=$method;emitted=($null-eq$reason);failure=$reason})};` +
+        `return [ordered]@{attempted=$true;emitted=$emitted;ports=@($ports);attempts=@($attempts.ToArray())}}\r\n` +
         `function Invoke-MyspeedBaselineBootstrap(` +
         `[scriptblock]$ObserveGuard={Get-MyspeedActualBaselineGuard},` +
         `[scriptblock]$ObserveOutputAuthority={Get-MyspeedBaselineOutputAuthority},` +
@@ -338,13 +396,10 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `$EXPECTED_NONCE $Root (Join-Path $env:SystemRoot 'Temp')},` +
         `[scriptblock]$RemoveInputs={param($Seed,$Root)Remove-MyspeedBaselineInputs $Seed $Root},` +
         `[scriptblock]$Publish={param($Path,$Bytes)Write-MyspeedExclusive $Path $Bytes},` +
-        `[scriptblock]$EmitCompletion={param([string]$Line)$serial=[IO.File]::Open('${COMPLETION_SERIAL_DEVICE}',` +
-        `[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None);try{` +
-        `$serialBytes=[Text.ASCIIEncoding]::new().GetBytes($Line+"\`r\`n");` +
-        `$serial.Write($serialBytes,0,$serialBytes.Length);$serial.Flush()}finally{$serial.Dispose()}},` +
+        `[scriptblock]$EmitCompletion={param([string]$Line)${COMPLETION_EMISSION_FUNCTION} $Line},` +
         `[scriptblock]$Shutdown={Stop-Computer -Force}){` +
         `$failure=$null;$failureStage='guest-bootstrap';$boundary=$null;$publicationOutput=$null;` +
-        `$cpuOperations=$null;$cpu=$null;$baselineBytes=$null;$baselineStatus='unavailable';` +
+        `$cpuOperations=$null;$cpu=$null;$baselineBytes=$null;$baselineStatus='unavailable';$completionEmission=$null;` +
         `$diagnostics=@();$runtimeRoot=Join-Path $env:SystemRoot ('Temp\\myspeed-baseline-runtime-'+$EXPECTED_NONCE);` +
         `$inputRoot=$null;` +
         `$runtimeInstalled=$false;$inputCleanupRequired=$false;$modeChanged=$false;$previousMode=[uint32]0;` +
@@ -393,7 +448,17 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `nonce=$EXPECTED_NONCE;baseline=[ordered]@{bytes=[string]$baselineBytes.Length;sha256=(& $completionDigest $baselineBytes)};` +
         `cpu=[ordered]@{bytes=[string]$cpuBytes.Length;sha256=(& $completionDigest $cpuBytes)}};` +
         `$completionLine='${COMPLETION_RECORD_PREFIX} '+($completion|ConvertTo-Json -Compress -Depth 4);` +
-        `if($completionLine.Length-le ${MAX_COMPLETION_RECORD_BYTES}){try{& $EmitCompletion $completionLine}catch{}}` +
+        /*
+         * An oversized line is still an outcome worth recording: `attempted:false` says the guest
+         * never reached a port, which is a different failure from reaching one and being refused.
+         */
+        `if($completionLine.Length-le ${MAX_COMPLETION_RECORD_BYTES}){` +
+        `try{$completionEmission=& $EmitCompletion $completionLine}catch{` +
+        `$completionEmission=[ordered]@{attempted=$true;emitted=$false;ports=@();attempts=@([ordered]@{` +
+        `method='${COMPLETION_EMISSION_METHOD_INVOCATION}';emitted=$false;` +
+        `failure=(Get-MyspeedBoundedFailureText $_.Exception.Message ` +
+        `${MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS})})}}}else{` +
+        `$completionEmission=[ordered]@{attempted=$false;emitted=$false;ports=@();attempts=@()}}` +
         `}catch{$failure=$_;$failureStage='publication'}};` +
         `if($null-ne$failure){if($baselineStatus-ceq'failed'-and$baselineBytes-is[byte[]]){` +
         `try{& $Publish (Join-Path $publicationOutput '${RESULT_NAME}') $baselineBytes}catch{}};` +
@@ -425,9 +490,11 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `if($null-ne$shutdownFailure){$shutdownFailure=[regex]::Replace($shutdownFailure,'[\\x00-\\x1f\\x7f]+',' ');` +
         `if($shutdownFailure.Length-gt$BASELINE_MAX_FAILURE_CHARACTERS){` +
         `$shutdownFailure=$shutdownFailure.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)}};` +
-        `$shutdownRecord=[ordered]@{schemaVersion=1;nonce=$EXPECTED_NONCE;stage='${SHUTDOWN_STAGE}';` +
-        `outcome=$shutdownOutcome;failure=$shutdownFailure};& $Publish (Join-Path $publicationOutput '${SHUTDOWN_OUTCOME_NAME}') ` +
-        `([Text.UTF8Encoding]::new($false).GetBytes(($shutdownRecord|ConvertTo-Json -Compress -Depth 4)))}catch{}}}}}};` +
+        `$shutdownRecord=[ordered]@{schemaVersion=${SHUTDOWN_OUTCOME_SCHEMA_VERSION};nonce=$EXPECTED_NONCE;` +
+        `stage='${SHUTDOWN_STAGE}';outcome=$shutdownOutcome;failure=$shutdownFailure;` +
+        `completionEmission=$completionEmission};& $Publish (Join-Path $publicationOutput '${SHUTDOWN_OUTCOME_NAME}') ` +
+        `([Text.UTF8Encoding]::new($false).GetBytes((` +
+        `$shutdownRecord|ConvertTo-Json -Compress -Depth ${SHUTDOWN_OUTCOME_JSON_DEPTH})))}catch{}}}}}};` +
         `if($null -ne $failure){throw $failure}}\r\n` +
         `if(-not $LibraryMode){Invoke-MyspeedBaselineBootstrap}\r\n`;
     return Buffer.from(script, "utf8");
@@ -435,7 +502,10 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
 
 export const WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS = Object.freeze({CPU_RESULT_NAME, EXECUTOR_CLEANUP_TIMEOUT_MILLISECONDS,
     COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, COMPLETION_RECORD_SCHEMA_VERSION,
-    COMPLETION_SERIAL_DEVICE, MAX_COMPLETION_RECORD_BYTES,
+    COMPLETION_SERIAL_DEVICE, COMPLETION_SERIAL_PORT_NAME, MAX_COMPLETION_RECORD_BYTES,
+    COMPLETION_EMISSION_FUNCTION, COMPLETION_EMISSION_METHOD_HANDLE, COMPLETION_EMISSION_METHOD_INVOCATION,
+    COMPLETION_EMISSION_METHOD_PORT, MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS,
+    MAX_COMPLETION_EMISSION_PORT_NAMES, SHUTDOWN_OUTCOME_SCHEMA_VERSION,
     EXECUTOR_DESCENDANT_DRAIN_MILLISECONDS, SHUTDOWN_OUTCOME_NAME, SHUTDOWN_STAGE,
     EXECUTOR_TIMEOUT_MILLISECONDS, MAX_CANDIDATE_BYTES, MAX_FAILURE_CHARACTERS, MAX_FIXTURE_BYTES, MAX_RESULT_BYTES,
     MAX_STREAM_BYTES, PROFILE, RESULT_NAME});

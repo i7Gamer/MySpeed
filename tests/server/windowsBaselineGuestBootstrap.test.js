@@ -29,6 +29,13 @@ const DESCENDANT_DRAIN_MILLISECONDS = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS.EXECU
 const BRIEF_DESCENDANT_MILLISECONDS = 400;
 const LEAKED_DESCENDANT_MILLISECONDS = 20_000;
 const SHUTDOWN_OUTCOME_NAME = "baseline-shutdown-outcome.json";
+const {SHUTDOWN_OUTCOME_SCHEMA_VERSION} = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
+/*
+ * The real emitter opens a serial port. Every harness that reaches publication stubs it out, so the
+ * suite never writes to whatever COM1 happens to exist on the machine running it; the tests that are
+ * about the emission itself pass an explicit absent port instead.
+ */
+const SILENT_EMIT_STUB = "-EmitCompletion {param([string]$Line)$null} ";
 const psString = value => `'${String(value).replaceAll("'", "''")}'`;
 const lingeringDescendant = milliseconds => "require('child_process').spawn(process.execPath,['-e'," +
     `'setTimeout(()=>{},${milliseconds})'],{detached:true,stdio:'ignore'}).unref();process.exitCode=0`;
@@ -149,7 +156,7 @@ describe("Windows baseline guest bootstrap", () => {
             `[pscustomobject]@{cleanupProven=$true}} ` +
             `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
             `-Publish {param($Path,$Bytes)if([IO.Path]::GetFileName($Path)-ceq'result.json'){$script:casePublished+=([Text.Encoding]::UTF8.GetString($Bytes))}} ` +
-            `-Shutdown {}}catch{};return (ConvertFrom-Json ($script:casePublished|Select-Object -Last 1))}\r\n` +
+            `${SILENT_EMIT_STUB}-Shutdown {}}catch{};return (ConvertFrom-Json ($script:casePublished|Select-Object -Last 1))}\r\n` +
             `foreach($target in @('${expected.join("','")}')){$observed+=(Invoke-Case $target)}\r\n` +
             `$observed|ConvertTo-Json -Compress\r\n`;
         const records = runLibraryHarness("myspeed-baseline-stages-", body);
@@ -161,7 +168,7 @@ describe("Windows baseline guest bootstrap", () => {
         {skip: !HAS_INBOX_POWERSHELL}, () => {
             const body = `$events=@();try{Invoke-MyspeedBaselineBootstrap -ObserveGuard {throw 'guard failed'} ` +
                 `-ObserveOutputAuthority {throw 'no output authority'} ` +
-                `-Publish {param($Path,$Bytes)$script:events+='publish'} -Shutdown {$script:events+='shutdown'}}catch{}\r\n` +
+                `-Publish {param($Path,$Bytes)$script:events+='publish'} ${SILENT_EMIT_STUB}-Shutdown {$script:events+='shutdown'}}catch{}\r\n` +
                 `$events|ConvertTo-Json -Compress\r\n`;
             assert.equal(runLibraryHarness("myspeed-baseline-no-authority-", body), "shutdown");
         });
@@ -180,7 +187,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-Publish {param($Path,$Bytes)$name=[IO.Path]::GetFileName($Path);$script:events+=([pscustomobject]@{name=$name;text=[Text.Encoding]::UTF8.GetString($Bytes)});` +
                 `if($name-in@('baseline-result.json','result.json')){throw 'collision'}} ` +
-                `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n` +
+                `${SILENT_EMIT_STUB}-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n` +
                 `$events|ConvertTo-Json -Compress\r\n`;
             const events = runLibraryHarness("myspeed-baseline-publication-fallback-", body);
             assert.deepEqual(events.map(event => event.name),
@@ -206,7 +213,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-Publish {param($Path,$Bytes)$script:published+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
-                `-Shutdown {}}catch{}\r\n$published|ConvertTo-Json -Compress\r\n`;
+                `${SILENT_EMIT_STUB}-Shutdown {}}catch{}\r\n$published|ConvertTo-Json -Compress\r\n`;
             const records = runLibraryHarness("myspeed-baseline-semantic-failure-", body);
             assert.deepEqual(records.map(record => record.name), ["baseline-result.json", "result.json", SHUTDOWN_OUTCOME_NAME]);
             assert.deepEqual(JSON.parse(records[0].text), JSON.parse(baseline));
@@ -232,7 +239,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `[pscustomobject]@{name='baseline-executor.stderr';bytes=[byte[]](4)});throw $errorValue} ` +
                 `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
-                `-Publish {param($Path,$Bytes)$script:events+=[IO.Path]::GetFileName($Path)} -Shutdown {$script:events+='shutdown'}}catch{}\r\n` +
+                `-Publish {param($Path,$Bytes)$script:events+=[IO.Path]::GetFileName($Path)} ${SILENT_EMIT_STUB}-Shutdown {$script:events+='shutdown'}}catch{}\r\n` +
                 `$events|ConvertTo-Json -Compress\r\n`;
             assert.deepEqual(runLibraryHarness("myspeed-baseline-diagnostic-publish-", body),
                 ["baseline-result.raw.json", "baseline-executor.stdout", "baseline-executor.stderr",
@@ -333,7 +340,7 @@ describe("Windows baseline guest bootstrap", () => {
                     `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                     `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
                     `-Publish {param($Path,$Bytes)$script:events+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
-                    `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''});${shutdown}}}catch{` +
+                    `${SILENT_EMIT_STUB}-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''});${shutdown}}}catch{` +
                     `$script:events+=([pscustomobject]@{name='thrown';text=$_.Exception.Message})}\r\n` +
                     `$events|ConvertTo-Json -Compress\r\n`;
                 return runLibraryHarness("myspeed-baseline-shutdown-marker-", body);
@@ -341,8 +348,10 @@ describe("Windows baseline guest bootstrap", () => {
             const returned = run("");
             assert.deepEqual(returned.map(event => event.name),
                 ["baseline-result.json", "result.json", "shutdown", SHUTDOWN_OUTCOME_NAME]);
-            assert.deepEqual(JSON.parse(returned[3].text), {schemaVersion: 1, nonce: NONCE, stage: "guest-shutdown",
-                outcome: "returned", failure: null});
+            assert.deepEqual(JSON.parse(returned[3].text), {schemaVersion: SHUTDOWN_OUTCOME_SCHEMA_VERSION,
+                nonce: NONCE, stage: "guest-shutdown", outcome: "returned", failure: null,
+                /* The stub returns nothing, which is exactly what "the emitter said nothing" looks like. */
+                completionEmission: null});
             const refused = run(`throw ('shutdown refused'+[char]10+('x'*600))`);
             assert.deepEqual(refused.map(event => event.name),
                 ["baseline-result.json", "result.json", "shutdown", SHUTDOWN_OUTCOME_NAME, "thrown"]);
@@ -451,7 +460,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `-RemoveRuntime {param($Root)$script:events+='cleanup';[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)$script:events+='cleanup-inputs';[pscustomobject]@{cleanupProven=$true}} ` +
                 `-Publish {param($Path,$Bytes)$script:events+=("publish:"+[IO.Path]::GetFileName($Path))} ` +
-                `-Shutdown {$script:events+='shutdown'}\r\n$events|ConvertTo-Json -Compress\r\n`;
+                `${SILENT_EMIT_STUB}-Shutdown {$script:events+='shutdown'}\r\n$events|ConvertTo-Json -Compress\r\n`;
             fs.writeFileSync(harnessPath, harness);
             const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
                 {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
@@ -481,7 +490,7 @@ describe("Windows baseline guest bootstrap", () => {
                 `-RemoveRuntime {param($Root)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
                 `-Publish {param($Path,$Bytes)$script:events+=([pscustomobject]@{name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
-                `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n$events|ConvertTo-Json -Compress\r\n`;
+                `${SILENT_EMIT_STUB}-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n$events|ConvertTo-Json -Compress\r\n`;
             fs.writeFileSync(harnessPath, harness);
             const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
                 {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
@@ -520,7 +529,7 @@ describe("Windows baseline guest bootstrap", () => {
                     `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                     `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                     `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
-                    `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
+                    `-Publish {param($Path,$Bytes)} ${SILENT_EMIT_STUB}-Shutdown {}\r\n` +
                     `[pscustomobject]@{removed=[IO.File]::Exists('${removedPath.replaceAll("'", "''")}')}|` +
                     `ConvertTo-Json -Compress\r\n`;
                 fs.writeFileSync(harnessPath, harness);
@@ -573,7 +582,7 @@ describe("Windows baseline guest bootstrap", () => {
                     `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
                     `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                     `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
-                    `-Publish {param($Path,$Bytes)} -Shutdown {}\r\n` +
+                    `-Publish {param($Path,$Bytes)} ${SILENT_EMIT_STUB}-Shutdown {}\r\n` +
                     `[pscustomobject]@{inputGone=(-not [IO.Directory]::Exists('${ownedInputRoot.replaceAll("'", "''")}'))}|` +
                     `ConvertTo-Json -Compress\r\n`;
                 fs.writeFileSync(harnessPath, harness);
@@ -626,7 +635,7 @@ describe("Windows baseline guest bootstrap", () => {
                     `-ObserveGuard {[pscustomobject]@{seed='${escapedRoot}';output='${escapedRoot}'}} ` +
                     `-ResolveInputRoot {'${escapedInput}'} ` +
                     `-Publish {param($Path,$Bytes)$script:events+=([Text.Encoding]::UTF8.GetString($Bytes))} ` +
-                    `-Shutdown {}}catch{}\r\n` +
+                    `${SILENT_EMIT_STUB}-Shutdown {}}catch{}\r\n` +
                     `[pscustomobject]@{rootExists=[IO.Directory]::Exists('${escapedInput}');` +
                     `candidateExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'MySpeed.exe'));` +
                     `fixtureExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'fixture-bundle.json'));` +
@@ -763,7 +772,7 @@ const runProducer = ({script = render(), activation = psLiteral(observedActivati
             `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
             `-Publish {param($Path,$Bytes)[IO.File]::WriteAllBytes(` +
             `[IO.Path]::Combine('${escape(publishedRoot)}',[IO.Path]::GetFileName($Path)),$Bytes)} ` +
-            `-Shutdown {}}catch{}\r\n` +
+            `${SILENT_EMIT_STUB}-Shutdown {}}catch{}\r\n` +
             `[Console]::Out.Write((@(Get-ChildItem -LiteralPath '${escape(publishedRoot)}'|` +
             `ForEach-Object{$_.Name})|ConvertTo-Json -Compress))\r\n`);
         const result = spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive", "-File", harnessPath],
@@ -842,8 +851,10 @@ describe("Windows baseline guest producer-to-parser contract", () => {
             assert.match(parsed.failure, /^runtime-cleanup: /u);
         });
 
-    const {COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES} =
-        WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
+    const {COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES,
+        COMPLETION_EMISSION_FUNCTION, COMPLETION_EMISSION_METHOD_HANDLE, COMPLETION_EMISSION_METHOD_PORT,
+        COMPLETION_SERIAL_DEVICE, COMPLETION_SERIAL_PORT_NAME, MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS,
+        SHUTDOWN_STAGE} = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
     const OBSERVED_BASELINE = JSON.stringify({schemaVersion: 1, profile: "baseline-cpu", status: "observed",
         cleanupProven: true, failure: null});
     /* The identity the guest must declare for a published receipt: exact byte count and digest. */
@@ -851,7 +862,9 @@ describe("Windows baseline guest producer-to-parser contract", () => {
         const bytes = Buffer.from(text, "utf8");
         return {bytes: String(bytes.length), sha256: crypto.createHash("sha256").update(bytes).digest("hex")};
     };
-    const completionBody = publishGuard => `$events=@();try{Invoke-MyspeedBaselineBootstrap ` +
+    const recordingEmitStub = `-EmitCompletion {param([string]$Line)` +
+        `$script:events+=([pscustomobject]@{name='completion';text=$Line})} `;
+    const completionBody = (publishGuard, emitStub = recordingEmitStub) => `$events=@();try{Invoke-MyspeedBaselineBootstrap ` +
         `-ObserveGuard {[pscustomobject]@{seed='D:\\';output='E:\\'}} -ResolveInputRoot {'C:\\owned'} ` +
         `-StageInputs {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
         `-InstallRuntime {param($Seed,$Root)[pscustomobject]@{installed=$true;root=$Root}} ` +
@@ -864,7 +877,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
         `-RemoveInputs {param($Seed,$Root)[pscustomobject]@{cleanupProven=$true}} ` +
         `-Publish {param($Path,$Bytes);${publishGuard};$script:events+=([pscustomobject]@{` +
         `name=[IO.Path]::GetFileName($Path);text=[Text.Encoding]::UTF8.GetString($Bytes)})} ` +
-        `-EmitCompletion {param([string]$Line)$script:events+=([pscustomobject]@{name='completion';text=$Line})} ` +
+        emitStub +
         `-Shutdown {$script:events+=([pscustomobject]@{name='shutdown';text=''})}}catch{}\r\n` +
         `$events|ConvertTo-Json -Compress\r\n`;
 
@@ -917,6 +930,96 @@ describe("Windows baseline guest producer-to-parser contract", () => {
         assert.equal(events.filter(event => event.name === "completion").length, 0);
         assert.ok(events.some(event => event.name === "shutdown"));
     });
+
+    /*
+     * A port number no rig assigns, so the managed mechanism fails the same way everywhere instead of
+     * writing to whatever COM1 happens to be on the machine running the suite.
+     */
+    const ABSENT_PORT_NAME = "COM253";
+    const ABSENT_DEVICE_PATH = `\\\\.\\${ABSENT_PORT_NAME}`;
+    const psLiteral = value => `'${value.replaceAll("'", "''")}'`;
+
+    it("keeps the completion emission outcome instead of discarding it", () => {
+        const source = render().toString("utf8");
+        /*
+         * Run 35390872740 published both receipts, returned from `Stop-Computer` and left the serial
+         * log at the firmware's own 1196 bytes. `try{...}catch{}` around the emission is what made
+         * that undiagnosable, so its absence is the property, not an implementation detail.
+         */
+        assert.equal(source.includes("try{& $EmitCompletion $completionLine}catch{}"), false);
+        assert.ok(source.includes("try{$completionEmission=& $EmitCompletion $completionLine}catch{"));
+        assert.ok(source.includes(`function ${COMPLETION_EMISSION_FUNCTION}(`));
+        /* Two mechanisms, and the second is only reached because the first did not emit. */
+        assert.ok(source.includes(`foreach($method in @('${COMPLETION_EMISSION_METHOD_PORT}',` +
+            `'${COMPLETION_EMISSION_METHOD_HANDLE}')){if($emitted){continue}`));
+        assert.ok(source.includes("[IO.Ports.SerialPort]::new($PortName,"));
+        assert.ok(source.includes("[IO.File]::Open($DevicePath,"));
+        /* An empty enumeration is the one observation that would settle whether a port exists at all. */
+        assert.ok(source.includes("[IO.Ports.SerialPort]::GetPortNames()"));
+        assert.ok(source.includes(`[string]$PortName='${COMPLETION_SERIAL_PORT_NAME}'`));
+        assert.ok(source.includes(`[string]$DevicePath='${COMPLETION_SERIAL_DEVICE}'`));
+        /* An oversized line never reaches a port, and that is a different report from a refusal. */
+        assert.ok(source.includes(`else{$completionEmission=[ordered]@{attempted=$false;emitted=$false;`));
+    });
+
+    it("publishes the emission report inside the shutdown outcome the guest already writes", () => {
+        const source = render().toString("utf8");
+        assert.ok(source.includes(`schemaVersion=${SHUTDOWN_OUTCOME_SCHEMA_VERSION};nonce=$EXPECTED_NONCE;` +
+            `stage='${SHUTDOWN_STAGE}'`));
+        assert.ok(source.includes("completionEmission=$completionEmission}"));
+        assert.ok(source.indexOf("$completionEmission=& $EmitCompletion") <
+            source.indexOf("completionEmission=$completionEmission}"));
+    });
+
+    it("reports both mechanisms' bounded failures without throwing when no port answers",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const report = runLibraryHarness("myspeed-baseline-emission-absent-",
+                `${COMPLETION_EMISSION_FUNCTION} 'LINE' ${psLiteral(ABSENT_PORT_NAME)} ` +
+                `${psLiteral(ABSENT_DEVICE_PATH)}|ConvertTo-Json -Compress -Depth 4\r\n`);
+            assert.equal(report.attempted, true);
+            assert.equal(report.emitted, false);
+            assert.deepEqual(report.attempts.map(attempt => attempt.method),
+                [COMPLETION_EMISSION_METHOD_PORT, COMPLETION_EMISSION_METHOD_HANDLE]);
+            for (const attempt of report.attempts) {
+                assert.equal(attempt.emitted, false);
+                assert.ok(attempt.failure.length > 0, "a refused mechanism must name its reason");
+                assert.ok(attempt.failure.length <= MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS);
+                assert.equal([...attempt.failure].some(character =>
+                    character.codePointAt(0) <= ASCII_CONTROL_MAX || character.codePointAt(0) === ASCII_DELETE),
+                false, "a reported reason must stay printable");
+            }
+        });
+
+    it("falls back to the raw handle and writes the exact record line when the managed port fails",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-emission-fallback-"));
+            const sink = path.join(root, "sink.bin");
+            try {
+                /* `FileMode::Open` never creates, so the stand-in device has to exist beforehand. */
+                fs.writeFileSync(sink, "");
+                const report = runLibraryHarness("myspeed-baseline-emission-sink-",
+                    `${COMPLETION_EMISSION_FUNCTION} 'LINE' ${psLiteral(ABSENT_PORT_NAME)} ` +
+                    `${psLiteral(sink)}|ConvertTo-Json -Compress -Depth 4\r\n`);
+                assert.equal(report.emitted, true);
+                assert.deepEqual(report.attempts.map(attempt => attempt.emitted), [false, true]);
+                assert.equal(report.attempts[1].failure, null);
+                assert.equal(fs.readFileSync(sink, "ascii"), "LINE\r\n");
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        });
+
+    it("carries the emission report into the published shutdown outcome record",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const events = runLibraryHarness("myspeed-baseline-emission-record-",
+                completionBody("", `-EmitCompletion {param([string]$Line)[ordered]@{attempted=$true;emitted=$false;` +
+                    `ports=@();attempts=@([ordered]@{method='${COMPLETION_EMISSION_METHOD_PORT}';emitted=$false;` +
+                    `failure='port refused'})}} `));
+            const outcome = JSON.parse(events.find(event => event.name === SHUTDOWN_OUTCOME_NAME).text);
+            assert.equal(outcome.schemaVersion, SHUTDOWN_OUTCOME_SCHEMA_VERSION);
+            assert.equal(outcome.outcome, "returned");
+            assert.equal(outcome.completionEmission.emitted, false);
+            assert.deepEqual([outcome.completionEmission.attempts].flat(),
+                [{method: COMPLETION_EMISSION_METHOD_PORT, emitted: false, failure: "port refused"}]);
+        });
 
 
     const VALID_COMPLETION = {schemaVersion: 1, kind: "myspeed-stage3-publication-complete", nonce: NONCE,
