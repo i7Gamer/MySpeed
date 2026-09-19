@@ -234,7 +234,7 @@ const guestResult = () => {
     const cpuid = encodedJson(rawCpuid());
     const summary = fullSummary();
     const summaryEncoding = encodedJson(summary);
-    return {schemaVersion: 1, status: "observed", profile: "baseline-cpu",
+    return {schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true,
         context: context(), candidate: {sourceSha: CANDIDATE_SOURCE_SHA, sha256: SHA("d"),
             artifactName: "MySpeed-windows-x64-baseline.exe"},
         cpu: {model: "Westmere-v2", cpuidBytesBase64: cpuid.bytesBase64, cpuidSha256: cpuid.sha256,
@@ -538,6 +538,40 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
         assert.equal(result.status, "failed");
         assert.equal(result.stage, "stage2-replay");
         assert.match(result.failure, /AVX|illegal/u);
+    });
+
+    /*
+     * The two guests measure the same probe binary on the same booted CPU, so their CPUID must
+     * agree - and until now nothing compared them.
+     *
+     * Each side's own gate only proves the feature floor, and both are pinned to the same five
+     * booleans, so comparing those would be tautological. The raw leaves are pinned nowhere: leaf 1
+     * EAX carries the CPU signature, and the other registers carry words no gate reads. Comparing
+     * those turns a duplicated measurement into a corroborated one, and catches a probe swapped
+     * between the two stages or a Stage 3 guest booted on a CPU Stage 2 never calibrated.
+     */
+    it("refuses a baseline CPUID that the calibration guest does not corroborate", async () => {
+        const input = request();
+        /* Same feature floor, different silicon: every gate that reads one side alone still passes. */
+        for (const divergent of [{...rawCpuid(), maxBasicLeaf: 13},
+            {...rawCpuid(), leaf1: {...rawCpuid().leaf1, eax: "0x000206c1"}},
+            {...rawCpuid(), leaf7Subleaf0: {...rawCpuid().leaf7Subleaf0, edx: "0x0000000c"}}]) {
+            const encoded = encodedJson(divergent);
+            const divergentGuest = guestResult();
+            divergentGuest.cpu = {...divergentGuest.cpu, cpuidBytesBase64: encoded.bytesBase64,
+                cpuidSha256: encoded.sha256};
+            assert.doesNotThrow(() => validateBaselineGuestResult(divergentGuest, input),
+                "the per-side gate must still accept it, or this proves nothing");
+            const encodedGuest = encodedJson(divergentGuest);
+            const collected = {...collectedGuestResult(), result: divergentGuest,
+                bytesBase64: encodedGuest.bytesBase64};
+            collected.identity = {...collected.identity, sha256: encodedGuest.sha256,
+                bytes: String(Buffer.from(encodedGuest.bytesBase64, "base64").length)};
+            const fixture = operations({collectBaselineGuestResult: async () => collected});
+            const result = await runWindowsCpuFloorStage3(input, fixture.value);
+            assert.equal(result.status, "failed", JSON.stringify(divergent.leaf1));
+            assert.match(result.failure, /corroborate/iu);
+        }
     });
 
     it("independently replays a completed result against retained Stage 2 bytes", async () => {

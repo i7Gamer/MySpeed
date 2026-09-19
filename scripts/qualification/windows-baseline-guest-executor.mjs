@@ -4,6 +4,7 @@ import path from "node:path";
 import {spawnSync as spawnSyncChild} from "node:child_process";
 import {fileURLToPath} from "node:url";
 
+import {composeWindowsBaselineGuestResult} from "./windows-baseline-guest-composer.mjs";
 import {createWindowsBaselineGuestOperations} from "./windows-baseline-guest-operations.mjs";
 import {runWindowsBaselineGuest} from "./windows-baseline-guest-runner.mjs";
 import {createWindowsBaselineGuestRuntime} from "./windows-baseline-guest-runtime.mjs";
@@ -16,6 +17,9 @@ const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_FAILURE_CHARACTERS = 512;
 const GUARD_TIMEOUT_MILLISECONDS = 30_000;
 const GUARD_STREAM_BYTES = 262_144;
+const MAX_PROBE_BYTES = 8 * 1024 * 1024;
+const MAX_PROBE_OUTPUT_BYTES = 64 * 1024;
+const PROBE_TIMEOUT_MILLISECONDS = 30_000;
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WRAPPER_PATH = path.join(HERE, "windows-baseline-guest-candidate-wrapper.ps1");
 const POWERSHELL_RELATIVE_PATH = "System32\\WindowsPowerShell\\v1.0\\powershell.exe";
@@ -29,7 +33,7 @@ const exactString = (value, pattern, label) => {
     return value;
 };
 
-function readOwnedJson(identity, label) {
+function readOwnedBytes(identity, maximum, label) {
     exactString(identity?.path, /^(?:[A-Za-z]:\\|\\\\)[^\x00-\x1f\x7f]+$/u, `${label} path`);
     exactString(identity?.sha256, /^[0-9a-f]{64}$/u, `${label} SHA`);
     const handle = fs.openSync(identity.path, "r");
@@ -38,15 +42,68 @@ function readOwnedJson(identity, label) {
         const lexical = fs.lstatSync(identity.path, {bigint: true});
         if (!before.isFile() || !lexical.isFile() || lexical.isSymbolicLink() || before.nlink !== 1n ||
             before.dev !== lexical.dev || before.ino !== lexical.ino || before.size < 2n ||
-            before.size > BigInt(MAX_JSON_BYTES) || fs.realpathSync.native(identity.path) !== identity.path)
+            before.size > BigInt(maximum) || fs.realpathSync.native(identity.path) !== identity.path)
             throw new Error(`${label} physical identity differs`);
         const bytes = fs.readFileSync(handle); const after = fs.fstatSync(handle, {bigint: true});
         if (BigInt(bytes.length) !== before.size || sha256(bytes) !== identity.sha256 || before.dev !== after.dev ||
             before.ino !== after.ino || before.size !== after.size || before.nlink !== after.nlink)
             throw new Error(`${label} content identity differs`);
-        try { return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)); }
-        catch { throw new TypeError(`${label} is not valid UTF-8 JSON`); }
+        return bytes;
     } finally { fs.closeSync(handle); }
+}
+
+function readOwnedJson(identity, label) {
+    const bytes = readOwnedBytes(identity, MAX_JSON_BYTES, label);
+    try { return JSON.parse(new TextDecoder("utf-8", {fatal: true}).decode(bytes)); }
+    catch { throw new TypeError(`${label} is not valid UTF-8 JSON`); }
+}
+
+/*
+ * Runs the CPU floor probe the host staged beside the candidate.
+ *
+ * The probe is proven byte for byte before it is executed - it is a binary the guest is about to
+ * run, so its identity matters more than any document's, not less. Its stdout is returned raw so
+ * the bytes the host hashes are the bytes the probe actually printed.
+ */
+function measureOwnedCpuid(identity, spawnSync = spawnSyncChild) {
+    readOwnedBytes(identity, MAX_PROBE_BYTES, "baseline CPUID probe");
+    return validateWindowsBaselineGuestProbeProcessResult(spawnSync(identity.path, [],
+        {windowsHide: true, timeout: PROBE_TIMEOUT_MILLISECONDS, maxBuffer: MAX_PROBE_OUTPUT_BYTES}));
+}
+
+/*
+ * The whole judgment of the probe's process, separated from running it so it can be driven directly.
+ *
+ * `error` is what covers the cases the other fields cannot describe: on a timeout Node reports
+ * ETIMEDOUT and kills the child, and on an output overrun it reports ENOBUFS while still handing
+ * back the truncated stdout. Checking it first means neither can be mistaken for a clean exit.
+ * No `encoding` is passed to spawnSync, so both streams arrive as buffers.
+ */
+export function validateWindowsBaselineGuestProbeProcessResult(result) {
+    if (!isObject(result) || result.error !== undefined || result.signal !== null ||
+        result.status !== SUCCESS_EXIT_CODE || !Buffer.isBuffer(result.stdout) ||
+        (result.stderr?.length ?? 0) !== 0)
+        throw new Error(probeFailureReason(result));
+    return result.stdout;
+}
+
+/*
+ * The exit status and signal lead, because a probe can fail with nothing else to say.
+ *
+ * A nonzero exit and an empty stderr is the ordinary silent failure, and the status is then the only
+ * fact there is - reported an hour into a VM run, where a bare "probe failed" is unactionable. The
+ * error's code follows it, since ETIMEDOUT and ENOBUFS name the two cases no other field describes.
+ *
+ * Trimmed after the cut and not before, for the reason the guest's sanitizer states: collapsing a run
+ * of control characters leaves a space, and cutting at the bound strands whatever trails it.
+ */
+function probeFailureReason(result) {
+    const detail = [`status=${result?.status ?? "none"}`, `signal=${result?.signal ?? "none"}`,
+        result?.error?.code ?? "", result?.error?.message ?? "",
+        Buffer.isBuffer(result?.stderr) ? result.stderr.toString("utf8") : ""].join(" ");
+    const prefix = "baseline CPUID probe failed: ";
+    return `${prefix}${detail.replace(/[\x00-\x1f\x7f\s]+/gu, " ")
+        .slice(0, MAX_FAILURE_CHARACTERS - prefix.length)}`.trim();
 }
 
 function writeNewResult(target, value) {
@@ -128,7 +185,8 @@ function defaultRuntime(request, execution, configuration = {}) {
 }
 
 export async function executeWindowsBaselineGuest(input, dependencies = {}) {
-    const functionNames = ["assertGuest", "readJson", "writeResult", "createRuntime", "createOperations", "runGuest"];
+    const functionNames = ["assertGuest", "readJson", "writeResult", "createRuntime", "createOperations",
+        "runGuest", "measureCpuid", "compose"];
     if (!isObject(dependencies) || Object.keys(dependencies).some(name =>
         name !== "runtimeConfiguration" && (!functionNames.includes(name) || typeof dependencies[name] !== "function")))
         return {exitCode: FAILURE_EXIT_CODE, result: failure(new TypeError("baseline executor dependencies differ"))};
@@ -142,7 +200,8 @@ export async function executeWindowsBaselineGuest(input, dependencies = {}) {
     const io = {assertGuest: assertActualGuest, readJson: readOwnedJson, writeResult: writeNewResult,
         createRuntime: (request, execution) => defaultRuntime(request, execution, runtimeConfiguration),
         createOperations: createWindowsBaselineGuestOperations,
-        runGuest: runWindowsBaselineGuest, ...dependencies};
+        runGuest: runWindowsBaselineGuest, measureCpuid: measureOwnedCpuid,
+        compose: composeWindowsBaselineGuestResult, ...dependencies};
     let result;
     try {
         if (!isObject(input)) throw new TypeError("baseline guest invocation differs");
@@ -153,7 +212,22 @@ export async function executeWindowsBaselineGuest(input, dependencies = {}) {
             "baseline guest execution manifest");
         const runtime = io.createRuntime(request, execution);
         const operations = io.createOperations({request, execution, dependencies: runtime});
+        /*
+         * Measured before the scenarios run, though it is only needed after them.
+         *
+         * A probe that cannot be opened or executed is a fault in what the host staged, and the guest
+         * can know that in its first second. Measuring it afterwards would surface the same fault
+         * twenty minutes later and report `cleanupProven: false` for a run the runner did clean up,
+         * because the executor's failure record cannot see the runner's proof.
+         */
+        const cpuidBytes = io.measureCpuid(execution.cpuidProbe);
         result = validateResult(await io.runGuest(request, operations));
+        /*
+         * A failed run publishes the runner's own failure record, which carries a reason the host can
+         * report. Only an observed run is composed into the envelope Stage 3 parses, because only an
+         * observed run has the summary and the cleanup proof that envelope is made of.
+         */
+        if (result.status === "observed") result = io.compose({request, execution, result, cpuidBytes});
     } catch (error) { result = failure(error); }
     try { io.writeResult(input.resultPath, result); }
     catch (error) { return {exitCode: FAILURE_EXIT_CODE, result: failure(error)}; }
@@ -179,4 +253,5 @@ if (process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLTo
 }
 
 export const WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS = Object.freeze({GUARD_TIMEOUT_MILLISECONDS,
-    MAX_FAILURE_CHARACTERS, MAX_JSON_BYTES, PROFILE});
+    MAX_FAILURE_CHARACTERS, MAX_JSON_BYTES, MAX_PROBE_BYTES, MAX_PROBE_OUTPUT_BYTES,
+    PROBE_TIMEOUT_MILLISECONDS, PROFILE});

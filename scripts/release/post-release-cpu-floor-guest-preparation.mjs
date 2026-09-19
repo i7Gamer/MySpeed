@@ -18,6 +18,8 @@ const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 const CANDIDATE_ARTIFACT_NAME = "MySpeed-windows-x64-baseline.exe";
+/* The probe whose output becomes the guest's own proof of the CPU floor. */
+const CPUID_PROBE_ROLE = "cpuid";
 const PROBES = Object.freeze([
     ["avx", "avx.exe"], ["avx2", "avx2.exe"], ["cpuid", "cpuid.exe"], ["illegal", "illegal.exe"],
     ["known-bad", "known_bad.exe"], ["known-good", "known_good.exe"], ["popcnt", "popcnt.exe"],
@@ -123,8 +125,14 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
     const runtimeBytes = buildWindowsBaselineGuestRuntimeBundle({sourceSha: context.sourceSha,
         nonce: context.nonce, files: runtimeFiles});
     const sourceByPath = new Map(runtimeFiles.map(record => [record.relativePath, record.source]));
-    const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: context.sourceSha,
-        eventSha: context.eventSha, runId: context.runId, runAttempt: context.runAttempt, nonce: context.nonce},
+    /*
+     * The whole hosted context reaches the guest. Stage 3 compares what the guest publishes against
+     * what it seeded, so narrowing this to the five identity fields made that comparison impossible
+     * to satisfy - the guest cannot echo an `environment` it was never handed.
+     */
+    const documents = buildWindowsBaselineGuestSeedDocuments({context: structuredClone(context),
+        cpuidProbe: ((probe) => ({bytes: probe.bytes, sha256: probe.sha256}))(
+            input.probes[PROBES.findIndex(([role]) => role === CPUID_PROBE_ROLE)]),
     candidate: {artifactName: input.candidate.artifactName, sourceSha: input.candidate.sourceSha,
         bytes: input.candidate.file.bytes, sha256: input.candidate.file.sha256},
     fixtureBundle: {bytes: String(fixtureBytes.length),
@@ -148,5 +156,5 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
         files: Object.freeze(files)});
 }
 
-export const POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA,
+export const POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA, CPUID_PROBE_ROLE,
     DIRECTORY_MODE, FILE_MODE, KIND, NODE_RUNTIME_SHA256, PROBES, SCHEMA_VERSION});

@@ -44,8 +44,9 @@ const integer = (value, minimum, maximum, label) => {
 };
 
 function validateExecution(value, request) {
-    exactKeys(value, ["candidateController", "candidateSource", "cleanStopController", "eventSha", "fixtureBundle",
-        "imageVersion", "kind", "manifestSha256", "nonce", "runAttempt", "runId", "schemaVersion", "sourceSha"],
+    exactKeys(value, ["candidateController", "candidateSource", "cleanStopController", "cpuModel", "cpuidProbe",
+        "eventSha", "fixtureBundle", "imageVersion", "kind", "manifestSha256", "nonce", "runAttempt", "runId",
+        "schemaVersion", "sourceSha"],
     "baseline guest execution manifest");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== EXECUTION_KIND)
         throw new TypeError("baseline guest execution manifest header differs");
@@ -54,9 +55,11 @@ function validateExecution(value, request) {
         if (value[name] !== expected) throw new TypeError(`baseline guest execution ${name} differs`);
     exactString(value.imageVersion, /^[0-9A-Za-z._-]{1,128}$/u, "baseline guest image version");
     sha256(value.manifestSha256, "baseline guest manifest SHA");
+    /* The CPU model is the host's label for the floor it booted; the probe is what measures it. */
+    exactString(value.cpuModel, /^[0-9A-Za-z._-]{1,64}$/u, "baseline guest CPU model");
     for (const [name, record] of [["candidate source", value.candidateSource],
         ["candidate controller", value.candidateController], ["clean-stop controller", value.cleanStopController],
-        ["fixture bundle", value.fixtureBundle]]) {
+        ["CPUID probe", value.cpuidProbe], ["fixture bundle", value.fixtureBundle]]) {
         exactKeys(record, ["bytes", "path", "sha256"], `baseline ${name}`);
         exactString(record.path, /^[A-Za-z]:\\[^\x00-\x1f\x7f:*?"<>|]+$/u, `baseline ${name} path`);
         exactString(record.bytes, /^[1-9][0-9]*$/u, `baseline ${name} bytes`);

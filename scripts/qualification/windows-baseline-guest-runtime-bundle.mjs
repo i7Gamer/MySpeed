@@ -8,6 +8,7 @@ const MAX_RUNTIME_BUNDLE_BYTES = 16 * 1024 * 1024;
 const RUNTIME_PATHS = Object.freeze([
     "scripts/qualification/windows-baseline-guest-executor.mjs",
     "scripts/qualification/windows-baseline-guest-runner.mjs",
+    "scripts/qualification/windows-baseline-guest-composer.mjs",
     "scripts/qualification/windows-baseline-guest-operations.mjs",
     "scripts/qualification/windows-baseline-guest-runtime.mjs",
     "scripts/qualification/windows-baseline-guest-materializer.mjs",

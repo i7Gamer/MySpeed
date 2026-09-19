@@ -23,6 +23,7 @@ $script:MaximumRuntimeRawBytes=16777216
 $script:RuntimePaths=@(
     'scripts/qualification/windows-baseline-guest-executor.mjs',
     'scripts/qualification/windows-baseline-guest-runner.mjs',
+    'scripts/qualification/windows-baseline-guest-composer.mjs',
     'scripts/qualification/windows-baseline-guest-operations.mjs',
     'scripts/qualification/windows-baseline-guest-runtime.mjs',
     'scripts/qualification/windows-baseline-guest-materializer.mjs',

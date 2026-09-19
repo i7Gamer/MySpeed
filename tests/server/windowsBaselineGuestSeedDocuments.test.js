@@ -10,13 +10,18 @@ const EVENT_SHA = "2".repeat(40);
 const CANDIDATE_SHA = "a".repeat(40);
 const NONCE = "3".repeat(32);
 const SHA = character => character.repeat(64);
-const CONTEXT = {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "2", nonce: NONCE};
+/* The whole hosted context, exactly as Stage 3 seeds it - the guest must echo every key back. */
+const CONTEXT = {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA, eventSha: EVENT_SHA,
+    runId: "123", runAttempt: "2", nonce: NONCE, environment: {GITHUB_ACTIONS: "true", CI: "true",
+        RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24",
+        ImageVersion: "20260901.1"}};
 
 const input = () => ({context: {...CONTEXT}, imageVersion: "windows-server-2025-standard-eval",
     manifestSha256: SHA("4"), candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
         sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("5")}, fixtureBundle: {bytes: "8192", sha256: SHA("6")},
     candidateController: {bytes: "65536", sha256: SHA("7")},
-    cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+    cleanStopController: {bytes: "131072", sha256: SHA("8")},
+    cpuidProbe: {bytes: "16384", sha256: SHA("9")}});
 
 const noopDependencies = () => Object.fromEntries(["checkPopulated", "checkPopulatedDatabase",
     "checkResetDatabase", "cleanup", "inspectCandidate", "materialize", "observeListener", "observeNetwork",

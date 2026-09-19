@@ -103,7 +103,7 @@ describe("post-release MSI hosted preparation workflow", () => {
             assert.deepEqual(JSON.parse(fs.readFileSync(outputPath, "utf8")), result);
             assert.deepEqual(JSON.parse(fs.readFileSync(fixtureProofPath, "utf8")),
                 result.fixturePreparation);
-            assert.equal(result.baselinePreparation.files.length, 31);
+            assert.equal(result.baselinePreparation.files.length, 32);
             assert.deepEqual(JSON.parse(fs.readFileSync(baselineProofPath, "utf8")),
                 result.baselinePreparation);
             assert.equal(fs.readFileSync(baselineProofPath, "utf8"),

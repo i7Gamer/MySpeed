@@ -11,8 +11,10 @@ const NONCE = "3".repeat(32);
 const NUL = String.fromCodePoint(0);
 const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
 const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
-    qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
-        nonce: NONCE}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+    qualifying: false, context: {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA, eventSha: EVENT_SHA,
+    runId: "123", runAttempt: "1", nonce: NONCE, environment: {GITHUB_ACTIONS: "true", CI: "true",
+        RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24",
+        ImageVersion: "20260901.1"}}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
         path: "D:\\MySpeed.exe", sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")}, fixture: {
         path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")}, paths: {
         taskRoot: `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}`,

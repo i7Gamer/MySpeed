@@ -548,27 +548,31 @@ describe("Windows baseline guest bootstrap", () => {
             const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-stage-"));
             const candidateBytes = Buffer.from("candidate-bytes\n");
             const fixtureBytes = Buffer.from("fixture-bytes\n");
+            const probeBytes = Buffer.from("cpuid-probe-bytes\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: String(probeBytes.length), sha256: digest(probeBytes)}});
             const scriptPath = path.join(root, "bootstrap.ps1");
             const harnessPath = path.join(root, "harness.ps1");
             const ownedInputRoot = path.join(root, "owned-input");
             const execution = structuredClone(documents.execution);
             execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
             execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
+            /* The executor opens the probe from the owned input root, so staging must put it there. */
+            execution.cpuidProbe.path = path.join(ownedInputRoot, "cpuid.exe");
             const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`, "utf8");
             const executionSha256 = digest(executionBytes);
             try {
                 fs.writeFileSync(path.join(root, "execution.json"), executionBytes);
                 fs.writeFileSync(path.join(root, "MySpeed.exe"), candidateBytes);
                 fs.writeFileSync(path.join(root, "fixture-bundle.json"), fixtureBytes);
+                fs.writeFileSync(path.join(root, "cpuid.exe"), probeBytes);
                 fs.writeFileSync(scriptPath, renderWindowsBaselineGuestBootstrap({nonce, sourceSha: SOURCE_SHA,
                     requestSha256: documents.requestRecord.sha256,
                     executionSha256, runtimeBundleSha256: SHA("6")}));
@@ -580,10 +584,18 @@ describe("Windows baseline guest bootstrap", () => {
                     `-LoadCpu {param($Seed)[pscustomobject]@{SetErrorMode={param($Value)[uint32]0};` +
                     `CollectEvidence={param($Value)[ordered]@{status='observed'}};` +
                     `ObserveActivation={[ordered]@{state='ready'}};ObserveSystemTools={@()}}} ` +
-                    `-StartExecutor {param($Root,$Seed)[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
+                    /*
+                     * The executor is the only moment the probe has to be on disk: staged after the
+                     * inputs are installed and gone again after cleanup. Observing it from here is
+                     * what proves staging put it there, since the assertion below runs too late.
+                     */
+                    `-StartExecutor {param($Root,$Seed)$script:probeStaged=[IO.File]::Exists(` +
+                    `(Join-Path '${ownedInputRoot.replaceAll("'", "''")}' 'cpuid.exe'));` +
+                    `[pscustomobject]@{bytes=[Text.UTF8Encoding]::new($false).GetBytes('{}');status='observed';diagnostics=@()}} ` +
                     `-RemoveRuntime {param($Root,$Seed)[pscustomobject]@{cleanupProven=$true}} ` +
                     `-Publish {param($Path,$Bytes)} ${SILENT_EMIT_STUB}-Shutdown {}\r\n` +
-                    `[pscustomobject]@{inputGone=(-not [IO.Directory]::Exists('${ownedInputRoot.replaceAll("'", "''")}'))}|` +
+                    `[pscustomobject]@{inputGone=(-not [IO.Directory]::Exists('${ownedInputRoot.replaceAll("'", "''")}'));` +
+                    `probeStaged=$script:probeStaged}|` +
                     `ConvertTo-Json -Compress\r\n`;
                 fs.writeFileSync(harnessPath, harness);
                 const result = spawnSync(POWERSHELL,
@@ -591,7 +603,7 @@ describe("Windows baseline guest bootstrap", () => {
                     {encoding: "utf8", timeout: TEST_TIMEOUT_MILLISECONDS, maxBuffer: TEST_STREAM_BYTES});
                 assert.equal(result.status, 0, result.stderr);
                 assert.equal(result.stderr, "");
-                assert.deepEqual(JSON.parse(result.stdout), {inputGone: true});
+                assert.deepEqual(JSON.parse(result.stdout), {inputGone: true, probeStaged: true});
             } finally {
                 if (fs.existsSync(ownedInputRoot)) fs.rmSync(ownedInputRoot, {recursive: true, force: true});
                 fs.rmSync(root, {recursive: true, force: true});
@@ -606,14 +618,14 @@ describe("Windows baseline guest bootstrap", () => {
             const candidateBytes = Buffer.from("stale-candidate\n");
             const fixtureBytes = Buffer.from("stale-fixture\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: "16384", sha256: SHA("9")}});
             const execution = structuredClone(documents.execution);
             execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
             execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
@@ -661,18 +673,20 @@ describe("Windows baseline guest bootstrap", () => {
             const ownedInputRoot = path.join(root, "owned-input");
             const candidateBytes = Buffer.from("candidate-before-drift\n");
             const fixtureBytes = Buffer.from("fixture-before-drift\n");
+            const probeBytes = Buffer.from("probe-before-drift\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: String(probeBytes.length), sha256: digest(probeBytes)}});
             const execution = structuredClone(documents.execution);
             execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
             execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
+            execution.cpuidProbe.path = path.join(ownedInputRoot, "cpuid.exe");
             const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`, "utf8");
             const scriptPath = path.join(root, "bootstrap.ps1");
             const harnessPath = path.join(root, "harness.ps1");
@@ -680,6 +694,7 @@ describe("Windows baseline guest bootstrap", () => {
                 fs.writeFileSync(path.join(root, "execution.json"), executionBytes);
                 fs.writeFileSync(path.join(root, "MySpeed.exe"), candidateBytes);
                 fs.writeFileSync(path.join(root, "fixture-bundle.json"), fixtureBytes);
+                fs.writeFileSync(path.join(root, "cpuid.exe"), probeBytes);
                 fs.writeFileSync(scriptPath, renderWindowsBaselineGuestBootstrap({nonce, sourceSha: SOURCE_SHA,
                     requestSha256: documents.requestRecord.sha256,
                     executionSha256: digest(executionBytes), runtimeBundleSha256: SHA("6")}));
@@ -691,7 +706,8 @@ describe("Windows baseline guest bootstrap", () => {
                     `try{$null=Remove-MyspeedBaselineInputs '${escapedRoot}' '${escapedInput}'}catch{}\r\n` +
                     `[pscustomobject]@{rootExists=[IO.Directory]::Exists('${escapedInput}');` +
                     `candidateExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'MySpeed.exe'));` +
-                    `fixtureExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'fixture-bundle.json'))}|` +
+                    `fixtureExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'fixture-bundle.json'));` +
+                    `probeExists=[IO.File]::Exists((Join-Path '${escapedInput}' 'cpuid.exe'))}|` +
                     `ConvertTo-Json -Compress\r\n`;
                 fs.writeFileSync(harnessPath, harness);
                 const result = spawnSync(POWERSHELL,
@@ -700,7 +716,7 @@ describe("Windows baseline guest bootstrap", () => {
                 assert.equal(result.status, 0, result.stderr);
                 assert.equal(result.stderr, "");
                 assert.deepEqual(JSON.parse(result.stdout), {rootExists: true, candidateExists: true,
-                    fixtureExists: true});
+                    fixtureExists: true, probeExists: true});
             } finally { fs.rmSync(root, {recursive: true, force: true}); }
         });
 });
@@ -854,6 +870,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
     const {COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES,
         COMPLETION_EMISSION_FUNCTION, COMPLETION_EMISSION_METHOD_HANDLE, COMPLETION_EMISSION_METHOD_PORT,
         COMPLETION_SERIAL_DEVICE, COMPLETION_SERIAL_PORT_NAME, MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS,
+        MAX_FAILURE_CHARACTERS: BASELINE_MAX_FAILURE_CHARACTERS,
         SHUTDOWN_STAGE} = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
     const OBSERVED_BASELINE = JSON.stringify({schemaVersion: 1, profile: "baseline-cpu", status: "observed",
         cleanupProven: true, failure: null});
@@ -1006,6 +1023,30 @@ describe("Windows baseline guest producer-to-parser contract", () => {
             "unspecified failure", "real failure", "real", "x".repeat(bound - 2)]);
         for (const reason of observed) assert.equal(reason, reason.trim());
     });
+
+    /*
+     * The sibling of the reason sanitizer, and it had the same gap: Get-MyspeedBaselineDiagnosticText
+     * trims before the cut but not after, so a stderr tail whose bound falls on whitespace reaches the
+     * diagnostic with trailing spaces. Same shape as the reason bug, same fix, pinned the same way.
+     */
+    it("trims the executor diagnostic on both sides of the bound", () => {
+        const source = render().toString("utf8");
+        assert.ok(source.includes("$text=$text.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS).Trim()"));
+    });
+
+    it("never lets a whitespace-only executor diagnostic reach the record",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const bound = BASELINE_MAX_FAILURE_CHARACTERS;
+            /* Empty, control-only, ordinary, and one that goes blank only at the cut. */
+            const cases = ["@()", "[byte[]]@(13,10,9)", "[Text.Encoding]::UTF8.GetBytes('real detail')",
+                `[Text.Encoding]::UTF8.GetBytes(('x'*${bound - 2})+'  y')`];
+            const observed = runLibraryHarness("myspeed-baseline-diagnostic-text-",
+                `@(${cases.join(",")})|ForEach-Object{Get-MyspeedBaselineDiagnosticText $_}|` +
+                "ConvertTo-Json -Compress\r\n");
+            /* A null result drops out of the pipeline, so only the two non-empty cases survive. */
+            assert.deepEqual(observed, ["real detail", "x".repeat(bound - 2)]);
+            for (const text of observed) assert.equal(text, text.trim());
+        });
 
     it("reports both mechanisms' bounded failures without throwing when no port answers",
         {skip: !HAS_INBOX_POWERSHELL}, () => {
