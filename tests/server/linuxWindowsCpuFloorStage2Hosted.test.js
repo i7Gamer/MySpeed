@@ -1053,14 +1053,6 @@ describe("hosted Stage 2 native adapter preparation", () => {
     });
 
     /*
-     * The other half of the carry the Stage 3 corroboration gate depends on. The monitor believes
-     * a marker and the launcher has to hand it outward; the receipt identity is minted here from
-     * the bytes actually read. Every test of the gate itself supplies both directly, so a launcher
-     * that stopped emitting them would leave the gate seeing a run that published nothing - which
-     * a clean exit is allowed to be. Both are emitted only under the Stage 3 reservation label, so
-     * this also pins the condition that keeps ordinary Stage 2 observations unchanged.
-     */
-    /*
      * Two wirings in the hosted launcher that nothing else pins.
      *
      * The launcher exit record is evidence about a failure, and a failure is the only time it is
@@ -1110,8 +1102,8 @@ describe("hosted Stage 2 native adapter preparation", () => {
          * cleanly - and a clean exit would satisfy the parsing gate by itself, leaving the
          * teardown branch untested. Both runs below are killed; only the marker differs.
          */
-        const killed = {exitCode: 137, signal: null,
-            terminationReason: "post-completion-teardown-timeout"};
+        /* The reason is the monitor's, supplied below; the process only has to be a killed one. */
+        const killed = {exitCode: 137, signal: null};
         const record = {nonce: "b".repeat(32),
             baseline: {bytes: "11", sha256: "2".repeat(64)},
             cpu: {bytes: "13", sha256: "3".repeat(64)}};
@@ -1128,6 +1120,14 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(Object.hasOwn(unbelievable, "failureDiagnostic"), true);
     });
 
+    /*
+     * The other half of the carry the Stage 3 corroboration gate depends on. The monitor believes
+     * a marker and the launcher has to hand it outward; the receipt identity is minted here from
+     * the bytes actually read. Every test of the gate itself supplies both directly, so a launcher
+     * that stopped emitting them would leave the gate seeing a run that published nothing - which
+     * a clean exit is allowed to be. Both are emitted only under the Stage 3 reservation label, so
+     * this also pins the condition that keeps ordinary Stage 2 observations unchanged.
+     */
     it("emits the believed marker and the receipt identity under the Stage 3 reservation", async () => {
         const produced = successfulGuestOutput();
         const record = {nonce: "b".repeat(32), baseline: {bytes: "11", sha256: "2".repeat(64)},
