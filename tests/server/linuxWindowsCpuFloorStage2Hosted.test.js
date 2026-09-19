@@ -2315,12 +2315,12 @@ describe("Stage 3 monitor completion transition", () => {
      * had happened cost an evidence download and a screenshot extraction. A UEFI-shell drop has a
      * name; an installer that wedged past a deadline had none.
      *
-     * What the status can support is narrow, and the name says only that much. QEMU runs under a
-     * `timeout` wrapper whose own exit status on a killed child is 128 plus the signal, so a high
-     * status is consistent with that wrapper - but it is a convention, not proof: a child killed
-     * by anything else produces the same status, and a process may simply exit(137) of its own
-     * accord. The timing is attached as evidence for a reader to weigh; the harness attributes
-     * nothing, and no status is treated as special.
+     * What the status can support is narrow, and the name says only that much. A high status is
+     * not the `timeout` wrapper reaching its own deadline: GNU timeout reports that as 124 unless
+     * asked to preserve the child's status, which it is not. It is the convention for a child that
+     * died some other way, and a process may also return such a status of its own accord; the two
+     * cannot be told apart here. The timing is attached as evidence for a reader to weigh; the
+     * harness attributes nothing, and no status is treated as special.
      */
     it("names a high exit status the monitor did not request, and attributes it to nothing", async () => {
         for (const exitCode of [129, 137, 143, 255]) {

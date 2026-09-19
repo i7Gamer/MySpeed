@@ -1329,6 +1329,13 @@ describe("Stage 3 corroborates the completion marker against what was extracted"
         }
     });
 
+    /* The other half of the check above: what a real extraction produces still passes it. */
+    it("accepts a valid extracted receipt that no marker accompanies", async () => {
+        const {result} = await publishedWithMarker({cpuReceipt: RECEIPT});
+        assert.equal(result.status, "observed");
+        assert.deepEqual(result.cpuReceipt, RECEIPT);
+    });
+
     it("accepts a clean exit whose marker agrees with both receipts", async () => {
         const first = await publishedWithMarker();
         const {result, baselineIdentity} = await publishedWithMarker({

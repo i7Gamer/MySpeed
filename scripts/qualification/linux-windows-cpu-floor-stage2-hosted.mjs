@@ -1797,12 +1797,17 @@ export async function runMonitoredQemu(io, request) {
      * did not complete cleanly", where a UEFI-shell drop reports `efi-shell-fallback`, so working
      * out even roughly what had happened cost an evidence download and a screenshot extraction.
      *
-     * The name claims exactly what was observed and no more. QEMU runs under a `timeout` wrapper
-     * whose own status on a killed child is 128 plus the signal, so a high status is consistent
-     * with that wrapper - but that is a convention, not proof: any other killer produces the same
-     * status, and a process may return it deliberately. Attributing it would need the wrapper to
-     * say so itself. The elapsed time and the deadline it was configured with are attached instead,
-     * so a reader can see the correlation the harness declines to assert.
+     * The name claims exactly what was observed and no more. It is tempting to read a high status
+     * as the `timeout` wrapper QEMU runs under reaching its deadline, and that reading is wrong:
+     * GNU timeout reports its own expiry as 124, whatever signal it was told to send, unless it is
+     * asked to preserve the status - and it is not asked here. A high status is therefore evidence
+     * against the wrapper's own deadline rather than for it.
+     *
+     * What remains is still unattributed. 128 plus a signal is a reporting convention for a child
+     * that died some other way, and a process may return such a status deliberately; neither can be
+     * told from the other here. Attributing it would need the killer to say so itself. The elapsed
+     * time and the deadline the launcher was configured with are attached instead, so a reader can
+     * see the correlation the harness declines to assert.
      */
     let launcherExit = null;
     const exitStatus = observation?.process?.exitCode;
