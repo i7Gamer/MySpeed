@@ -550,6 +550,68 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
      * those turns a duplicated measurement into a corroborated one, and catches a probe swapped
      * between the two stages or a Stage 3 guest booted on a CPU Stage 2 never calibrated.
      */
+    /*
+     * Publishes a baseline guest carrying `baselineCpuid` against a calibration guest carrying
+     * `calibrationCpuid`, and returns whatever Stage 3 made of the pair.
+     */
+    async function publishedWithCpuid(baselineCpuid, calibrationCpuid) {
+        const input = request();
+        const encoded = encodedJson(baselineCpuid);
+        const guest = guestResult();
+        guest.cpu = {...guest.cpu, cpuidBytesBase64: encoded.bytesBase64, cpuidSha256: encoded.sha256};
+        assert.doesNotThrow(() => validateBaselineGuestResult(guest, input),
+            "the per-side gate must still accept it, or this proves nothing");
+        const encodedGuest = encodedJson(guest);
+        const collected = {...collectedGuestResult(), result: guest,
+            bytesBase64: encodedGuest.bytesBase64};
+        collected.identity = {...collected.identity, sha256: encodedGuest.sha256,
+            bytes: String(Buffer.from(encodedGuest.bytesBase64, "base64").length)};
+        const raw = rawStage2Guest();
+        raw.runs = raw.runs.map(run => run.role === "cpuid" ? {...run,
+            stdoutBase64: Buffer.from(`${JSON.stringify(calibrationCpuid)}\n`).toString("base64")} : run);
+        const rawEncoded = encodedJson(raw);
+        const fixture = operations({
+            collectBaselineGuestResult: async () => collected,
+            replayStage2: async () => ({identity: input.stage2.result, result: stage2Observation(),
+                guestEvidence: {identity: {...input.stage2.guestResult, sha256: rawEncoded.sha256,
+                    bytes: String(Buffer.from(rawEncoded.bytesBase64, "base64").length)},
+                bytesBase64: rawEncoded.bytesBase64}})});
+        input.stage2.guestResult = {...input.stage2.guestResult, sha256: rawEncoded.sha256,
+            bytes: String(Buffer.from(rawEncoded.bytesBase64, "base64").length)};
+        return runWindowsCpuFloorStage3(input, fixture.value);
+    }
+
+    /*
+     * Run 35447618046 failed here, and the harness was wrong rather than the guest.
+     *
+     * Leaf 1 EBX's top byte is the initial APIC ID - which vCPU executed CPUID - and both guests
+     * boot two of them, so two correct measurements disagree there whenever the scheduler picks
+     * differently. These are the exact registers that run read: the records are identical in every
+     * bit except that byte, and an hour of VM time was spent discovering it.
+     */
+    it("accepts a baseline CPUID that differs only in which vCPU ran the probe", async () => {
+        const observed = {...rawCpuid(), maxBasicLeaf: 11,
+            leaf1: {eax: "0x000206c1", ebx: "0x00020800", ecx: "0x82b82203", edx: "0x178bfbff"}};
+        const calibration = {...observed, leaf1: {...observed.leaf1, ebx: "0x01020800"}};
+        const result = await publishedWithCpuid(observed, calibration);
+        assert.equal(result.status, "observed", result.failure);
+    });
+
+    /*
+     * Everything the APIC ID shares its register with still has to agree. The low three bytes are
+     * the logical processor count, the CLFLUSH line size and the brand index - all properties of
+     * the model, so a disagreement there is a different CPU rather than a different vCPU.
+     */
+    it("refuses a leaf 1 EBX that differs below the initial APIC ID", async () => {
+        const observed = {...rawCpuid(), maxBasicLeaf: 11,
+            leaf1: {eax: "0x000206c1", ebx: "0x00020800", ecx: "0x82b82203", edx: "0x178bfbff"}};
+        /* One logical processor rather than two, under an APIC ID that would otherwise be ignored. */
+        const calibration = {...observed, leaf1: {...observed.leaf1, ebx: "0x01010800"}};
+        const result = await publishedWithCpuid(observed, calibration);
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /corroborate/iu);
+    });
+
     it("refuses a baseline CPUID that the calibration guest does not corroborate", async () => {
         const input = request();
         /* Same feature floor, different silicon: every gate that reads one side alone still passes. */

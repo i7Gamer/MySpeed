@@ -41,6 +41,9 @@ const MAX_EMBEDDED_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const MAX_EMBEDDED_EVIDENCE_BASE64_CHARACTERS = 4 * Math.ceil(MAX_EMBEDDED_EVIDENCE_BYTES / 3);
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 const REGISTER_PATTERN = /^0x[a-f0-9]{8}$/u;
+/* Leaf 1 EBX below its top byte: everything except the initial APIC ID. See modelBitsOfLeaf1Ebx. */
+const INITIAL_APIC_ID_SHIFT = 24;
+const LEAF1_EBX_MODEL_MASK = (1 << INITIAL_APIC_ID_SHIFT) - 1;
 const PROBE_ROLES = Object.freeze(["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt",
     "sse42"]);
 const STAGE2_OUTPUT_DISK_BYTES = "67108864";
@@ -564,10 +567,26 @@ function baselineCpuidRecord(guest) {
 }
 
 function assertCorroboratedCpuid(baseline, calibration) {
-    const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf, leaf1: value.leaf1,
+    const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf,
+        leaf1: {...value.leaf1, ebx: modelBitsOfLeaf1Ebx(value.leaf1.ebx)},
         leaf7Subleaf0: value.leaf7Subleaf0, xcr0: value.xcr0});
     if (!same(leaves(baseline), leaves(calibration)))
         throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest");
+}
+
+/*
+ * Leaf 1 EBX without its top byte, which is the initial APIC ID: the vCPU that happened to execute
+ * CPUID, not a property of the CPU.
+ *
+ * Both guests boot with two vCPUs, so which one runs the probe is the guest scheduler's choice and
+ * the two correct measurements disagree there. Run 35447618046 read 0x00020800 in the baseline guest
+ * and 0x01020800 in the calibration guest - identical in every other bit of every other register.
+ *
+ * Everything below that byte is still compared, because all of it describes the model rather than
+ * the moment: logical processor count, CLFLUSH line size and brand index.
+ */
+function modelBitsOfLeaf1Ebx(register) {
+    return (Number.parseInt(register.slice(2), 16) & LEAF1_EBX_MODEL_MASK) >>> 0;
 }
 
 function validateCandidate(value, context) {
