@@ -356,10 +356,17 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `if($bounded.Length-gt$Maximum){$bounded=$bounded.Substring(0,$Maximum)};` +
         `if($bounded.Length-eq 0){$bounded='unspecified failure'};return $bounded}\r\n` +
         /*
-         * Never throws: its whole purpose is to say what happened, and a thrown emitter would be the
-         * swallow all over again. The port names come from the same enumeration the mechanisms use,
-         * so an empty list is itself the answer - it says Windows has no serial port to write to,
-         * and no amount of retrying a write will change that.
+         * No mechanism can throw out of here: each one is wrapped, and its bounded reason becomes an
+         * attempt record, because a thrown emitter would be the swallow all over again. Encoding the
+         * payload is the one statement outside a try, and the call site still turns a throw from it
+         * into an `invocation` record, so no path reaches the shutdown record saying nothing.
+         *
+         * Both mechanisms write the same `$payload`, built once before the loop: whichever transport
+         * carries the line, the bytes on the wire are identical.
+         *
+         * The port names come from the same enumeration the mechanisms use, so an empty list is
+         * itself the answer - it says Windows has no serial port to write to at all, and no amount
+         * of retrying a write will change that.
          */
         `function ${COMPLETION_EMISSION_FUNCTION}([string]$Line,` +
         `[string]$PortName='${COMPLETION_SERIAL_PORT_NAME}',[string]$DevicePath='${COMPLETION_SERIAL_DEVICE}'){` +

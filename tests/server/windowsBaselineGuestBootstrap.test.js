@@ -958,6 +958,15 @@ describe("Windows baseline guest producer-to-parser contract", () => {
         assert.ok(source.includes("[IO.Ports.SerialPort]::GetPortNames()"));
         assert.ok(source.includes(`[string]$PortName='${COMPLETION_SERIAL_PORT_NAME}'`));
         assert.ok(source.includes(`[string]$DevicePath='${COMPLETION_SERIAL_DEVICE}'`));
+        /*
+         * Only the raw-handle transport can be exercised without a serial port, so the managed one
+         * is pinned the only way that does not need hardware: both mechanisms write the same
+         * `$payload`, encoded once before the loop. The fallback case below proves those bytes are
+         * exactly the record line plus CRLF, which makes it the content check for both.
+         */
+        assert.ok(source.includes("$payload=[Text.ASCIIEncoding]::new().GetBytes($Line+\"`r`n\");"));
+        assert.equal(source.split("$payload,0,$payload.Length").length - 1, 2,
+            "each mechanism writes the one payload, and nothing else writes at all");
         /* An oversized line never reaches a port, and that is a different report from a refusal. */
         assert.ok(source.includes(`else{$completionEmission=[ordered]@{attempted=$false;emitted=$false;`));
     });
