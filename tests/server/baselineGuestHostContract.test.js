@@ -130,8 +130,9 @@ describe("baseline guest to Stage 3 host contract", () => {
 
     /*
      * The two SHAs are the trap. The summary is the candidate release's evidence, so it is stamped
-     * with the candidate's SHA; the harness SHA belongs to the context alone. The release manifest
-     * rejects the summary on the same comparison, so getting this wrong fails twice, late.
+     * with the candidate's SHA; the harness SHA belongs to the context alone. Stage 3's
+     * validateFullSummary is what rejects it, at the very end of a run that has already spent an
+     * hour, which is why the two are pinned apart here instead.
      */
     it("stamps the verifier summary with the candidate SHA, not the harness SHA", async () => {
         const published = await publishedGuestResult();

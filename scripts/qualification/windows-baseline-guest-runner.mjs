@@ -258,9 +258,12 @@ export async function runWindowsBaselineGuest(input, operationValue) {
     if (failure !== null || !cleanupProven) return {schemaVersion: SCHEMA_VERSION, status: "failed", profile: PROFILE,
         cleanupProven, failure: failureMessage(failure ?? new Error("baseline cleanup is incomplete"))};
     /*
-     * The candidate release SHA, never the harness context SHA. This summary is the candidate's
-     * own evidence: Stage 3's validateFullSummary and scripts/release/qualification-manifest.mjs
-     * both compare it against the candidate, and validateRequest has already proven the two differ.
+     * The candidate release SHA, never the harness context SHA. This summary is the candidate's own
+     * evidence, and Stage 3's validateFullSummary compares it against the candidate; validateRequest
+     * has already proven the two SHAs differ, so seeding the context's would reject every run.
+     *
+     * The shape matches the verifier evidence scripts/release/qualification-manifest.mjs checks, but
+     * that reads the release's own summary artifacts rather than this one.
      */
     const summary = {status: "passed", exit: SUCCESS_EXIT_CODE, mode: "full", sourceSha: request.candidate.sourceSha,
         artifactSha256: request.candidate.sha256, platform: "win32", architecture: "x64",

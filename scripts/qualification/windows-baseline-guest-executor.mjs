@@ -194,15 +194,22 @@ export async function executeWindowsBaselineGuest(input, dependencies = {}) {
             "baseline guest execution manifest");
         const runtime = io.createRuntime(request, execution);
         const operations = io.createOperations({request, execution, dependencies: runtime});
+        /*
+         * Measured before the scenarios run, though it is only needed after them.
+         *
+         * A probe that cannot be opened or executed is a fault in what the host staged, and the guest
+         * can know that in its first second. Measuring it afterwards would surface the same fault
+         * twenty minutes later and report `cleanupProven: false` for a run the runner did clean up,
+         * because the executor's failure record cannot see the runner's proof.
+         */
+        const cpuidBytes = io.measureCpuid(execution.cpuidProbe);
         result = validateResult(await io.runGuest(request, operations));
         /*
          * A failed run publishes the runner's own failure record, which carries a reason the host can
          * report. Only an observed run is composed into the envelope Stage 3 parses, because only an
          * observed run has the summary and the cleanup proof that envelope is made of.
          */
-        if (result.status === "observed")
-            result = io.compose({request, execution, result,
-                cpuidBytes: io.measureCpuid(execution.cpuidProbe)});
+        if (result.status === "observed") result = io.compose({request, execution, result, cpuidBytes});
     } catch (error) { result = failure(error); }
     try { io.writeResult(input.resultPath, result); }
     catch (error) { return {exitCode: FAILURE_EXIT_CODE, result: failure(error)}; }

@@ -228,6 +228,34 @@ describe("Windows baseline guest executable entry", () => {
         } finally { fs.rmSync(value.root, {recursive: true, force: true}); }
     });
 
+    /*
+     * The probe is measured before the scenarios run, not after them.
+     *
+     * A probe that cannot be opened or executed is a fault in what the host staged, and the guest
+     * can know that in the first second. Measuring it after the run would surface the same fault
+     * twenty minutes later and, worse, report cleanupProven:false for a run the runner did clean
+     * up - the executor's failure record cannot see the runner's proof.
+     */
+    it("measures the probe before the run so a staging fault fails fast and truthfully", async () => {
+        const value = fixture(); const calls = [];
+        try {
+            const result = await executeWindowsBaselineGuest({requestPath: value.requestPath,
+                expectedRequestSha256: value.requestSha256, executionPath: value.executionPath,
+                expectedExecutionSha256: value.executionSha256, resultPath: value.resultPath}, {
+                assertGuest: async () => undefined,
+                readJson: identity => JSON.parse(fs.readFileSync(identity.path, "utf8")),
+                createRuntime: () => ({runtime: true}),
+                createOperations: () => ({operations: true}),
+                measureCpuid: () => { calls.push("probe");
+                    throw new Error("baseline CPUID probe physical identity differs"); },
+                runGuest: async () => { calls.push("run"); throw new Error("the run must never start"); }
+            });
+            assert.equal(result.exitCode, 1);
+            assert.deepEqual(calls, ["probe"]);
+            assert.match(result.result.failure, /baseline CPUID probe physical identity differs/u);
+        } finally { fs.rmSync(value.root, {recursive: true, force: true}); }
+    });
+
     it("writes a bounded failed result and returns nonzero when execution throws", async () => {
         const value = fixture();
         try {
@@ -237,6 +265,8 @@ describe("Windows baseline guest executable entry", () => {
                 assertGuest: async () => undefined,
                 readJson: readPortableJson,
                 createRuntime: () => ({}), createOperations: () => ({}),
+                /* The probe is measured first, so the run only gets to throw once it is satisfied. */
+                measureCpuid: () => CPUID_BYTES(),
                 runGuest: async () => { throw new Error("guest failure\nsecret trailing detail"); }
             });
             assert.equal(result.exitCode, 1);
