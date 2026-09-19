@@ -937,7 +937,6 @@ describe("Windows baseline guest producer-to-parser contract", () => {
      */
     const ABSENT_PORT_NAME = "COM253";
     const ABSENT_DEVICE_PATH = `\\\\.\\${ABSENT_PORT_NAME}`;
-    const psLiteral = value => `'${value.replaceAll("'", "''")}'`;
 
     it("keeps the completion emission outcome instead of discarding it", () => {
         const source = render().toString("utf8");
@@ -978,6 +977,34 @@ describe("Windows baseline guest producer-to-parser contract", () => {
         assert.ok(source.includes("completionEmission=$completionEmission}"));
         assert.ok(source.indexOf("$completionEmission=& $EmitCompletion") <
             source.indexOf("completionEmission=$completionEmission}"));
+    });
+
+    /*
+     * Copilot found this on #82 and it is right: sanitizing collapses a run of control characters
+     * to one space, so a message made only of them passed the emptiness check and reached the
+     * record as " ". The behavioural case is Windows-gated, so the rendered source is pinned too.
+     */
+    it("trims the sanitized reason on both sides of the bound", () => {
+        const source = render().toString("utf8");
+        assert.ok(source.includes("'[\\x00-\\x1f\\x7f]+',' ').Trim();"));
+        assert.ok(source.includes("$bounded=$bounded.Substring(0,$Maximum).Trim()"));
+    });
+
+    it("never lets a whitespace-only reason reach the record", {skip: !HAS_INBOX_POWERSHELL}, () => {
+        const bound = MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS;
+        /*
+         * Control-only, space-only, empty, mixed, ordinary, and one that only goes blank at the cut.
+         * Each element is parenthesised and string-seeded: bare `[char]13+[char]10` adds as numbers,
+         * and an unparenthesised element lets the comma bind into the neighbouring expression.
+         */
+        const cases = [`(''+[char]13+[char]10)`, `('  ')`, `('')`, `(''+[char]9+' '+[char]7)`,
+            `('real failure')`, `(''+[char]13+'real'+[char]10)`, `(('x'*${bound - 2})+'  y')`];
+        const observed = runLibraryHarness("myspeed-baseline-bounded-text-",
+            `@(${cases.join(",")})|ForEach-Object{Get-MyspeedBoundedFailureText $_ ${bound}}|` +
+            "ConvertTo-Json -Compress\r\n");
+        assert.deepEqual(observed, ["unspecified failure", "unspecified failure", "unspecified failure",
+            "unspecified failure", "real failure", "real", "x".repeat(bound - 2)]);
+        for (const reason of observed) assert.equal(reason, reason.trim());
     });
 
     it("reports both mechanisms' bounded failures without throwing when no port answers",

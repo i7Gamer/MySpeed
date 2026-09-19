@@ -351,9 +351,20 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `Throw-MyspeedBaselineExecutorFailure 'Baseline executor result identity differs' $diagnostics $null};` +
         `return [pscustomobject]@{bytes=$bytes;status=[string]$semantic.status;diagnostics=@()}}catch{` +
         `if(-not$_.Exception.Data.Contains('MyspeedDiagnostics')){$_.Exception.Data['MyspeedDiagnostics']=$diagnostics.ToArray()};throw}}\r\n` +
+        /*
+         * Trimmed on both sides of the truncation. Sanitizing a message made only of control
+         * characters collapses it to a single space, which is not empty, so the check below never
+         * fired and a blank reason reached the record - the swallow by other means. Cutting at the
+         * bound strands trailing spaces the same way.
+         *
+         * The guarantee this buys is bounded, and worth stating rather than implying: ASCII control
+         * characters and whatever .NET counts as whitespace, which includes NBSP. A message made
+         * only of zero-width format characters (U+200B, U+FEFF) would still pass, and nothing this
+         * is called with - `Exception.Message` from the framework's own IO types - is made of those.
+         */
         `function Get-MyspeedBoundedFailureText([string]$Text,[int]$Maximum){` +
-        `$bounded=[regex]::Replace([string]$Text,'[\\x00-\\x1f\\x7f]+',' ');` +
-        `if($bounded.Length-gt$Maximum){$bounded=$bounded.Substring(0,$Maximum)};` +
+        `$bounded=[regex]::Replace([string]$Text,'[\\x00-\\x1f\\x7f]+',' ').Trim();` +
+        `if($bounded.Length-gt$Maximum){$bounded=$bounded.Substring(0,$Maximum).Trim()};` +
         `if($bounded.Length-eq 0){$bounded='unspecified failure'};return $bounded}\r\n` +
         /*
          * No mechanism can throw out of here: each one is wrapped, and its bounded reason becomes an
