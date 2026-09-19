@@ -353,3 +353,31 @@ describe("WinPE diagnostic record carries no unredacted stream", () => {
         assert.match(launched.winpeDiagnostic.collection.failure, /not identified before the launch/u);
     });
 });
+
+describe("an unavailable late-boot milestone survives collection", () => {
+    /*
+     * The point of recording an abandoned milestone explicitly is that it reaches the evidence. The
+     * collector reads a PNG for every milestone it is given, and its failure handler discards the
+     * whole record rather than the one milestone - so a milestone with no frame used to delete the
+     * captured ones alongside it, which is the opposite of what the explicit state is for.
+     */
+    it("keeps the record and every observed field instead of discarding all of it", async () => {
+        const lateBoot = {schemaVersion: 1, kind: "qemu-late-boot-observation", milestones: [
+            /* Abandoned after `query-status`: the status it saw is real, the frame never happened. */
+            {milestone: 1, offsetMs: 120_000, status: "running", running: true,
+                unavailable: {reason: "reader-unavailable"}},
+            /* Abandoned before `query-status`: nothing was observed, so nothing is reported. */
+            {milestone: 2, offsetMs: 300_000, unavailable: {reason: "reader-unavailable"}}
+        ]};
+        const {operations} = adapter({lateBoot});
+        const launched = await operations.launchOwnedQemu(launchInput());
+        assert.notEqual(launched.lateBoot, null, "a frameless milestone must not erase the record");
+        assert.equal(launched.lateBoot.milestones.length, 2);
+        assert.deepEqual(launched.lateBoot.milestones[0], {milestone: 1, offsetMs: 120_000,
+            status: "running", running: true, unavailable: {reason: "reader-unavailable"}});
+        assert.deepEqual(launched.lateBoot.milestones[1], {milestone: 2, offsetMs: 300_000,
+            unavailable: {reason: "reader-unavailable"}});
+        /* No frames were compared, so the advisory verdict has nothing to say and says nothing. */
+        assert.equal(launched.lateBoot.displayAdvanced, null);
+    });
+});

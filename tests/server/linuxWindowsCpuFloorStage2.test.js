@@ -954,6 +954,46 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.throws(() => validateLateBoot({...valid, displayAdvanced: "false"}, paths()), /late-boot/u);
     });
 
+    /*
+     * A milestone the session could not complete keeps its slot, because the list is dense and
+     * positional and a gap that silently shortens it cannot be told apart from a milestone that was
+     * never due. How much of it survives depends on how far the exchange got, and nothing it did
+     * not observe is invented: a milestone abandoned after `query-status` keeps the real status it
+     * saw, and one abandoned before it reports no status at all.
+     */
+    it("accepts an unavailable late-boot milestone in either shape and invents nothing", () => {
+        const captured = milestone => ({milestone, offsetMs: LATE_BOOT_OFFSETS[milestone - 1],
+            status: "running", running: true, screenshot: {path: `${paths().root}/late-boot-${milestone}.png`,
+                bytes: String(PNG.length), sha256: HASH(PNG), bytesBase64: PNG.toString("base64")}});
+        const LATE_BOOT_OFFSETS = [120_000, 300_000];
+        const base = {schemaVersion: 1, kind: "qemu-late-boot-observation", displayAdvanced: null};
+
+        /* Nothing observed: no status, no running, no screenshot - only why. */
+        const unobserved = {...base, milestones: [captured(1),
+            {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1], unavailable: {reason: "reader-unavailable"}}]};
+        assert.deepEqual(validateLateBoot(unobserved, paths()), unobserved);
+
+        /* Status observed, frame abandoned: the real status survives, the screenshot does not. */
+        const framed = {...base, milestones: [captured(1), {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1],
+            status: "running", running: true, unavailable: {reason: "reader-unavailable"}}]};
+        assert.deepEqual(validateLateBoot(framed, paths()), framed);
+
+        /* A fabricated field on an unobserved milestone is exactly what the split exists to stop. */
+        assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
+            {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1], running: true,
+                unavailable: {reason: "reader-unavailable"}}]}, paths()), /late-boot/u);
+        /* An unavailable milestone may not also carry a frame, and must say why. */
+        assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
+            {...captured(2), unavailable: {reason: "reader-unavailable"}}]}, paths()), /late-boot/u);
+        assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
+            {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1], unavailable: {reason: ""}}]}, paths()),
+        /late-boot/u);
+        /* The slot still has to be the one it claims to be. */
+        assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
+            {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[0], unavailable: {reason: "reader-unavailable"}}]},
+        paths()), /late-boot/u);
+    });
+
     it("instantiates typed GuestBootstrapError and QemuLaunchError with failure diagnostics", () => {
         const failureEvidence = {schemaVersion: 1, status: "failed", nonce: NONCE,
             stage: "guest-bootstrap", failure: "synthetic probe crash"};

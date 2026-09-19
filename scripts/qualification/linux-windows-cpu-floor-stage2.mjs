@@ -108,6 +108,8 @@ export const STAGE2_DIAGNOSTIC_DEADLINES = Object.freeze({executionMinutes: 25, 
 const MAX_LATE_BOOT_SCREENSHOT_BYTES = 1_048_576;
 const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREENSHOT_BYTES / 3) * 4;
 const MAX_LATE_BOOT_MILESTONES = 2;
+/* Why a milestone has no frame is a short stable identifier, not a message, and is bounded as one. */
+const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
@@ -1886,9 +1888,29 @@ export function validateLateBoot(value, pathsValue) {
         value.milestones.length > MAX_LATE_BOOT_MILESTONES)
         throw new TypeError("QEMU late-boot observation is invalid");
     for (const [index, item] of value.milestones.entries()) {
-        assertKeys(item, ["milestone", "offsetMs", "running", "screenshot", "status"], "QEMU late-boot milestone");
         const expectedMilestone = index + 1;
         const expectedOffset = LATE_BOOT_OFFSETS[index];
+        /*
+         * A milestone the session could not complete keeps its slot rather than shortening the
+         * list, because the list is positional and a gap is indistinguishable from a milestone that
+         * was never due. It is validated as its own exact shape, not as a captured milestone with
+         * optional fields: an unobserved milestone has no status and no frame, and a list that
+         * admitted either alongside `unavailable` would admit a fabricated one.
+         */
+        if (Object.hasOwn(item, "unavailable")) {
+            const observedStatus = Object.hasOwn(item, "status");
+            assertKeys(item, observedStatus ? ["milestone", "offsetMs", "running", "status", "unavailable"] :
+                ["milestone", "offsetMs", "unavailable"], "QEMU late-boot milestone");
+            assertKeys(item.unavailable, ["reason"], "QEMU late-boot milestone reason");
+            if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
+                typeof item.unavailable.reason !== "string" || item.unavailable.reason.length < 1 ||
+                item.unavailable.reason.length > MAX_LATE_BOOT_REASON_CHARACTERS ||
+                (observedStatus && (typeof item.running !== "boolean" ||
+                    typeof item.status !== "string" || item.status.length < 1)))
+                throw new TypeError("QEMU late-boot milestone is invalid");
+            continue;
+        }
+        assertKeys(item, ["milestone", "offsetMs", "running", "screenshot", "status"], "QEMU late-boot milestone");
         if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
             typeof item.running !== "boolean" || typeof item.status !== "string" || item.status.length < 1)
             throw new TypeError("QEMU late-boot milestone is invalid");

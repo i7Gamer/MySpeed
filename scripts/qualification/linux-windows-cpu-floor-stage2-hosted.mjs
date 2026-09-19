@@ -1816,6 +1816,13 @@ function readSerialConsole(io, target) {
  * Nothing reads this to abort, accept or gate a run; the serial console above is the evidence.
  */
 function displayProgressVerdict(earlyBoot, milestones) {
+    /*
+     * A milestone with no frame breaks the chain rather than being skipped over. Comparing the
+     * frames on either side of a gap would answer a question nobody asked - whether the display
+     * changed across an interval that was never sampled - and this verdict already prefers null to
+     * a conclusion it cannot support.
+     */
+    if (milestones.some(item => item.unavailable !== undefined)) return null;
     const digests = [...(earlyBoot === null ? [] : [earlyBoot.screenshots.at(-1).sha256]),
         ...milestones.map(item => item.screenshot.sha256)];
     if (digests.length < 2) return null;
@@ -2218,6 +2225,20 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
         Array.isArray(monitored.lateBoot.milestones)) {
         try {
             const validatedMilestones = monitored.lateBoot.milestones.map(item => {
+                /*
+                 * A milestone the session abandoned has no frame to read. It passes through with
+                 * exactly what was observed - which may be nothing beyond the reason - because the
+                 * catch below discards the entire record, so throwing here would delete the
+                 * captured milestones alongside the missing one.
+                 */
+                if (item.unavailable !== undefined) {
+                    return {
+                        milestone: item.milestone,
+                        offsetMs: item.offsetMs,
+                        ...(item.status === undefined ? {} : {status: item.status, running: item.running}),
+                        unavailable: {reason: item.unavailable.reason}
+                    };
+                }
                 const observed = io.readOwnedVerified(item.screenshotPath, MAX_EARLY_BOOT_SCREENSHOT_BYTES);
                 if (observed.identity.path !== item.screenshotPath || observed.bytes.length < PNG_SIGNATURE.length ||
                     !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||

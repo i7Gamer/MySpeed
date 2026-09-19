@@ -10,6 +10,7 @@ import {
     WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS,
     WINPE_DIAGNOSTIC_CONSOLE_QCODES,
     WINPE_DIAGNOSTIC_DRIVE_LETTERS,
+    WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS,
     WINPE_DIAGNOSTIC_HOLD_MILLISECONDS,
     WINPE_DIAGNOSTIC_KEY_GAP_MILLISECONDS,
     WINPE_DIAGNOSTIC_LATEST_OFFSET_MILLISECONDS,
@@ -35,8 +36,10 @@ const ROOT = `/home/runner/work/_temp/myspeed-windows-cpu-floor-${NONCE}`;
 const SCREENSHOTS = [`${ROOT}/early-boot-1.png`, `${ROOT}/early-boot-2.png`];
 const LATE_SCREENSHOTS = [`${ROOT}/late-boot-1.png`, `${ROOT}/late-boot-2.png`];
 const AUTHORIZATION = {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: NONCE};
+/* Long enough that a settling session always wins, short enough that a stuck one fails quickly. */
+const SETTLEMENT_WATCHDOG_MILLISECONDS = 2_000;
 
-function transport(responses) {
+function transport(responses, stallWrite = null, flood = null) {
     /*
      * A fake QMP transport rather than a canned array: the diagnostic writes 85 commands whose ids
      * are derived, so the transcript has to answer what was actually written. `responses` overrides
@@ -50,17 +53,35 @@ function transport(responses) {
         if (resolveChunk !== null) { const resolver = resolveChunk; resolveChunk = null; resolver({value: chunk, done: false}); }
         else pending.push(chunk);
     };
+    /*
+     * Once flooding, every read is served immediately with something that is not the reply being
+     * waited for - a QMP event, which `expectResponse` skips, or a fragment of a message, which
+     * leaves the parser mid-line. Either renews the per-chunk deadline for as long as it lasts, so
+     * the exchange can only end on one of the source's own bounds.
+     */
+    let flooding = null;
     const readable = {[Symbol.asyncIterator]: () => ({
-        next: () => pending.length > 0 ? Promise.resolve({value: pending.shift(), done: false}) :
-            new Promise(resolve => { resolveChunk = resolve; })
+        next: () => {
+            if (pending.length > 0) return Promise.resolve({value: pending.shift(), done: false});
+            if (flooding !== null) {
+                return Promise.resolve({value: flooding === "fragments" ? Buffer.from(" ") :
+                    Buffer.from(`${JSON.stringify({event: "RTC_CHANGE", data: {offset: 1}})}\r\n`), done: false});
+            }
+            return new Promise(resolve => { resolveChunk = resolve; });
+        }
     })};
     push({QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}});
     return {writes, readable, writeBytes: bytes => {
         const value = JSON.parse(bytes.toString("utf8"));
         writes.push(value);
+        /* A pipe write that never settles: the bytes may already be gone, so a reply is owed. */
+        if (value.id === stallWrite) return new Promise(() => undefined);
+        if (flood !== null && value.id === flood.id) { flooding = flood.kind; return; }
         const override = responses?.[value.id];
-        push(override === undefined ? {return: {}, id: value.id} :
-            typeof override === "function" ? override(value) : override);
+        const reply = override === undefined ? {return: {}, id: value.id} :
+            typeof override === "function" ? override(value) : override;
+        /* `null` withholds the reply entirely, which is how an owed acknowledgement is abandoned. */
+        if (reply !== null) push(reply);
     }};
 }
 
@@ -71,12 +92,17 @@ const STATUS_RESPONSES = {
 };
 
 /*
- * Only `now` and `wait` are injected. `cancellableDelay` falls through to `wait` when no timer
- * factory is supplied, which leaves the real `withDeadline` timers alone - a fake timer factory
- * would fire the per-message deadline instantly and prove nothing about pacing.
+ * Only `now` and `wait` are injected by default. `cancellableDelay` falls through to `wait` when no
+ * timer factory is supplied, which leaves the real `withDeadline` timers alone - a blanket fake
+ * timer factory would fire the per-message deadline instantly and prove nothing about pacing.
+ *
+ * `timers` opts one test out of that, for the deadlines themselves rather than the pacing: a test
+ * that must abandon an owed acknowledgement has to fire a real `withDeadline` timer, and cannot do
+ * it by waiting ten seconds. Every existing test leaves `timers` unset and keeps its real timers.
  */
-async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock, nowHook} = {}) {
-    const bus = transport({...responses, ...STATUS_RESPONSES});
+async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock, nowHook,
+    timers, stallWrite, flood} = {}) {
+    const bus = transport({...responses, ...STATUS_RESPONSES}, stallWrite, flood);
     let now = 0;
     let nowReads = 0;
     const waits = [];
@@ -92,7 +118,8 @@ async function runDiagnosticSession({responses, authorization = AUTHORIZATION, c
          * whole delay and hitting a different check than the one under test.
          */
         now: () => { nowReads += 1; return nowHook?.(nowReads, now) ?? now; },
-        wait: async milliseconds => { waits.push(milliseconds); now += clock?.(milliseconds) ?? milliseconds; }
+        wait: async milliseconds => { waits.push(milliseconds); now += clock?.(milliseconds) ?? milliseconds; },
+        ...(timers ?? {})
     });
     return {late: await latePromise, writes: bus.writes, waits, elapsed: () => now};
 }
@@ -325,6 +352,153 @@ describe("WinPE answer-file diagnostic never costs the frame it exists to observ
         assert.equal(session.late.winpeDiagnostic.failure, null);
         assert.equal(session.late.milestones.length, 2);
         assert.equal(session.late.milestones[1].screenshotPath, LATE_SCREENSHOTS[1]);
+    });
+
+    /*
+     * The counterpart to the two tests above, and the reason they are not in conflict. A phase
+     * deadline that falls before a command is issued, or after its acknowledgement is consumed,
+     * owes nothing and must keep the frame. A deadline that falls while an acknowledgement is
+     * still owed leaves an unconsumed reply on a shared reader, and continuing would let it be
+     * read as the next command's response. That session stops instead, and says so.
+     */
+    it("issues nothing further once an owed acknowledgement is abandoned", async () => {
+        let armed = false;
+        const running = runDiagnosticSession({
+            /* Withheld, so the read that follows the write can only end at its deadline. */
+            responses: {"winpe-console": () => { armed = true; return null; }},
+            /*
+             * Injecting a timer factory also takes over `cancellableDelay`, which otherwise falls
+             * through to `wait`. Pacing delays therefore have to keep running - they are just run
+             * immediately, since this test is about ordering rather than timing - while the reply
+             * deadline is the one held back until there is an owed acknowledgement to abandon.
+             */
+            timers: {
+                setTimer: (callback, milliseconds) => {
+                    if (armed && milliseconds === WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS) {
+                        queueMicrotask(callback);
+                        return 0;
+                    }
+                    return setTimeout(callback, 0);
+                },
+                clearTimer: handle => clearTimeout(handle)
+            }
+        });
+        /*
+         * A real timer, not the session's injected one: continuing past the abandoned reply lets a
+         * later command wait on a reply the orphaned reader already took, and that waits forever.
+         * The watchdog turns that into a failure with a name instead of a hung suite.
+         */
+        let watchdog;
+        const session = await Promise.race([running, new Promise((resolve, reject) => {
+            watchdog = setTimeout(() => reject(new Error("session did not settle after the abandoned reply")),
+                SETTLEMENT_WATCHDOG_MILLISECONDS);
+        })]).finally(() => clearTimeout(watchdog));
+        const issued = session.writes.map(value => value.id);
+        assert.ok(issued.includes("late-screenshot-1"), "the first milestone completed before the abandon");
+        assert.equal(issued.includes("late-status-2"), false, "no command may follow an abandoned reply");
+        assert.equal(issued.includes("late-screenshot-2"), false);
+        assert.equal(session.late.milestones.length, 2, "the abandoned milestone keeps its slot");
+        assert.equal(session.late.milestones[1].milestone, 2);
+        assert.equal(session.late.milestones[1].offsetMs, LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS[1]);
+        /* Nothing was observed for it, so nothing is reported for it beyond why. */
+        assert.equal(Object.hasOwn(session.late.milestones[1], "status"), false);
+        assert.equal(Object.hasOwn(session.late.milestones[1], "running"), false);
+        assert.equal(Object.hasOwn(session.late.milestones[1], "screenshotPath"), false);
+        assert.match(session.late.milestones[1].unavailable.reason, /\S/u);
+    });
+
+    /*
+     * The same phase deadline as the test below, one clock read earlier, and the opposite outcome.
+     * Crossing it after an acknowledgement is consumed abandons nothing and keeps the frame;
+     * crossing it between the write and its reply leaves that reply unread on the shared reader,
+     * and no timer is involved in either case. Ownership decides, not timing.
+     */
+    /*
+     * A reply buried under something the reader keeps having to skip - events, which
+     * `expectResponse` discards, or fragments, which leave the parser mid-line - renews the
+     * per-chunk deadline indefinitely without any single read expiring. What actually ends it is
+     * the transcript and byte caps the source already enforces, so the flood is bounded by volume
+     * rather than by time; the whole-exchange budget is the bound on time, and on a tight flood the
+     * volume cap always reaches its limit first.
+     *
+     * What matters either way is the same, and is what these assert: however the exchange ends, it
+     * ended with an acknowledgement still owed, so the session must stop rather than read on.
+     */
+    for (const kind of ["events", "fragments"]) {
+        it(`stops with an owed reply when one is buried under a stream of ${kind}`, async () => {
+            let armed = false;
+            let watchdog;
+            const running = runDiagnosticSession({
+                flood: {id: "winpe-console", kind},
+                responses: {"late-screenshot-1": value => { armed = true; return {return: {}, id: value.id}; }},
+                timers: {
+                    setTimer: (callback, milliseconds) => {
+                        if (armed && milliseconds === WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS) {
+                            queueMicrotask(callback);
+                            return 0;
+                        }
+                        return setTimeout(callback, 0);
+                    },
+                    clearTimer: handle => clearTimeout(handle)
+                }
+            });
+            const session = await Promise.race([running, new Promise((resolve, reject) => {
+                watchdog = setTimeout(() => reject(new Error(`a reply behind ${kind} was never bounded`)),
+                    SETTLEMENT_WATCHDOG_MILLISECONDS);
+            })]).finally(() => clearTimeout(watchdog));
+            assert.equal(session.writes.map(value => value.id).includes("late-status-2"), false);
+            assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
+        });
+    }
+
+    /*
+     * The symmetric half of the abandoned-read case. A bounded write shares the same deadline
+     * mechanism and is equally uncancellable, so a write left pending owes a reply exactly as a
+     * pending read does - the bytes may already have reached the monitor.
+     */
+    it("issues nothing further once a pending write is abandoned", async () => {
+        let armed = false;
+        let watchdog;
+        const running = runDiagnosticSession({
+            stallWrite: "winpe-console",
+            /* Armed on the last exchange before the diagnostic, since a stalled write never replies. */
+            responses: {"late-screenshot-1": value => { armed = true; return {return: {}, id: value.id}; }},
+            timers: {
+                setTimer: (callback, milliseconds) => {
+                    if (armed && milliseconds === WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS) {
+                        queueMicrotask(callback);
+                        return 0;
+                    }
+                    return setTimeout(callback, 0);
+                },
+                clearTimer: handle => clearTimeout(handle)
+            }
+        });
+        const session = await Promise.race([running, new Promise((resolve, reject) => {
+            watchdog = setTimeout(() => reject(new Error("session did not settle after the abandoned write")),
+                SETTLEMENT_WATCHDOG_MILLISECONDS);
+        })]).finally(() => clearTimeout(watchdog));
+        const issued = session.writes.map(value => value.id);
+        assert.equal(issued.includes("late-status-2"), false, "no command may follow an abandoned write");
+        assert.equal(session.late.milestones.length, 2);
+        assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
+    });
+
+    it("stops when the phase closes between a write and its reply, with no deadline involved", async () => {
+        let reads = 0;
+        let jumpAt = null;
+        const session = await runDiagnosticSession({
+            responses: {"winpe-key-5": value => { jumpAt = reads + 1; return {return: {}, id: value.id}; }},
+            nowHook: (index, current) => {
+                reads = index;
+                return jumpAt !== null && index >= jumpAt ?
+                    current + WINPE_DIAGNOSTIC_PHASE_MILLISECONDS + 1 : current;
+            }
+        });
+        const issued = session.writes.map(value => value.id);
+        assert.equal(issued.includes("late-status-2"), false, "the reader owed a reply it never read");
+        assert.equal(session.late.milestones.length, 2);
+        assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
     });
 
     it("still captures the +300s frame when the deadline aborts the sequence mid-line", async () => {
