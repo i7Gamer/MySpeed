@@ -2310,6 +2310,42 @@ describe("Stage 3 monitor completion transition", () => {
         assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
     });
 
+    /*
+     * Run 35453004452 died with exit 137 and no reason at all, and establishing even roughly what
+     * had happened cost an evidence download and a screenshot extraction. A UEFI-shell drop has a
+     * name; an installer that wedged past a deadline had none.
+     *
+     * What the status can support is narrow, and the name says only that much. QEMU runs under a
+     * `timeout` wrapper whose own exit status on a killed child is 128 plus the signal, so a high
+     * status is consistent with that wrapper - but it is a convention, not proof: a child killed
+     * by anything else produces the same status, and a process may simply exit(137) of its own
+     * accord. The timing is attached as evidence for a reader to weigh; the harness attributes
+     * nothing, and no status is treated as special.
+     */
+    it("names a high exit status the monitor did not request, and attributes it to nothing", async () => {
+        for (const exitCode of [129, 137, 143, 255]) {
+            const {result} = await run({serialAt: () => `boot${CRLF}`, exitAt: 30_000, exitCode});
+            assert.equal(result.terminationReason, "launcher-high-exit-status-unattributed", String(exitCode));
+            assert.equal(result.launcherExit.exitStatus, exitCode);
+            assert.equal(result.launcherExit.elapsedMs, 30_000);
+            assert.equal(result.launcherExit.configuredDeadlineMs, 1_000_000);
+        }
+    });
+
+    it("leaves a reason the monitor chose for itself exactly as it was", async () => {
+        const {result} = await run({serialAt: () => `boot${CRLF}`, exitCode: 137});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.launcherExit, undefined);
+    });
+
+    it("says nothing about an ordinary exit status", async () => {
+        for (const exitCode of [0, 1, 128]) {
+            const {result} = await run({serialAt: () => `boot${CRLF}`, exitAt: 30_000, exitCode});
+            assert.equal(result.terminationReason, null, String(exitCode));
+            assert.equal(result.launcherExit, undefined);
+        }
+    });
+
     it("supplies no trigger when the completion channel itself fails", async () => {
         const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
         assert.equal(result.terminationReason, "deadline");

@@ -110,6 +110,8 @@ const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREE
 const MAX_LATE_BOOT_MILESTONES = 2;
 /* Why a milestone has no frame is a short stable identifier, not a message, and is bounded as one. */
 const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
+/* A process exit status is a byte, whatever produced it. */
+const MAX_EXIT_STATUS = 255;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
@@ -1782,6 +1784,27 @@ export function validateQmpShutdownEventDiagnostic(value) {
     return deepFreeze(structuredClone(value));
 }
 
+/*
+ * Why QEMU's exit status was not one the monitor asked for, and the timing a reader needs to weigh
+ * it. Failure-only and optional, so every failure diagnostic retained before it existed still
+ * replays. It states what was observed and attributes nothing: `exitStatus` is the status itself,
+ * and `elapsedMs` alongside `configuredDeadlineMs` - both milliseconds on the monitor's own clock,
+ * measured from the launcher's spawn - is the correlation, not a cause.
+ */
+export function validateLauncherExitDiagnostic(value) {
+    assertKeys(value, ["configuredDeadlineMs", "elapsedMs", "exitStatus", "kind", "lastMilestone", "schemaVersion"],
+        "QEMU launcher exit diagnostic");
+    const bounded = item => Number.isSafeInteger(item) && item >= 0;
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launcher-exit-diagnostic" ||
+        !Number.isSafeInteger(value.exitStatus) || value.exitStatus < 0 || value.exitStatus > MAX_EXIT_STATUS ||
+        !bounded(value.elapsedMs) || !bounded(value.configuredDeadlineMs) ||
+        (value.lastMilestone !== null &&
+            (!Number.isSafeInteger(value.lastMilestone) || value.lastMilestone < 1 ||
+                value.lastMilestone > MAX_LATE_BOOT_MILESTONES)))
+        throw new TypeError("QEMU launcher exit diagnostic is invalid");
+    return deepFreeze(structuredClone(value));
+}
+
 export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
@@ -1795,7 +1818,9 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (Object.hasOwn(value ?? {}, "midWindowFrames")) diagnosticKeys.push("midWindowFrames");
     if (Object.hasOwn(value ?? {}, "shutdown")) diagnosticKeys.push("shutdown");
     if (Object.hasOwn(value ?? {}, "qmpShutdownEvent")) diagnosticKeys.push("qmpShutdownEvent");
+    if (Object.hasOwn(value ?? {}, "launcherExit")) diagnosticKeys.push("launcherExit");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
+    if (Object.hasOwn(value, "launcherExit")) validateLauncherExitDiagnostic(value.launcherExit);
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
     assertKeys(value.processFlags, ["errorObserved", "stderrOverflow", "stdoutOverflow"], "QEMU process flags");

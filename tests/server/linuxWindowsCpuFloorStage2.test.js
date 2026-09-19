@@ -23,6 +23,7 @@ import {
     validateEarlyBoot,
     validateGuestFailure,
     validateLateBoot,
+    validateLauncherExitDiagnostic,
     validatePackageClosure,
     selectWindowsImage
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -992,6 +993,34 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
             {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[0], unavailable: {reason: "reader-unavailable"}}]},
         paths()), /late-boot/u);
+    });
+
+    /*
+     * The evidence for a status the monitor did not ask for. It has to survive validation to be
+     * of any use to the reader it exists for, and it has to refuse a malformed one: a timing
+     * claim nobody checks is worse than none, because it reads exactly like a checked one.
+     */
+    it("round-trips a launcher exit diagnostic and refuses a malformed one", () => {
+        const valid = {schemaVersion: 1, kind: "qemu-launcher-exit-diagnostic", exitStatus: 137,
+            elapsedMs: 1_482_000, configuredDeadlineMs: 1_500_000, lastMilestone: 2};
+        assert.deepEqual(validateLauncherExitDiagnostic(valid), valid);
+        assert.equal(Object.isFrozen(validateLauncherExitDiagnostic(valid)), true);
+        /* A run that never reached a milestone says so rather than guessing at one. */
+        const none = {...valid, lastMilestone: null};
+        assert.deepEqual(validateLauncherExitDiagnostic(none), none);
+
+        for (const invalid of [
+            {...valid, exitStatus: 256},
+            {...valid, exitStatus: -1},
+            {...valid, elapsedMs: -1},
+            {...valid, elapsedMs: 1.5},
+            {...valid, configuredDeadlineMs: null},
+            {...valid, lastMilestone: 0},
+            {...valid, lastMilestone: 3},
+            {...valid, kind: "other"},
+            {...valid, extra: true}
+        ]) assert.throws(() => validateLauncherExitDiagnostic(invalid), /launcher exit diagnostic/u,
+        JSON.stringify(invalid));
     });
 
     it("instantiates typed GuestBootstrapError and QemuLaunchError with failure diagnostics", () => {

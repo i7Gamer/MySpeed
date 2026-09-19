@@ -1486,6 +1486,8 @@ function defaultWriteCleanupAuthority(pidPath, identity) {
 }
 
 export async function runMonitoredQemu(io, request) {
+    /* Optional in this module: several callers drive paths that never reach the monitor loop. */
+    const launchStartedAt = typeof io.monotonicMilliseconds === "function" ? io.monotonicMilliseconds() : null;
     const pidfile = request.precreatePidFile === true ? io.createOwnedPidFile(request.pidPath) : null;
     let finished = false;
     let outerProcessGroupId = null;
@@ -1774,6 +1776,33 @@ export async function runMonitoredQemu(io, request) {
      * Both the array and every entry are frozen: no late report can mutate what has already been
      * returned.
      */
+    /*
+     * A high exit status the monitor did not ask for. Run 35453004452 reported only "QEMU process
+     * did not complete cleanly", where a UEFI-shell drop reports `efi-shell-fallback`, so working
+     * out even roughly what had happened cost an evidence download and a screenshot extraction.
+     *
+     * The name claims exactly what was observed and no more. QEMU runs under a `timeout` wrapper
+     * whose own status on a killed child is 128 plus the signal, so a high status is consistent
+     * with that wrapper - but that is a convention, not proof: any other killer produces the same
+     * status, and a process may return it deliberately. Attributing it would need the wrapper to
+     * say so itself. The elapsed time and the deadline it was configured with are attached instead,
+     * so a reader can see the correlation the harness declines to assert.
+     */
+    let launcherExit = null;
+    const exitStatus = observation?.process?.exitCode;
+    if (terminationReasons.length === 0 && launchStartedAt !== null && Number.isSafeInteger(exitStatus) &&
+        exitStatus >= LOWEST_UNATTRIBUTED_EXIT_STATUS && exitStatus <= HIGHEST_EXIT_STATUS) {
+        launcherExit = {
+            schemaVersion: 1,
+            kind: "qemu-launcher-exit-diagnostic",
+            exitStatus,
+            /* Both measured on the monitor's own clock, from the moment the launcher was spawned. */
+            elapsedMs: io.monotonicMilliseconds() - launchStartedAt,
+            configuredDeadlineMs: request.timeoutMs,
+            lastMilestone: finalLateBoot?.milestones?.at(-1)?.milestone ?? null
+        };
+        terminationReasons.push(LAUNCHER_HIGH_EXIT_REASON);
+    }
     midWindowFinalized = true;
     qmpShutdownFinalized = true;
     const finalMidWindow = request.qmp?.midWindow ?
@@ -1783,6 +1812,7 @@ export async function runMonitoredQemu(io, request) {
         null;
     const finish = value => {
         const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow,
+            ...(launcherExit === null ? {} : {launcherExit}),
             ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord}),
         ...(completionRecord !== null ? {serialCompletion: {record: completionRecord,
             ...(completionObservedAt === null ? {} : {observedAtMs: completionObservedAt})}} :
@@ -2355,6 +2385,9 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
     if (!guestParsingAllowed) result.failureDiagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
         process: structuredClone(result.process), processFlags: structuredClone(processFlags),
         monitorFailure: monitored.monitorFailure ?? null,
+        /* Failure-only, and only when the monitor observed a status it did not itself ask for. */
+        ...(monitored.launcherExit === undefined ? {} :
+            {launcherExit: structuredClone(monitored.launcherExit)}),
         /*
          * Failure-only, and only when the continuous QMP pump actually captured one: a successful
          * launch never reaches this branch at all, and a launch that never authorized mid-window
@@ -3317,6 +3350,15 @@ export const MAX_SERIAL_OBSERVATION_BYTES = 1024 * 1024;
 export const POST_COMPLETION_EXIT_GRACE_MILLISECONDS = 30_000;
 const POST_COMPLETION_POLL_MILLISECONDS = 1_000;
 export const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-timeout";
+/*
+ * "High" rather than "signalled": a shell reports a signalled child as 128 plus the signal, but that
+ * is a reporting convention and a process may return any of these values itself. The range is derived
+ * from that convention rather than from any particular status, so none of them is special-cased.
+ */
+export const LAUNCHER_HIGH_EXIT_REASON = "launcher-high-exit-status-unattributed";
+const SIGNAL_STATUS_BASE = 128;
+const LOWEST_UNATTRIBUTED_EXIT_STATUS = SIGNAL_STATUS_BASE + 1;
+const HIGHEST_EXIT_STATUS = 255;
 /*
  * Only the Stage 3 baseline launch observes completion records, and it is bound to its own
  * reservation label rather than to a request flag any caller could set. Kept as a literal here
