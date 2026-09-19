@@ -10,6 +10,18 @@ const MAX_STREAM_BYTES = 4 * 1024 * 1024;
 const MAX_CANDIDATE_BYTES = 512 * 1024 * 1024;
 const MAX_FIXTURE_BYTES = 64 * 1024 * 1024;
 const MAX_FAILURE_CHARACTERS = 512;
+const CPUID_PROBE_NAME = "cpuid.exe";
+/*
+ * Everything the guest stages into its owned input root, in the order PowerShell sorts it. The
+ * cleanup compares the directory listing against exactly this, so a file added to one side and not
+ * the other is caught as an inventory mismatch rather than silently left behind.
+ *
+ * That order comes from Sort-Object -CaseSensitive, which is culture-aware rather than ordinal: it
+ * puts "MySpeed.exe" last, where an ASCII sort would put its capital M first.
+ */
+const STAGED_INPUT_NAMES = Object.freeze([CPUID_PROBE_NAME, "fixture-bundle.json", "MySpeed.exe"]);
+/* The same inventory as a PowerShell array literal, so no call site can drift from it. */
+const STAGED_INPUT_LIST = `@(${STAGED_INPUT_NAMES.map(name => `'${name}'`).join(",")})`;
 const BASELINE_SCENARIO_COUNT = 3;
 const CONTROLLER_HARD_DEADLINE_MILLISECONDS = 310_000;
 const GUARD_TIMEOUT_MILLISECONDS = 30_000;
@@ -246,25 +258,34 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `Copy-MyspeedBaselineInput (Join-Path $Seed 'MySpeed.exe') (Join-Path $Root 'MySpeed.exe') ` +
         `$execution.candidateSource;Copy-MyspeedBaselineInput (Join-Path $Seed 'fixture-bundle.json') ` +
         `(Join-Path $Root 'fixture-bundle.json') $execution.fixtureBundle;` +
+        /*
+         * The CPU floor probe is staged with the same identity check as the candidate, because the
+         * executor runs it to prove the floor and the host will not accept a result without that
+         * measurement. Seeded beside the other two so one cleanup owns the whole root.
+         */
+        `Copy-MyspeedBaselineInput (Join-Path $Seed '${CPUID_PROBE_NAME}') ` +
+        `(Join-Path $Root '${CPUID_PROBE_NAME}') $execution.cpuidProbe;` +
         `return [pscustomobject]@{installed=$true;root=$Root}}catch{if($created){` +
-        `foreach($name in @('MySpeed.exe','fixture-bundle.json')){$target=Join-Path $Root $name;` +
+        `foreach($name in ${STAGED_INPUT_LIST}){$target=Join-Path $Root $name;` +
         `if([IO.File]::Exists($target)){[IO.File]::Delete($target)}};if([IO.Directory]::Exists($Root)){` +
         `[IO.Directory]::Delete($Root,$false)}};throw}}\r\n` +
         `function Remove-MyspeedBaselineInputs([string]$Seed,[string]$Root){` +
         `if(-not [IO.Directory]::Exists($Root)){return [pscustomobject]@{cleanupProven=$true}};` +
         `$execution=Read-MyspeedBaselineExecution $Seed $Root;$entries=@([IO.Directory]::GetFileSystemEntries($Root));` +
-        `if($entries.Count -ne 2){throw 'Baseline input cleanup inventory differs'};` +
+        `if($entries.Count -ne ${STAGED_INPUT_NAMES.length}){throw 'Baseline input cleanup inventory differs'};` +
         `$names=@($entries|ForEach-Object{[IO.Path]::GetFileName($_)}|Sort-Object -CaseSensitive);` +
-        `if($names[0] -cne 'fixture-bundle.json' -or $names[1] -cne 'MySpeed.exe'){` +
-        `throw 'Baseline input cleanup inventory differs'};foreach($pair in @(` +
+        STAGED_INPUT_NAMES.map((name, index) =>
+            `if($names[${index}] -cne '${name}'){throw 'Baseline input cleanup inventory differs'};`).join("") +
+        `foreach($pair in @(` +
         `[pscustomobject]@{name='MySpeed.exe';identity=$execution.candidateSource},` +
+        `[pscustomobject]@{name='${CPUID_PROBE_NAME}';identity=$execution.cpuidProbe},` +
         `[pscustomobject]@{name='fixture-bundle.json';identity=$execution.fixtureBundle})){` +
         `$target=Join-Path $Root $pair.name;if(([IO.File]::GetAttributes($target)-band[IO.FileAttributes]::ReparsePoint)-ne 0){` +
         `throw 'Baseline input cleanup encountered a reparse point'};$stream=[IO.File]::Open($target,[IO.FileMode]::Open,` +
         `[IO.FileAccess]::Read,[IO.FileShare]::None);try{if($stream.Length -ne [Convert]::ToInt64($pair.identity.bytes,` +
         `[Globalization.CultureInfo]::InvariantCulture)-or(Get-MyspeedBaselineSha $stream)-cne $pair.identity.sha256){` +
         `throw 'Baseline input cleanup identity differs'}}finally{$stream.Dispose()}};` +
-        `foreach($name in @('MySpeed.exe','fixture-bundle.json')){[IO.File]::Delete((Join-Path $Root $name))};` +
+        `foreach($name in ${STAGED_INPUT_LIST}){[IO.File]::Delete((Join-Path $Root $name))};` +
         `[IO.Directory]::Delete($Root,$false);return [pscustomobject]@{cleanupProven=(-not[IO.Directory]::Exists($Root))}}\r\n` +
         `function Initialize-MyspeedBaselineJobType{if(-not('MySpeed.Qualification.BaselineJob'-as[type])){` +
         `Add-Type -TypeDefinition $BASELINE_JOB_SOURCE -Language CSharp}}\r\n` +
