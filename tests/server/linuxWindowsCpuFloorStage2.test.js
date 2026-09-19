@@ -1013,6 +1013,10 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         for (const invalid of [
             {...valid, exitStatus: 256},
             {...valid, exitStatus: -1},
+            /* Statuses this diagnostic is never emitted for: an ordinary exit is not an unrequested one. */
+            {...valid, exitStatus: 0},
+            {...valid, exitStatus: 1},
+            {...valid, exitStatus: 128},
             {...valid, elapsedMs: -1},
             {...valid, elapsedMs: 1.5},
             {...valid, configuredDeadlineMs: null},

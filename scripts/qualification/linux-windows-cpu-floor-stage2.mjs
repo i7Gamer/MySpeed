@@ -112,6 +112,12 @@ const MAX_LATE_BOOT_MILESTONES = 2;
 const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
 /* A process exit status is a byte, whatever produced it. */
 const MAX_EXIT_STATUS = 255;
+/*
+ * The producer emits this diagnostic only for a status above the signal-reporting base, because
+ * an ordinary exit is not a status the monitor failed to ask for. Accepting a lower one here
+ * would let a retained or hand-built diagnostic label a perfectly ordinary exit as unattributed.
+ */
+const MIN_UNATTRIBUTED_EXIT_STATUS = 129;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
@@ -1796,7 +1802,8 @@ export function validateLauncherExitDiagnostic(value) {
         "QEMU launcher exit diagnostic");
     const bounded = item => Number.isSafeInteger(item) && item >= 0;
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launcher-exit-diagnostic" ||
-        !Number.isSafeInteger(value.exitStatus) || value.exitStatus < 0 || value.exitStatus > MAX_EXIT_STATUS ||
+        !Number.isSafeInteger(value.exitStatus) || value.exitStatus < MIN_UNATTRIBUTED_EXIT_STATUS ||
+        value.exitStatus > MAX_EXIT_STATUS ||
         !bounded(value.elapsedMs) || !bounded(value.configuredDeadlineMs) ||
         (value.lastMilestone !== null &&
             (!Number.isSafeInteger(value.lastMilestone) || value.lastMilestone < 1 ||

@@ -1767,16 +1767,22 @@ export async function runMonitoredQemu(io, request) {
                 io.readOwnedRangeVerified(request.serialCompletion.path, start, maximum));
             drained = completionObserver.finalize();
         } catch { drained = null; }
-        if (drained?.failure === SERIAL_COMPLETION_FAILURES.recordInvalid) {
+        if (drained?.failure != null) {
             /*
-             * A marker that arrived after one was already believed. The run is exactly as
-             * contradictory as one whose first marker was malformed, and the earlier record is
-             * worth no more for having been read first: what the channel now says is that this
-             * guest emitted something the reviewed producer never emits. The believed record is
-             * dropped with it, which also withdraws the teardown that record had authorized.
+             * The observer withdraws its own completion when it fails, so a record believed
+             * earlier cannot be held here past that point: it would keep authorizing a teardown
+             * on evidence that has been taken back. Every explicit failure withdraws it.
+             *
+             * Only an unbelievable marker is also reported as one. A marker that arrived after
+             * one was already believed is exactly as contradictory as a malformed first marker,
+             * and the earlier record is worth no more for having been read first - what the
+             * channel now says is that this guest emitted something the reviewed producer never
+             * emits. A channel that merely broke says nothing about what the guest published, so
+             * it withdraws the record without claiming the guest published anything wrong.
              */
-            completionFailure = drained.failure;
             completionRecord = null;
+            if (drained.failure === SERIAL_COMPLETION_FAILURES.recordInvalid)
+                completionFailure = drained.failure;
         } else if (completionRecord === null && drained?.completion != null)
             completionRecord = drained.completion.record;
     }

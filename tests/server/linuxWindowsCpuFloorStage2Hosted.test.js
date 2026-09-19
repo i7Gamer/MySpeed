@@ -2515,6 +2515,25 @@ describe("Stage 3 monitor completion transition", () => {
         assert.equal(result.serialCompletion.record, undefined);
     });
 
+    /*
+     * A channel that fails after a record was already believed. The observer withdraws its own
+     * completion when it fails, so continuing to hold the record here would keep a teardown
+     * authorized by evidence the observer has taken back - and the run would be accepted on a
+     * marker nothing stands behind any more.
+     *
+     * The failure kind stays non-fatal on its own: a broken channel is not proof that the guest
+     * published something wrong, so it is not reported as an unbelievable marker. What it does
+     * mean is that nothing here can vouch for the record, so the record goes.
+     */
+    it("withdraws a believed record when the channel fails after it", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}\u00ff` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        assert.equal(result.serialCompletion?.record, undefined,
+            "a record the observer withdrew cannot keep authorizing the teardown");
+    });
+
     it("supplies no trigger when the completion channel itself fails", async () => {
         const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
         assert.equal(result.terminationReason, "deadline");
