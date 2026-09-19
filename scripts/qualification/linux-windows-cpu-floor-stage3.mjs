@@ -41,6 +41,9 @@ const MAX_EMBEDDED_EVIDENCE_BYTES = 4 * 1024 * 1024;
 const MAX_EMBEDDED_EVIDENCE_BASE64_CHARACTERS = 4 * Math.ceil(MAX_EMBEDDED_EVIDENCE_BYTES / 3);
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u;
 const REGISTER_PATTERN = /^0x[a-f0-9]{8}$/u;
+/* Leaf 1 EBX below its top byte: everything except the initial APIC ID. See modelBitsOfLeaf1Ebx. */
+const INITIAL_APIC_ID_SHIFT = 24;
+const LEAF1_EBX_MODEL_MASK = (1 << INITIAL_APIC_ID_SHIFT) - 1;
 const PROBE_ROLES = Object.freeze(["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt",
     "sse42"]);
 const STAGE2_OUTPUT_DISK_BYTES = "67108864";
@@ -557,6 +560,13 @@ function validateStage2GuestEvidence(value, expectedIdentity, context, projected
  *
  * Compared as parsed records, not as bytes: the calibration guest's copy is re-serialized through
  * PowerShell on its way out, so the two are never byte-identical even when they agree.
+ *
+ * This holds because linux-windows-cpu-floor-stage3-sequence.mjs runs both stages in one job, on one
+ * runner, against one QEMU and one KVM, so every host-filtered bit is identical on both sides by
+ * construction. Two of the compared words depend on that and would stop agreeing if the stages were
+ * ever split across runners, or a retained Stage 2 result replayed on a fresh one: leaf 7 EDX, whose
+ * IBRS bit Westmere-v2 requests but nested KVM here does not advertise - the observed record is all
+ * zeros - and leaf 1 ECX, whose x2APIC bit comes from KVM's own defaults rather than the model.
  */
 /* The record the baseline guest published, re-read from the bytes its own validator already proved. */
 function baselineCpuidRecord(guest) {
@@ -564,10 +574,46 @@ function baselineCpuidRecord(guest) {
 }
 
 function assertCorroboratedCpuid(baseline, calibration) {
-    const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf, leaf1: value.leaf1,
+    const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf,
+        leaf1: {...value.leaf1, ebx: modelBitsOfLeaf1Ebx(value.leaf1.ebx)},
         leaf7Subleaf0: value.leaf7Subleaf0, xcr0: value.xcr0});
-    if (!same(leaves(baseline), leaves(calibration)))
-        throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest");
+    const disagreed = disagreeingCpuidFields(leaves(baseline), leaves(calibration));
+    if (disagreed.length > 0)
+        throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest: "
+            + disagreed.join(", "));
+}
+
+/*
+ * Which fields disagreed, so the refusal can say.
+ *
+ * Run 35447618046 reported only that corroboration had failed. Finding the single byte behind it
+ * meant range-reading both records out of a 9.7 GB evidence artifact, an hour after the run began.
+ * The names alone would have made that a five-minute diagnosis, and they cost nothing to carry.
+ */
+function disagreeingCpuidFields(baseline, calibration, prefix = "") {
+    const names = [];
+    for (const [name, value] of Object.entries(baseline)) {
+        const other = calibration[name];
+        if (value !== null && typeof value === "object")
+            names.push(...disagreeingCpuidFields(value, other ?? {}, `${prefix}${name}.`));
+        else if (value !== other) names.push(`${prefix}${name}`);
+    }
+    return names;
+}
+
+/*
+ * Leaf 1 EBX without its top byte, which is the initial APIC ID: the vCPU that happened to execute
+ * CPUID, not a property of the CPU.
+ *
+ * Both guests boot with two vCPUs, so which one runs the probe is the guest scheduler's choice and
+ * the two correct measurements disagree there. Run 35447618046 read 0x00020800 in the baseline guest
+ * and 0x01020800 in the calibration guest - identical in every other bit of every other register.
+ *
+ * Everything below that byte is still compared, because all of it describes the model rather than
+ * the moment: logical processor count, CLFLUSH line size and brand index.
+ */
+function modelBitsOfLeaf1Ebx(register) {
+    return (Number.parseInt(register.slice(2), 16) & LEAF1_EBX_MODEL_MASK) >>> 0;
 }
 
 function validateCandidate(value, context) {
