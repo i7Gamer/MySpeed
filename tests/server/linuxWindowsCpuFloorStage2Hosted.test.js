@@ -2346,6 +2346,36 @@ describe("Stage 3 monitor completion transition", () => {
         }
     });
 
+    /*
+     * A second marker that arrives after the first was already believed. The run is exactly as
+     * contradictory as one whose first marker was malformed, and reading a record first earns it
+     * nothing: what the channel now says is that this guest emitted something the reviewed
+     * producer never emits. Believing the earlier one because the drain stopped looking would
+     * hand Stage 3 a marker to corroborate while the evidence against it sat unread.
+     */
+    it("withdraws a believed record when a contradictory one follows it", async () => {
+        const {result} = await run({exitAt: 40_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined,
+            "the earlier record is worth no more for having been read first");
+    });
+
+    /*
+     * The same, on the path the marker itself authorized. A teardown forced by a record cannot
+     * survive that record being contradicted - the authorization and the evidence are the same
+     * claim, so withdrawing one withdraws the other.
+     */
+    it("withdraws the record that authorized a forced teardown when it is contradicted", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined);
+    });
+
     it("supplies no trigger when the completion channel itself fails", async () => {
         const {result} = await run({serialAt: () => `${"x".repeat(MAX_COMPLETION_RECORD_BYTES + 1)}\r\n`});
         assert.equal(result.terminationReason, "deadline");

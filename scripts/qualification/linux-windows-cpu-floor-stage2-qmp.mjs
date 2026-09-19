@@ -562,8 +562,14 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
     }
 
     async function readBounded() {
-        assertReaderUsable();
         while (true) {
+            /*
+             * Rechecked every iteration, not once on entry. The read that was abandoned is still
+             * running here - that is what makes it an orphan - and more bytes arriving would
+             * otherwise have it consume another message and open another `iterator.next()` on a
+             * reader that has already been closed to further traffic.
+             */
+            assertReaderUsable();
             const message = extractOneMessage();
             if (message !== undefined) return message;
             const next = await withDeadline(iterator.next(), dependencies);
@@ -784,7 +790,7 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
             get shutdownRecord() { return shutdownRecord; }};
     }
 
-    return {readBounded, createDispatcher, boundedExchange, markResponseOwed, assertReaderUsable};
+    return {readBounded, createDispatcher, boundedExchange, markResponseOwed};
 }
 
 /*
@@ -915,13 +921,18 @@ async function runSession(input, dependencies, session) {
             if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
             beforeWrite();
             /*
+             * Serialized before the response is owed, not after: a value that cannot be encoded
+             * never reaches the wire, so it owes nothing and must not close the shared reader.
+             */
+            const encoded = Buffer.from(`${JSON.stringify(value)}\n`);
+            /*
              * Past every pre-write abort, so bytes may now leave and a response becomes owed. A
              * dispatcher session has its own terminal guard and single-reader admission, so only
              * the bounded path arms this one.
              */
             if (dispatcher === null) messageSource.markResponseOwed();
             try {
-                return await input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
+                return await input.writeBytes(encoded);
             } catch (error) {
                 if (error && typeof error === "object" && !QMP_ERROR_PROVENANCE.has(error)) {
                     QMP_ERROR_PROVENANCE.set(error, "qmp-write-failed");

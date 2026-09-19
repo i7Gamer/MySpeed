@@ -1344,6 +1344,41 @@ describe("Stage 3 corroborates the completion marker against what was extracted"
         }
     });
 
+    /*
+     * Equality proves only that two values agree, and two values that are both nonsense agree
+     * perfectly. A byte count that is not a canonical positive decimal, or a hash that is not a
+     * SHA-256, is not evidence of a publication however well it matches - so both sides are
+     * checked for what they are before they are checked against each other.
+     */
+    it("refuses identities that match each other but are not identities", async () => {
+        const nonsense = [
+            {bytes: "-1", sha256: SHA("c")},
+            {bytes: "0", sha256: SHA("c")},
+            {bytes: "01", sha256: SHA("c")},
+            {bytes: "2809", sha256: "not-a-sha256"},
+            {bytes: "2809", sha256: SHA("C").toUpperCase()},
+            {bytes: null, sha256: null}
+        ];
+        for (const receipt of nonsense) {
+            const base = await publishedWithMarker();
+            const {result} = await publishedWithMarker({
+                marker: {record: {nonce: MARKER_NONCE, baseline: {...base.baselineIdentity},
+                    cpu: {...receipt}}},
+                cpuReceipt: {...receipt}});
+            assert.equal(result.status, "failed", JSON.stringify(receipt));
+            assert.match(result.failure, /completion/iu, JSON.stringify(receipt));
+        }
+    });
+
+    it("refuses an extracted receipt carrying keys an identity does not have", async () => {
+        const base = await publishedWithMarker();
+        const {result} = await publishedWithMarker({
+            marker: agreeing(base.baselineIdentity, RECEIPT),
+            cpuReceipt: {...RECEIPT, path: "/owned/result.json"}});
+        assert.equal(result.status, "failed");
+        assert.match(result.failure, /receipt identity/iu);
+    });
+
     it("refuses a marker that was emitted and could not be believed", async () => {
         const {result} = await publishedWithMarker({
             marker: {invalid: "serial-completion-invalid"}, cpuReceipt: RECEIPT});

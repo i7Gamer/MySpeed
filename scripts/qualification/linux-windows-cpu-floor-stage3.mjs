@@ -892,12 +892,25 @@ function assertCorroboratedPublication({marker, cpuReceipt, baselineIdentity, pr
     keys(record, ["baseline", "cpu", "nonce"], "Stage 3 completion marker record");
     if (record.nonce !== nonce)
         throw new TypeError("Stage 3 completion marker carries another run's nonce");
-    if (cpuReceipt === undefined)
-        throw new TypeError("Stage 3 completion marker has no extracted CPU receipt to corroborate");
+    if (cpuReceipt === undefined || baselineIdentity === undefined)
+        throw new TypeError("Stage 3 completion marker has no extracted receipt to corroborate");
+    /* The receipt identity is this change's own new field, so it is exact-key checked here. */
+    keys(cpuReceipt, ["bytes", "sha256"], "Stage 3 extracted CPU receipt identity");
     for (const [name, claimed, extracted] of [["baseline", record.baseline, baselineIdentity],
         ["CPU", record.cpu, cpuReceipt]]) {
+        /*
+         * Both sides are validated before they are compared, because equality alone proves only
+         * that two values agree - and two values that are both nonsense agree perfectly. A byte
+         * count that is not a canonical positive decimal, or a hash that is not a lowercase
+         * SHA-256, is not evidence of a publication whatever it matches.
+         */
         keys(claimed, ["bytes", "sha256"], `Stage 3 completion marker ${name} identity`);
-        if (claimed.bytes !== extracted?.bytes || claimed.sha256 !== extracted?.sha256)
+        for (const [side, identity] of [["marker", claimed], ["extracted", extracted]]) {
+            decimal(identity?.bytes, `Stage 3 completion ${name} ${side} identity bytes`, {positive: true});
+            exactString(identity.sha256, SHA256_PATTERN, `Stage 3 completion ${name} ${side} identity hash`);
+
+        }
+        if (claimed.bytes !== extracted.bytes || claimed.sha256 !== extracted.sha256)
             throw new TypeError(
                 `Stage 3 completion marker ${name} identity differs from what was extracted`);
     }

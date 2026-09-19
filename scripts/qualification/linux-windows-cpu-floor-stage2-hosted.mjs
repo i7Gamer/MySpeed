@@ -1751,18 +1751,34 @@ export async function runMonitoredQemu(io, request) {
      * ordinary absence. This is evidence only: `completionObservedAt` stays null, so a marker found
      * here can authorize no teardown. Deciding whether the run may be torn down and deciding what
      * it published are different questions asked at different times, and only the first has passed.
+     *
+     * Only for a run that ended without a reason of its own. A run already failing for a named
+     * reason has an answer, and reading a record out of the log of a guest that dropped to the UEFI
+     * shell, or was killed at its deadline, would report a publication for a run that did not
+     * complete one. That deliberately includes the record first seen in the tick that reached the
+     * deadline, which the loop above refuses to act on for the same reason: the run failed, and the
+     * marker's only remaining use would be to describe a publication nothing will be accepted from.
      */
-    if (completionObserver !== null && completionRecord === null && completionFailure === null &&
-        terminationReasons.length === 0) {
+    if (completionObserver !== null && completionFailure === null &&
+        (terminationReasons.length === 0 || terminationReasons[0] === POST_COMPLETION_TERMINATION_REASON)) {
         let drained = null;
         try {
             drained = completionObserver.consume((start, maximum) =>
                 io.readOwnedRangeVerified(request.serialCompletion.path, start, maximum));
             drained = completionObserver.finalize();
         } catch { drained = null; }
-        if (drained?.completion != null) completionRecord = drained.completion.record;
-        else if (drained?.failure === SERIAL_COMPLETION_FAILURES.recordInvalid)
+        if (drained?.failure === SERIAL_COMPLETION_FAILURES.recordInvalid) {
+            /*
+             * A marker that arrived after one was already believed. The run is exactly as
+             * contradictory as one whose first marker was malformed, and the earlier record is
+             * worth no more for having been read first: what the channel now says is that this
+             * guest emitted something the reviewed producer never emits. The believed record is
+             * dropped with it, which also withdraws the teardown that record had authorized.
+             */
             completionFailure = drained.failure;
+            completionRecord = null;
+        } else if (completionRecord === null && drained?.completion != null)
+            completionRecord = drained.completion.record;
     }
     const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
     /*
@@ -3303,8 +3319,12 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                      * marker states what the guest wrote and nothing downstream could otherwise
                      * check that claim: the parsed fields below are a reading of this file, not the
                      * file. Verified already by the read above; this only stops it being discarded.
+                     *
+                     * Emitted under the same condition as the marker it exists to corroborate, so
+                     * an ordinary Stage 2 observation carries neither. This launcher is shared.
                      */
-                    cpuReceipt: {bytes: guestRead.identity.bytes, sha256: guestRead.identity.sha256},
+                    ...(input.reservation?.label === STAGE3_BASELINE_RESERVATION_LABEL ?
+                        {cpuReceipt: {bytes: guestRead.identity.bytes, sha256: guestRead.identity.sha256}} : {}),
                     guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
                     instructions: parsed.instructions, network: parsed.network, activation: parsed.activation,
                     systemTools: parsed.systemTools,
