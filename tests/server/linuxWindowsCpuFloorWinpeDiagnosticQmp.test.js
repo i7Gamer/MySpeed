@@ -6,6 +6,7 @@ import {
     INSTALLER_BOOT_CONFIRMATION,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS,
+    PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS,
     WINPE_DIAGNOSTIC_CONFIRMATION,
     WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS,
     WINPE_DIAGNOSTIC_CONSOLE_QCODES,
@@ -38,8 +39,17 @@ const LATE_SCREENSHOTS = [`${ROOT}/late-boot-1.png`, `${ROOT}/late-boot-2.png`];
 const AUTHORIZATION = {confirmation: WINPE_DIAGNOSTIC_CONFIRMATION, nonce: NONCE};
 /* Long enough that a settling session always wins, short enough that a stuck one fails quickly. */
 const SETTLEMENT_WATCHDOG_MILLISECONDS = 2_000;
+/*
+ * A slow flood serves one large fragment per read instead of a byte, so a reader that kept
+ * going would reach the source's transcript cap within a handful of turns rather than tens of
+ * thousands. The abandon lands after the third, with the fragment that follows it delayed by a
+ * turn so the reader is demonstrably parked when the exchange it belonged to is given up.
+ */
+const FLOOD_FRAGMENT_BYTES = 4_096;
+const FRAGMENTS_BEFORE_ABANDON = 3;
+const ORPHAN_OBSERVATION_MILLISECONDS = 50;
 
-function transport(responses, stallWrite = null, flood = null) {
+function transport(responses, stallWrite = null, flood = null, slowFlood = null) {
     /*
      * A fake QMP transport rather than a canned array: the diagnostic writes 85 commands whose ids
      * are derived, so the transcript has to answer what was actually written. `responses` overrides
@@ -60,9 +70,22 @@ function transport(responses, stallWrite = null, flood = null) {
      * the exchange can only end on one of the source's own bounds.
      */
     let flooding = null;
+    let slowFlooding = false;
+    let floodReads = 0;
     const readable = {[Symbol.asyncIterator]: () => ({
         next: () => {
             if (pending.length > 0) return Promise.resolve({value: pending.shift(), done: false});
+            if (slowFlooding) {
+                floodReads += 1;
+                const served = floodReads;
+                const fragment = Buffer.alloc(FLOOD_FRAGMENT_BYTES, 0x20);
+                return new Promise(resolve => setTimeout(() => {
+                    if (served !== FRAGMENTS_BEFORE_ABANDON) return resolve({value: fragment, done: false});
+                    /* Abandon first, then let the fragment land a turn later, fully after it. */
+                    slowFlood.abandon();
+                    setTimeout(() => resolve({value: fragment, done: false}), 0);
+                }, 0));
+            }
             if (flooding !== null) {
                 return Promise.resolve({value: flooding === "fragments" ? Buffer.from(" ") :
                     Buffer.from(`${JSON.stringify({event: "RTC_CHANGE", data: {offset: 1}})}\r\n`), done: false});
@@ -71,11 +94,12 @@ function transport(responses, stallWrite = null, flood = null) {
         }
     })};
     push({QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}});
-    return {writes, readable, writeBytes: bytes => {
+    return {writes, readable, floodReads: () => floodReads, writeBytes: bytes => {
         const value = JSON.parse(bytes.toString("utf8"));
         writes.push(value);
         /* A pipe write that never settles: the bytes may already be gone, so a reply is owed. */
         if (value.id === stallWrite) return new Promise(() => undefined);
+        if (slowFlood !== null && value.id === slowFlood.id) { slowFlooding = true; return; }
         if (flood !== null && value.id === flood.id) { flooding = flood.kind; return; }
         const override = responses?.[value.id];
         const reply = override === undefined ? {return: {}, id: value.id} :
@@ -101,8 +125,8 @@ const STATUS_RESPONSES = {
  * it by waiting ten seconds. Every existing test leaves `timers` unset and keeps its real timers.
  */
 async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock, nowHook,
-    timers, stallWrite, flood} = {}) {
-    const bus = transport({...responses, ...STATUS_RESPONSES}, stallWrite, flood);
+    timers, stallWrite, flood, slowFlood} = {}) {
+    const bus = transport({...responses, ...STATUS_RESPONSES}, stallWrite, flood, slowFlood);
     let now = 0;
     let nowReads = 0;
     const waits = [];
@@ -121,7 +145,8 @@ async function runDiagnosticSession({responses, authorization = AUTHORIZATION, c
         wait: async milliseconds => { waits.push(milliseconds); now += clock?.(milliseconds) ?? milliseconds; },
         ...(timers ?? {})
     });
-    return {late: await latePromise, writes: bus.writes, waits, elapsed: () => now};
+    return {late: await latePromise, writes: bus.writes, waits, floodReads: bus.floodReads,
+        elapsed: () => now};
 }
 
 describe("WinPE answer-file diagnostic command derivation", () => {
@@ -450,6 +475,59 @@ describe("WinPE answer-file diagnostic never costs the frame it exists to observ
             assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
         });
     }
+
+    /*
+     * The orphan itself, rather than the commands that come after it. The whole-exchange budget
+     * bounds the exchange, not the read inside it: `withDeadline` never cancels its loser, so the
+     * read that was mid-line when the budget fired is still parked on the shared iterator. A
+     * fragment arriving after that would have it complete a message, consume it, and open another
+     * `iterator.next()` on a reader that has already been closed to further traffic - taking bytes
+     * no one owns and hiding them from anything that looked next.
+     *
+     * Checking abandonment once on entry cannot see this, because the loop was entered before the
+     * exchange was given up. The fragment is deliberately delayed a turn past the abandon so the
+     * reader is provably parked at the moment ownership ends.
+     */
+    it("stops consuming fragments once the exchange that owned them was abandoned", async () => {
+        let fireBudget = null;
+        let watchdog;
+        const running = runDiagnosticSession({
+            slowFlood: {id: "winpe-console", abandon: () => fireBudget?.()},
+            timers: {
+                setTimer: (callback, milliseconds) => {
+                    /* Held, not fired: this budget ends the exchange on the flood's schedule. */
+                    if (milliseconds === WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS) {
+                        fireBudget = callback;
+                        return 0;
+                    }
+                    /*
+                     * Pacing runs immediately, as everywhere else here, but a read deadline is left
+                     * at its real length and unreferenced. The orphaned read is the subject of this
+                     * test: firing its own deadline instantly would end it for a reason that has
+                     * nothing to do with the guard, and the test would pass without the guard.
+                     * Every other delay is pacing and runs immediately, as in the tests above.
+                     */
+                    if (milliseconds === PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS) {
+                        const handle = setTimeout(callback, milliseconds);
+                        handle.unref?.();
+                        return handle;
+                    }
+                    return setTimeout(callback, 0);
+                },
+                clearTimer: handle => clearTimeout(handle)
+            }
+        });
+        const session = await Promise.race([running, new Promise((resolve, reject) => {
+            watchdog = setTimeout(() => reject(new Error("the flooded exchange was never abandoned")),
+                SETTLEMENT_WATCHDOG_MILLISECONDS);
+        })]).finally(() => clearTimeout(watchdog));
+        /* Long enough for an orphan still reading to take several more fragments. */
+        await new Promise(resolve => setTimeout(resolve, ORPHAN_OBSERVATION_MILLISECONDS));
+        assert.equal(session.floodReads(), FRAGMENTS_BEFORE_ABANDON,
+            "no fragment may be consumed after the exchange that asked for it was abandoned");
+        assert.equal(session.writes.map(value => value.id).includes("late-status-2"), false);
+        assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
+    });
 
     /*
      * The symmetric half of the abandoned-read case. A bounded write shares the same deadline
