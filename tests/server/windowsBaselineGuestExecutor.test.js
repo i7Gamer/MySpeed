@@ -120,11 +120,36 @@ describe("Windows baseline guest executable entry", () => {
                 error => assert.match(error.message, /^baseline CPUID probe failed/u) ?? true);
     });
 
+    /*
+     * A probe that fails silently is the hard case: a nonzero exit with nothing on stderr leaves
+     * only the exit status to report, and it is the one thing that says what happened. Reporting it
+     * matters here more than elsewhere, because this refusal is read an hour into a VM run.
+     */
+    it("names the exit status and signal in every probe failure it reports", () => {
+        const stdout = Buffer.from("{}\n", "utf8");
+        const valid = {status: 0, signal: null, stdout, stderr: Buffer.alloc(0)};
+        for (const [result, expected] of [
+            [{...valid, status: 1}, /status=1 signal=none$/u],
+            [{...valid, status: null, signal: "SIGTERM"}, /status=none signal=SIGTERM/u],
+            [{...valid, error: Object.assign(new Error("spawnSync"), {code: "ETIMEDOUT"})}, /ETIMEDOUT/u],
+            [{...valid, error: Object.assign(new Error("spawnSync"), {code: "ENOBUFS"})}, /ENOBUFS/u],
+            [{...valid, status: 2, stderr: Buffer.from("probe refused", "utf8")}, /status=2 .*probe refused/u],
+            [undefined, /status=none signal=none$/u]
+        ]) assert.throws(() => validateWindowsBaselineGuestProbeProcessResult(result), error => {
+            assert.match(error.message, expected);
+            /* Bounded, single line, and trimmed after the cut rather than before it. */
+            assert.ok(error.message.length <= WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS.MAX_FAILURE_CHARACTERS);
+            assert.equal(error.message, error.message.trim());
+            assert.equal(error.message.includes("\n"), false);
+            return true;
+        }, JSON.stringify(expected.source));
+    });
+
     it("bounds the probe failure reason it reports", () => {
         const {MAX_FAILURE_CHARACTERS} = WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS;
         assert.throws(() => validateWindowsBaselineGuestProbeProcessResult({status: 1, signal: null,
             stdout: Buffer.alloc(0), stderr: Buffer.from("detail".repeat(1000), "utf8")}), error => {
-            assert.ok(error.message.length <= MAX_FAILURE_CHARACTERS * 2);
+            assert.ok(error.message.length <= MAX_FAILURE_CHARACTERS);
             return true;
         });
     });
