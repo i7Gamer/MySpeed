@@ -433,7 +433,7 @@ describe("WinPE answer-file diagnostic never costs the frame it exists to observ
         assert.equal(Object.hasOwn(session.late.milestones[1], "status"), false);
         assert.equal(Object.hasOwn(session.late.milestones[1], "running"), false);
         assert.equal(Object.hasOwn(session.late.milestones[1], "screenshotPath"), false);
-        assert.match(session.late.milestones[1].unavailable.reason, /\S/u);
+        assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
     });
 
     /*
