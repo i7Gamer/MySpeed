@@ -549,14 +549,14 @@ describe("Windows baseline guest bootstrap", () => {
             const candidateBytes = Buffer.from("candidate-bytes\n");
             const fixtureBytes = Buffer.from("fixture-bytes\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: "16384", sha256: SHA("9")}});
             const scriptPath = path.join(root, "bootstrap.ps1");
             const harnessPath = path.join(root, "harness.ps1");
             const ownedInputRoot = path.join(root, "owned-input");
@@ -606,14 +606,14 @@ describe("Windows baseline guest bootstrap", () => {
             const candidateBytes = Buffer.from("stale-candidate\n");
             const fixtureBytes = Buffer.from("stale-fixture\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: "16384", sha256: SHA("9")}});
             const execution = structuredClone(documents.execution);
             execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
             execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");
@@ -662,14 +662,14 @@ describe("Windows baseline guest bootstrap", () => {
             const candidateBytes = Buffer.from("candidate-before-drift\n");
             const fixtureBytes = Buffer.from("fixture-before-drift\n");
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
-            const documents = buildWindowsBaselineGuestSeedDocuments({context: {sourceSha: SOURCE_SHA,
-                eventSha: "2".repeat(40), runId: "123", runAttempt: "2", nonce},
+            const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
             candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
-            cleanStopController: {bytes: "131072", sha256: SHA("8")}});
+            cleanStopController: {bytes: "131072", sha256: SHA("8")},
+            cpuidProbe: {bytes: "16384", sha256: SHA("9")}});
             const execution = structuredClone(documents.execution);
             execution.candidateSource.path = path.join(ownedInputRoot, "MySpeed.exe");
             execution.fixtureBundle.path = path.join(ownedInputRoot, "fixture-bundle.json");

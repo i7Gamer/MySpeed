@@ -12,6 +12,11 @@ const MAX_SUMMARY_STRING_CHARACTERS = 256;
 const EXPECTED_SCENARIOS = Object.freeze(["populated-first-boot", "populated-restart", "fresh-no-config-reset"]);
 const OPERATION_NAMES = Object.freeze(["awaitOwnedListener", "awaitReady", "checkPopulated", "checkPopulatedDatabase",
     "checkResetDatabase", "cleanupFixture", "closeScenario", "observeNetwork", "openScenario", "prepareFixture"]);
+/* The hosted context, carried through the seed intact so Stage 3's comparison can be satisfied. */
+const CONTEXT_KEYS = Object.freeze(["environment", "eventSha", "nonce", "repository", "runAttempt", "runId",
+    "schemaVersion", "sourceSha"]);
+const ENVIRONMENT_KEYS = Object.freeze(["CI", "GITHUB_ACTIONS", "ImageOS", "ImageVersion", "RUNNER_ARCH",
+    "RUNNER_ENVIRONMENT", "RUNNER_OS"]);
 
 const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 const exactKeys = (value, expected, label) => {
@@ -69,7 +74,12 @@ function validateRequest(value) {
         "schemaVersion"], "baseline guest request");
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== REQUEST_KIND || value.profile !== PROFILE ||
         value.qualifying !== false) throw new TypeError("baseline guest request header differs");
-    exactKeys(value.context, ["eventSha", "nonce", "runAttempt", "runId", "sourceSha"], "baseline guest context");
+    exactKeys(value.context, CONTEXT_KEYS, "baseline guest context");
+    if (value.context.schemaVersion !== SCHEMA_VERSION) throw new TypeError("baseline context schema differs");
+    exactString(value.context.repository, /^[0-9A-Za-z._-]{1,100}\/[0-9A-Za-z._-]{1,100}$/u, "baseline repository");
+    exactKeys(value.context.environment, ENVIRONMENT_KEYS, "baseline guest environment");
+    for (const name of ENVIRONMENT_KEYS)
+        exactString(value.context.environment[name], /^[0-9A-Za-z._-]{1,128}$/u, `baseline environment ${name}`);
     exactString(value.context.sourceSha, /^[0-9a-f]{40}$/u, "baseline source SHA");
     exactString(value.context.eventSha, /^[0-9a-f]{40}$/u, "baseline event SHA");
     exactString(value.context.runId, /^[1-9][0-9]{0,19}$/u, "baseline run ID");
@@ -247,7 +257,12 @@ export async function runWindowsBaselineGuest(input, operationValue) {
     }
     if (failure !== null || !cleanupProven) return {schemaVersion: SCHEMA_VERSION, status: "failed", profile: PROFILE,
         cleanupProven, failure: failureMessage(failure ?? new Error("baseline cleanup is incomplete"))};
-    const summary = {status: "passed", exit: SUCCESS_EXIT_CODE, mode: "full", sourceSha: request.context.sourceSha,
+    /*
+     * The candidate release SHA, never the harness context SHA. This summary is the candidate's
+     * own evidence: Stage 3's validateFullSummary and scripts/release/qualification-manifest.mjs
+     * both compare it against the candidate, and validateRequest has already proven the two differ.
+     */
+    const summary = {status: "passed", exit: SUCCESS_EXIT_CODE, mode: "full", sourceSha: request.candidate.sourceSha,
         artifactSha256: request.candidate.sha256, platform: "win32", architecture: "x64",
         command: [request.candidate.path], processes, databaseChecks, openGraphChecks,
         networkIsolation: {kind: "qemu-nic-none-windows-guest", ...network}, shutdownProofs};

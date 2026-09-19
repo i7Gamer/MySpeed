@@ -199,7 +199,7 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
             candidateExitCode: scenario === "fresh-no-config-reset" ? 113 : 0, forced: false,
             jobActiveProcesses: 0, handlesClosed: true}))};
     const cpuidEncoding = encode(rawCpuid); const summaryEncoding = encode(summary);
-    const guest = {schemaVersion: 1, status: "observed", profile: "baseline-cpu", context,
+    const guest = {schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true, context,
         candidate: {sourceSha: candidate.sourceSha, sha256: candidate.file.sha256, artifactName: candidate.artifactName},
         cpu: {model: "Westmere-v2", cpuidBytesBase64: cpuidEncoding.bytesBase64,
             cpuidSha256: cpuidEncoding.sha256, sse42: true, popcnt: true, avx: false, avx2: false,

@@ -234,7 +234,7 @@ const guestResult = () => {
     const cpuid = encodedJson(rawCpuid());
     const summary = fullSummary();
     const summaryEncoding = encodedJson(summary);
-    return {schemaVersion: 1, status: "observed", profile: "baseline-cpu",
+    return {schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true,
         context: context(), candidate: {sourceSha: CANDIDATE_SOURCE_SHA, sha256: SHA("d"),
             artifactName: "MySpeed-windows-x64-baseline.exe"},
         cpu: {model: "Westmere-v2", cpuidBytesBase64: cpuid.bytesBase64, cpuidSha256: cpuid.sha256,

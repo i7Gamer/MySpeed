@@ -16,6 +16,7 @@ const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const RUNTIME_PATHS = Object.freeze([
     "scripts/qualification/windows-baseline-guest-executor.mjs",
     "scripts/qualification/windows-baseline-guest-runner.mjs",
+    "scripts/qualification/windows-baseline-guest-composer.mjs",
     "scripts/qualification/windows-baseline-guest-operations.mjs",
     "scripts/qualification/windows-baseline-guest-runtime.mjs",
     "scripts/qualification/windows-baseline-guest-materializer.mjs",

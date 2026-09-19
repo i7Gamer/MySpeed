@@ -456,7 +456,7 @@ function stage3GuestResult() {
     const summaryBytes = Buffer.from(`${JSON.stringify(summary)}\n`, "utf8");
     const summaryEncoding = {bytes: summaryBytes, bytesBase64: summaryBytes.toString("base64"), sha256: HASH(summaryBytes)};
     return {
-        schemaVersion: 1, status: "observed", profile: "baseline-cpu",
+        schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true,
         context: context(), candidate: {sourceSha: CANDIDATE_SOURCE_SHA, sha256: SHA("d"),
             artifactName: "MySpeed-windows-x64-baseline.exe"},
         cpu: {model: "Westmere-v2", cpuidBytesBase64: cpuid.bytesBase64, cpuidSha256: cpuid.sha256,

@@ -55,7 +55,7 @@ function harness(root) {
 }
 
 describe("post-release MSI baseline input preparation", () => {
-    it("retains the exact candidate fixture and harness runtime as a closed 30/31-file subtree", () => {
+    it("retains the exact candidate fixture and harness runtime as a closed 31/32-file subtree", () => {
         for (const includeWal of [false, true]) {
             const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-input-")));
             try {
@@ -64,13 +64,13 @@ describe("post-release MSI baseline input preparation", () => {
                     harnessRoot: harness(root), harnessSourceSha: HARNESS_SHA,
                     manifestPath: fs.realpathSync.native(
                         "tests/fixtures/post-release-native-v1.6.1/qualification-manifest.json"), outputRoot});
-                assert.equal(result.files.length, includeWal ? 31 : 30);
+                assert.equal(result.files.length, includeWal ? 32 : 31);
                 assert.equal(result.files[0].relativePath, "qualification-manifest.json");
                 assert.deepEqual(result.files.map(file => file.bindingId),
                     result.files.map(file => `baseline:${file.relativePath}`));
                 assert.equal(result.files.filter(file => file.sourceRole === "candidate").length,
                     includeWal ? 18 : 17);
-                assert.equal(result.files.filter(file => file.sourceRole === "harness").length, 13);
+                assert.equal(result.files.filter(file => file.sourceRole === "harness").length, 14);
                 assert.equal(result.files.some(file => file.relativePath.includes("ost-cli")), false);
                 const wal = result.files.find(file => file.relativePath.endsWith("storage.db-wal"));
                 assert.equal(includeWal ? wal.sha256 : wal, includeWal

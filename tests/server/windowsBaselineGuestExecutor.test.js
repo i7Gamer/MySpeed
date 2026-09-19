@@ -16,6 +16,17 @@ const NONCE = "3".repeat(32);
 const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
 const WINDOWS_ROOT = `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}`;
 const SHA = character => character.repeat(64);
+/* The whole hosted context - the seed carries every key so Stage 3 can compare them. */
+/* What the staged cpuid.exe prints on the Westmere-v2 floor: SSE4.2 and POPCNT only. */
+const CPUID_BYTES = () => Buffer.from(`${JSON.stringify({schemaVersion: 1, kind: "cpuid", maxBasicLeaf: 7,
+    leaf1: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00900000", edx: "0x00000000"},
+    leaf7Subleaf0: {eax: "0x00000000", ebx: "0x00000000", ecx: "0x00000000", edx: "0x00000000"},
+    xcr0: null, features: {sse42: true, popcnt: true, osxsave: false, avx: false, avx2: false}})}
+`, "utf8");
+const HOSTED_CONTEXT = () => ({schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA,
+    eventSha: EVENT_SHA, runId: "123", runAttempt: "1", nonce: NONCE, environment: {GITHUB_ACTIONS: "true",
+        CI: "true", RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted",
+        ImageOS: "ubuntu24", ImageVersion: "20260901.1"}});
 
 function readPortableJson(identity) {
     const bytes = fs.readFileSync(identity.path);
@@ -26,12 +37,11 @@ function readPortableJson(identity) {
 function fixture() {
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-baseline-executor-")));
     const request = {schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
-        qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
-            nonce: NONCE}, candidate: {}, fixture: {}, paths: {}, scenarios: []};
+        qualifying: false, context: HOSTED_CONTEXT(), candidate: {}, fixture: {}, paths: {}, scenarios: []};
     const execution = {schemaVersion: 1, kind: "myspeed-windows-baseline-guest-execution-manifest",
         sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1", nonce: NONCE,
         imageVersion: "windows-server-2025-standard-eval", manifestSha256: "4".repeat(64), candidateSource: {},
-        candidateController: {}, cleanStopController: {}, fixtureBundle: {}};
+        cpuModel: "Westmere-v2", cpuidProbe: {}, candidateController: {}, cleanStopController: {}, fixtureBundle: {}};
     const requestBytes = Buffer.from(`${JSON.stringify(request)}\n`);
     const executionBytes = Buffer.from(`${JSON.stringify(execution)}\n`);
     const requestPath = path.join(root, "request.json"); const executionPath = path.join(root, "execution.json");
@@ -44,8 +54,7 @@ function fixture() {
 function actualFactoryFixture() {
     const value = fixture();
     value.request = {schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
-        qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
-            nonce: NONCE}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+        qualifying: false, context: HOSTED_CONTEXT(), candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
             path: `${WINDOWS_ROOT}\\MySpeed.exe`, sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")},
         fixture: {path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")},
         paths: {taskRoot: WINDOWS_ROOT, populatedWork: `${WINDOWS_ROOT}\\populated`,
@@ -54,6 +63,7 @@ function actualFactoryFixture() {
     value.execution = {schemaVersion: 1, kind: "myspeed-windows-baseline-guest-execution-manifest",
         sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1", nonce: NONCE,
         imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("6"),
+        cpuModel: "Westmere-v2", cpuidProbe: {path: "D:\\cpuid.exe", bytes: "16384", sha256: SHA("9")},
         candidateSource: {path: "D:\\MySpeed.exe", bytes: "524288", sha256: SHA("4")},
         candidateController: {path: "D:\\windows-native-candidate-controller.ps1", bytes: "65536", sha256: SHA("7")},
         cleanStopController: {path: "D:\\windows-clean-stop-controller.ps1", bytes: "65536", sha256: SHA("8")},
@@ -132,6 +142,7 @@ describe("Windows baseline guest executable entry", () => {
                 expectedExecutionSha256: value.executionSha256, resultPath: value.resultPath}, {
                 assertGuest: async () => undefined,
                 readJson: readPortableJson,
+                measureCpuid: () => CPUID_BYTES(),
                 runtimeConfiguration: {powershellPath: "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
                     dependencies: {
                         materialize: () => ({expected, initialDatabase: expected}),
@@ -152,8 +163,12 @@ describe("Windows baseline guest executable entry", () => {
                     }}
             });
             assert.equal(output.exitCode, 0, output.result.failure);
-            assert.deepEqual(output.result.summary.processes.map(item => item.scenario), SCENARIOS);
-            assert.deepEqual(output.result.summary.shutdownProofs.map(item => item.candidateExitCode), [0, 0, 113]);
+            assert.deepEqual(output.result.verifier.summary.processes.map(item => item.scenario), SCENARIOS);
+            assert.deepEqual(output.result.verifier.summary.shutdownProofs.map(item => item.candidateExitCode),
+                [0, 0, 113]);
+            /* The envelope the host parses, not the runner record it was composed from. */
+            assert.equal(output.result.cpu.model, "Westmere-v2");
+            assert.equal(output.result.verifier.summary.sourceSha, CANDIDATE_SHA);
             assert.equal(JSON.parse(fs.readFileSync(value.resultPath, "utf8")).status, "observed");
         } finally { fs.rmSync(value.root, {recursive: true, force: true}); }
     });
@@ -169,8 +184,11 @@ describe("Windows baseline guest executable entry", () => {
                     return JSON.parse(fs.readFileSync(identity.path, "utf8")); },
                 createRuntime: configuration => { calls.push(["runtime", configuration]); return {runtime: true}; },
                 createOperations: input => { calls.push(["operations", input]); return {operations: true}; },
+                measureCpuid: () => CPUID_BYTES(),
                 runGuest: async (request, operations) => { calls.push(["run", request, operations]); return {
-                    schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true, summary: {}}; }
+                    schemaVersion: 1, status: "observed", profile: "baseline-cpu", cleanupProven: true,
+                    summary: {networkIsolation: {kind: "qemu-nic-none-windows-guest", hardwareNics: 0,
+                        enabledNonLoopbackInterfaces: 0, nonLoopbackRoutes: 0}}}; }
             });
             assert.equal(result.exitCode, 0);
             assert.deepEqual(calls.slice(0, 3), ["guard", "read:baseline guest request",

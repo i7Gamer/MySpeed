@@ -14,8 +14,10 @@ const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config
 const candidatePid = scenario => 100 + SCENARIOS.indexOf(scenario);
 const candidateCreationTime = scenario => (SCENARIOS.indexOf(scenario) + 10).toString(16).padStart(16, "0");
 const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
-    qualifying: false, context: {sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1",
-        nonce: NONCE}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+    qualifying: false, context: {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA, eventSha: EVENT_SHA,
+    runId: "123", runAttempt: "1", nonce: NONCE, environment: {GITHUB_ACTIONS: "true", CI: "true",
+        RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24",
+        ImageVersion: "20260901.1"}}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
         path: `${TASK_ROOT}\\MySpeed.exe`, sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")}, fixture: {
         path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")}, paths: {taskRoot: TASK_ROOT,
         populatedWork: `${TASK_ROOT}\\populated`, resetWork: `${TASK_ROOT}\\reset`},
@@ -24,6 +26,7 @@ const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-
 const execution = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-execution-manifest",
     sourceSha: SOURCE_SHA, eventSha: EVENT_SHA, runId: "123", runAttempt: "1", nonce: NONCE,
     imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("6"),
+    cpuModel: "Westmere-v2", cpuidProbe: {path: "D:\\cpuid.exe", bytes: "16384", sha256: SHA("9")},
     candidateSource: {path: "D:\\MySpeed.exe", bytes: "524288", sha256: SHA("4")},
     candidateController: {path: "D:\\windows-native-candidate-controller.ps1", bytes: "65536", sha256: SHA("7")},
     cleanStopController: {path: "D:\\windows-clean-stop-controller.ps1", bytes: "65536", sha256: SHA("8")},

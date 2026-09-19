@@ -762,10 +762,16 @@ function validateFullSummary(value, requestValue) {
 
 export function validateBaselineGuestResult(value, requestValue) {
     const checked = validateRequest(requestValue);
-    keys(value, ["candidate", "context", "cpu", "network", "profile", "releaseGatesCleared", "schemaVersion", "status",
-        "verifier"], "baseline guest result");
+    keys(value, ["candidate", "cleanupProven", "context", "cpu", "network", "profile", "releaseGatesCleared",
+        "schemaVersion", "status", "verifier"], "baseline guest result");
+    /*
+     * `cleanupProven` is the guest's own teardown proof. The bootstrap already refuses to publish a
+     * result whose cleanup is unproven, so requiring it here costs nothing and closes the gap where
+     * a guest could report an observed run it never cleaned up after.
+     */
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.profile !== PROFILE ||
-        !same(value.context, checked.context) || !Array.isArray(value.releaseGatesCleared) ||
+        value.cleanupProven !== true || !same(value.context, checked.context) ||
+        !Array.isArray(value.releaseGatesCleared) ||
         value.releaseGatesCleared.length !== 0) throw new TypeError("baseline guest header is invalid");
     keys(value.candidate, ["artifactName", "sha256", "sourceSha"], "baseline guest candidate");
     if (value.candidate.artifactName !== BASELINE_ARTIFACT || value.candidate.sourceSha !== checked.candidate.sourceSha ||
