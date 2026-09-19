@@ -255,6 +255,79 @@ describe("Predeadline frame diagnostic schema validation", () => {
 });
 
 describe("QMP predeadline frame sequencing & scheduling", () => {
+    /*
+     * A bounded session shares one reader, so a milestone that abandons an owed acknowledgement
+     * closes it for the predeadline frame too. The milestone loop already names that condition
+     * `reader-unavailable`; this frame reported the session's raw internal provenance instead,
+     * which the hosted collector then coerced to `command-failed` because no vocabulary admits
+     * it - telling a reader the monitor refused a command when no command was ever issued.
+     */
+    it("names a closed reader on the predeadline frame as the milestone loop does", async () => {
+        const writes = [];
+        let predeadline = null;
+        let resolvePredeadline;
+        const predeadlineSettled = new Promise(resolve => { resolvePredeadline = resolve; });
+        let latePromise = null;
+        let clock = 0;
+        let armed = false;
+        const pending = [];
+        let resolveChunk = null;
+        const push = value => {
+            const chunk = Buffer.from(`${JSON.stringify(value)}\r\n`);
+            if (resolveChunk !== null) {
+                const resolver = resolveChunk;
+                resolveChunk = null;
+                resolver({value: chunk, done: false});
+            } else pending.push(chunk);
+        };
+        const readable = {[Symbol.asyncIterator]: () => ({next: () => (pending.length > 0 ?
+            Promise.resolve({value: pending.shift(), done: false}) :
+            new Promise(resolve => { resolveChunk = resolve; }))})};
+        push({QMP: {version: {qemu: {major: 10, minor: 1, micro: 2}, package: ""}, capabilities: []}});
+        await runEarlyBootQmpSession({
+            readable,
+            writeBytes: bytes => {
+                const value = JSON.parse(bytes.toString("utf8"));
+                writes.push(value);
+                /* Withheld: the read that follows can only end at its deadline, still owed. */
+                if (value.id === "late-screenshot-1") { armed = true; return; }
+                push(/status$/u.test(value.id) ? {return: {running: true, status: "running"}, id: value.id} :
+                    {return: {}, id: value.id});
+            },
+            screenshotPaths: SCREENSHOTS,
+            lateScreenshotPaths: LATE_SCREENSHOTS,
+            predeadline: {screenshotPath: PREDEADLINE_PATH, executionDeadline: 1_500_000},
+            onPredeadlineObservation: observation => { predeadline = observation; resolvePredeadline(); },
+            onLateObservation: promise => { latePromise = promise; }
+        }, {
+            now: () => clock,
+            wait: async milliseconds => { clock += milliseconds; },
+            /*
+             * Pacing runs immediately; the reply deadline is held back until there is an owed
+             * acknowledgement to abandon, so the reader closes for the reason under test rather
+             * than every exchange expiring at once.
+             */
+            setTimer: (callback, milliseconds) => {
+                if (armed && milliseconds === PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS) {
+                    queueMicrotask(callback);
+                    return 0;
+                }
+                return setTimeout(callback, 0);
+            },
+            clearTimer: handle => clearTimeout(handle)
+        });
+        await latePromise;
+        let watchdog;
+        await Promise.race([predeadlineSettled, new Promise((resolve, reject) => {
+            watchdog = setTimeout(() => reject(new Error("the predeadline frame never settled")), 2_000);
+        })]).finally(() => clearTimeout(watchdog));
+        assert.equal(predeadline.status, "unavailable");
+        assert.equal(predeadline.reason, "reader-unavailable",
+            "no command was issued, so the monitor refused none");
+        assert.equal(PREDEADLINE_FRAME_UNAVAILABLE_REASONS.includes(predeadline.reason), true,
+            "and the reason has to be one the hosted collector will publish");
+    });
+
     it("schedules screendump at executionDeadline minus lead milliseconds and settles late milestones promptly", async () => {
         let simulatedTime = 0;
         const delays = [];
