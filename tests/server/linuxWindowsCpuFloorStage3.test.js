@@ -612,27 +612,23 @@ describe("Windows CPU-floor Stage 3 baseline qualification core", () => {
         assert.match(result.failure, /corroborate/iu);
     });
 
-    it("refuses a baseline CPUID that the calibration guest does not corroborate", async () => {
-        const input = request();
-        /* Same feature floor, different silicon: every gate that reads one side alone still passes. */
-        for (const divergent of [{...rawCpuid(), maxBasicLeaf: 13},
-            {...rawCpuid(), leaf1: {...rawCpuid().leaf1, eax: "0x000206c1"}},
-            {...rawCpuid(), leaf7Subleaf0: {...rawCpuid().leaf7Subleaf0, edx: "0x0000000c"}}]) {
-            const encoded = encodedJson(divergent);
-            const divergentGuest = guestResult();
-            divergentGuest.cpu = {...divergentGuest.cpu, cpuidBytesBase64: encoded.bytesBase64,
-                cpuidSha256: encoded.sha256};
-            assert.doesNotThrow(() => validateBaselineGuestResult(divergentGuest, input),
-                "the per-side gate must still accept it, or this proves nothing");
-            const encodedGuest = encodedJson(divergentGuest);
-            const collected = {...collectedGuestResult(), result: divergentGuest,
-                bytesBase64: encodedGuest.bytesBase64};
-            collected.identity = {...collected.identity, sha256: encodedGuest.sha256,
-                bytes: String(Buffer.from(encodedGuest.bytesBase64, "base64").length)};
-            const fixture = operations({collectBaselineGuestResult: async () => collected});
-            const result = await runWindowsCpuFloorStage3(input, fixture.value);
-            assert.equal(result.status, "failed", JSON.stringify(divergent.leaf1));
+    /*
+     * A record that disagrees anywhere the mask does not reach is refused, and the refusal says
+     * where. Run 35447618046 reported only that corroboration had failed, and finding the one
+     * byte behind it meant extracting both records from a 9.7 GB evidence artifact.
+     */
+    it("refuses an uncorroborated baseline CPUID and names what disagreed", async () => {
+        for (const [divergent, named] of [
+            [{...rawCpuid(), maxBasicLeaf: 13}, /maxBasicLeaf/u],
+            [{...rawCpuid(), leaf1: {...rawCpuid().leaf1, eax: "0x000206c1"}}, /leaf1\.eax/u],
+            [{...rawCpuid(), leaf1: {...rawCpuid().leaf1, ebx: "0x00010800"}}, /leaf1\.ebx/u],
+            [{...rawCpuid(), leaf7Subleaf0: {...rawCpuid().leaf7Subleaf0, edx: "0x0000000c"}},
+                /leaf7Subleaf0\.edx/u]
+        ]) {
+            const result = await publishedWithCpuid(divergent, rawCpuid());
+            assert.equal(result.status, "failed", JSON.stringify(divergent));
             assert.match(result.failure, /corroborate/iu);
+            assert.match(result.failure, named);
         }
     });
 

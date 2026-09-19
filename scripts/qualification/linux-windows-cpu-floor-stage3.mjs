@@ -560,6 +560,13 @@ function validateStage2GuestEvidence(value, expectedIdentity, context, projected
  *
  * Compared as parsed records, not as bytes: the calibration guest's copy is re-serialized through
  * PowerShell on its way out, so the two are never byte-identical even when they agree.
+ *
+ * This holds because linux-windows-cpu-floor-stage3-sequence.mjs runs both stages in one job, on one
+ * runner, against one QEMU and one KVM, so every host-filtered bit is identical on both sides by
+ * construction. Two of the compared words depend on that and would stop agreeing if the stages were
+ * ever split across runners, or a retained Stage 2 result replayed on a fresh one: leaf 7 EDX, whose
+ * IBRS bit Westmere-v2 requests but nested KVM here does not advertise - the observed record is all
+ * zeros - and leaf 1 ECX, whose x2APIC bit comes from KVM's own defaults rather than the model.
  */
 /* The record the baseline guest published, re-read from the bytes its own validator already proved. */
 function baselineCpuidRecord(guest) {
@@ -570,8 +577,28 @@ function assertCorroboratedCpuid(baseline, calibration) {
     const leaves = value => ({maxBasicLeaf: value.maxBasicLeaf,
         leaf1: {...value.leaf1, ebx: modelBitsOfLeaf1Ebx(value.leaf1.ebx)},
         leaf7Subleaf0: value.leaf7Subleaf0, xcr0: value.xcr0});
-    if (!same(leaves(baseline), leaves(calibration)))
-        throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest");
+    const disagreed = disagreeingCpuidFields(leaves(baseline), leaves(calibration));
+    if (disagreed.length > 0)
+        throw new TypeError("baseline CPUID is not corroborated by the Stage 2 calibration guest: "
+            + disagreed.join(", "));
+}
+
+/*
+ * Which fields disagreed, so the refusal can say.
+ *
+ * Run 35447618046 reported only that corroboration had failed. Finding the single byte behind it
+ * meant range-reading both records out of a 9.7 GB evidence artifact, an hour after the run began.
+ * The names alone would have made that a five-minute diagnosis, and they cost nothing to carry.
+ */
+function disagreeingCpuidFields(baseline, calibration, prefix = "") {
+    const names = [];
+    for (const [name, value] of Object.entries(baseline)) {
+        const other = calibration[name];
+        if (value !== null && typeof value === "object")
+            names.push(...disagreeingCpuidFields(value, other ?? {}, `${prefix}${name}.`));
+        else if (value !== other) names.push(`${prefix}${name}`);
+    }
+    return names;
 }
 
 /*
