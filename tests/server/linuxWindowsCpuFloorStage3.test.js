@@ -1314,6 +1314,21 @@ describe("Stage 3 corroborates the completion marker against what was extracted"
         baseline: {...baselineIdentity}, cpu: {...receipt}}});
     const RECEIPT = {bytes: "2809", sha256: SHA("c")};
 
+    /*
+     * A receipt with no marker beside it. Nothing corroborates it and no gate reads it, so this
+     * is not a false acceptance - but it is an exact-key gate admitting an arbitrary value into a
+     * result that is then accepted and retained, and the next reader of that field has no way to
+     * know it was never checked. What is present is checked for what it is, marker or no marker.
+     */
+    it("refuses an extracted receipt that is not an identity even with no marker to match", async () => {
+        for (const receipt of [{evil: true}, "garbage", {bytes: "-1", sha256: "zz"},
+            {bytes: null, sha256: null}, {...RECEIPT, path: "/owned/result.json"}]) {
+            const {result} = await publishedWithMarker({cpuReceipt: receipt});
+            assert.equal(result.status, "failed", JSON.stringify(receipt));
+            assert.match(result.failure, /receipt identity/iu, JSON.stringify(receipt));
+        }
+    });
+
     it("accepts a clean exit whose marker agrees with both receipts", async () => {
         const first = await publishedWithMarker();
         const {result, baselineIdentity} = await publishedWithMarker({
@@ -1366,7 +1381,8 @@ describe("Stage 3 corroborates the completion marker against what was extracted"
                     cpu: {...receipt}}},
                 cpuReceipt: {...receipt}});
             assert.equal(result.status, "failed", JSON.stringify(receipt));
-            assert.match(result.failure, /completion/iu, JSON.stringify(receipt));
+            /* Refused as an identity, whether by the receipt check or by the comparison. */
+            assert.match(result.failure, /identity/iu, JSON.stringify(receipt));
         }
     });
 

@@ -549,6 +549,14 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
     /* Called at the write boundary, once bytes may have left: from here a response is owed. */
     function markResponseOwed() { responseOwed = true; }
 
+    /*
+     * Called the instant the acknowledgement is read, before anything judges what it says. A reply
+     * that was taken off the reader leaves it in sync whether it carries a result or a refusal, and
+     * a monitor refusal is an ordinary protocol outcome the caller is expected to survive. Owing is
+     * about who holds the reply, not about whether the reply was welcome.
+     */
+    function markResponseConsumed() { responseOwed = false; }
+
     async function boundedExchange(run) {
         assertReaderUsable();
         try {
@@ -790,7 +798,7 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
             get shutdownRecord() { return shutdownRecord; }};
     }
 
-    return {readBounded, createDispatcher, boundedExchange, markResponseOwed};
+    return {readBounded, createDispatcher, boundedExchange, markResponseOwed, markResponseConsumed};
 }
 
 /*
@@ -804,15 +812,20 @@ function lateMilestoneUnavailableReason(error) {
     return provenance ?? LATE_MILESTONE_DEFAULT_REASON;
 }
 
-async function expectResponse(readMessage, id) {
+async function expectResponse(readMessage, id, onAcknowledged = () => undefined) {
     while (true) {
         const value = await readMessage();
         if (value.event !== undefined) continue;
         if (value.id !== id) {
+            /*
+             * Deliberately before the notification below: this reply was not ours, so the reply that
+             * is ours is still unread and still owed. A mismatch is a genuine desync.
+             */
             const err = new Error("QMP response is invalid");
             QMP_ERROR_PROVENANCE.set(err, "qmp-id-mismatch");
             throw err;
         }
+        onAcknowledged();
         if (value.error !== undefined) {
             const err = new Error("QMP response is invalid");
             QMP_ERROR_PROVENANCE.set(err, "qmp-error-response");
@@ -963,7 +976,7 @@ async function runSession(input, dependencies, session) {
         if (dispatcher === null) {
             return await messageSource.boundedExchange(async () => {
                 await write(value, beforeWrite);
-                return await expectResponse(readMessage, id);
+                return await expectResponse(readMessage, id, messageSource.markResponseConsumed);
             });
         }
         const {entry, responsePromise} = dispatcher.expect(id, timeoutMilliseconds, deadlineIncludesWrite);
@@ -1145,7 +1158,7 @@ async function runSession(input, dependencies, session) {
                         keys: qcodes.map(data => ({type: "qcode", data})),
                         "hold-time": WINPE_DIAGNOSTIC_HOLD_MILLISECONDS}, id});
                     assertPhaseOpen();
-                    return await expectResponse(readMessage, id);
+                    return await expectResponse(readMessage, id, messageSource.markResponseConsumed);
                 })(), dependencies, WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS));
                 record.acknowledgedKeyEvents += 1;
                 return final ? getTime() : assertPhaseOpen();

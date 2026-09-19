@@ -878,6 +878,17 @@ export function validateBaselineGuestResult(value, requestValue) {
  */
 function assertCorroboratedPublication({marker, cpuReceipt, baselineIdentity, process, nonce}) {
     const forced = process?.terminationReason === POST_COMPLETION_TERMINATION_REASON;
+    /*
+     * Checked whenever it is present, not only when a marker turns up to be compared against it.
+     * A receipt with nothing to corroborate it still reaches an accepted, retained result, and a
+     * later reader of that field cannot tell a value that was checked from one that was merely
+     * carried. This is the field this change introduced, so it is exact-key checked.
+     */
+    if (cpuReceipt !== undefined) {
+        keys(cpuReceipt, ["bytes", "sha256"], "Stage 3 extracted CPU receipt identity");
+        decimal(cpuReceipt.bytes, "Stage 3 extracted CPU receipt identity bytes", {positive: true});
+        exactString(cpuReceipt.sha256, SHA256_PATTERN, "Stage 3 extracted CPU receipt identity hash");
+    }
     if (marker === undefined) {
         if (forced) throw new TypeError(
             "Stage 3 forced teardown was accepted without the completion marker that authorized it");
@@ -894,8 +905,6 @@ function assertCorroboratedPublication({marker, cpuReceipt, baselineIdentity, pr
         throw new TypeError("Stage 3 completion marker carries another run's nonce");
     if (cpuReceipt === undefined || baselineIdentity === undefined)
         throw new TypeError("Stage 3 completion marker has no extracted receipt to corroborate");
-    /* The receipt identity is this change's own new field, so it is exact-key checked here. */
-    keys(cpuReceipt, ["bytes", "sha256"], "Stage 3 extracted CPU receipt identity");
     for (const [name, claimed, extracted] of [["baseline", record.baseline, baselineIdentity],
         ["CPU", record.cpu, cpuReceipt]]) {
         /*

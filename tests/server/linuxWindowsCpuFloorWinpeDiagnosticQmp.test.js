@@ -286,6 +286,8 @@ describe("WinPE answer-file diagnostic QMP sequence", () => {
         assert.equal(late.winpeDiagnostic.acknowledgedKeyEvents, budget.keyEvents);
         assert.equal(late.winpeDiagnostic.failure, null);
         assert.equal(late.milestones.length, 2);
+        assert.ok(late.milestones.every(item => item.screenshotPath),
+            "both frames are taken, not merely slotted");
         assert.deepEqual(late.milestones.map(item => item.offsetMs), [...LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS]);
     });
 
@@ -315,7 +317,9 @@ describe("WinPE answer-file diagnostic QMP sequence", () => {
         assert.equal(late.winpeDiagnostic.submittedOffsetMs, null);
         assert.equal(late.winpeDiagnostic.acknowledgedKeyEvents, 20);
         assert.match(late.winpeDiagnostic.failure, /QMP response is invalid/u);
-        assert.equal(late.milestones.length, 2, "the second frame still has to be taken");
+        assert.equal(late.milestones.length, 2);
+        assert.ok(late.milestones[1].screenshotPath,
+            "the second frame still has to be taken: a refused key is not a broken reader");
     });
 
     it("stops on the phase deadline mid-sequence rather than pushing the second frame", async () => {
