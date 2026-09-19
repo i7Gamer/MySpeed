@@ -14,6 +14,7 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     MID_WINDOW_FRAME_SKIPPED_REASONS,
     MID_WINDOW_FRAME_UNAVAILABLE_REASONS,
     MID_WINDOW_FRAME_MALFORMED_REASONS,
+    MAX_EXIT_STATUS, MIN_UNATTRIBUTED_EXIT_STATUS,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     validateQmpShutdownEventDiagnostic,
@@ -1486,6 +1487,8 @@ function defaultWriteCleanupAuthority(pidPath, identity) {
 }
 
 export async function runMonitoredQemu(io, request) {
+    /* Optional in this module: several callers drive paths that never reach the monitor loop. */
+    const launchStartedAt = typeof io.monotonicMilliseconds === "function" ? io.monotonicMilliseconds() : null;
     const pidfile = request.precreatePidFile === true ? io.createOwnedPidFile(request.pidPath) : null;
     let finished = false;
     let outerProcessGroupId = null;
@@ -1633,6 +1636,7 @@ export async function runMonitoredQemu(io, request) {
     let deadlineReached = false;
     let completionObservedAt = null;
     let completionRecord = null;
+    let completionFailure = null;
     const completionObserver = request.serialCompletion === undefined ? null :
         createSerialCompletionObserver(request.serialCompletion.nonce);
     while (!finished && terminationReasons.length === 0 && completionObservedAt === null) {
@@ -1679,6 +1683,14 @@ export async function runMonitoredQemu(io, request) {
             if (observed.completion !== null) {
                 completionObservedAt = io.monotonicMilliseconds();
                 completionRecord = observed.completion.record;
+            } else if (observed.failure === SERIAL_COMPLETION_FAILURES.recordInvalid) {
+                /*
+                 * A marker was emitted and cannot be believed. It authorizes nothing - the trigger
+                 * above stays unarmed - but it must not be forgotten either: reported as absence it
+                 * would reach Stage 3 indistinguishable from a guest that published no marker at
+                 * all, which is the one shape no corroboration rule can refuse.
+                 */
+                completionFailure = observed.failure;
             }
         }
         if (completionObservedAt === null && deadlineReached && terminationReasons.length === 0)
@@ -1733,6 +1745,48 @@ export async function runMonitoredQemu(io, request) {
             terminationReasons.push("group-observation-failed");
         }
     }
+    /*
+     * One bounded read after the process has settled. The polling loop above stops at process exit,
+     * so a marker written in the moments before it - or one whose closing newline never arrived,
+     * because the machine writing it stopped - was never read at all, and arrived at Stage 3 as an
+     * ordinary absence. This is evidence only: `completionObservedAt` stays null, so a marker found
+     * here can authorize no teardown. Deciding whether the run may be torn down and deciding what
+     * it published are different questions asked at different times, and only the first has passed.
+     *
+     * Only for a run that ended without a reason of its own. A run already failing for a named
+     * reason has an answer, and reading a record out of the log of a guest that dropped to the UEFI
+     * shell, or was killed at its deadline, would report a publication for a run that did not
+     * complete one. That deliberately includes the record first seen in the tick that reached the
+     * deadline, which the loop above refuses to act on for the same reason: the run failed, and the
+     * marker's only remaining use would be to describe a publication nothing will be accepted from.
+     */
+    if (completionObserver !== null && completionFailure === null &&
+        (terminationReasons.length === 0 || terminationReasons[0] === POST_COMPLETION_TERMINATION_REASON)) {
+        let drained = null;
+        try {
+            drained = completionObserver.consume((start, maximum) =>
+                io.readOwnedRangeVerified(request.serialCompletion.path, start, maximum));
+            drained = completionObserver.finalize();
+        } catch { drained = null; }
+        if (drained?.failure != null) {
+            /*
+             * The observer withdraws its own completion when it fails, so a record believed
+             * earlier cannot be held here past that point: it would keep authorizing a teardown
+             * on evidence that has been taken back. Every explicit failure withdraws it.
+             *
+             * Only an unbelievable marker is also reported as one. A marker that arrived after
+             * one was already believed is exactly as contradictory as a malformed first marker,
+             * and the earlier record is worth no more for having been read first - what the
+             * channel now says is that this guest emitted something the reviewed producer never
+             * emits. A channel that merely broke says nothing about what the guest published, so
+             * it withdraws the record without claiming the guest published anything wrong.
+             */
+            completionRecord = null;
+            if (drained.failure === SERIAL_COMPLETION_FAILURES.recordInvalid)
+                completionFailure = drained.failure;
+        } else if (completionRecord === null && drained?.completion != null)
+            completionRecord = drained.completion.record;
+    }
     const finalLateBoot = (lateBootSettled && lateBootObservation) ? lateBootObservation : null;
     /*
      * Enabled-state finalization: when mid-window capture was requested, its two-slot state is never
@@ -1745,6 +1799,50 @@ export async function runMonitoredQemu(io, request) {
      * Both the array and every entry are frozen: no late report can mutate what has already been
      * returned.
      */
+    /*
+     * A high exit status the monitor did not ask for. Run 35453004452 reported only "QEMU process
+     * did not complete cleanly", where a UEFI-shell drop reports `efi-shell-fallback`, so working
+     * out even roughly what had happened cost an evidence download and a screenshot extraction.
+     *
+     * The name claims exactly what was observed and no more. Two things narrow what a *numeric*
+     * high status can mean here, and both are worth stating because each has been got wrong once.
+     *
+     * GNU timeout reports its own expiry as 124 for a catchable signal, but 128 plus the signal
+     * when it had to use KILL, which is what this wrapper is given - its own documentation says so,
+     * and coreutils 9.4 on the runner's image agrees. So expiry here looks like 137, not 124.
+     *
+     * A child killed by anything *else* does not arrive as a status at all: the wrapper re-raises
+     * the signal on itself and the parent sees a signalled process, which the integer check above
+     * has already excluded. An external killer - the OOM killer, the runner - therefore cannot
+     * produce this record.
+     *
+     * What is left is the wrapper's own deadline or a process returning such a status deliberately,
+     * and those two cannot be told apart from here, so the name still attributes nothing. The
+     * elapsed time and the deadline the launcher was configured with are attached instead, so a
+     * reader can see the correlation the harness declines to assert.
+     */
+    let launcherExit = null;
+    const exitStatus = observation?.process?.exitCode;
+    if (terminationReasons.length === 0 && launchStartedAt !== null && Number.isSafeInteger(exitStatus) &&
+        exitStatus >= MIN_UNATTRIBUTED_EXIT_STATUS && exitStatus <= MAX_EXIT_STATUS) {
+        launcherExit = {
+            schemaVersion: 1,
+            kind: "qemu-launcher-exit-diagnostic",
+            exitStatus,
+            /* Both measured on the monitor's own clock, from the moment the launcher was spawned. */
+            elapsedMs: io.monotonicMilliseconds() - launchStartedAt,
+            /*
+             * The budget the launcher itself was given, which is the execution deadline - not the
+             * monitor's own outer bound, which is that deadline plus the cleanup allowance. Beside
+             * an exit status the launcher produced, the outer bound would show a process killed at
+             * the instant its deadline expired as one that died minutes inside it, reversing the
+             * very correlation this field exists to let a reader draw.
+             */
+            configuredDeadlineMs: request.executionDeadline - launchStartedAt,
+            lastMilestone: finalLateBoot?.milestones?.at(-1)?.milestone ?? null
+        };
+        terminationReasons.push(LAUNCHER_HIGH_EXIT_REASON);
+    }
     midWindowFinalized = true;
     qmpShutdownFinalized = true;
     const finalMidWindow = request.qmp?.midWindow ?
@@ -1754,9 +1852,11 @@ export async function runMonitoredQemu(io, request) {
         null;
     const finish = value => {
         const enriched = {...value, predeadline: predeadlineObservation, midWindowFrames: finalMidWindow,
+            ...(launcherExit === null ? {} : {launcherExit}),
             ...(qmpShutdownRecord === null ? {} : {qmpShutdownEvent: qmpShutdownRecord}),
-        ...(completionRecord === null ? {} : {serialCompletion: {record: completionRecord,
-            observedAtMs: completionObservedAt}})};
+        ...(completionRecord !== null ? {serialCompletion: {record: completionRecord,
+            ...(completionObservedAt === null ? {} : {observedAtMs: completionObservedAt})}} :
+            completionFailure === null ? {} : {serialCompletion: {invalid: completionFailure}})};
         if (pidfile && io.pathExists(request.pidPath)) {
             if (enriched.absentAfter !== true || enriched.processGroupGone !== true)
                 return {...enriched, terminationReason: enriched.terminationReason ?? "pidfile-cleanup-deferred"};
@@ -1816,6 +1916,13 @@ function readSerialConsole(io, target) {
  * Nothing reads this to abort, accept or gate a run; the serial console above is the evidence.
  */
 function displayProgressVerdict(earlyBoot, milestones) {
+    /*
+     * A milestone with no frame breaks the chain rather than being skipped over. Comparing the
+     * frames on either side of a gap would answer a question nobody asked - whether the display
+     * changed across an interval that was never sampled - and this verdict already prefers null to
+     * a conclusion it cannot support.
+     */
+    if (milestones.some(item => item.unavailable !== undefined)) return null;
     const digests = [...(earlyBoot === null ? [] : [earlyBoot.screenshots.at(-1).sha256]),
         ...milestones.map(item => item.screenshot.sha256)];
     if (digests.length < 2) return null;
@@ -2218,6 +2325,20 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
         Array.isArray(monitored.lateBoot.milestones)) {
         try {
             const validatedMilestones = monitored.lateBoot.milestones.map(item => {
+                /*
+                 * A milestone the session abandoned has no frame to read. It passes through with
+                 * exactly what was observed - which may be nothing beyond the reason - because the
+                 * catch below discards the entire record, so throwing here would delete the
+                 * captured milestones alongside the missing one.
+                 */
+                if (item.unavailable !== undefined) {
+                    return {
+                        milestone: item.milestone,
+                        offsetMs: item.offsetMs,
+                        ...(item.status === undefined ? {} : {status: item.status, running: item.running}),
+                        unavailable: {reason: item.unavailable.reason}
+                    };
+                }
                 const observed = io.readOwnedVerified(item.screenshotPath, MAX_EARLY_BOOT_SCREENSHOT_BYTES);
                 if (observed.identity.path !== item.screenshotPath || observed.bytes.length < PNG_SIGNATURE.length ||
                     !observed.bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE) ||
@@ -2268,7 +2389,17 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
         processGroupId: processRecord.processGroupId,
         qemuPidAbsentAfter: processRecord.qemuPidAbsentAfter,
         terminationReason: processRecord.terminationReason}, argv: input.argv, earlyBoot,
-        ...(lateBoot !== null ? {lateBoot} : {})};
+        ...(lateBoot !== null ? {lateBoot} : {}),
+        /*
+         * The marker's own claim about what the guest published, carried rather than consumed here.
+         * Only the validated record crosses: when it was seen is what decided the teardown, and is
+         * no part of what it says was written. It is emitted only for a launch that asked for the
+         * marker at all, so an ordinary Stage 2 observation keeps exactly the keys it always had.
+         */
+        ...(monitored.serialCompletion === undefined ? {} :
+            {serialCompletion: monitored.serialCompletion.record !== undefined ?
+                {record: structuredClone(monitored.serialCompletion.record)} :
+                {invalid: monitored.serialCompletion.invalid}})};
     /*
      * Two disjoint process shapes, never a relaxation of the first. Either QEMU exited cleanly
      * on its own, or the host observed a valid publication-complete record before the execution
@@ -2277,7 +2408,12 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
      * still has to hold, and the guest's receipts are still extracted and strictly parsed
      * afterwards, so this cannot admit a run whose workload did not finish.
      */
-    const completionTeardownAccepted = monitored.serialCompletion !== undefined
+    /*
+     * A believed record, not merely the field's presence: the field now also carries the explicit
+     * outcome for a marker that was emitted and could not be believed, and an unbelievable marker
+     * must authorize strictly less than none at all.
+     */
+    const completionTeardownAccepted = monitored.serialCompletion?.record !== undefined
         && processRecord.terminationReason === POST_COMPLETION_TERMINATION_REASON
         && processRecord.qemuPidAbsentAfter === true && processRecord.treeGone === true;
     const guestParsingAllowed = (( processRecord.exitCode === 0 && processRecord.signal === null )
@@ -2289,6 +2425,9 @@ async function launchHostedQemuProcess(io, stageStartedMilliseconds, input, cont
     if (!guestParsingAllowed) result.failureDiagnostic = {schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
         process: structuredClone(result.process), processFlags: structuredClone(processFlags),
         monitorFailure: monitored.monitorFailure ?? null,
+        /* Failure-only, and only when the monitor observed a status it did not itself ask for. */
+        ...(monitored.launcherExit === undefined ? {} :
+            {launcherExit: structuredClone(monitored.launcherExit)}),
         /*
          * Failure-only, and only when the continuous QMP pump actually captured one: a successful
          * launch never reaches this branch at all, and a launch that never authorized mid-window
@@ -3199,6 +3338,17 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 if (parsed.status === "failed") return {...launched, guest: parsed, guestFailure: parsed};
                 const output = io.inspectOwned(input.paths.outputDisk);
                 return {...launched,
+                    /*
+                     * The exact bytes of the receipt as extracted, kept because the completion
+                     * marker states what the guest wrote and nothing downstream could otherwise
+                     * check that claim: the parsed fields below are a reading of this file, not the
+                     * file. Verified already by the read above; this only stops it being discarded.
+                     *
+                     * Emitted under the same condition as the marker it exists to corroborate, so
+                     * an ordinary Stage 2 observation carries neither. This launcher is shared.
+                     */
+                    ...(input.reservation?.label === STAGE3_BASELINE_RESERVATION_LABEL ?
+                        {cpuReceipt: {bytes: guestRead.identity.bytes, sha256: guestRead.identity.sha256}} : {}),
                     guest: {schemaVersion: 1, status: "observed", cpu: {...parsed.cpu, xcr0: null},
                     instructions: parsed.instructions, network: parsed.network, activation: parsed.activation,
                     systemTools: parsed.systemTools,
@@ -3244,6 +3394,13 @@ export const MAX_SERIAL_OBSERVATION_BYTES = 1024 * 1024;
 export const POST_COMPLETION_EXIT_GRACE_MILLISECONDS = 30_000;
 const POST_COMPLETION_POLL_MILLISECONDS = 1_000;
 export const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-timeout";
+/*
+ * "High" rather than "signalled": a shell reports a signalled child as 128 plus the signal, but that
+ * is a reporting convention and a process may return any of these values itself. The range is derived
+ * from that convention rather than from any particular status, so none of them is special-cased.
+ */
+export const LAUNCHER_HIGH_EXIT_REASON = "launcher-high-exit-status-unattributed";
+
 /*
  * Only the Stage 3 baseline launch observes completion records, and it is bound to its own
  * reservation label rather than to a request flag any caller could set. Kept as a literal here
@@ -3314,6 +3471,18 @@ export function createSerialCompletionObserver(nonce) {
         for (const row of rows) if (!classify(row.endsWith("\r") ? row.slice(0, -1) : row)) return outcome();
         /* A line that can never fit a record means the stream is not the one we contracted for. */
         if (carry.length > MAX_COMPLETION_RECORD_BYTES) return fail(SERIAL_COMPLETION_FAILURES.channelFailed);
+        return outcome();
+    },
+    /*
+     * The last line the guest wrote need not have ended in a newline - the machine it was running
+     * on stopped. Once nothing more can arrive, what is held back is a whole line after all, and
+     * classifying it is the difference between reading the marker and never seeing it.
+     */
+    finalize() {
+        if (failure !== null || carry.length === 0) return outcome();
+        const line = carry.endsWith("\r") ? carry.slice(0, -1) : carry;
+        carry = "";
+        classify(line);
         return outcome();
     }};
 }

@@ -865,6 +865,66 @@ export function validateBaselineGuestResult(value, requestValue) {
     return structuredClone(value);
 }
 
+/*
+ * The guest writes the completion marker from the very bytes it has just published, so a marker
+ * that disagrees with what was extracted is not a run that went another way - it is contradictory
+ * evidence about one run, and nothing may be accepted on it. Hence one direction of the rule is
+ * unconditional: a marker that is present must match, however QEMU exited. The other stays
+ * conditional, because a clean exit proves the workload finished without any marker at all, while a
+ * forced teardown was authorized by a marker and cannot then be accepted in its absence.
+ *
+ * Shape and nonce are checked here rather than trusted from the parse upstream: this is the trust
+ * boundary the value crosses, and everything else crossing it is revalidated on arrival.
+ */
+function assertCorroboratedPublication({marker, cpuReceipt, baselineIdentity, process, nonce}) {
+    const forced = process?.terminationReason === POST_COMPLETION_TERMINATION_REASON;
+    /*
+     * Checked whenever it is present, not only when a marker turns up to be compared against it.
+     * A receipt with nothing to corroborate it still reaches an accepted, retained result, and a
+     * later reader of that field cannot tell a value that was checked from one that was merely
+     * carried. This is the field this change introduced, so it is exact-key checked.
+     */
+    if (cpuReceipt !== undefined) {
+        keys(cpuReceipt, ["bytes", "sha256"], "Stage 3 extracted CPU receipt identity");
+        decimal(cpuReceipt.bytes, "Stage 3 extracted CPU receipt identity bytes", {positive: true});
+        exactString(cpuReceipt.sha256, SHA256_PATTERN, "Stage 3 extracted CPU receipt identity hash");
+    }
+    if (marker === undefined) {
+        if (forced) throw new TypeError(
+            "Stage 3 forced teardown was accepted without the completion marker that authorized it");
+        return;
+    }
+    if (marker === null || typeof marker !== "object" || Array.isArray(marker) ||
+        !Object.hasOwn(marker, "record"))
+        throw new TypeError(`Stage 3 completion marker was not usable: ${
+            typeof marker?.invalid === "string" ? marker.invalid : "malformed"}`);
+    keys(marker, ["record"], "Stage 3 completion marker");
+    const record = marker.record;
+    keys(record, ["baseline", "cpu", "nonce"], "Stage 3 completion marker record");
+    if (record.nonce !== nonce)
+        throw new TypeError("Stage 3 completion marker carries another run's nonce");
+    if (cpuReceipt === undefined || baselineIdentity === undefined)
+        throw new TypeError("Stage 3 completion marker has no extracted receipt to corroborate");
+    for (const [name, claimed, extracted] of [["baseline", record.baseline, baselineIdentity],
+        ["CPU", record.cpu, cpuReceipt]]) {
+        /*
+         * Both sides are validated before they are compared, because equality alone proves only
+         * that two values agree - and two values that are both nonsense agree perfectly. A byte
+         * count that is not a canonical positive decimal, or a hash that is not a lowercase
+         * SHA-256, is not evidence of a publication whatever it matches.
+         */
+        keys(claimed, ["bytes", "sha256"], `Stage 3 completion marker ${name} identity`);
+        for (const [side, identity] of [["marker", claimed], ["extracted", extracted]]) {
+            decimal(identity?.bytes, `Stage 3 completion ${name} ${side} identity bytes`, {positive: true});
+            exactString(identity.sha256, SHA256_PATTERN, `Stage 3 completion ${name} ${side} identity hash`);
+
+        }
+        if (claimed.bytes !== extracted.bytes || claimed.sha256 !== extracted.sha256)
+            throw new TypeError(
+                `Stage 3 completion marker ${name} identity differs from what was extracted`);
+    }
+}
+
 function validateCollectedGuest(value, requestValue, pathsValue, expectedOutputDisk) {
     keys(value, ["bytesBase64", "identity", "result", "sourceOutputDisk"], "baseline collected guest result");
     const sourceOutputDisk = validateIdentity(value.sourceOutputDisk, "baseline guest source output disk");
@@ -892,7 +952,10 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
     keys(value, ["argv", "baselineFullRuntimeAccepted", "candidate", "classification", "cleanupProven", "context",
         "cpuFloorAccepted", "earlyBoot", "guest", "guestEvidence", "media", "outputDisk", "qemuProcess", "qualifying",
         "releaseGateCleared", "reservation", "schemaVersion", "stage", "stage2GuestEvidence", "stage2Result",
-        "status"], "completed Stage 3 result");
+        "status",
+        /* Present only for a run whose guest published a marker; corroborated below where present. */
+        ...(value?.serialCompletion === undefined ? [] : ["serialCompletion"]),
+        ...(value?.cpuReceipt === undefined ? [] : ["cpuReceipt"])], "completed Stage 3 result");
     if (value.schemaVersion !== SCHEMA_VERSION || value.status !== "observed" || value.stage !== "complete" ||
         value.classification !== CLASSIFICATION || value.qualifying !== false || value.releaseGateCleared !== false ||
         value.baselineFullRuntimeAccepted !== true || value.cpuFloorAccepted !== true || value.cleanupProven !== true ||
@@ -914,6 +977,9 @@ export function validateCompletedStage3Result(value, requestValue, retainedStage
         throw new TypeError("completed Stage 3 output disk differs");
     const guest = validateCollectedGuest(value.guestEvidence, checked.request, checked.paths, outputDisk);
     assertCorroboratedCpuid(baselineCpuidRecord(guest), stage2Guest.cpuid);
+    assertCorroboratedPublication({marker: value.serialCompletion, cpuReceipt: value.cpuReceipt,
+        baselineIdentity: value.guestEvidence.identity, process: value.qemuProcess,
+        nonce: checked.context.nonce});
     if (!same(guest, value.guest)) throw new TypeError("completed Stage 3 guest evidence differs");
     return Object.freeze({accepted: true, stage2, candidate, media});
 }
@@ -1090,7 +1156,11 @@ export async function runWindowsCpuFloorStage3(input, operations) {
         const launch = await operations.launchBaselineGuest({context, argv, budget: checked.budget, candidate,
             media, paths: checked.paths, profile: PROFILE, stage2, toolchain: stage2.toolchain, windowsIso,
             ...(checked.bootConfirmation === undefined ? {} : {bootConfirmation: checked.bootConfirmation})});
-        keys(launch, ["argv", "earlyBoot", "outputDisk", "process", "reservation"], "Stage 3 launch observation");
+        const launchKeys = ["argv", "earlyBoot", "outputDisk", "process", "reservation"];
+        /* Present only for a launch that asked for the marker; admitted here, judged below. */
+        if (launch?.serialCompletion !== undefined) launchKeys.push("serialCompletion");
+        if (launch?.cpuReceipt !== undefined) launchKeys.push("cpuReceipt");
+        keys(launch, launchKeys, "Stage 3 launch observation");
         if (!same(launch.argv, argv)) throw new TypeError("Stage 3 observed QEMU vector differs");
         const earlyBoot = validateEarlyBoot(launch.earlyBoot, checked.paths, checked.bootConfirmation);
         const reservation = validateStage3Reservation(launch.reservation);
@@ -1105,13 +1175,18 @@ export async function runWindowsCpuFloorStage3(input, operations) {
             outputDisk, paths: checked.paths});
         const guest = validateCollectedGuest(guestEvidence, checked.request, checked.paths, outputDisk);
         assertCorroboratedCpuid(baselineCpuidRecord(guest), stage2Guest.cpuid);
+        assertCorroboratedPublication({marker: launch.serialCompletion, cpuReceipt: launch.cpuReceipt,
+            baselineIdentity: guestEvidence.identity, process: launch.process, nonce: context.nonce});
         return Object.freeze({schemaVersion: SCHEMA_VERSION, status: "observed", stage: "complete",
             classification: CLASSIFICATION, qualifying: false, releaseGateCleared: false,
             baselineFullRuntimeAccepted: true, cpuFloorAccepted: true, cleanupProven: true, context,
             stage2Result: checked.stage2Result, stage2GuestEvidence, candidate, media, argv,
             earlyBoot: structuredClone(earlyBoot), reservation: structuredClone(reservation),
             qemuProcess: launch.process, outputDisk,
-            guestEvidence: structuredClone(guestEvidence), guest});
+            guestEvidence: structuredClone(guestEvidence), guest,
+            ...(launch.serialCompletion === undefined ? {} :
+                {serialCompletion: structuredClone(launch.serialCompletion)}),
+            ...(launch.cpuReceipt === undefined ? {} : {cpuReceipt: structuredClone(launch.cpuReceipt)})});
     } catch (error) { return failure(context, stage, error, cleanupProven); }
 }
 

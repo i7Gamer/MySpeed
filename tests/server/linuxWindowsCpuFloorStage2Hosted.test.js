@@ -18,6 +18,7 @@ import {
     createHostedQemuProcessLauncher,
     createHostedCpuFloorCleanupOperations,
     createHostedStage2Operations,
+    STAGE3_BASELINE_RESERVATION_LABEL,
     cpuFloorCleanupAuthorityPath,
     defaultReadOwnedPrefixVerified,
     defaultValidateOutputDisk,
@@ -1049,6 +1050,125 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.deepEqual(extracted, secondary ? ["::result.json", "::bootstrap-failure.json"] : ["::result.json"]);
         assert.equal(result.process.cleanupProven, true);
         assert.equal(result.process.treeGone, true);
+    });
+
+    /*
+     * Two wirings in the hosted launcher that nothing else pins.
+     *
+     * The launcher exit record is evidence about a failure, and a failure is the only time it is
+     * attached; dropping it from the diagnostic loses the one account of a status the monitor did
+     * not ask for, which is precisely why it was added.
+     *
+     * The teardown gate is the sharper of the two. A marker that was emitted and could not be
+     * believed arrives in the same field as one that could, and a forced teardown is only ever
+     * authorized by a believed record. Keying the gate on the field's presence would let an
+     * unbelievable marker authorize a teardown, which must authorize strictly less than none.
+     */
+    it("attaches the launcher exit record to the failure diagnostic, and only a believed marker authorizes a teardown", async () => {
+        const produced = successfulGuestOutput();
+        const launcherExit = {schemaVersion: 1, kind: "qemu-launcher-exit-diagnostic", exitStatus: 137,
+            elapsedMs: 1_482_000, configuredDeadlineMs: 1_500_000, lastMilestone: null};
+        const launch = async (monitoredExtras, processExtras) => {
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                runOwned: async () => ({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}),
+                runMonitoredQemu: async () => ({observation: {process: {...okProcess, ...processExtras},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+                    executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+                qmp: qmpObservation(), absentAfter: true, processGroupGone: true,
+                terminationReason: null, ...monitoredExtras}),
+                pathExists: () => false,
+                readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                    ({bytes: Buffer.from(JSON.stringify(produced)), identity: {path: target,
+                        bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)}})
+            }});
+            const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
+                `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+            return await adapter.launchOwnedQemu({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"],
+                reservation: {label: STAGE3_BASELINE_RESERVATION_LABEL,
+                    executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000}});
+        };
+        const failed = await launch({launcherExit}, {exitCode: 137});
+        assert.deepEqual(failed.failureDiagnostic.launcherExit, launcherExit,
+            "the only account of an unrequested status must survive into the diagnostic");
+
+        /*
+         * A forced teardown means the monitor killed the process, so it cannot also have exited
+         * cleanly - and a clean exit would satisfy the parsing gate by itself, leaving the
+         * teardown branch untested. Both runs below are killed; only the marker differs.
+         */
+        /* The reason is the monitor's, supplied below; the process only has to be a killed one. */
+        const killed = {exitCode: 137, signal: null};
+        const record = {nonce: "b".repeat(32),
+            baseline: {bytes: "11", sha256: "2".repeat(64)},
+            cpu: {bytes: "13", sha256: "3".repeat(64)}};
+        const believed = await launch(
+            {serialCompletion: {record},
+                terminationReason: "post-completion-teardown-timeout"}, killed);
+        assert.notEqual(believed.guest, null,
+            "a believed record is what authorizes the teardown in the first place");
+        const unbelievable = await launch(
+            {serialCompletion: {invalid: "serial-completion-invalid"},
+                terminationReason: "post-completion-teardown-timeout"}, killed);
+        assert.equal(unbelievable.guest, null,
+            "an unbelievable marker authorizes strictly less than no marker at all");
+        assert.equal(Object.hasOwn(unbelievable, "failureDiagnostic"), true);
+    });
+
+    /*
+     * The other half of the carry the Stage 3 corroboration gate depends on. The monitor believes
+     * a marker and the launcher has to hand it outward; the receipt identity is minted here from
+     * the bytes actually read. Every test of the gate itself supplies both directly, so a launcher
+     * that stopped emitting them would leave the gate seeing a run that published nothing - which
+     * a clean exit is allowed to be. Both are emitted only under the Stage 3 reservation label, so
+     * this also pins the condition that keeps ordinary Stage 2 observations unchanged.
+     */
+    it("emits the believed marker and the receipt identity under the Stage 3 reservation", async () => {
+        const produced = successfulGuestOutput();
+        const record = {nonce: "b".repeat(32), baseline: {bytes: "11", sha256: "2".repeat(64)},
+            cpu: {bytes: "13", sha256: "3".repeat(64)}};
+        const monitored = serialCompletion => ({observation: {process: okProcess,
+            stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+        identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+            executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+        qmp: qmpObservation(), absentAfter: true, processGroupGone: true, terminationReason: null,
+        ...(serialCompletion === undefined ? {} : {serialCompletion})});
+        const launch = async reservation => {
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                runOwned: async () => ({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}),
+                runMonitoredQemu: async () => monitored(reservation === undefined ? undefined :
+                    {record: structuredClone(record)}),
+                pathExists: () => false,
+                readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                    ({bytes: Buffer.from(JSON.stringify(produced)), identity: {path: target,
+                        bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)}})
+            }});
+            const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
+                `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+            return await adapter.launchOwnedQemu({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"],
+                ...(reservation === undefined ? {} : {reservation})});
+        };
+        const reserved = await launch({label: STAGE3_BASELINE_RESERVATION_LABEL,
+            executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000});
+        assert.deepEqual(reserved.serialCompletion, {record},
+            "the gate cannot corroborate a marker the launcher never emitted");
+        assert.deepEqual(reserved.cpuReceipt,
+            {bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)},
+            "the receipt identity is the bytes that were read, not a re-derivation");
+        /* An ordinary Stage 2 launch shares this code and must carry neither. */
+        const ordinary = await launch();
+        assert.equal(Object.hasOwn(ordinary, "serialCompletion"), false);
+        assert.equal(Object.hasOwn(ordinary, "cpuReceipt"), false);
     });
 
     it("retains activation and system-tool records from parsed guest output through the hosted launch", async () => {
@@ -2165,6 +2285,13 @@ describe("Stage 3 monitor completion transition", () => {
         baseline: {bytes: "1985", sha256: DIGEST("a")}, cpu: {bytes: "2809", sha256: DIGEST("b")}})}\r\n`;
     const SERIAL_PATH = "/owned/serial.log";
     const EXECUTION_DEADLINE = 100_000;
+    /*
+     * The monitor's clock does not start at zero in a real run, and a fake one that does makes
+     * every relative field indistinguishable from the absolute value it is derived from - an
+     * elapsed time reads the same as a timestamp, a budget the same as a deadline. The origin is
+     * offset so those two can disagree, and the tests below say which one they mean.
+     */
+    const CLOCK_ORIGIN = 500_000;
     const monitorProcess = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
         qemuPid: 2345, qemuPidAbsentAfter: true, qemuStartTicks: "77", processGroupId: 2300,
         launcherExecutablePath: "/owned/loader"};
@@ -2176,11 +2303,13 @@ describe("Stage 3 monitor completion transition", () => {
     const run = async ({serialAt, exitAt = null, exitCode = 0, serialCompletion = true}) => {
         let finish = null;
         const operation = new Promise(resolve => { finish = resolve; });
-        let clock = 0;
+        let clock = CLOCK_ORIGIN;
         let terminationReason = null;
+        /* Every threshold a test states is an offset from the launch, never a point on the clock. */
+        const elapsed = () => clock - CLOCK_ORIGIN;
         const settle = () => finish({process: {...monitorProcess, exitCode,
             cleanupProven: true, treeGone: true}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
-        const advance = () => { if (exitAt !== null && clock >= exitAt) settle(); };
+        const advance = () => { if (exitAt !== null && elapsed() >= exitAt) settle(); };
         const result = await runMonitoredQemu({
             runOwned: (command, argv, options) => {
                 options.onSpawn(2300);
@@ -2194,12 +2323,12 @@ describe("Stage 3 monitor completion transition", () => {
             observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
                 effectiveMemoryBytes: "8589934592"}),
             readOwnedPrefixVerified: () => {
-                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const bytes = Buffer.from(serialAt(elapsed()), "latin1");
                 return {bytes, identity: {path: SERIAL_PATH, bytes: String(bytes.length),
                     sha256: "0".repeat(64), observedBytes: String(bytes.length), truncated: false}};
             },
             readOwnedRangeVerified: (target, start, maximum) => {
-                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const bytes = Buffer.from(serialAt(elapsed()), "latin1");
                 const from = Math.min(start, bytes.length);
                 return {bytes: bytes.subarray(from, Math.min(bytes.length, from + maximum)),
                     identity: {device: "1", inode: "1", observedBytes: String(bytes.length)}};
@@ -2210,7 +2339,7 @@ describe("Stage 3 monitor completion transition", () => {
             terminateQemuGroup: async () => true
         }, {command: "/usr/bin/qemu", argv: [], timeoutMs: 1_000_000, maxStreamBytes: 1_024,
             pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader",
-            executionDeadline: EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
+            executionDeadline: CLOCK_ORIGIN + EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
             ...(serialCompletion ? {serialCompletion: {nonce: MONITOR_NONCE, path: SERIAL_PATH}} : {}),
             resources: {taskPath: "/owned", roots: ["/owned"]}});
         return {result, terminationReason};
@@ -2234,7 +2363,9 @@ describe("Stage 3 monitor completion transition", () => {
 
     it("charges the grace to cleanup rather than extending the execution budget", async () => {
         const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
-        assert.ok(result.serialCompletion.observedAtMs < EXECUTION_DEADLINE);
+        /* An instant on the monitor clock, so it is compared against the deadline instant. */
+        assert.ok(result.serialCompletion.observedAtMs < CLOCK_ORIGIN + EXECUTION_DEADLINE);
+        assert.ok(result.serialCompletion.observedAtMs >= CLOCK_ORIGIN);
     });
 
     it("keeps the ordinary deadline when no record ever appears", async () => {
@@ -2262,6 +2393,150 @@ describe("Stage 3 monitor completion transition", () => {
             serialAt: clock => (clock >= EXECUTION_DEADLINE ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
         assert.equal(result.terminationReason, "deadline");
         assert.equal(result.serialCompletion, undefined);
+    });
+
+    /* The line ending the fixture already uses, so no test below has to spell an escape. */
+    const CRLF = RECORD_LINE.slice(-2);
+
+    /*
+     * A marker the guest emitted but that cannot be believed - malformed, or a second one where
+     * the reviewed producer emits exactly one - is not the same as a guest that emitted none.
+     * Collapsing it into absence hands Stage 3 a run that looks like an ordinary clean exit,
+     * which is the one shape its "a present marker must match" rule can never refuse. It
+     * survives as its own outcome instead, and still authorizes nothing.
+     */
+    it("reports a malformed record as an explicit invalid outcome rather than as absence", async () => {
+        const malformed = `${COMPLETION_RECORD_PREFIX} {"schemaVersion":1,"kind":"wrong"}${CRLF}`;
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 20_000 ? `boot${CRLF}${malformed}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined);
+        assert.equal(result.terminationReason, null, "an unbelievable marker triggers nothing");
+    });
+
+    it("reports a second record as invalid, since the reviewed producer emits one", async () => {
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+    });
+
+    /*
+     * The polling loop stops at process exit, so a record written in the moments before it - or
+     * one whose final newline never arrived - was previously never read at all. A bounded final
+     * drain after settlement reads it. It is evidence for corroboration only: arriving after the
+     * process is gone it can authorize no teardown, and it arms no trigger.
+     */
+    it("drains a record emitted just before exit, without arming the teardown trigger", async () => {
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+        assert.equal(result.serialCompletion.observedAtMs, undefined);
+        assert.notEqual(result.terminationReason, "post-completion-teardown-timeout");
+    });
+
+    it("finalizes a trailing record whose newline never arrived", async () => {
+        const unterminated = RECORD_LINE.slice(0, -2);
+        const {result} = await run({exitAt: 30_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${unterminated}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.record.cpu.sha256, DIGEST("b"));
+    });
+
+    /*
+     * Run 35453004452 died with exit 137 and no reason at all, and establishing even roughly what
+     * had happened cost an evidence download and a screenshot extraction. A UEFI-shell drop has a
+     * name; an installer that wedged past a deadline had none.
+     *
+     * What the status can support is narrow, and the name says only that much. A numeric high
+     * status is consistent with the `timeout` wrapper reaching its own deadline, which reports
+     * 128 plus the signal when that signal is KILL, or with a process returning such a status
+     * itself; the two cannot be told apart here. A child killed by anything else arrives as a
+     * signal rather than a status and never reaches this diagnostic at all. The timing is
+     * attached as evidence for a reader to weigh; the harness attributes nothing, and no status
+     * is treated as special.
+     */
+    it("names a high exit status the monitor did not request, and attributes it to nothing", async () => {
+        for (const exitCode of [129, 137, 143, 255]) {
+            const {result} = await run({serialAt: () => `boot${CRLF}`, exitAt: 30_000, exitCode});
+            assert.equal(result.terminationReason, "launcher-high-exit-status-unattributed", String(exitCode));
+            assert.equal(result.launcherExit.exitStatus, exitCode);
+            assert.equal(result.launcherExit.elapsedMs, 30_000);
+            /*
+             * The budget the launcher itself was given, not the monitor's outer bound. The two
+             * differ by the cleanup allowance, and reporting the outer one beside an exit status
+             * the launcher produced would show a process killed exactly at its deadline as one
+             * that died comfortably inside it - the correlation reversed by the field meant to
+             * carry it.
+             */
+            assert.equal(result.launcherExit.configuredDeadlineMs, EXECUTION_DEADLINE);
+        }
+    });
+
+    it("leaves a reason the monitor chose for itself exactly as it was", async () => {
+        const {result} = await run({serialAt: () => `boot${CRLF}`, exitCode: 137});
+        assert.equal(result.terminationReason, "deadline");
+        assert.equal(result.launcherExit, undefined);
+    });
+
+    it("says nothing about an ordinary exit status", async () => {
+        for (const exitCode of [0, 1, 128]) {
+            const {result} = await run({serialAt: () => `boot${CRLF}`, exitAt: 30_000, exitCode});
+            assert.equal(result.terminationReason, null, String(exitCode));
+            assert.equal(result.launcherExit, undefined);
+        }
+    });
+
+    /*
+     * A second marker that arrives after the first was already believed. The run is exactly as
+     * contradictory as one whose first marker was malformed, and reading a record first earns it
+     * nothing: what the channel now says is that this guest emitted something the reviewed
+     * producer never emits. Believing the earlier one because the drain stopped looking would
+     * hand Stage 3 a marker to corroborate while the evidence against it sat unread.
+     */
+    it("withdraws a believed record when a contradictory one follows it", async () => {
+        const {result} = await run({exitAt: 40_000,
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined,
+            "the earlier record is worth no more for having been read first");
+    });
+
+    /*
+     * The same, on the path the marker itself authorized. A teardown forced by a record cannot
+     * survive that record being contradicted - the authorization and the evidence are the same
+     * claim, so withdrawing one withdraws the other.
+     */
+    it("withdraws the record that authorized a forced teardown when it is contradicted", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}${RECORD_LINE}` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        assert.equal(result.serialCompletion.invalid, "serial-completion-invalid");
+        assert.equal(result.serialCompletion.record, undefined);
+    });
+
+    /*
+     * A channel that fails after a record was already believed. The observer withdraws its own
+     * completion when it fails, so continuing to hold the record here would keep a teardown
+     * authorized by evidence the observer has taken back - and the run would be accepted on a
+     * marker nothing stands behind any more.
+     *
+     * The failure kind stays non-fatal on its own: a broken channel is not proof that the guest
+     * published something wrong, so it is not reported as an unbelievable marker. What it does
+     * mean is that nothing here can vouch for the record, so the record goes.
+     */
+    it("withdraws a believed record when the channel fails after it", async () => {
+        const {result} = await run({
+            serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}\u00ff` :
+                clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
+        assert.equal(result.terminationReason, "post-completion-teardown-timeout");
+        /*
+         * Absent outright, not merely lacking a record: reporting the broken channel as an
+         * unbelievable marker would also leave `.record` undefined, and would be the fatal
+         * treatment this deliberately does not give it.
+         */
+        assert.equal(result.serialCompletion, undefined,
+            "a record the observer withdrew cannot keep authorizing the teardown, and a broken channel is not a marker the guest got wrong");
     });
 
     it("supplies no trigger when the completion channel itself fails", async () => {

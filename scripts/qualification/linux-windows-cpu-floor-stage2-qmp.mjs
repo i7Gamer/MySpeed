@@ -186,6 +186,15 @@ export const WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS = 2_000;
 export const WINPE_DIAGNOSTIC_SUBMIT_QCODE = "ret";
 /* Per-reply allowance and the whole-phase bound, both enforced on every write, read and delay. */
 export const WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS = 10_000;
+/*
+ * One budget for a whole send-key exchange, which is the only bound that can express "this reply
+ * took too long". The per-message deadline bounds a single pipe write and a single chunk read, and
+ * a reply arriving in fragments or behind a steady event stream renews it indefinitely without any
+ * single read ever expiring. Two of them, because an exchange is a write and a reply and each was
+ * already allowed one - so this bounds what was previously unbounded without tightening what was
+ * not, and replaces the second timer that used to race the per-message one at the same value.
+ */
+export const WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS = 2 * WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS;
 export const WINPE_DIAGNOSTIC_PHASE_MILLISECONDS = 60_000;
 /*
  * The phase opens after the +120s frame and must be finished well before the +300s frame that
@@ -515,8 +524,60 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
         }
     }
 
+    /*
+     * The shared reader's terminal state. A bounded session has exactly one reader, so an exchange
+     * that is abandoned while its acknowledgement is still owed leaves an unconsumed reply on that
+     * reader: the next command would read it as its own response, or wait forever for a reply the
+     * orphaned read already took. Neither is recoverable from here, so the reader is closed to all
+     * further traffic instead.
+     *
+     * The trigger is ownership, not timing. A deadline is only one of the ways an exchange can be
+     * abandoned - a phase boundary crossed between a successful write and its reply abandons one
+     * with no timer involved at all. Expiry before a command is issued owes nothing, and expiry
+     * after its acknowledgement is consumed owes nothing; everything between them closes the reader.
+     */
+    let readerAbandoned = null;
+    let responseOwed = false;
+
+    function assertReaderUsable() {
+        if (readerAbandoned === null) return;
+        const error = new Error("QMP reader abandoned an acknowledgement");
+        QMP_ERROR_PROVENANCE.set(error, "qmp-reader-abandoned");
+        throw error;
+    }
+
+    /* Called at the write boundary, once bytes may have left: from here a response is owed. */
+    function markResponseOwed() { responseOwed = true; }
+
+    /*
+     * Called the instant the acknowledgement is read, before anything judges what it says. A reply
+     * that was taken off the reader leaves it in sync whether it carries a result or a refusal, and
+     * a monitor refusal is an ordinary protocol outcome the caller is expected to survive. Owing is
+     * about who holds the reply, not about whether the reply was welcome.
+     */
+    function markResponseConsumed() { responseOwed = false; }
+
+    async function boundedExchange(run) {
+        assertReaderUsable();
+        try {
+            const value = await run();
+            responseOwed = false;
+            return value;
+        } catch (error) {
+            if (responseOwed) readerAbandoned = error;
+            throw error;
+        }
+    }
+
     async function readBounded() {
         while (true) {
+            /*
+             * Rechecked every iteration, not once on entry. The read that was abandoned is still
+             * running here - that is what makes it an orphan - and more bytes arriving would
+             * otherwise have it consume another message and open another `iterator.next()` on a
+             * reader that has already been closed to further traffic.
+             */
+            assertReaderUsable();
             const message = extractOneMessage();
             if (message !== undefined) return message;
             const next = await withDeadline(iterator.next(), dependencies);
@@ -737,18 +798,34 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
             get shutdownRecord() { return shutdownRecord; }};
     }
 
-    return {readBounded, createDispatcher};
+    return {readBounded, createDispatcher, boundedExchange, markResponseOwed, markResponseConsumed};
 }
 
-async function expectResponse(readMessage, id) {
+/*
+ * Why a late-boot milestone has no frame, as a stable identifier rather than a message. The reader
+ * case reuses the mid-window vocabulary, because it is the same condition seen from another loop.
+ */
+const LATE_MILESTONE_DEFAULT_REASON = "milestone-failed";
+function lateMilestoneUnavailableReason(error) {
+    const provenance = error && typeof error === "object" ? QMP_ERROR_PROVENANCE.get(error) : undefined;
+    if (provenance === "qmp-reader-abandoned") return "reader-unavailable";
+    return provenance ?? LATE_MILESTONE_DEFAULT_REASON;
+}
+
+async function expectResponse(readMessage, id, onAcknowledged = () => undefined) {
     while (true) {
         const value = await readMessage();
         if (value.event !== undefined) continue;
         if (value.id !== id) {
+            /*
+             * Deliberately before the notification below: this reply was not ours, so the reply that
+             * is ours is still unread and still owed. A mismatch is a genuine desync.
+             */
             const err = new Error("QMP response is invalid");
             QMP_ERROR_PROVENANCE.set(err, "qmp-id-mismatch");
             throw err;
         }
+        onAcknowledged();
         if (value.error !== undefined) {
             const err = new Error("QMP response is invalid");
             QMP_ERROR_PROVENANCE.set(err, "qmp-error-response");
@@ -856,8 +933,19 @@ async function runSession(input, dependencies, session) {
         const operation = Promise.resolve().then(async () => {
             if (session.expired || session.cancelled) throw new Error("QMP session deadline exceeded");
             beforeWrite();
+            /*
+             * Serialized before the response is owed, not after: a value that cannot be encoded
+             * never reaches the wire, so it owes nothing and must not close the shared reader.
+             */
+            const encoded = Buffer.from(`${JSON.stringify(value)}\n`);
+            /*
+             * Past every pre-write abort, so bytes may now leave and a response becomes owed. A
+             * dispatcher session has its own terminal guard and single-reader admission, so only
+             * the bounded path arms this one.
+             */
+            if (dispatcher === null) messageSource.markResponseOwed();
             try {
-                return await input.writeBytes(Buffer.from(`${JSON.stringify(value)}\n`));
+                return await input.writeBytes(encoded);
             } catch (error) {
                 if (error && typeof error === "object" && !QMP_ERROR_PROVENANCE.has(error)) {
                     QMP_ERROR_PROVENANCE.set(error, "qmp-write-failed");
@@ -886,8 +974,10 @@ async function runSession(input, dependencies, session) {
     const sendAndAwait = async (value, id, timeoutMilliseconds = QMP_MESSAGE_TIMEOUT_MILLISECONDS,
         beforeWrite = () => undefined, deadlineIncludesWrite = false) => {
         if (dispatcher === null) {
-            await write(value, beforeWrite);
-            return await expectResponse(readMessage, id);
+            return await messageSource.boundedExchange(async () => {
+                await write(value, beforeWrite);
+                return await expectResponse(readMessage, id, messageSource.markResponseConsumed);
+            });
         }
         const {entry, responsePromise} = dispatcher.expect(id, timeoutMilliseconds, deadlineIncludesWrite);
         try {
@@ -1049,15 +1139,27 @@ async function runSession(input, dependencies, session) {
              * submit, because there is no next action left to stop and discarding the record would
              * cost the +300s frame the whole phase exists to observe.
              */
+            /*
+             * One budget for the whole exchange, not one timer per half. The inner deadlines bound
+             * a single pipe write and a single chunk read; neither can express "this reply has taken
+             * too long", because `expectResponse` skips QMP events and `readBounded` gives every
+             * chunk a fresh deadline - a fragmented reply or a steady event stream extends one
+             * response indefinitely while no individual read ever expires. Two independently defined
+             * constants of the same value around the same operation raced on registration order and
+             * bounded nothing extra.
+             *
+             * The phase check between the write and the reply is inside the exchange on purpose: if
+             * it throws there, the acknowledgement is owed and unread, and the reader closes.
+             */
             const sendKey = async (qcodes, id, final = false) => {
                 assertPhaseOpen();
-                await withDeadline(write({execute: "send-key", arguments: {
-                    keys: qcodes.map(data => ({type: "qcode", data})),
-                    "hold-time": WINPE_DIAGNOSTIC_HOLD_MILLISECONDS}, id}), dependencies,
-                WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
-                assertPhaseOpen();
-                await withDeadline(expectResponse(readMessage, id), dependencies,
-                    WINPE_DIAGNOSTIC_REPLY_TIMEOUT_MILLISECONDS);
+                await messageSource.boundedExchange(() => withDeadline((async () => {
+                    await write({execute: "send-key", arguments: {
+                        keys: qcodes.map(data => ({type: "qcode", data})),
+                        "hold-time": WINPE_DIAGNOSTIC_HOLD_MILLISECONDS}, id});
+                    assertPhaseOpen();
+                    return await expectResponse(readMessage, id, messageSource.markResponseConsumed);
+                })(), dependencies, WINPE_DIAGNOSTIC_EXCHANGE_BUDGET_MILLISECONDS));
                 record.acknowledgedKeyEvents += 1;
                 return final ? getTime() : assertPhaseOpen();
             };
@@ -1106,9 +1208,17 @@ async function runSession(input, dependencies, session) {
                 predeadlineSettled = true;
                 input.onPredeadlineObservation?.(record);
             };
+            /*
+             * What the failing milestone had already observed when it was abandoned. A milestone
+             * whose `query-status` completed and whose screendump did not really did observe a
+             * status; one abandoned before `query-status` observed nothing at all. The two are
+             * recorded as different shapes rather than one shape with invented fields.
+             */
+            let observedStatus = null;
             try {
                 for (let i = 0; i < MAX_LATE_BOOT_MILESTONES; i += 1) {
                     if (session.cancelled || session.expired) break;
+                    observedStatus = null;
                     const targetOffset = LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS[i];
                     const elapsed = getTime() - sessionStartTime;
                     const remaining = Math.max(0, targetOffset - elapsed);
@@ -1117,6 +1227,7 @@ async function runSession(input, dependencies, session) {
                     const milestoneIndex = i + 1;
                     const statusId = `late-status-${milestoneIndex}`;
                     const lateStatus = await sendAndAwait({execute: "query-status", id: statusId}, statusId);
+                    observedStatus = lateStatus;
                     if (session.cancelled || session.expired) break;
                     const screenshotId = `late-screenshot-${milestoneIndex}`;
                     await sendAndAwait({execute: "screendump", arguments: {
@@ -1129,6 +1240,7 @@ async function runSession(input, dependencies, session) {
                         running: lateStatus.running,
                         screenshotPath: lateScreenshotPaths[i]
                     }));
+                    observedStatus = null;
                     /*
                      * The one window: after the first frame is on disk and before the wait for the
                      * second one starts. Its own failure never breaks the milestone loop, because
@@ -1144,9 +1256,36 @@ async function runSession(input, dependencies, session) {
                         try { winpeDiagnosticRecord = await runWinpeDiagnostic(); }
                         catch { winpeDiagnosticRecord = null; }
                 }
-            } catch {
-                /* any milestone failure terminates the milestone loop */
+            } catch (error) {
+                /*
+                 * Any milestone failure terminates the milestone loop - but the milestones it did
+                 * not reach must still say so. Dropping them makes an abandoned frame and a frame
+                 * that was never due indistinguishable, and the list `validateLateBoot` accepts is
+                 * dense and positional: a slot cannot be omitted and then reappear later. So every
+                 * remaining slot is filled in place, carrying only what was actually observed.
+                 */
                 if (midWindow !== null) optionalContinuationUnsafe = true;
+                const reason = lateMilestoneUnavailableReason(error);
+                const abandonedIndex = milestones.length;
+                /*
+                 * Only a loop that observed something backfills. A late-boot phase that failed on
+                 * its very first command observed nothing at all, and `null` is already this
+                 * record's way of saying so - a list of nothing but gaps would assert that two
+                 * milestones were missed, which is no more true than it is useful.
+                 */
+                const observedAnything = abandonedIndex > 0 || observedStatus !== null;
+                for (let i = observedAnything ? abandonedIndex : MAX_LATE_BOOT_MILESTONES;
+                    i < MAX_LATE_BOOT_MILESTONES; i += 1) {
+                    /* Only the milestone that was interrupted can have observed anything. */
+                    const partial = i === abandonedIndex && observedStatus !== null ?
+                        {status: observedStatus.status, running: observedStatus.running} : {};
+                    milestones.push(Object.freeze({
+                        milestone: i + 1,
+                        offsetMs: LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS[i],
+                        ...partial,
+                        unavailable: Object.freeze({reason})
+                    }));
+                }
             }
 
             // Late boot observation settles promptly at Milestone 2 (300s) - never held hostage by predeadline!

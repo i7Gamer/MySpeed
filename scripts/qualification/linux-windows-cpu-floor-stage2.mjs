@@ -108,6 +108,21 @@ export const STAGE2_DIAGNOSTIC_DEADLINES = Object.freeze({executionMinutes: 25, 
 const MAX_LATE_BOOT_SCREENSHOT_BYTES = 1_048_576;
 const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREENSHOT_BYTES / 3) * 4;
 const MAX_LATE_BOOT_MILESTONES = 2;
+/* Why a milestone has no frame is a short stable identifier, not a message, and is bounded as one. */
+const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
+/*
+ * The range of statuses this diagnostic is emitted and accepted for, defined once. The producer
+ * in the hosted launcher and the validator here have to agree exactly: a producer bound below
+ * the validator's would emit records the validator refuses, and a validator bound below the
+ * producer's would admit a hand-built or retained record labelling an ordinary exit as one the
+ * monitor never asked for. Two copies of the same number in two modules is how that drifts.
+ *
+ * The lower bound is one above the signal-reporting base, because an ordinary exit is not a
+ * status the monitor failed to ask for. The upper is simply what a process exit status is.
+ */
+const SIGNAL_STATUS_BASE = 128;
+export const MIN_UNATTRIBUTED_EXIT_STATUS = SIGNAL_STATUS_BASE + 1;
+export const MAX_EXIT_STATUS = 255;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);
@@ -1780,6 +1795,28 @@ export function validateQmpShutdownEventDiagnostic(value) {
     return deepFreeze(structuredClone(value));
 }
 
+/*
+ * Why QEMU's exit status was not one the monitor asked for, and the timing a reader needs to weigh
+ * it. Failure-only and optional, so every failure diagnostic retained before it existed still
+ * replays. It states what was observed and attributes nothing: `exitStatus` is the status itself,
+ * and `elapsedMs` alongside `configuredDeadlineMs` - both milliseconds on the monitor's own clock,
+ * measured from the launcher's spawn - is the correlation, not a cause.
+ */
+export function validateLauncherExitDiagnostic(value) {
+    assertKeys(value, ["configuredDeadlineMs", "elapsedMs", "exitStatus", "kind", "lastMilestone", "schemaVersion"],
+        "QEMU launcher exit diagnostic");
+    const bounded = item => Number.isSafeInteger(item) && item >= 0;
+    if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launcher-exit-diagnostic" ||
+        !Number.isSafeInteger(value.exitStatus) || value.exitStatus < MIN_UNATTRIBUTED_EXIT_STATUS ||
+        value.exitStatus > MAX_EXIT_STATUS ||
+        !bounded(value.elapsedMs) || !bounded(value.configuredDeadlineMs) ||
+        (value.lastMilestone !== null &&
+            (!Number.isSafeInteger(value.lastMilestone) || value.lastMilestone < 1 ||
+                value.lastMilestone > MAX_LATE_BOOT_MILESTONES)))
+        throw new TypeError("QEMU launcher exit diagnostic is invalid");
+    return deepFreeze(structuredClone(value));
+}
+
 export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     /*
      * New serial records carry a bounded prefix and explicit status; an empty prefix proves only
@@ -1793,7 +1830,9 @@ export function validateQemuLaunchDiagnostic(value, process, expectedNonce) {
     if (Object.hasOwn(value ?? {}, "midWindowFrames")) diagnosticKeys.push("midWindowFrames");
     if (Object.hasOwn(value ?? {}, "shutdown")) diagnosticKeys.push("shutdown");
     if (Object.hasOwn(value ?? {}, "qmpShutdownEvent")) diagnosticKeys.push("qmpShutdownEvent");
+    if (Object.hasOwn(value ?? {}, "launcherExit")) diagnosticKeys.push("launcherExit");
     assertKeys(value, diagnosticKeys, "QEMU failure diagnostic");
+    if (Object.hasOwn(value, "launcherExit")) validateLauncherExitDiagnostic(value.launcherExit);
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== "qemu-launch-failure-diagnostic" ||
         !same(value.process, process)) throw new TypeError("QEMU failure diagnostic identity is invalid");
     assertKeys(value.processFlags, ["errorObserved", "stderrOverflow", "stdoutOverflow"], "QEMU process flags");
@@ -1886,9 +1925,29 @@ export function validateLateBoot(value, pathsValue) {
         value.milestones.length > MAX_LATE_BOOT_MILESTONES)
         throw new TypeError("QEMU late-boot observation is invalid");
     for (const [index, item] of value.milestones.entries()) {
-        assertKeys(item, ["milestone", "offsetMs", "running", "screenshot", "status"], "QEMU late-boot milestone");
         const expectedMilestone = index + 1;
         const expectedOffset = LATE_BOOT_OFFSETS[index];
+        /*
+         * A milestone the session could not complete keeps its slot rather than shortening the
+         * list, because the list is positional and a gap is indistinguishable from a milestone that
+         * was never due. It is validated as its own exact shape, not as a captured milestone with
+         * optional fields: an unobserved milestone has no status and no frame, and a list that
+         * admitted either alongside `unavailable` would admit a fabricated one.
+         */
+        if (Object.hasOwn(item, "unavailable")) {
+            const observedStatus = Object.hasOwn(item, "status");
+            assertKeys(item, observedStatus ? ["milestone", "offsetMs", "running", "status", "unavailable"] :
+                ["milestone", "offsetMs", "unavailable"], "QEMU late-boot milestone");
+            assertKeys(item.unavailable, ["reason"], "QEMU late-boot milestone reason");
+            if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
+                typeof item.unavailable.reason !== "string" || item.unavailable.reason.length < 1 ||
+                item.unavailable.reason.length > MAX_LATE_BOOT_REASON_CHARACTERS ||
+                (observedStatus && (typeof item.running !== "boolean" ||
+                    typeof item.status !== "string" || item.status.length < 1)))
+                throw new TypeError("QEMU late-boot milestone is invalid");
+            continue;
+        }
+        assertKeys(item, ["milestone", "offsetMs", "running", "screenshot", "status"], "QEMU late-boot milestone");
         if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
             typeof item.running !== "boolean" || typeof item.status !== "string" || item.status.length < 1)
             throw new TypeError("QEMU late-boot milestone is invalid");
