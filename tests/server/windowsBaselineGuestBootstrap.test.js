@@ -854,6 +854,7 @@ describe("Windows baseline guest producer-to-parser contract", () => {
     const {COMPLETION_RECORD_KIND, COMPLETION_RECORD_PREFIX, MAX_COMPLETION_RECORD_BYTES,
         COMPLETION_EMISSION_FUNCTION, COMPLETION_EMISSION_METHOD_HANDLE, COMPLETION_EMISSION_METHOD_PORT,
         COMPLETION_SERIAL_DEVICE, COMPLETION_SERIAL_PORT_NAME, MAX_COMPLETION_EMISSION_FAILURE_CHARACTERS,
+        MAX_FAILURE_CHARACTERS: BASELINE_MAX_FAILURE_CHARACTERS,
         SHUTDOWN_STAGE} = WINDOWS_BASELINE_BOOTSTRAP_CONSTANTS;
     const OBSERVED_BASELINE = JSON.stringify({schemaVersion: 1, profile: "baseline-cpu", status: "observed",
         cleanupProven: true, failure: null});
@@ -1006,6 +1007,30 @@ describe("Windows baseline guest producer-to-parser contract", () => {
             "unspecified failure", "real failure", "real", "x".repeat(bound - 2)]);
         for (const reason of observed) assert.equal(reason, reason.trim());
     });
+
+    /*
+     * The sibling of the reason sanitizer, and it had the same gap: Get-MyspeedBaselineDiagnosticText
+     * trims before the cut but not after, so a stderr tail whose bound falls on whitespace reaches the
+     * diagnostic with trailing spaces. Same shape as the reason bug, same fix, pinned the same way.
+     */
+    it("trims the executor diagnostic on both sides of the bound", () => {
+        const source = render().toString("utf8");
+        assert.ok(source.includes("$text=$text.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS).Trim()"));
+    });
+
+    it("never lets a whitespace-only executor diagnostic reach the record",
+        {skip: !HAS_INBOX_POWERSHELL}, () => {
+            const bound = BASELINE_MAX_FAILURE_CHARACTERS;
+            /* Empty, control-only, ordinary, and one that goes blank only at the cut. */
+            const cases = ["@()", "[byte[]]@(13,10,9)", "[Text.Encoding]::UTF8.GetBytes('real detail')",
+                `[Text.Encoding]::UTF8.GetBytes(('x'*${bound - 2})+'  y')`];
+            const observed = runLibraryHarness("myspeed-baseline-diagnostic-text-",
+                `@(${cases.join(",")})|ForEach-Object{Get-MyspeedBaselineDiagnosticText $_}|` +
+                "ConvertTo-Json -Compress\r\n");
+            /* A null result drops out of the pipeline, so only the two non-empty cases survive. */
+            assert.deepEqual(observed, ["real detail", "x".repeat(bound - 2)]);
+            for (const text of observed) assert.equal(text, text.trim());
+        });
 
     it("reports both mechanisms' bounded failures without throwing when no port answers",
         {skip: !HAS_INBOX_POWERSHELL}, () => {

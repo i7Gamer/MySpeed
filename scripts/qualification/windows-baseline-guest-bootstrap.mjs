@@ -283,8 +283,14 @@ export function renderWindowsBaselineGuestBootstrap(bindings) {
         `finally{$stream.Dispose()}}\r\n` +
         `function Get-MyspeedBaselineDiagnosticText([byte[]]$Bytes){if($null-eq$Bytes-or$Bytes.Length-eq 0){return $null};` +
         `try{$text=[Text.UTF8Encoding]::new($false,$true).GetString($Bytes)}catch{return $null};` +
+        /*
+         * Trimmed on both sides of the cut, for the reason the sibling sanitizer states: collapsing
+         * a run of control characters leaves a single space, and cutting at the bound strands
+         * trailing ones. Either way a diagnostic that carries nothing a reader can use would still
+         * be non-empty, and would displace the generic message that at least names the failure.
+         */
         `$text=[regex]::Replace($text,'[\\x00-\\x1f\\x7f]+',' ').Trim();if($text.Length-gt` +
-        `$BASELINE_MAX_FAILURE_CHARACTERS){$text=$text.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS)};` +
+        `$BASELINE_MAX_FAILURE_CHARACTERS){$text=$text.Substring(0,$BASELINE_MAX_FAILURE_CHARACTERS).Trim()};` +
         `if($text.Length-eq 0){return $null};return $text}\r\n` +
         `function Throw-MyspeedBaselineExecutorFailure([string]$Message,[object[]]$Diagnostics,[string]$Context){` +
         `if($Context){$remaining=$BASELINE_MAX_FAILURE_CHARACTERS-[Math]::Min($Message.Length,$BASELINE_MAX_FAILURE_CHARACTERS);` +
