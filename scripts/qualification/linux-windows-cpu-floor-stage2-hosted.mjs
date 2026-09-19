@@ -1814,7 +1814,14 @@ export async function runMonitoredQemu(io, request) {
             exitStatus,
             /* Both measured on the monitor's own clock, from the moment the launcher was spawned. */
             elapsedMs: io.monotonicMilliseconds() - launchStartedAt,
-            configuredDeadlineMs: request.timeoutMs,
+            /*
+             * The budget the launcher itself was given, which is the execution deadline - not the
+             * monitor's own outer bound, which is that deadline plus the cleanup allowance. Beside
+             * an exit status the launcher produced, the outer bound would show a process killed at
+             * the instant its deadline expired as one that died minutes inside it, reversing the
+             * very correlation this field exists to let a reader draw.
+             */
+            configuredDeadlineMs: request.executionDeadline - launchStartedAt,
             lastMilestone: finalLateBoot?.milestones?.at(-1)?.milestone ?? null
         };
         terminationReasons.push(LAUNCHER_HIGH_EXIT_REASON);

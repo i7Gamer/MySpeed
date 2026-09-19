@@ -2328,7 +2328,14 @@ describe("Stage 3 monitor completion transition", () => {
             assert.equal(result.terminationReason, "launcher-high-exit-status-unattributed", String(exitCode));
             assert.equal(result.launcherExit.exitStatus, exitCode);
             assert.equal(result.launcherExit.elapsedMs, 30_000);
-            assert.equal(result.launcherExit.configuredDeadlineMs, 1_000_000);
+            /*
+             * The budget the launcher itself was given, not the monitor's outer bound. The two
+             * differ by the cleanup allowance, and reporting the outer one beside an exit status
+             * the launcher produced would show a process killed exactly at its deadline as one
+             * that died comfortably inside it - the correlation reversed by the field meant to
+             * carry it.
+             */
+            assert.equal(result.launcherExit.configuredDeadlineMs, EXECUTION_DEADLINE);
         }
     });
 
