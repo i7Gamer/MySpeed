@@ -988,6 +988,11 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
         assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
             {...captured(2), unavailable: {reason: "reader-unavailable"}}]}, paths()), /late-boot/u);
         assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
+            {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1],
+                /* Dispatcher-internal, which no record of this family discloses. */
+                unavailable: {reason: "dispatcher-terminal"}}]}, paths()),
+    /invalid/u);
+        assert.throws(() => validateLateBoot({...base, milestones: [captured(1),
             {milestone: 2, offsetMs: LATE_BOOT_OFFSETS[1], unavailable: {reason: ""}}]}, paths()),
         /late-boot/u);
         /* The slot still has to be the one it claims to be. */

@@ -6,6 +6,7 @@ import {
     INSTALLER_BOOT_CONFIRMATION,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     LATE_BOOT_MILESTONE_OFFSETS_MILLISECONDS,
+    LATE_MILESTONE_UNAVAILABLE_REASONS,
     PREDEADLINE_FRAME_COMMAND_TIMEOUT_MILLISECONDS,
     WINPE_DIAGNOSTIC_CONFIRMATION,
     WINPE_DIAGNOSTIC_CONSOLE_OPEN_MILLISECONDS,
@@ -49,7 +50,7 @@ const FLOOD_FRAGMENT_BYTES = 4_096;
 const FRAGMENTS_BEFORE_ABANDON = 3;
 const ORPHAN_OBSERVATION_MILLISECONDS = 50;
 
-function transport(responses, stallWrite = null, flood = null, slowFlood = null) {
+function transport(responses, stallWrite = null, flood = null, slowFlood = null, failWrite = null) {
     /*
      * A fake QMP transport rather than a canned array: the diagnostic writes 85 commands whose ids
      * are derived, so the transcript has to answer what was actually written. `responses` overrides
@@ -99,6 +100,8 @@ function transport(responses, stallWrite = null, flood = null, slowFlood = null)
         writes.push(value);
         /* A pipe write that never settles: the bytes may already be gone, so a reply is owed. */
         if (value.id === stallWrite) return new Promise(() => undefined);
+        /* A write that fails outright, which the session tags with its own provenance. */
+        if (value.id === failWrite) throw new Error("pipe write failed");
         if (slowFlood !== null && value.id === slowFlood.id) { slowFlooding = true; return; }
         if (flood !== null && value.id === flood.id) { flooding = flood.kind; return; }
         const override = responses?.[value.id];
@@ -125,8 +128,8 @@ const STATUS_RESPONSES = {
  * it by waiting ten seconds. Every existing test leaves `timers` unset and keeps its real timers.
  */
 async function runDiagnosticSession({responses, authorization = AUTHORIZATION, clock, nowHook,
-    timers, stallWrite, flood, slowFlood} = {}) {
-    const bus = transport({...responses, ...STATUS_RESPONSES}, stallWrite, flood, slowFlood);
+    timers, stallWrite, flood, slowFlood, failWrite} = {}) {
+    const bus = transport({...responses, ...STATUS_RESPONSES}, stallWrite, flood, slowFlood, failWrite);
     let now = 0;
     let nowReads = 0;
     const waits = [];
@@ -564,6 +567,26 @@ describe("WinPE answer-file diagnostic never costs the frame it exists to observ
         assert.equal(issued.includes("late-status-2"), false, "no command may follow an abandoned write");
         assert.equal(session.late.milestones.length, 2);
         assert.equal(session.late.milestones[1].unavailable.reason, "reader-unavailable");
+    });
+
+    /*
+     * The milestone record publishes a closed vocabulary, and what it discloses is what the
+     * optional frames disclose: the provenance that names what happened to this command. Nothing
+     * else records that, so collapsing it into the generic reason would lose the only account of
+     * why the milestone was missed.
+     */
+    it("publishes the specific cause of a milestone its own command lost", async () => {
+        let watchdog;
+        const running = runDiagnosticSession({failWrite: "late-status-2"});
+        const session = await Promise.race([running, new Promise((resolve, reject) => {
+            watchdog = setTimeout(() => reject(new Error("the failed write never settled")),
+                SETTLEMENT_WATCHDOG_MILLISECONDS);
+        })]).finally(() => clearTimeout(watchdog));
+        assert.equal(session.late.milestones[1].unavailable.reason, "qmp-write-failed",
+            "a write that failed is the reason, and the record is the only place it is said");
+        assert.equal(LATE_MILESTONE_UNAVAILABLE_REASONS.includes(
+            session.late.milestones[1].unavailable.reason), true,
+            "and it has to be a reason the record is allowed to publish");
     });
 
     it("stops when the phase closes between a write and its reply, with no deadline involved", async () => {

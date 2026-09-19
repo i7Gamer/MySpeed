@@ -5,7 +5,8 @@ import {validateHostedContext} from "./linux-kvm-capability.mjs";
 import {STAGE2_LIMITS} from "./linux-windows-cpu-floor-admission.mjs";
 import {validateInstallerBootConfirmation, validateInstallerBootInput,
     validateWinpeDiagnosticAuthorization, validateWinpeDiagnosticInput, winpeDiagnosticScriptName,
-    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES, QMP_SHUTDOWN_CAUSES} from
+    MID_WINDOW_SAMPLE_OFFSETS_MILLISECONDS, MID_WINDOW_FRAME_FILENAMES, QMP_SHUTDOWN_CAUSES,
+    LATE_MILESTONE_UNAVAILABLE_REASONS} from
     "./linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaseCalibrationHandoff,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
@@ -108,8 +109,7 @@ export const STAGE2_DIAGNOSTIC_DEADLINES = Object.freeze({executionMinutes: 25, 
 const MAX_LATE_BOOT_SCREENSHOT_BYTES = 1_048_576;
 const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREENSHOT_BYTES / 3) * 4;
 const MAX_LATE_BOOT_MILESTONES = 2;
-/* Why a milestone has no frame is a short stable identifier, not a message, and is bounded as one. */
-const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
+
 /*
  * The range of statuses this diagnostic is emitted and accepted for, defined once. The producer
  * in the hosted launcher and the validator here have to agree exactly: a producer bound below
@@ -1940,8 +1940,7 @@ export function validateLateBoot(value, pathsValue) {
                 ["milestone", "offsetMs", "unavailable"], "QEMU late-boot milestone");
             assertKeys(item.unavailable, ["reason"], "QEMU late-boot milestone reason");
             if (item.milestone !== expectedMilestone || item.offsetMs !== expectedOffset ||
-                typeof item.unavailable.reason !== "string" || item.unavailable.reason.length < 1 ||
-                item.unavailable.reason.length > MAX_LATE_BOOT_REASON_CHARACTERS ||
+                !LATE_MILESTONE_UNAVAILABLE_REASONS.includes(item.unavailable.reason) ||
                 (observedStatus && (typeof item.running !== "boolean" ||
                     typeof item.status !== "string" || item.status.length < 1)))
                 throw new TypeError("QEMU late-boot milestone is invalid");

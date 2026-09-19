@@ -807,6 +807,19 @@ function createQmpMessageSource(readable, dependencies, bounds = {}) {
  */
 const LATE_MILESTONE_DEFAULT_REASON = "milestone-failed";
 /*
+ * The session provenances this record publishes verbatim, which are exactly the ones the
+ * optional frames already publish. They name a specific thing that happened to this milestone's
+ * own command, and collapsing them into the generic reason would throw away the only account of
+ * it - the same mistake the predeadline vocabulary carries a comment about having made once.
+ *
+ * What is left out is the continuous dispatcher's internal vocabulary, which is deliberately not
+ * disclosed by any of these records; it is reported generically, exactly as the frames report it.
+ */
+const DISCLOSED_MILESTONE_PROVENANCE = Object.freeze([
+    "qmp-write-failed", "qmp-stream-ended", "qmp-error-response", "qmp-id-mismatch"]);
+export const LATE_MILESTONE_UNAVAILABLE_REASONS = Object.freeze([
+    LATE_MILESTONE_DEFAULT_REASON, "reader-unavailable", ...DISCLOSED_MILESTONE_PROVENANCE]);
+/*
  * The same condition, in the vocabulary the optional frames publish. Their raw provenance is
  * internal: the hosted collectors admit only a closed set and coerce anything else to
  * `command-failed`, which would tell a reader the monitor refused a command when the session never
@@ -818,8 +831,14 @@ function optionalFrameReason(provenance) {
 }
 function lateMilestoneUnavailableReason(error) {
     const provenance = error && typeof error === "object" ? QMP_ERROR_PROVENANCE.get(error) : undefined;
+    /*
+     * A closed reader has its own name. Anything this record discloses is published as it is,
+     * because it says what happened to this milestone's command and nothing else records that.
+     * Anything else is dispatcher-internal and is reported generically rather than leaked.
+     */
     if (provenance === "qmp-reader-abandoned") return "reader-unavailable";
-    return provenance ?? LATE_MILESTONE_DEFAULT_REASON;
+    return DISCLOSED_MILESTONE_PROVENANCE.includes(provenance) ?
+        provenance : LATE_MILESTONE_DEFAULT_REASON;
 }
 
 async function expectResponse(readMessage, id, onAcknowledged = () => undefined) {
