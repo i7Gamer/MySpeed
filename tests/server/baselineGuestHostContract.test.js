@@ -42,7 +42,6 @@ const CANDIDATE_FILE_SHA = SHA("d");
 const CANDIDATE_BYTES = "524288";
 const IMAGE_VERSION = "20260901.1";
 const WALL_DEADLINE_MILLISECONDS = Date.parse("2026-09-16T13:20:00Z");
-const SCENARIOS = ["populated-first-boot", "populated-restart", "fresh-no-config-reset"];
 
 /* The one context. Both sides below are derived from exactly this object. */
 const hostedContext = () => ({schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: HARNESS_SOURCE_SHA,
