@@ -187,6 +187,34 @@ describe("baseline guest to Stage 3 host contract", () => {
             WINDOWS_BASELINE_GUEST_EXECUTOR_CONSTANTS.MAX_PROBE_BYTES);
     });
 
+    /*
+     * No shipped module may carry a raw control byte.
+     *
+     * These files are full of character-class regexes, and writing one with a literal byte rather
+     * than its escape does not change the regex - it changes the file. Git stops calling the blob
+     * text, which silently disables the repository's line-ending normalization for it, and diff,
+     * blame and patch all stop rendering it. The damage is invisible at the point it is made.
+     *
+     * Checked by character code rather than by a regex, so this guard cannot acquire the very
+     * escape it exists to catch. Tab, newline and carriage return are the legitimate ones.
+     */
+    it("ships no module carrying a raw control byte", () => {
+        const TAB = 9; const LINE_FEED = 10; const CARRIAGE_RETURN = 13;
+        const FIRST_PRINTABLE = 32; const DELETE = 127;
+        const forbidden = code => code === DELETE ||
+            (code < FIRST_PRINTABLE && code !== TAB && code !== LINE_FEED && code !== CARRIAGE_RETURN);
+        const offenders = [];
+        for (const relative of WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS) {
+            const source = fs.readFileSync(path.join(REPOSITORY_ROOT, relative), "latin1");
+            for (let index = 0; index < source.length; index += 1) {
+                if (!forbidden(source.charCodeAt(index))) continue;
+                offenders.push(`${relative} offset ${index} code ${source.charCodeAt(index)}`);
+                break;
+            }
+        }
+        assert.deepEqual(offenders, [], "write the escape, not the byte");
+    });
+
     it("ships every module the guest executor imports", () => {
         const shipped = new Set(WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS);
         const root = path.join(QUALIFICATION_ROOT, "windows-baseline-guest-executor.mjs");
