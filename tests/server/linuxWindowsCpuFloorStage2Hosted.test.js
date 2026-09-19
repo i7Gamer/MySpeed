@@ -2530,8 +2530,13 @@ describe("Stage 3 monitor completion transition", () => {
             serialAt: clock => (clock >= 30_000 ? `boot${CRLF}${RECORD_LINE}\u00ff` :
                 clock >= 20_000 ? `boot${CRLF}${RECORD_LINE}` : `boot${CRLF}`)});
         assert.equal(result.terminationReason, "post-completion-teardown-timeout");
-        assert.equal(result.serialCompletion?.record, undefined,
-            "a record the observer withdrew cannot keep authorizing the teardown");
+        /*
+         * Absent outright, not merely lacking a record: reporting the broken channel as an
+         * unbelievable marker would also leave `.record` undefined, and would be the fatal
+         * treatment this deliberately does not give it.
+         */
+        assert.equal(result.serialCompletion, undefined,
+            "a record the observer withdrew cannot keep authorizing the teardown, and a broken channel is not a marker the guest got wrong");
     });
 
     it("supplies no trigger when the completion channel itself fails", async () => {

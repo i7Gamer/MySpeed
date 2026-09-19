@@ -110,14 +110,19 @@ const MAX_LATE_BOOT_SCREENSHOT_BASE64_CHARACTERS = Math.ceil(MAX_LATE_BOOT_SCREE
 const MAX_LATE_BOOT_MILESTONES = 2;
 /* Why a milestone has no frame is a short stable identifier, not a message, and is bounded as one. */
 const MAX_LATE_BOOT_REASON_CHARACTERS = 64;
-/* A process exit status is a byte, whatever produced it. */
-const MAX_EXIT_STATUS = 255;
 /*
- * The producer emits this diagnostic only for a status above the signal-reporting base, because
- * an ordinary exit is not a status the monitor failed to ask for. Accepting a lower one here
- * would let a retained or hand-built diagnostic label a perfectly ordinary exit as unattributed.
+ * The range of statuses this diagnostic is emitted and accepted for, defined once. The producer
+ * in the hosted launcher and the validator here have to agree exactly: a producer bound below
+ * the validator's would emit records the validator refuses, and a validator bound below the
+ * producer's would admit a hand-built or retained record labelling an ordinary exit as one the
+ * monitor never asked for. Two copies of the same number in two modules is how that drifts.
+ *
+ * The lower bound is one above the signal-reporting base, because an ordinary exit is not a
+ * status the monitor failed to ask for. The upper is simply what a process exit status is.
  */
-const MIN_UNATTRIBUTED_EXIT_STATUS = 129;
+const SIGNAL_STATUS_BASE = 128;
+export const MIN_UNATTRIBUTED_EXIT_STATUS = SIGNAL_STATUS_BASE + 1;
+export const MAX_EXIT_STATUS = 255;
 const LATE_BOOT_OFFSETS = Object.freeze([120_000, 300_000]);
 
 export const PREDEADLINE_FRAME_STATUSES = Object.freeze(["captured", "skipped", "unavailable", "malformed"]);

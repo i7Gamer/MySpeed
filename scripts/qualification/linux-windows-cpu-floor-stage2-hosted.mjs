@@ -14,6 +14,7 @@ import {GUEST_FAILURE_FALLBACK_NAME, MAX_GUEST_BYTES, MAX_GUEST_SHUTDOWN_BYTES, 
     MID_WINDOW_FRAME_SKIPPED_REASONS,
     MID_WINDOW_FRAME_UNAVAILABLE_REASONS,
     MID_WINDOW_FRAME_MALFORMED_REASONS,
+    MAX_EXIT_STATUS, MIN_UNATTRIBUTED_EXIT_STATUS,
     STAGE2_PROVENANCE, TOP_LEVEL_PACKAGE_PINS, WINPE_DIAGNOSTIC_MEMBERS,
     WINPE_DIAGNOSTIC_OUTPUT_MARKER_NAME, validateWindowsSystemTools,
     validateQmpShutdownEventDiagnostic,
@@ -1823,7 +1824,7 @@ export async function runMonitoredQemu(io, request) {
     let launcherExit = null;
     const exitStatus = observation?.process?.exitCode;
     if (terminationReasons.length === 0 && launchStartedAt !== null && Number.isSafeInteger(exitStatus) &&
-        exitStatus >= LOWEST_UNATTRIBUTED_EXIT_STATUS && exitStatus <= HIGHEST_EXIT_STATUS) {
+        exitStatus >= MIN_UNATTRIBUTED_EXIT_STATUS && exitStatus <= MAX_EXIT_STATUS) {
         launcherExit = {
             schemaVersion: 1,
             kind: "qemu-launcher-exit-diagnostic",
@@ -3399,9 +3400,7 @@ export const POST_COMPLETION_TERMINATION_REASON = "post-completion-teardown-time
  * from that convention rather than from any particular status, so none of them is special-cased.
  */
 export const LAUNCHER_HIGH_EXIT_REASON = "launcher-high-exit-status-unattributed";
-const SIGNAL_STATUS_BASE = 128;
-const LOWEST_UNATTRIBUTED_EXIT_STATUS = SIGNAL_STATUS_BASE + 1;
-const HIGHEST_EXIT_STATUS = 255;
+
 /*
  * Only the Stage 3 baseline launch observes completion records, and it is bound to its own
  * reservation label rather than to a request flag any caller could set. Kept as a literal here
