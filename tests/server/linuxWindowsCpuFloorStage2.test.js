@@ -24,6 +24,7 @@ import {
     validateGuestFailure,
     validateLateBoot,
     validateLauncherExitDiagnostic,
+    validateQemuLaunchDiagnostic,
     validatePackageClosure,
     selectWindowsImage
 } from "../../scripts/qualification/linux-windows-cpu-floor-stage2.mjs";
@@ -1021,6 +1022,33 @@ describe("hosted Windows CPU-floor Stage 2 runnable preparation", () => {
             {...valid, extra: true}
         ]) assert.throws(() => validateLauncherExitDiagnostic(invalid), /launcher exit diagnostic/u,
         JSON.stringify(invalid));
+    });
+
+    /*
+     * The validator above is only worth having if the diagnostic that carries the field runs it.
+     * Admitting the key and checking what is under it are separate lines, and the first passing
+     * without the second would let an unchecked timing claim through wearing a checked one's
+     * shape - the exact failure the validator exists to prevent.
+     */
+    it("runs the launcher exit validator from the launch diagnostic that admits the key", () => {
+        const process = {exitCode: 137, signal: null, timedOut: false, cleanupProven: true,
+            treeGone: true, qemuPid: 12345, qemuStartTicks: "1000",
+            launcherExecutablePath: "/usr/bin/qemu-system-x86_64", processGroupId: 12345,
+            qemuPidAbsentAfter: true, terminationReason: "launcher-high-exit-status-unattributed"};
+        const diagnostic = launcherExit => ({schemaVersion: 1, kind: "qemu-launch-failure-diagnostic",
+            process, processFlags: {errorObserved: false, stdoutOverflow: false, stderrOverflow: false},
+            monitorFailure: null, stderr: {bytes: "0",
+                sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                bytesBase64: ""}, launcherExit});
+        const sound = {schemaVersion: 1, kind: "qemu-launcher-exit-diagnostic", exitStatus: 137,
+            elapsedMs: 1_482_000, configuredDeadlineMs: 1_500_000, lastMilestone: null};
+        assert.deepEqual(validateQemuLaunchDiagnostic(diagnostic(sound), process, NONCE).launcherExit,
+            sound);
+        for (const broken of [{...sound, elapsedMs: -1}, {...sound, exitStatus: 256},
+            {...sound, configuredDeadlineMs: null}, {...sound, lastMilestone: 3},
+            {...sound, extra: true}])
+            assert.throws(() => validateQemuLaunchDiagnostic(diagnostic(broken), process, NONCE),
+                /launcher exit diagnostic/u, JSON.stringify(broken));
     });
 
     it("instantiates typed GuestBootstrapError and QemuLaunchError with failure diagnostics", () => {

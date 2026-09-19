@@ -1060,6 +1060,74 @@ describe("hosted Stage 2 native adapter preparation", () => {
      * a clean exit is allowed to be. Both are emitted only under the Stage 3 reservation label, so
      * this also pins the condition that keeps ordinary Stage 2 observations unchanged.
      */
+    /*
+     * Two wirings in the hosted launcher that nothing else pins.
+     *
+     * The launcher exit record is evidence about a failure, and a failure is the only time it is
+     * attached; dropping it from the diagnostic loses the one account of a status the monitor did
+     * not ask for, which is precisely why it was added.
+     *
+     * The teardown gate is the sharper of the two. A marker that was emitted and could not be
+     * believed arrives in the same field as one that could, and a forced teardown is only ever
+     * authorized by a believed record. Keying the gate on the field's presence would let an
+     * unbelievable marker authorize a teardown, which must authorize strictly less than none.
+     */
+    it("attaches the launcher exit record to the failure diagnostic, and only a believed marker authorizes a teardown", async () => {
+        const produced = successfulGuestOutput();
+        const launcherExit = {schemaVersion: 1, kind: "qemu-launcher-exit-diagnostic", exitStatus: 137,
+            elapsedMs: 1_482_000, configuredDeadlineMs: 1_500_000, lastMilestone: null};
+        const launch = async (monitoredExtras, processExtras) => {
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                inspectOwned: rootFileIdentity, inspectDirectory: directoryIdentity,
+                runOwned: async () => ({process: okProcess, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)}),
+                runMonitoredQemu: async () => ({observation: {process: {...okProcess, ...processExtras},
+                    stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)},
+                identity: {pid: 2345, processGroupId: 2300, startTicks: "77",
+                    executablePath: `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`},
+                qmp: qmpObservation(), absentAfter: true, processGroupGone: true,
+                terminationReason: null, ...monitoredExtras}),
+                pathExists: () => false,
+                readOwnedVerified: target => target.endsWith(".png") ? screenshotRead(target) :
+                    ({bytes: Buffer.from(JSON.stringify(produced)), identity: {path: target,
+                        bytes: String(Buffer.byteLength(JSON.stringify(produced))), sha256: "1".repeat(64)}})
+            }});
+            const toolchain = {firmware: qemuFirmware(), runtime: {loader: rootFileIdentity(
+                `${paths().portableRoot}/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2`),
+            libraryPath: [`${paths().portableRoot}/lib/x86_64-linux-gnu`]},
+            qemu: commandIdentity(`${paths().portableRoot}/usr/bin/qemu-system-x86_64`),
+            mcopy: commandIdentity(`${paths().portableRoot}/usr/bin/mcopy`)};
+            return await adapter.launchOwnedQemu({paths: paths(), toolchain,
+                privilegeMode: "reviewed-sudo-kvm", argv: ["-nic", "none"],
+                reservation: {label: STAGE3_BASELINE_RESERVATION_LABEL,
+                    executionMilliseconds: 55 * 60_000, cleanupMilliseconds: 2 * 60_000}});
+        };
+        const failed = await launch({launcherExit}, {exitCode: 137});
+        assert.deepEqual(failed.failureDiagnostic.launcherExit, launcherExit,
+            "the only account of an unrequested status must survive into the diagnostic");
+
+        /*
+         * A forced teardown means the monitor killed the process, so it cannot also have exited
+         * cleanly - and a clean exit would satisfy the parsing gate by itself, leaving the
+         * teardown branch untested. Both runs below are killed; only the marker differs.
+         */
+        const killed = {exitCode: 137, signal: null,
+            terminationReason: "post-completion-teardown-timeout"};
+        const record = {nonce: "b".repeat(32),
+            baseline: {bytes: "11", sha256: "2".repeat(64)},
+            cpu: {bytes: "13", sha256: "3".repeat(64)}};
+        const believed = await launch(
+            {serialCompletion: {record},
+                terminationReason: "post-completion-teardown-timeout"}, killed);
+        assert.notEqual(believed.guest, null,
+            "a believed record is what authorizes the teardown in the first place");
+        const unbelievable = await launch(
+            {serialCompletion: {invalid: "serial-completion-invalid"},
+                terminationReason: "post-completion-teardown-timeout"}, killed);
+        assert.equal(unbelievable.guest, null,
+            "an unbelievable marker authorizes strictly less than no marker at all");
+        assert.equal(Object.hasOwn(unbelievable, "failureDiagnostic"), true);
+    });
+
     it("emits the believed marker and the receipt identity under the Stage 3 reservation", async () => {
         const produced = successfulGuestOutput();
         const record = {nonce: "b".repeat(32), baseline: {bytes: "11", sha256: "2".repeat(64)},
@@ -2217,6 +2285,13 @@ describe("Stage 3 monitor completion transition", () => {
         baseline: {bytes: "1985", sha256: DIGEST("a")}, cpu: {bytes: "2809", sha256: DIGEST("b")}})}\r\n`;
     const SERIAL_PATH = "/owned/serial.log";
     const EXECUTION_DEADLINE = 100_000;
+    /*
+     * The monitor's clock does not start at zero in a real run, and a fake one that does makes
+     * every relative field indistinguishable from the absolute value it is derived from - an
+     * elapsed time reads the same as a timestamp, a budget the same as a deadline. The origin is
+     * offset so those two can disagree, and the tests below say which one they mean.
+     */
+    const CLOCK_ORIGIN = 500_000;
     const monitorProcess = {exitCode: 0, signal: null, timedOut: false, cleanupProven: true, treeGone: true,
         qemuPid: 2345, qemuPidAbsentAfter: true, qemuStartTicks: "77", processGroupId: 2300,
         launcherExecutablePath: "/owned/loader"};
@@ -2228,11 +2303,13 @@ describe("Stage 3 monitor completion transition", () => {
     const run = async ({serialAt, exitAt = null, exitCode = 0, serialCompletion = true}) => {
         let finish = null;
         const operation = new Promise(resolve => { finish = resolve; });
-        let clock = 0;
+        let clock = CLOCK_ORIGIN;
         let terminationReason = null;
+        /* Every threshold a test states is an offset from the launch, never a point on the clock. */
+        const elapsed = () => clock - CLOCK_ORIGIN;
         const settle = () => finish({process: {...monitorProcess, exitCode,
             cleanupProven: true, treeGone: true}, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)});
-        const advance = () => { if (exitAt !== null && clock >= exitAt) settle(); };
+        const advance = () => { if (exitAt !== null && elapsed() >= exitAt) settle(); };
         const result = await runMonitoredQemu({
             runOwned: (command, argv, options) => {
                 options.onSpawn(2300);
@@ -2246,12 +2323,12 @@ describe("Stage 3 monitor completion transition", () => {
             observeRuntimeResources: () => ({taskBytes: "1", freeBytes: "90000000000",
                 effectiveMemoryBytes: "8589934592"}),
             readOwnedPrefixVerified: () => {
-                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const bytes = Buffer.from(serialAt(elapsed()), "latin1");
                 return {bytes, identity: {path: SERIAL_PATH, bytes: String(bytes.length),
                     sha256: "0".repeat(64), observedBytes: String(bytes.length), truncated: false}};
             },
             readOwnedRangeVerified: (target, start, maximum) => {
-                const bytes = Buffer.from(serialAt(clock), "latin1");
+                const bytes = Buffer.from(serialAt(elapsed()), "latin1");
                 const from = Math.min(start, bytes.length);
                 return {bytes: bytes.subarray(from, Math.min(bytes.length, from + maximum)),
                     identity: {device: "1", inode: "1", observedBytes: String(bytes.length)}};
@@ -2262,7 +2339,7 @@ describe("Stage 3 monitor completion transition", () => {
             terminateQemuGroup: async () => true
         }, {command: "/usr/bin/qemu", argv: [], timeoutMs: 1_000_000, maxStreamBytes: 1_024,
             pidPath: "/owned/qemu.pid", expectedExecutable: "/owned/loader",
-            executionDeadline: EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
+            executionDeadline: CLOCK_ORIGIN + EXECUTION_DEADLINE, serialLogPath: SERIAL_PATH,
             ...(serialCompletion ? {serialCompletion: {nonce: MONITOR_NONCE, path: SERIAL_PATH}} : {}),
             resources: {taskPath: "/owned", roots: ["/owned"]}});
         return {result, terminationReason};
@@ -2286,7 +2363,9 @@ describe("Stage 3 monitor completion transition", () => {
 
     it("charges the grace to cleanup rather than extending the execution budget", async () => {
         const {result} = await run({serialAt: clock => (clock >= 20_000 ? `boot\r\n${RECORD_LINE}` : "boot\r\n")});
-        assert.ok(result.serialCompletion.observedAtMs < EXECUTION_DEADLINE);
+        /* An instant on the monitor clock, so it is compared against the deadline instant. */
+        assert.ok(result.serialCompletion.observedAtMs < CLOCK_ORIGIN + EXECUTION_DEADLINE);
+        assert.ok(result.serialCompletion.observedAtMs >= CLOCK_ORIGIN);
     });
 
     it("keeps the ordinary deadline when no record ever appears", async () => {
