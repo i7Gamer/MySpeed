@@ -141,7 +141,13 @@ export function createPrereleaseCpuFloorBinding(input) {
     /*
      * Inverted from the published path, which requires the harness and the candidate to be
      * different commits. A branch build is produced by the commit under test, so they must be the
-     * same one, and an artifact from any other commit is what must not be admitted.
+     * same one.
+     *
+     * Unreachable as written, and kept deliberately: the target binder already refuses a candidate
+     * that is not the harness commit, so on any branded target these two are the same SHA and the
+     * check above has already compared the context against it. It stands as the statement of this
+     * path's invariant at the point that depends on it, so that weakening the binder's rule fails
+     * here too rather than silently widening what a binding will accept.
      */
     if (hostedContext.sourceSha !== target.candidate.sourceSha) {
         fail("harness source SHA must equal the candidate source SHA");

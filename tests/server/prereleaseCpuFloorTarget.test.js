@@ -73,12 +73,14 @@ describe("pre-release CPU-floor target", () => {
     });
 
     /*
-     * Without this an artifact from any previous run of the workflow would satisfy the binding, and
-     * a green result would say nothing about the commit that was dispatched.
+     * A range check, not a run-identity check: attempts are counted from one. Whether the artifact
+     * belongs to *this* run is decided by the binding against the hosted context, and is tested
+     * there - see "refuses an artifact that belongs to another run or attempt".
      */
-    it("refuses an artifact whose run does not match the declared run", () => {
+    it("records the run it was told and refuses an attempt below the first", () => {
         const target = bindPrereleaseCpuFloorTarget(input());
         assert.equal(target.build.runId, RUN_ID);
+        assert.equal(target.build.runAttempt, RUN_ATTEMPT);
         assert.throws(() => bindPrereleaseCpuFloorTarget(input({
             buildArtifact: buildArtifact({runAttempt: 0})})), /run attempt/u);
     });

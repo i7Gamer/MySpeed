@@ -79,13 +79,14 @@ describe("pre-release CPU-floor binding", () => {
     });
 
     /*
-     * The published path forbids harness and candidate being one commit. Here they must be, so the
-     * refusal to test is the opposite one - an artifact carrying some other commit's work.
+     * Named for what it actually reaches. The published path forbids harness and candidate being one
+     * commit and here they must be, but the refusal happens in the *target binder*: constructing the
+     * argument throws before the binding is ever called. The binding repeats the rule as an
+     * unreachable guard, which is why nothing here can exercise it - see the comment at that check.
      */
-    it("refuses a candidate that is not the harness commit", () => {
-        assert.throws(() => createPrereleaseCpuFloorBinding({hostedContext: hostedContext(),
-            target: target({candidate: {sourceSha: OTHER_SHA},
-                buildArtifact: {headSha: OTHER_SHA}})}), /candidate source SHA/u);
+    it("cannot be built on a target whose candidate is not the harness commit", () => {
+        assert.throws(() => target({candidate: {sourceSha: OTHER_SHA},
+            buildArtifact: {headSha: OTHER_SHA}}), /candidate source SHA must be the harness commit/u);
     });
 
     /*
