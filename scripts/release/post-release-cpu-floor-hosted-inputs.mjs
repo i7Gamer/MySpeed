@@ -7,7 +7,8 @@ import {stage2ClosureFromStage3Closure, executeStage3Launcher} from
     "../qualification/linux-windows-cpu-floor-stage3-launcher.mjs";
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../qualification/windows-baseline-guest-runtime-bundle.mjs";
-import {prepareV161PostReleaseCpuFloorGuestFiles} from "./post-release-cpu-floor-guest-preparation.mjs";
+import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
+import {prepareCpuFloorGuestFiles} from "./cpu-floor-guest-preparation.mjs";
 import {createV161PostReleaseCpuFloorBinding, acquireV161PostReleaseCpuFloorBaselineSummary} from
     "./post-release-cpu-floor.mjs";
 
@@ -107,12 +108,12 @@ export async function runV161PostReleaseCpuFloorHostedInputs(input, dependencies
         "fixture/transport.json", hostedContext.sourceSha),
         populatedRoot: path.join(baselineRoot, "fixture", "populated"),
         resetRoot: path.join(baselineRoot, "fixture", "reset")};
-    const prepareGuest = dependencies.prepareGuest ?? prepareV161PostReleaseCpuFloorGuestFiles;
+    const prepareGuest = dependencies.prepareGuest ?? prepareCpuFloorGuestFiles;
     const runtimeNode = {path: observed.execution.runtime.path, bytes: String(observed.execution.runtime.bytes),
         sha256: observed.execution.runtime.sha256};
     const guestProbes = probes.map(probe => ({...probe, bytes: String(probe.bytes)}));
     const preparedGuest = prepareGuest({context: hostedContext, candidate: {
-        provenance: "published-release",
+        provenance: CANDIDATE_PROVENANCE.published,
         sourceSha: binding.candidate.sourceSha, artifactName: binding.candidate.artifact.name,
         file: {name: "MySpeed.exe", bytes: String(binding.candidate.exeAsset.bytes),
             sha256: binding.candidate.exeAsset.sha256}}, runtimeNode, fixture,

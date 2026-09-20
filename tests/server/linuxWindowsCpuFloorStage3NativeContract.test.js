@@ -11,8 +11,8 @@ import {INSTALLER_BOOT_CONFIRMATION, validateScreenshots} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
 import {buildWindowsMsiSetupCompleteActivation, getCompletedWindowsMsiActivationEvidence} from
     "../../scripts/qualification/windows-msi-post-setup-activation.mjs";
-import {POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS} from
-    "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
+import {CPU_FLOOR_GUEST_PREPARATION_CONSTANTS} from
+    "../../scripts/release/cpu-floor-guest-preparation.mjs";
 import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
 import {
     acquireV161PostReleaseCpuFloorBaselineSummary,
@@ -63,7 +63,7 @@ describe("Stage 3 probe seed naming contract", () => {
     });
 
     it("cannot drift from the release artifact names the host actually downloads", () => {
-        assert.deepEqual(POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS.PROBES.map(([role, name]) => [role, name]),
+        assert.deepEqual(CPU_FLOOR_GUEST_PREPARATION_CONSTANTS.PROBES.map(([role, name]) => [role, name]),
             PROBE_SEED_FILES.map(entry => [entry.role, entry.artifactName]));
     });
 });

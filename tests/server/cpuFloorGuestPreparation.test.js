@@ -6,8 +6,8 @@ import path from "node:path";
 import {describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
 
-import {prepareV161PostReleaseCpuFloorGuestFiles} from
-    "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
+import {prepareCpuFloorGuestFiles} from
+    "../../scripts/release/cpu-floor-guest-preparation.mjs";
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
 
@@ -78,7 +78,7 @@ describe("CPU-floor guest preparation for a branch build", () => {
         try {
             const value = input(root, {candidateSha: HARNESS_SHA, provenance: "branch-build"});
             fs.mkdirSync(path.dirname(value.outputRoot));
-            const result = prepareV161PostReleaseCpuFloorGuestFiles(value,
+            const result = prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256});
             assert.equal(result.status, "prepared");
             const request = JSON.parse(fs.readFileSync(
@@ -95,7 +95,7 @@ describe("CPU-floor guest preparation for a branch build", () => {
         try {
             const value = input(root, {candidateSha: CANDIDATE_SHA, provenance: "branch-build"});
             fs.mkdirSync(path.dirname(value.outputRoot));
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+            assert.throws(() => prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256}), /source roles differ/u);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
@@ -109,7 +109,7 @@ describe("CPU-floor guest preparation for a branch build", () => {
             try {
                 const value = input(root, {candidateSha: HARNESS_SHA});
                 prepare(value);
-                assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+                assert.throws(() => prepareCpuFloorGuestFiles(value,
                     {expectedNodeSha256: value.runtimeNode.sha256}), /candidate provenance differs/u);
             } finally { fs.rmSync(root, {recursive: true, force: true}); }
         };
@@ -125,7 +125,7 @@ describe("post-release CPU-floor guest preparation", () => {
     it("uses the real fixture, runtime and seed builders to stage the exact inert 14-file closure", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-guest-prep-")));
         try { const value = input(root); fs.mkdirSync(path.dirname(value.outputRoot));
-            const result = prepareV161PostReleaseCpuFloorGuestFiles(value,
+            const result = prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256});
             assert.equal(result.status, "prepared"); assert.equal(result.files.length, 14);
             assert.deepEqual(result.files.map(file => file.name), ["node.exe", "request.json", "execution.json",
@@ -150,10 +150,10 @@ describe("post-release CPU-floor guest preparation", () => {
     it("refuses changed identities before creating the output root", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-guest-reject-")));
         try { const value = input(root);
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value), /Node runtime digest/u);
+            assert.throws(() => prepareCpuFloorGuestFiles(value), /Node runtime digest/u);
             assert.equal(fs.existsSync(value.outputRoot), false);
             value.probes[0].sha256 = "0".repeat(64);
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+            assert.throws(() => prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256}), /probe avx content identity/u);
             assert.equal(fs.existsSync(value.outputRoot), false);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
@@ -174,7 +174,7 @@ describe("post-release CPU-floor guest preparation", () => {
     ]) it(`refuses ${label} before writing`, () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-guest-table-")));
         try { const value = input(root); fs.mkdirSync(path.dirname(value.outputRoot)); mutate(value);
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+            assert.throws(() => prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256}), pattern);
             assert.equal(fs.existsSync(value.outputRoot), false);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
@@ -183,7 +183,7 @@ describe("post-release CPU-floor guest preparation", () => {
     it("refuses a pre-existing output root", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-guest-existing-")));
         try { const value = input(root); fs.mkdirSync(value.outputRoot, {recursive: true});
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+            assert.throws(() => prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256}), /output root is not fresh/u);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }
     });
@@ -192,7 +192,7 @@ describe("post-release CPU-floor guest preparation", () => {
         const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-guest-link-")));
         try { const value = input(root); const target = path.join(root, "real-stage3"); fs.mkdirSync(target);
             fs.symlinkSync(target, path.dirname(value.outputRoot), process.platform === "win32" ? "junction" : "dir");
-            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+            assert.throws(() => prepareCpuFloorGuestFiles(value,
                 {expectedNodeSha256: value.runtimeNode.sha256}), /output root is not fresh/u);
             assert.equal(fs.existsSync(value.outputRoot), false);
         } finally { fs.rmSync(root, {recursive: true, force: true}); }

@@ -12,9 +12,11 @@ import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
 import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
 
 const SCHEMA_VERSION = 1;
-const KIND = "myspeed-v1.6.1-post-release-cpu-floor-guest-preparation";
+const KIND = "myspeed-cpu-floor-guest-preparation";
 const NODE_RUNTIME_SHA256 = "995a3fb3cefad590cd3f4b321532a4b9582fb9c6575320ed2e3e894caac3e362";
-const CANDIDATE_SOURCE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
+/* The published release this module is pinned to. Meaningless on the branch path, which pins
+ * the candidate to the harness commit instead. */
+const PUBLISHED_CANDIDATE_SOURCE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
 const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -80,7 +82,7 @@ function writeVerified(root, name, bytes) {
 // Caller obligation: runtimeNode must come from an already authenticated same-run source - the MSI
 // preparation for a published release, or the guest bundle artifact for a branch build. This bounded
 // module re-observes its physical identity but does not authenticate that upstream document.
-export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {}) {
+export function prepareCpuFloorGuestFiles(input, dependencies = {}) {
     exactKeys(input, ["candidate", "context", "fixture", "imageVersion", "manifestSha256", "outputRoot",
         "probes", "runtimeInstaller", "runtimeNode", "runtimeSources"], "CPU-floor guest preparation input");
     const {context} = input;
@@ -96,7 +98,7 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
     if (provenance !== CANDIDATE_PROVENANCE.published && provenance !== CANDIDATE_PROVENANCE.branch)
         throw new TypeError("CPU-floor guest candidate provenance differs");
     const rolesHold = provenance === CANDIDATE_PROVENANCE.published
-        ? input.candidate.sourceSha === CANDIDATE_SOURCE_SHA
+        ? input.candidate.sourceSha === PUBLISHED_CANDIDATE_SOURCE_SHA
             && input.candidate.sourceSha !== context.sourceSha
         : input.candidate.sourceSha === context.sourceSha;
     if (context.sourceSha !== context.eventSha || !rolesHold)
@@ -172,5 +174,6 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
         files: Object.freeze(files)});
 }
 
-export const POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA, CPUID_PROBE_ROLE,
-    DIRECTORY_MODE, FILE_MODE, KIND, NODE_RUNTIME_SHA256, PROBES, SCHEMA_VERSION});
+export const CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CPUID_PROBE_ROLE,
+    DIRECTORY_MODE, FILE_MODE, KIND, NODE_RUNTIME_SHA256, PROBES, PUBLISHED_CANDIDATE_SOURCE_SHA,
+    SCHEMA_VERSION});

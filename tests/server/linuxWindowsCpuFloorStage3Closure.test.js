@@ -25,7 +25,7 @@ describe("Stage 3 external execution closure", () => {
     it("contains the actual transitive module graph, including the request builder", async () => {
         const bundled = await build({absWorkingDir: ROOT,
             entryPoints: ["scripts/qualification/linux-windows-cpu-floor-stage3-launcher.mjs",
-                "scripts/release/post-release-cpu-floor-guest-preparation.mjs",
+                "scripts/release/cpu-floor-guest-preparation.mjs",
                 "scripts/release/post-release-cpu-floor-hosted-inputs.mjs",
                 "scripts/release/post-release-msi-linux-controller.mjs",
                 "scripts/release/prerelease-cpu-floor-hosted-inputs.mjs"],

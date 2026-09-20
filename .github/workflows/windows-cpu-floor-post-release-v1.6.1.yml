@@ -134,7 +134,7 @@ jobs:
             tests/server/linuxWindowsCpuFloorStage3NativeContract.test.js \
             tests/server/linuxWindowsCpuFloorStage3Sequence.test.js \
             tests/server/postReleaseCpuFloor.test.js \
-            tests/server/postReleaseCpuFloorGuestPreparation.test.js \
+            tests/server/cpuFloorGuestPreparation.test.js \
             tests/server/postReleaseCpuFloorHostedInputs.test.js \
             tests/server/postReleaseCpuFloorWorkflow.test.js
 

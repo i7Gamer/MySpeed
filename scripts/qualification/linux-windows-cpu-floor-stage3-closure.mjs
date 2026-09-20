@@ -59,7 +59,7 @@ export const STAGE3_EXECUTION_PATHS = Object.freeze([
     "scripts/qualification/windows-msi-stage2-request.mjs",
     "scripts/qualification/safety.mjs",
     "scripts/release/post-release-cpu-floor.mjs",
-    "scripts/release/post-release-cpu-floor-guest-preparation.mjs",
+    "scripts/release/cpu-floor-guest-preparation.mjs",
     "scripts/release/post-release-cpu-floor-hosted-inputs.mjs",
     "scripts/release/post-release-msi-acquisition.mjs",
     "scripts/release/post-release-msi-baseline-input-preparation.mjs",

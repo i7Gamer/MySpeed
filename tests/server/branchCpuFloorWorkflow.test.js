@@ -7,8 +7,8 @@ import {parse} from "yaml";
 
 import {STAGE3_BUDGET_CONSTANTS} from
     "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
-import {POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS} from
-    "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
+import {CPU_FLOOR_GUEST_PREPARATION_CONSTANTS} from
+    "../../scripts/release/cpu-floor-guest-preparation.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WORKFLOW_PATH = path.join(HERE, "..", "..", ".github", "workflows",
@@ -103,7 +103,7 @@ describe("Windows CPU-floor branch workflow", () => {
      */
     it("pins the guest Node runtime to the digest the guest preparation enforces", () => {
         assert.equal(workflow().env.NODE_RUNTIME_SHA256,
-            POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS.NODE_RUNTIME_SHA256);
+            CPU_FLOOR_GUEST_PREPARATION_CONSTANTS.NODE_RUNTIME_SHA256);
     });
 
     /*

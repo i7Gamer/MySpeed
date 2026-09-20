@@ -11,8 +11,8 @@ import {runV161PostReleaseCpuFloorHostedInputs} from
 import {bindV161PostReleaseTarget} from "../../scripts/release/post-release-target.mjs";
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
-import {prepareV161PostReleaseCpuFloorGuestFiles} from
-    "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
+import {prepareCpuFloorGuestFiles} from
+    "../../scripts/release/cpu-floor-guest-preparation.mjs";
 import {targetInput, hostedContext, authenticBaselineSummaryBytes, baselineArtifactRecord, OBSERVED_AT,
     stage3ExecutionPlan} from "../helpers/post-release-cpu-floor-fixture.mjs";
 
@@ -157,7 +157,7 @@ describe("post-release CPU-floor hosted input adapter", () => {
                 readOwned: (identity, label) => label === "candidate executable" ? Buffer.from("candidate")
                     : fs.readFileSync(identity.path),
                 makeDirectory: () => fs.mkdirSync(localStage3),
-                prepareGuest: guestInput => { prepared = prepareV161PostReleaseCpuFloorGuestFiles(
+                prepareGuest: guestInput => { prepared = prepareCpuFloorGuestFiles(
                     {...guestInput, outputRoot: path.join(localStage3, "candidate")},
                     {expectedNodeSha256: guestInput.runtimeNode.sha256}); return prepared; },
                 stageFile: () => {}, makeStage2Closure: () => {}, launch: async () => ({accepted: true})

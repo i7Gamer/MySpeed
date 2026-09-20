@@ -9,12 +9,11 @@ import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../qualification/windows-baseline-guest-runtime-bundle.mjs";
 import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
 /*
- * Shared with the published path despite its name. The module was pinned to v1.6.1 by one line;
- * that line is now a provenance branch, so both callers use the same guest file preparation and
- * cannot drift in what they hand the guest. The name is stale and worth a separate tidy-up: it is
- * listed in the Stage 3 execution closure, so renaming the file is a change to a sealed set.
+ * Shared with the published path. The module was pinned to v1.6.1 by one line; that line is now a
+ * provenance branch, so both callers use the same guest file preparation and cannot drift in what
+ * they hand the guest. Only the published SHA it compares against stays release-specific.
  */
-import {prepareV161PostReleaseCpuFloorGuestFiles} from "./post-release-cpu-floor-guest-preparation.mjs";
+import {prepareCpuFloorGuestFiles} from "./cpu-floor-guest-preparation.mjs";
 import {acquirePrereleaseCpuFloorCandidate, buildPrereleaseCpuFloorStage2Request,
     buildPrereleaseCpuFloorStage3Request, buildPrereleaseCpuFloorStage3Template,
     createPrereleaseCpuFloorBinding, inspectPrereleaseCpuFloorEvidence} from
@@ -156,7 +155,7 @@ export async function runPrereleaseCpuFloorHostedInputs(input, dependencies = {}
         resetRoot: path.join(bundle.root, "fixture", "reset")};
     const runtimeNode = bundleIdentity(bundle, NODE_RUNTIME_PATH, sourceSha);
 
-    const prepareGuest = dependencies.prepareGuest ?? prepareV161PostReleaseCpuFloorGuestFiles;
+    const prepareGuest = dependencies.prepareGuest ?? prepareCpuFloorGuestFiles;
     const preparedGuest = prepareGuest({
         context: hostedContext,
         candidate: {
