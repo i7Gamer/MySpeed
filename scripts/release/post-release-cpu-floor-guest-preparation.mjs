@@ -77,8 +77,9 @@ function writeVerified(root, name, bytes) {
     return Object.freeze({name, path: target, bytes: String(bytes.length), sha256: sha256(bytes)});
 }
 
-// Caller obligation: runtimeNode must be extracted from the already authenticated same-run MSI preparation;
-// this bounded module re-observes its physical identity but does not authenticate that upstream document.
+// Caller obligation: runtimeNode must come from an already authenticated same-run source - the MSI
+// preparation for a published release, or the guest bundle artifact for a branch build. This bounded
+// module re-observes its physical identity but does not authenticate that upstream document.
 export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {}) {
     exactKeys(input, ["candidate", "context", "fixture", "imageVersion", "manifestSha256", "outputRoot",
         "probes", "runtimeInstaller", "runtimeNode", "runtimeSources"], "CPU-floor guest preparation input");

@@ -98,8 +98,6 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
     decimal(input.candidate.bytes, MAX_CANDIDATE_BYTES, "baseline seed candidate bytes");
     hash(input.candidate.sha256, "baseline seed candidate SHA");
     exactString(input.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline seed candidate source SHA");
-    // The candidate is a different release than the harness that stages this guest; the fixture
-    // bundle is stamped with this SHA, so it must never collapse onto the harness context SHA.
     /*
      * A published release must not be the commit running the harness; a branch build must be. The
      * seed carries the candidate SHA that the guest materializer later checks the fixture bundle

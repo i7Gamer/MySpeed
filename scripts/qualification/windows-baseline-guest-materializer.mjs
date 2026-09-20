@@ -103,9 +103,10 @@ function validateBundle(bytes, request) {
     catch { throw new TypeError("baseline fixture bundle is not valid UTF-8 JSON"); }
     exactKeys(value, ["schemaVersion", "kind", "sourceSha", "expected", "populated", "reset"],
         "baseline fixture bundle");
-    // The bundle is built and stamped with the candidate release SHA, which is a different release
-    // than the harness context SHA that stages this guest. Validate against the candidate SHA the
-    // request carries, never the harness context SHA (run 35285135433 rejected every real bundle).
+    // The bundle is stamped with the candidate source SHA. Validate against the SHA the request
+    // carries, never the harness context SHA - for a published release those are different commits
+    // and using the harness one rejected every real bundle (run 35285135433); for a branch build
+    // they are the same commit, so the rule is stated as "use the candidate's" either way.
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== BUNDLE_KIND ||
         value.sourceSha !== request.candidate.sourceSha) throw new TypeError("baseline fixture bundle identity differs");
     exactKeys(value.expected, ["passwordValueSha256", "ping", "resultId"], "baseline fixture expectation");

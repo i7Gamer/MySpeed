@@ -271,9 +271,11 @@ export async function runWindowsBaselineGuest(input, operationValue) {
     if (failure !== null || !cleanupProven) return {schemaVersion: SCHEMA_VERSION, status: "failed", profile: PROFILE,
         cleanupProven, failure: failureMessage(failure ?? new Error("baseline cleanup is incomplete"))};
     /*
-     * The candidate release SHA, never the harness context SHA. This summary is the candidate's own
-     * evidence, and Stage 3's validateFullSummary compares it against the candidate; validateRequest
-     * has already proven the two SHAs differ, so seeding the context's would reject every run.
+     * The candidate source SHA, never the harness context SHA. This summary is the candidate's own
+     * evidence and Stage 3's validateFullSummary compares it against the candidate, so seeding the
+     * context's would be wrong for a published release, where the two are different commits. For a
+     * branch build they are the same commit and the distinction does not arise - which is why this
+     * reads "use the candidate's" rather than "the two differ", as it used to.
      *
      * The shape matches the verifier evidence scripts/release/qualification-manifest.mjs checks, but
      * that reads the release's own summary artifacts rather than this one.
