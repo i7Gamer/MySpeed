@@ -13,6 +13,8 @@ import {
 } from "../../scripts/release/prerelease-cpu-floor.mjs";
 import {validateRequest} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildAcceptedStage3Fixture} from "../helpers/windows-cpu-floor-stage3-fixture.mjs";
+import {inspectCompletedStage3Sequence} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage3-launcher.mjs";
 
 const SHA = character => character.repeat(64);
 const HARNESS_SHA = "d".repeat(40);
@@ -177,15 +179,26 @@ describe("pre-release CPU-floor evidence", () => {
         const fixture = await buildAcceptedStage3Fixture({
             sourceSha: HARNESS_SHA, eventSha: HARNESS_SHA, candidateSourceSha: HARNESS_SHA,
             nonce: NONCE, runId: String(RUN_ID), runAttempt: String(RUN_ATTEMPT),
-            candidate: {provenance: "branch-build", artifactId: String(ARTIFACT_ID),
+            /*
+             * Key order matters, unavoidably: the acquired-candidate check compares serialized
+             * JSON, so this literal has to be written in the order the Stage 3 template emits.
+             * At runtime both sides come from that template, so the ordering holds by
+             * construction - but a fixture written field-by-field does not get that for free, and
+             * the failure reads "acquired candidate provenance differs" on two objects that are
+             * identical field for field.
+             */
+            candidate: {provenance: "branch-build", sourceSha: HARNESS_SHA,
+                artifactId: String(ARTIFACT_ID),
                 artifactName: "MySpeed-windows-x64-baseline.exe",
+                runId: String(RUN_ID), runAttempt: String(RUN_ATTEMPT),
                 archive: {bytes: String(ARCHIVE_BYTES), sha256: ARCHIVE_SHA},
-                sourceSha: HARNESS_SHA, runId: String(RUN_ID), runAttempt: String(RUN_ATTEMPT),
                 file: {name: "MySpeed.exe", bytes: EXE_BYTES, sha256: EXE_SHA}},
             ...overrides.fixture});
         const bound = createPrereleaseCpuFloorBinding({hostedContext: fixture.request.context,
             target: target()});
-        return {fixture, binding: bound, input: {binding: bound, request: fixture.request,
+        const boundAcquired = acquirePrereleaseCpuFloorCandidate(bound, acquisition());
+        return {fixture, binding: bound, acquired: boundAcquired,
+            input: {binding: bound, request: fixture.request,
             result: fixture.completedResult, retainedStage2Bytes: fixture.retainedStage2Bytes,
             ...overrides.input}};
     };
@@ -224,6 +237,28 @@ describe("pre-release CPU-floor evidence", () => {
         request.context = {...request.context, runId: "999"};
         assert.throws(() => inspectPrereleaseCpuFloorEvidence({...input, binding: bound, request}),
             /request context differs/u);
+    });
+
+    /*
+     * The seam that killed the first version, exercised rather than stubbed. The launcher re-derives
+     * the request through the branch builder and hands the inspector the identity binding; a test
+     * that calls the inspector directly with an acquired binding proves neither. Both halves were
+     * wrong at once here - the brand and the missing `accepted` - and both were invisible because
+     * nothing composed them.
+     */
+    it("composes through the launcher's own inspection seam with the branch builders", async () => {
+        const {fixture, binding: bound, acquired: boundAcquired, input} = await composed();
+        const inspection = inspectCompletedStage3Sequence({
+            binding: bound, acquired: boundAcquired, plan: {
+                installerConfirmation: PRERELEASE_CPU_FLOOR_CONSTANTS.STAGE3_NO_INPUT,
+                wallDeadlineUnixMilliseconds: fixture.request.budget.wallDeadlineUnixMilliseconds},
+            sequenceResult: input.result, sameExecutionStage2: fixture.request.stage2,
+            stage2ResultBytes: fixture.retainedStage2Bytes
+        }, {buildStage3Request: buildPrereleaseCpuFloorStage3Request,
+            inspectEvidence: inspectPrereleaseCpuFloorEvidence});
+        assert.equal(inspection.accepted, true,
+            "the launcher throws unless the consumer says so explicitly");
+        assert.equal(inspection.establishes, "branch-build-runs-on-cpu-floor");
     });
 
     it("refuses Stage 2 bytes that are not the ones the request names", async () => {

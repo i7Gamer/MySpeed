@@ -12,8 +12,12 @@ export const TEST_RESULT_SENTINEL = "qualification-seed-row";
 export const FIXTURE_MARKER = ".myspeed-qualification.json";
 export const HANDOFF_SCHEMA_VERSION = 1;
 
-const PROVIDER_CATALOGUES = ["ookla.json", "librespeed.json"];
-const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3", "ost-cli"];
+/*
+ * What the producer emits. Exported because three separate consumers hard-code the Windows form
+ * of this list and one of them drifted for a year: a test now holds all three to these.
+ */
+export const PROVIDER_CATALOGUES = ["ookla.json", "librespeed.json"];
+export const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3", "ost-cli"];
 const WINDOWS_SUFFIX = ".exe";
 const DIRECTORY_MODE = 0o700;
 const EXECUTABLE_MODE = 0o700;

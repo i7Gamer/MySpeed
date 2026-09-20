@@ -15,7 +15,8 @@ const MAX_FILE_BYTES = 512 * 1024 * 1024;
 /*
  * The provider binaries the fixture producer emits. The third copy of this list - the two guest
  * inventories carry it too - and the one that drifted longest: ost-cli shipped with the
- * OpenSpeedTest provider and none of the three were told. Kept in step by a test.
+ * OpenSpeedTest provider and none of the three were told. fixtureInventoryParity.test.js now
+ * holds all three to the producer's own exported sets.
  */
 const FIXTURE_COMMON = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
     "bin/ost-cli.exe", "bin/speedtest.exe", "data/servers/librespeed.json",
