@@ -37,9 +37,8 @@ const TEMPORARY_ROOT = "/home/runner/work/_temp";
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
-const INPUT_KEYS = ["bundle", "candidateArchive", "candidateDeclaredSha256", "candidateExe",
-    "closureRecords", "hostedContext", "observedAt", "probeArtifact", "probes", "roots",
-    "stage3Plan", "target"];
+const INPUT_KEYS = ["bundle", "candidateDeclaredSha256", "candidateExe", "closureRecords",
+    "hostedContext", "observedAt", "probeArtifact", "probes", "roots", "stage3Plan", "target"];
 const ROOT_KEYS = ["candidate", "closure", "envelope", "stage2Closure", "stage3", "transport"];
 const BUNDLE_KEYS = ["files", "root"];
 
@@ -121,8 +120,8 @@ function bundleIdentity(bundle, relativePath, sourceSha) {
 
 export async function runPrereleaseCpuFloorHostedInputs(input, dependencies = {}) {
     exactKeys(input, INPUT_KEYS, "hosted pre-release CPU-floor input");
-    const {bundle, candidateArchive, candidateDeclaredSha256, candidateExe, closureRecords,
-        hostedContext, observedAt, probeArtifact, probes, roots, stage3Plan, target} = input;
+    const {bundle, candidateDeclaredSha256, candidateExe, closureRecords, hostedContext,
+        observedAt, probeArtifact, probes, roots, stage3Plan, target} = input;
     validateHostedContext(hostedContext);
     exactKeys(bundle, BUNDLE_KEYS, "guest bundle");
     if (!Array.isArray(bundle.files) || !path.isAbsolute(bundle.root)) {
@@ -130,9 +129,9 @@ export async function runPrereleaseCpuFloorHostedInputs(input, dependencies = {}
     }
 
     const binding = createPrereleaseCpuFloorBinding({hostedContext, target});
-    const acquired = acquirePrereleaseCpuFloorCandidate(binding, {archive: candidateArchive,
-        file: {bytes: String(candidateExe.bytes), sha256: candidateExe.sha256},
-        declaredSha256: candidateDeclaredSha256, observedAt});
+    const acquired = acquirePrereleaseCpuFloorCandidate(binding,
+        {file: {bytes: String(candidateExe.bytes), sha256: candidateExe.sha256},
+            declaredSha256: candidateDeclaredSha256, observedAt});
 
     exactKeys(roots, ROOT_KEYS, "hosted CPU-floor roots");
     if (roots.stage3 !== `${TEMPORARY_ROOT}/myspeed-stage3-${hostedContext.nonce}`

@@ -20,12 +20,17 @@ import {buildPrereleaseWindowsExeAcquisitionPlan} from "./prerelease-cpu-floor-t
  * plainly rather than dressed up: the CPU-floor build produced by this commit, in this run, starts
  * on a floor-level CPU, binds a loopback listener it owns, and stops cleanly.
  *
- * Where trust comes from. The archive digest is GitHub's own record of the artifact this run
- * produced, never a value the caller computed - that is the property that made the published asset
- * table worth having, and it is the one most easily lost here, because hashing the downloaded file
- * locally looks equivalent and proves nothing about which run produced it. The executable's own
- * digest is then derived from that authenticated archive, which is why acquisition is a separate,
- * explicit step rather than a field on the binding.
+ * Where trust comes from, stated without inflating it. The artifact's identity is GitHub's own
+ * record of what this run produced - read from the API listing scoped to this run id and head SHA,
+ * never from hashing the downloaded file, because a local hash proves the bytes are self-consistent
+ * and nothing about which run produced them. The download action validates the archive against that
+ * record before anything here runs, so everything inside it inherits that validation.
+ *
+ * What acquisition adds on top, and the reason it is a separate step rather than a field on the
+ * binding, is a comparison between two genuinely different sources: the executable as downloaded,
+ * against the digest the build wrote beside it at compile time. Re-asserting the archive's own
+ * digest here would compare the API's value with itself, since a branch artifact is new every run
+ * and has no independently fixed digest to check against.
  */
 
 const SCHEMA_VERSION = 1;
@@ -44,7 +49,7 @@ const STAGE3_NO_INPUT = "no-input";
 const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, INSTALLER_BOOT_CONFIRMATION_CADENCE]);
 const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
-const ACQUISITION_KEYS = ["archive", "declaredSha256", "file", "observedAt"];
+const ACQUISITION_KEYS = ["declaredSha256", "file", "observedAt"];
 const RECORD_KEYS = ["bytes", "sha256"];
 const STAGE2_RECEIPT_KEYS = ["guestResult", "result"];
 const IDENTITY_KEYS = ["bytes", "path", "sha256"];
@@ -180,19 +185,21 @@ export function createPrereleaseCpuFloorBinding(input) {
 /**
  * Admits the executable's identity.
  *
- * Be precise about where the integrity actually comes from, because it is easy to overstate. The
- * artifact's digest is GitHub's own record of what this run produced, and the download action
- * validates the archive against it; everything inside the archive is covered by that, including the
- * digest sidecar the build wrote next to the executable. What this function adds on top is a
- * consistency check the caller cannot skip: the executable's computed digest has to equal the one
- * the build declared for it. A caller that recomputes both from the same bytes proves little, so
- * `declaredSha256` is expected to come from the sidecar rather than from hashing the executable
- * a second time.
+ * Be precise about where the integrity comes from, because it is easy to overstate and this
+ * function used to. The archive's own digest is GitHub's record of what this run produced, and the
+ * download action validates the archive against it before anything here runs; re-asserting that
+ * digest here would only compare the API's value with itself, because a branch artifact is new
+ * every run and there is no independently fixed digest to compare it against. The published path
+ * can make that check because its expected digest is a constant settled at release time.
+ *
+ * So the one thing this adds is a check with two genuinely different sources: the executable's
+ * digest as computed from the downloaded file, against the digest the build wrote into a sidecar
+ * beside it at compile time. Both travel inside the archive the download action validated, and a
+ * caller cannot skip the comparison.
  */
 export function acquirePrereleaseCpuFloorCandidate(binding, acquisition) {
     requireIdentityBinding(binding, "candidate acquisition");
     exactKeys(acquisition, ACQUISITION_KEYS, "candidate acquisition");
-    requireBoundedRecord(acquisition.archive, "candidate archive");
     requireBoundedRecord(acquisition.file, "candidate executable");
     if (typeof acquisition.declaredSha256 !== "string"
             || !SHA256_PATTERN.test(acquisition.declaredSha256)) {
@@ -205,11 +212,6 @@ export function acquirePrereleaseCpuFloorCandidate(binding, acquisition) {
             || !Number.isFinite(Date.parse(acquisition.observedAt))) {
         fail("observation time must be a UTC second-resolution timestamp");
     }
-    requireEqual(`${DIGEST_PREFIX}${acquisition.archive.sha256}`,
-        binding.candidate.artifact.archiveDigest, "candidate archive digest");
-    requireEqual(Number(acquisition.archive.bytes), Number(binding.candidate.artifact.archiveSize),
-        "candidate archive size");
-
     const acquired = {
         ...structuredClone(binding),
         candidate: {

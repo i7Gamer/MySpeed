@@ -57,7 +57,6 @@ const roots = () => ({stage3: STAGE3_ROOT, candidate: `${STAGE3_ROOT}/candidate`
 
 const input = (overrides = {}) => ({
     target: target(), hostedContext: context(), bundle: bundle(),
-    candidateArchive: {bytes: String(ARCHIVE_BYTES), sha256: ARCHIVE_SHA},
     candidateExe: {path: `${TEMP}/candidate/MySpeed.exe`, bytes: 524288, sha256: EXE_SHA},
     candidateDeclaredSha256: EXE_SHA,
     observedAt: OBSERVED_AT, probeArtifact: {sourceSha: HARNESS_SHA},
@@ -138,10 +137,14 @@ describe("pre-release CPU-floor hosted input adapter", () => {
             capture().dependencies), /Stage 3 roots differ/u);
     });
 
-    it("refuses an archive that is not the one the run recorded", async () => {
+    /*
+     * Two different sources: the sidecar the build wrote at compile time, and the hash of the file
+     * this job downloaded. Comparing the download against itself would prove nothing.
+     */
+    it("refuses an executable that is not the one the build declared", async () => {
         await assert.rejects(runPrereleaseCpuFloorHostedInputs(
-            input({candidateArchive: {bytes: String(ARCHIVE_BYTES), sha256: SHA("e")}}),
-            capture().dependencies), /archive digest/u);
+            input({candidateDeclaredSha256: SHA("a")}), capture().dependencies),
+        /digest the build declared/u);
     });
 
     it("refuses an execution the Stage 3 consumer did not accept", async () => {

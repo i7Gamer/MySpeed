@@ -704,8 +704,6 @@ jobs:
               headSha: process.env.GITHUB_SHA}});
           const result = await runPrereleaseCpuFloorHostedInputs({target, hostedContext: context,
             bundle: {root: bundleRoot, files: bundleManifest.files},
-            candidateArchive: {bytes: process.env.CANDIDATE_ARCHIVE_BYTES,
-              sha256: process.env.CANDIDATE_ARCHIVE_DIGEST.slice("sha256:".length)},
             candidateExe: identity(path.join(candidateRoot, "MySpeed.exe")),
             candidateDeclaredSha256: declaredCandidateSha256,
             observedAt: process.env.CANDIDATE_OBSERVED_AT, probeArtifact, probes,

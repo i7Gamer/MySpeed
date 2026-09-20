@@ -48,9 +48,8 @@ const hostedContext = (overrides = {}) => ({schemaVersion: 1, repository: REPOSI
 
 const binding = () => createPrereleaseCpuFloorBinding({hostedContext: hostedContext(), target: target()});
 
-const acquisition = (overrides = {}) => ({archive: {bytes: String(ARCHIVE_BYTES), sha256: ARCHIVE_SHA},
-    file: {bytes: EXE_BYTES, sha256: EXE_SHA}, declaredSha256: EXE_SHA, observedAt: OBSERVED_AT,
-    ...overrides});
+const acquisition = (overrides = {}) => ({file: {bytes: EXE_BYTES, sha256: EXE_SHA},
+    declaredSha256: EXE_SHA, observedAt: OBSERVED_AT, ...overrides});
 
 const acquired = () => acquirePrereleaseCpuFloorCandidate(binding(), acquisition());
 
@@ -112,19 +111,6 @@ describe("pre-release CPU-floor binding", () => {
 });
 
 describe("pre-release CPU-floor candidate acquisition", () => {
-    /*
-     * The archive digest is GitHub's record of what this run produced. Admitting an archive that
-     * does not match it would let the executable's digest - which is derived from these bytes -
-     * come from whatever the downloader happened to have.
-     */
-    it("refuses an archive that is not the one the run recorded", () => {
-        assert.throws(() => acquirePrereleaseCpuFloorCandidate(binding(),
-            acquisition({archive: {bytes: String(ARCHIVE_BYTES), sha256: SHA("e")}})),
-        /archive digest/u);
-        assert.throws(() => acquirePrereleaseCpuFloorCandidate(binding(),
-            acquisition({archive: {bytes: "1024", sha256: ARCHIVE_SHA}})), /archive size/u);
-    });
-
     it("refuses an executable outside the qualified size bound or with a malformed digest", () => {
         for (const file of [{bytes: "0", sha256: EXE_SHA},
             {bytes: String(PRERELEASE_CPU_FLOOR_CONSTANTS.MAXIMUM_CANDIDATE_BYTES + 1), sha256: EXE_SHA},
