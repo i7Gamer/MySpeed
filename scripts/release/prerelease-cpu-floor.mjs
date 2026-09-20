@@ -44,7 +44,7 @@ const STAGE3_NO_INPUT = "no-input";
 const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION,
     INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, INSTALLER_BOOT_CONFIRMATION_CADENCE]);
 const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
-const ACQUISITION_KEYS = ["archive", "file", "observedAt"];
+const ACQUISITION_KEYS = ["archive", "declaredSha256", "file", "observedAt"];
 const RECORD_KEYS = ["bytes", "sha256"];
 const STAGE2_RECEIPT_KEYS = ["guestResult", "result"];
 const IDENTITY_KEYS = ["bytes", "path", "sha256"];
@@ -178,15 +178,28 @@ export function createPrereleaseCpuFloorBinding(input) {
 }
 
 /**
- * Admits the executable's identity, but only once the archive it came out of matches the digest
- * GitHub recorded for this run's artifact. The executable's digest is therefore derived from an
- * authenticated archive rather than asserted by whoever downloaded it.
+ * Admits the executable's identity.
+ *
+ * Be precise about where the integrity actually comes from, because it is easy to overstate. The
+ * artifact's digest is GitHub's own record of what this run produced, and the download action
+ * validates the archive against it; everything inside the archive is covered by that, including the
+ * digest sidecar the build wrote next to the executable. What this function adds on top is a
+ * consistency check the caller cannot skip: the executable's computed digest has to equal the one
+ * the build declared for it. A caller that recomputes both from the same bytes proves little, so
+ * `declaredSha256` is expected to come from the sidecar rather than from hashing the executable
+ * a second time.
  */
 export function acquirePrereleaseCpuFloorCandidate(binding, acquisition) {
     requireIdentityBinding(binding, "candidate acquisition");
     exactKeys(acquisition, ACQUISITION_KEYS, "candidate acquisition");
     requireBoundedRecord(acquisition.archive, "candidate archive");
     requireBoundedRecord(acquisition.file, "candidate executable");
+    if (typeof acquisition.declaredSha256 !== "string"
+            || !SHA256_PATTERN.test(acquisition.declaredSha256)) {
+        fail("declared executable digest must be a sha256 hex digest");
+    }
+    requireEqual(acquisition.file.sha256, acquisition.declaredSha256,
+        "candidate executable digest against the digest the build declared");
 
     if (typeof acquisition.observedAt !== "string" || !UTC_SECONDS_PATTERN.test(acquisition.observedAt)
             || !Number.isFinite(Date.parse(acquisition.observedAt))) {

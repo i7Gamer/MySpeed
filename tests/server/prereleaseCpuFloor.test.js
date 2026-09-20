@@ -49,7 +49,8 @@ const hostedContext = (overrides = {}) => ({schemaVersion: 1, repository: REPOSI
 const binding = () => createPrereleaseCpuFloorBinding({hostedContext: hostedContext(), target: target()});
 
 const acquisition = (overrides = {}) => ({archive: {bytes: String(ARCHIVE_BYTES), sha256: ARCHIVE_SHA},
-    file: {bytes: EXE_BYTES, sha256: EXE_SHA}, observedAt: OBSERVED_AT, ...overrides});
+    file: {bytes: EXE_BYTES, sha256: EXE_SHA}, declaredSha256: EXE_SHA, observedAt: OBSERVED_AT,
+    ...overrides});
 
 const acquired = () => acquirePrereleaseCpuFloorCandidate(binding(), acquisition());
 
@@ -131,6 +132,18 @@ describe("pre-release CPU-floor candidate acquisition", () => {
             assert.throws(() => acquirePrereleaseCpuFloorCandidate(binding(), acquisition({file})),
                 /candidate executable/u, JSON.stringify(file));
         }
+    });
+
+    /*
+     * The build writes a digest sidecar beside the executable. Checking the executable against it
+     * is the one consistency check a caller cannot skip; without it an executable could be swapped
+     * for another inside a correctly named archive.
+     */
+    it("refuses an executable that is not the one the build declared", () => {
+        assert.throws(() => acquirePrereleaseCpuFloorCandidate(binding(),
+            acquisition({declaredSha256: SHA("a")})), /digest the build declared/u);
+        assert.throws(() => acquirePrereleaseCpuFloorCandidate(binding(),
+            acquisition({declaredSha256: "not-a-digest"})), /declared executable digest/u);
     });
 
     it("names the staged executable and keeps the binding non-qualifying", () => {
