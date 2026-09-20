@@ -50,7 +50,6 @@ permissions:
   actions: read
   contents: read
 env:
-  EXPECTED_HARNESS_SHA: ${{ github.sha }}
   BASELINE_ARTIFACT_NAME: MySpeed-windows-x64-baseline.exe
   BUNDLE_ARTIFACT_NAME: myspeed-branch-guest-bundle
   WORKFLOW_CONFIRMATION: RUN-WINDOWS-BASELINE-CPU-FLOOR
@@ -175,7 +174,11 @@ jobs:
         run: |
           set -euo pipefail
           bundle_root="$RUNNER_TEMP/myspeed-branch-bundle"
+          # The handoff opens both work directories rather than creating them, so they have to
+          # exist first. The published caller does the same before its own handoff.
           install -d -m 700 "$bundle_root/fixture"
+          install -d -m 700 "$bundle_root/fixture/populated"
+          install -d -m 700 "$bundle_root/fixture/reset"
           node scripts/qualification/fixture.mjs handoff --repo "$PWD" \
             --work "$bundle_root/fixture/populated" --reset-work "$bundle_root/fixture/reset" \
             --manifest "$bundle_root/fixture/transport.json" --source-sha "$GITHUB_SHA"
@@ -410,6 +413,9 @@ jobs:
         with:
           artifact-ids: ${{ steps.candidate-metadata.outputs.id }}
           merge-multiple: true
+          # Stated rather than inherited: the binding's provenance rests on this validation, and a
+          # future default that only warned would void it silently.
+          digest-mismatch: error
           path: ${{ runner.temp }}/myspeed-branch-candidate-${{ needs.seal.outputs.nonce }}
 
       - name: Download this run's authenticated guest bundle
@@ -417,6 +423,7 @@ jobs:
         with:
           artifact-ids: ${{ steps.bundle-metadata.outputs.id }}
           merge-multiple: true
+          digest-mismatch: error
           path: ${{ runner.temp }}/myspeed-branch-bundle-${{ needs.seal.outputs.nonce }}
 
       - name: Download sealed Stage 3 closure

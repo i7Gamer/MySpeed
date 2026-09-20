@@ -67,11 +67,11 @@ const hostRequest = () => ({schemaVersion: 1, context: hostedContext(), profile:
         qemuPid: `${ROOT}/baseline-qemu.pid`, serialLog: `${ROOT}/baseline-serial.log`}});
 
 /* The real seed builder, fed the real hosted context - not a narrowed copy of it. */
-const seedDocuments = () => buildWindowsBaselineGuestSeedDocuments({
+const seedDocuments = (candidate = {provenance: "published-release",
+    sourceSha: CANDIDATE_SOURCE_SHA}) => buildWindowsBaselineGuestSeedDocuments({
     context: hostedContext(),
-    candidate: {provenance: "published-release", artifactName: ARTIFACT_NAME,
-        sourceSha: CANDIDATE_SOURCE_SHA, bytes: CANDIDATE_BYTES,
-        sha256: CANDIDATE_FILE_SHA},
+    candidate: {artifactName: ARTIFACT_NAME, bytes: CANDIDATE_BYTES,
+        sha256: CANDIDATE_FILE_SHA, ...candidate},
     fixtureBundle: {bytes: "8192", sha256: SHA("5")},
     candidateController: {bytes: "4096", sha256: SHA("7")},
     cleanStopController: {bytes: "4096", sha256: SHA("8")},
@@ -116,6 +116,51 @@ async function publishedGuestResult() {
     return composeWindowsBaselineGuestResult({request: documents.request, execution: documents.execution,
         result: inner, cpuidBytes: cpuidBytes()});
 }
+
+describe("baseline guest to Stage 3 host contract, for a branch build", () => {
+    /*
+     * The guest re-checks the candidate SHA against the harness SHA from inside the VM. It used to
+     * enforce only the published half of that rule - candidate must differ - which refused every
+     * branch run about forty minutes into a fifty-minute job, in the one place where nothing can be
+     * observed. Driving the real seed builder and the real guest runner is the only way to catch
+     * that here rather than there.
+     */
+    it("accepts a branch candidate built by the harness commit", async () => {
+        const documents = seedDocuments({provenance: "branch-build",
+            sourceSha: hostedContext().sourceSha});
+        const inner = await runWindowsBaselineGuest(documents.request, guestOperations());
+        assert.equal(inner.status, "observed", inner.failure);
+    });
+
+    it("still refuses a branch candidate that is not the harness commit", async () => {
+        const documents = seedDocuments({provenance: "branch-build",
+            sourceSha: hostedContext().sourceSha});
+        const request = structuredClone(documents.request);
+        request.candidate.sourceSha = CANDIDATE_SOURCE_SHA;
+        const inner = await runWindowsBaselineGuest(request, guestOperations());
+        assert.equal(inner.status, "failed");
+        assert.match(String(inner.failure), /source SHA differs/u);
+    });
+
+    it("still refuses a published candidate that is the harness commit", async () => {
+        const documents = seedDocuments();
+        const request = structuredClone(documents.request);
+        request.candidate.sourceSha = hostedContext().sourceSha;
+        const inner = await runWindowsBaselineGuest(request, guestOperations());
+        assert.equal(inner.status, "failed");
+        assert.match(String(inner.failure), /source SHA differs/u);
+    });
+
+    /* A provenance the guest does not recognise must not pick whichever branch checks less. */
+    it("refuses a candidate whose provenance it does not recognise", async () => {
+        const documents = seedDocuments();
+        const request = structuredClone(documents.request);
+        request.candidate.provenance = "released";
+        const inner = await runWindowsBaselineGuest(request, guestOperations());
+        assert.equal(inner.status, "failed");
+        assert.match(String(inner.failure), /provenance differs/u);
+    });
+});
 
 describe("baseline guest to Stage 3 host contract", () => {
     it("publishes a result the host validator accepts", async () => {

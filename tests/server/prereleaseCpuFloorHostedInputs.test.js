@@ -5,6 +5,9 @@ import {describe, it} from "node:test";
 import {runPrereleaseCpuFloorHostedInputs} from
     "../../scripts/release/prerelease-cpu-floor-hosted-inputs.mjs";
 import {bindPrereleaseCpuFloorTarget} from "../../scripts/release/prerelease-cpu-floor-target.mjs";
+import {buildPrereleaseCpuFloorStage2Request, buildPrereleaseCpuFloorStage3Request,
+    buildPrereleaseCpuFloorStage3Template, inspectPrereleaseCpuFloorEvidence} from
+    "../../scripts/release/prerelease-cpu-floor.mjs";
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
 
@@ -66,7 +69,8 @@ const input = (overrides = {}) => ({
     ...overrides});
 
 const capture = () => {
-    const seen = {staged: [], prepared: null, launched: null, stage2Closure: null, directories: []};
+    const seen = {staged: [], prepared: null, launched: null, launchDependencies: null,
+        stage2Closure: null, directories: []};
     return {seen, dependencies: {
         readOwned: () => Buffer.from("candidate-executable"),
         makeDirectory: value => seen.directories.push(value),
@@ -78,8 +82,9 @@ const capture = () => {
         makeStage2Closure: (...value) => {
             seen.stage2Closure = value;
         },
-        launch: async value => {
+        launch: async (value, launchDependencies) => {
             seen.launched = value;
+            seen.launchDependencies = launchDependencies;
             return {accepted: true, qualifying: false};
         }
     }};
@@ -117,6 +122,27 @@ describe("pre-release CPU-floor hosted input adapter", () => {
         await runPrereleaseCpuFloorHostedInputs(input(), dependencies);
         assert.equal(seen.prepared.manifestSha256, ARCHIVE_SHA);
     });
+
+    /*
+     * The launcher defaults every builder to the published ones, which brand-check for a binding
+     * this path never produces. Naming them is therefore load-bearing, not tidiness: without it a
+     * branch run is refused by the published brand check and the builders below are never reached
+     * at all. A test that stubs `launch` without inspecting what it was handed passes happily while
+     * they are dead code, which is how this was missed the first time.
+     */
+    it("hands the launcher the branch builders rather than letting it default to the published ones",
+        async () => {
+            const {seen, dependencies} = capture();
+            await runPrereleaseCpuFloorHostedInputs(input(), dependencies);
+            assert.equal(seen.launchDependencies.buildStage2Request,
+                buildPrereleaseCpuFloorStage2Request);
+            assert.equal(seen.launchDependencies.buildStage3Template,
+                buildPrereleaseCpuFloorStage3Template);
+            assert.equal(seen.launchDependencies.buildStage3Request,
+                buildPrereleaseCpuFloorStage3Request);
+            assert.equal(seen.launchDependencies.inspectEvidence,
+                inspectPrereleaseCpuFloorEvidence);
+        });
 
     it("refuses a bundle with a missing file or one built from another commit", async () => {
         const missing = bundle();

@@ -132,7 +132,8 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
     const fixtureIdentity = {path: `${inputRoot}\\fixture-bundle.json`, bytes: fixture.bytes,
         sha256: fixture.sha256};
     const request = {schemaVersion: SCHEMA_VERSION, kind: REQUEST_KIND, profile: PROFILE, qualifying: false,
-        context, candidate: {artifactName: candidate.artifactName, path: `${taskRoot}\\MySpeed.exe`,
+        context, candidate: {artifactName: candidate.artifactName, provenance,
+            path: `${taskRoot}\\MySpeed.exe`,
             sourceSha: candidate.sourceSha, bytes: candidate.bytes, sha256: candidate.sha256},
         fixture: fixtureIdentity,
         paths: {taskRoot, populatedWork: `${taskRoot}\\populated`, resetWork: `${taskRoot}\\reset`},

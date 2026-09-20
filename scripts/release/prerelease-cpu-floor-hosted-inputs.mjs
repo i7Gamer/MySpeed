@@ -15,7 +15,9 @@ import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate
  * listed in the Stage 3 execution closure, so renaming the file is a change to a sealed set.
  */
 import {prepareV161PostReleaseCpuFloorGuestFiles} from "./post-release-cpu-floor-guest-preparation.mjs";
-import {createPrereleaseCpuFloorBinding, acquirePrereleaseCpuFloorCandidate} from
+import {acquirePrereleaseCpuFloorCandidate, buildPrereleaseCpuFloorStage2Request,
+    buildPrereleaseCpuFloorStage3Request, buildPrereleaseCpuFloorStage3Template,
+    createPrereleaseCpuFloorBinding, inspectPrereleaseCpuFloorEvidence} from
     "./prerelease-cpu-floor.mjs";
 
 /*
@@ -182,9 +184,21 @@ export async function runPrereleaseCpuFloorHostedInputs(input, dependencies = {}
 
     (dependencies.makeStage2Closure ?? stage2ClosureFromStage3Closure)(roots.closure, roots.stage2Closure);
     const launch = dependencies.launch ?? executeStage3Launcher;
+    /*
+     * The launcher defaults every builder to the published ones, which brand-check for a binding
+     * this path does not produce. Naming them here is not optional wiring: without it a branch run
+     * reaches the launcher and is refused by the published brand check, and the builders below are
+     * never called at all.
+     */
     const result = await launch({closureRoot: roots.closure, closureRecords, transportRoot: roots.transport,
         envelopeRoot: roots.envelope, binding, acquired, plan: stage3Plan, probeArtifact,
-        guestFiles: preparedGuest.files}, dependencies.launchDependencies);
+        guestFiles: preparedGuest.files}, {
+        buildStage2Request: buildPrereleaseCpuFloorStage2Request,
+        buildStage3Template: buildPrereleaseCpuFloorStage3Template,
+        buildStage3Request: buildPrereleaseCpuFloorStage3Request,
+        inspectEvidence: inspectPrereleaseCpuFloorEvidence,
+        ...dependencies.launchDependencies
+    });
     if (result?.accepted !== true) throw new Error("Stage 3 consumer did not accept the execution");
     return result;
 }

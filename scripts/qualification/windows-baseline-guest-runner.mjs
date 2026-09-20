@@ -85,12 +85,25 @@ function validateRequest(value) {
     exactString(value.context.runId, /^[1-9][0-9]{0,19}$/u, "baseline run ID");
     exactString(value.context.runAttempt, /^[1-9][0-9]{0,9}$/u, "baseline run attempt");
     exactString(value.context.nonce, /^[0-9a-f]{32}$/u, "baseline nonce");
-    exactKeys(value.candidate, ["artifactName", "bytes", "path", "sha256", "sourceSha"], "baseline candidate");
+    exactKeys(value.candidate, ["artifactName", "bytes", "path", "provenance", "sha256", "sourceSha"],
+        "baseline candidate");
     if (value.candidate.artifactName !== ARTIFACT_NAME) throw new TypeError("baseline artifact name differs");
     exactString(value.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline candidate source SHA");
-    // The candidate release SHA (which stamps the fixture bundle) is always a different release than
-    // the harness context SHA; equality means the seed documents were built incorrectly.
-    if (value.candidate.sourceSha === value.context.sourceSha)
+    /*
+     * The candidate SHA stamps the fixture bundle, so the guest re-checks it against the harness
+     * SHA from in here as well. The host checks it twice already, but the guest is the one place
+     * where nothing can be observed if it is wrong.
+     *
+     * A published release is always a different commit from the harness testing it; a branch build
+     * is always the same one. Enforcing only the published half of that rule refused every branch
+     * run from inside the VM, roughly forty minutes in, which is the least debuggable place a
+     * host-side mistake can surface.
+     */
+    if (value.candidate.provenance !== "published-release"
+        && value.candidate.provenance !== "branch-build")
+        throw new TypeError("baseline candidate provenance differs");
+    const isHarnessCommit = value.candidate.sourceSha === value.context.sourceSha;
+    if (value.candidate.provenance === "published-release" ? isHarnessCommit : !isHarnessCommit)
         throw new TypeError("baseline candidate source SHA differs");
     windowsPath(value.candidate.path, "baseline candidate path");
     decimal(value.candidate.bytes, "baseline candidate bytes"); sha256(value.candidate.sha256, "baseline candidate SHA");
