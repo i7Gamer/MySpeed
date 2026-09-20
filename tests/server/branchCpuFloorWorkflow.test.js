@@ -139,14 +139,30 @@ describe("Windows CPU-floor branch workflow", () => {
         }
     });
 
+    /*
+     * Each suite has to be its own continued line, not merely a substring of the step. A literal
+     * "\n" pasted into the YAML instead of a line break leaves every name present and the command
+     * unrunnable, which a substring match cannot tell apart from a working battery.
+     */
     it("runs the branch suites before sealing the closure", () => {
         const step = workflow().jobs.seal.steps.find(item =>
             String(item.name).includes("unit tests"));
+        const lines = String(step.run).split("\n").map(value => value.trim());
         for (const suite of ["prereleaseCpuFloorTarget", "prereleaseCpuFloor",
             "prereleaseCpuFloorHostedInputs", "linuxWindowsCpuFloorStage3CandidateProvenance",
-            "branchCpuFloorWorkflow"]) {
-            assert.match(step.run, new RegExp(`tests/server/${suite}\\.test\\.js`, "u"), suite);
+            "branchCpuFloorWorkflow",
+            /*
+             * The run builds through build-binaries with windows_only, and stages a fixture whose
+             * inventory three consumers hard-code. Both contracts are this workflow's to rely on,
+             * so both are proven before anything is sealed.
+             */
+            "buildBinariesWindowsOnly", "fixtureInventoryParity"]) {
+            assert.ok(lines.some(line =>
+                /^(bun test )?tests\/server\/[A-Za-z0-9]+\.test\.js( \\)?$/u.test(line)
+                && line.includes(`tests/server/${suite}.test.js`)),
+            `${suite} must be its own line in the battery`);
         }
+        assert.doesNotMatch(String(step.run), /\\n/u, "no literal backslash-n in the command");
     });
 
     /*

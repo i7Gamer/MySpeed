@@ -316,7 +316,9 @@ jobs:
             tests/server/prereleaseCpuFloor.test.js \
             tests/server/prereleaseCpuFloorHostedInputs.test.js \
             tests/server/linuxWindowsCpuFloorStage3CandidateProvenance.test.js \
-            tests/server/branchCpuFloorWorkflow.test.js
+            tests/server/branchCpuFloorWorkflow.test.js \
+            tests/server/buildBinariesWindowsOnly.test.js \
+            tests/server/fixtureInventoryParity.test.js
 
       - name: Seal complete transitive execution closure
         id: seal
