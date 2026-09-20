@@ -189,7 +189,9 @@ jobs:
           install -d -m 700 "$bundle_root/fixture"
           install -d -m 700 "$bundle_root/fixture/populated"
           install -d -m 700 "$bundle_root/fixture/reset"
-          node scripts/qualification/fixture.mjs handoff --repo "$PWD" \
+          # The fixture binaries are inert placeholders, so the platform only selects the filename
+          # suffix. This job runs on Linux and the guest is Windows, so it has to be named.
+          node scripts/qualification/fixture.mjs handoff --repo "$PWD" --platform win32 \
             --work "$bundle_root/fixture/populated" --reset-work "$bundle_root/fixture/reset" \
             --manifest "$bundle_root/fixture/transport.json" --source-sha "$GITHUB_SHA"
           node --input-type=module - "$bundle_root" <<'NODE'

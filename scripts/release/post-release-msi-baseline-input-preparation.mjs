@@ -12,8 +12,14 @@ const MANIFEST_BYTES = 21_518;
 const MANIFEST_SHA256 = "7339a6446d048bbae93759734bcafc94208e2b847af15677e847ae9a4b2f8bca";
 const EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const MAX_FILE_BYTES = 512 * 1024 * 1024;
+/*
+ * The provider binaries the fixture producer emits. The third copy of this list - the two guest
+ * inventories carry it too - and the one that drifted longest: ost-cli shipped with the
+ * OpenSpeedTest provider and none of the three were told. Kept in step by a test.
+ */
 const FIXTURE_COMMON = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
-    "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
+    "bin/ost-cli.exe", "bin/speedtest.exe", "data/servers/librespeed.json",
+    "data/servers/ookla.json"]);
 const OPTIONAL_WAL = "data/storage.db-wal";
 const TRANSIENT_SHARED_MEMORY = "data/storage.db-shm";
 const POPULATED_SQLITE_SIDECARS = Object.freeze([TRANSIENT_SHARED_MEMORY, OPTIONAL_WAL]);

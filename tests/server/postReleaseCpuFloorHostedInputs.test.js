@@ -47,7 +47,7 @@ const adapterInput = observed => ({observedMsiPreparation: observed, hostedConte
 const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const physicalIdentity = target => { const bytes = fs.readFileSync(target); return {path: fs.realpathSync.native(target),
     bytes: bytes.length, sha256: hash(bytes)}; };
-const COMMON_FIXTURE_FILES = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
+const COMMON_FIXTURE_FILES = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe", "bin/ost-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"];
 function writeFixtureTree(root, populated) {
     for (const name of COMMON_FIXTURE_FILES) { const target = path.join(root, ...name.split("/"));

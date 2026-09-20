@@ -11,8 +11,14 @@ const MAX_BUNDLE_BYTES = 64 * 1024 * 1024;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const SOURCE_PATTERN = /^[0-9a-f]{40}$/u;
 const NONCE_PATTERN = /^[0-9a-f]{48}$/u;
+/*
+ * Every provider binary the fixture producer emits. This list was four entries for a year after
+ * ost-cli shipped, because the only caller ran an older producer and nothing compared the two; the
+ * mismatch surfaced the first time the producer and the guest came from the same commit.
+ */
 const COMMON_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
-    "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
+    "bin/ost-cli.exe", "bin/speedtest.exe", "data/servers/librespeed.json",
+    "data/servers/ookla.json"]);
 const POPULATED_FILES = Object.freeze([...COMMON_FILES, "data/storage.db"].sort());
 const RESET_FILES = Object.freeze([...COMMON_FILES].sort());
 const OPTIONAL_EMPTY_WAL = "data/storage.db-wal";

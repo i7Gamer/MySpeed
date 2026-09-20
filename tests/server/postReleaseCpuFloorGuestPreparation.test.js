@@ -16,7 +16,7 @@ const REPOSITORY = path.resolve(HERE, "..", "..");
 const CANDIDATE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
 const HARNESS_SHA = "dce629fd50ea007221b3a9f2698c32a573bca160";
 const NONCE = "a1b2c3d4e5f60718293a4b5c6d7e8f90";
-const COMMON = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe", "bin/speedtest.exe",
+const COMMON = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe", "bin/ost-cli.exe", "bin/speedtest.exe",
     "data/servers/librespeed.json", "data/servers/ookla.json"];
 const PROBES = [["avx", "avx.exe"], ["avx2", "avx2.exe"], ["cpuid", "cpuid.exe"],
     ["illegal", "illegal.exe"], ["known-bad", "known_bad.exe"], ["known-good", "known_good.exe"],
