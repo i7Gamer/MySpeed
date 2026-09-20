@@ -99,6 +99,12 @@ function validateRequest(value) {
      * run from inside the VM, roughly forty minutes in, which is the least debuggable place a
      * host-side mistake can surface.
      */
+    /*
+     * Spelled out rather than taken from CANDIDATE_PROVENANCE on purpose. This file runs inside the
+     * guest from the runtime bundle, which carries a fixed list of members and imports nothing else;
+     * the provenance module is not one of them, so importing it here would fail the run from inside
+     * the VM. Change these strings only with the ones in that module.
+     */
     if (value.candidate.provenance !== "published-release"
         && value.candidate.provenance !== "branch-build")
         throw new TypeError("baseline candidate provenance differs");
