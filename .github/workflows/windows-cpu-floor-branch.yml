@@ -247,7 +247,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: myspeed-branch-guest-bundle
+          name: ${{ env.BUNDLE_ARTIFACT_NAME }}
           path: ${{ runner.temp }}/myspeed-branch-bundle
           include-hidden-files: true
           if-no-files-found: error
@@ -255,11 +255,10 @@ jobs:
 
   seal:
     name: Test and seal Stage 3 sequence closure
-    if: github.repository == 'i7Gamer/MySpeed'
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-WINDOWS-BASELINE-CPU-FLOOR'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
       nonce: ${{ steps.seal.outputs.nonce }}
       closure_sha256: ${{ steps.seal.outputs.closure_sha256 }}
       bootstrap_sha256: ${{ steps.seal.outputs.bootstrap_sha256 }}
@@ -520,7 +519,10 @@ jobs:
           closure_root="$RUNNER_TEMP/myspeed-stage3-closure-$EXPECTED_NONCE"
           kvm_root="$RUNNER_TEMP/linux-kvm-capability-closure"
           work_root="$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE"
-          test ! -e "$kvm_root" && test ! -e "$work_root"
+          # Separate statements on purpose: under `set -e` a failing left operand of `&&` does not
+          # abort, so writing these as one line silently tests only the second.
+          test ! -e "$kvm_root"
+          test ! -e "$work_root"
           install -d -m 700 "$kvm_root"
           install -m 600 "$closure_root/scripts/qualification/linux-kvm-capability.mjs" "$kvm_root/"
           install -m 600 "$closure_root/scripts/qualification/linux-kvm-privileged-capability.mjs" "$kvm_root/"
@@ -838,5 +840,10 @@ jobs:
             ${{ runner.temp }}/myspeed-stage3-sequence-envelope-${{ needs.seal.outputs.nonce }}
             ${{ runner.temp }}/myspeed-stage3-logs-${{ needs.seal.outputs.nonce }}
             ${{ runner.temp }}/myspeed-stage3-${{ needs.seal.outputs.nonce }}
+            # The guest system disk is tens of gigabytes and is the one member nobody extracts
+            # evidence from - the output volume beside it is the 64 MB file that gets read. Its
+            # bulk is what makes this upload unable to finish inside the retention reserve, which
+            # is spent precisely when a sequence stalled and the evidence is most wanted.
+            !${{ runner.temp }}/myspeed-stage3-${{ needs.seal.outputs.nonce }}/stage3.qcow2
           retention-days: 7
           if-no-files-found: error

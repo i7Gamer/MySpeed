@@ -5,6 +5,8 @@ import {describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
 import {parse} from "yaml";
 
+import {STAGE3_BUDGET_CONSTANTS} from
+    "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS} from
     "../../scripts/release/post-release-cpu-floor-guest-preparation.mjs";
 
@@ -148,16 +150,40 @@ describe("Windows CPU-floor branch workflow", () => {
     });
 
     /*
-     * The evidence budget is derived from the execute job's own ceiling. Two numbers that must
-     * agree but are written twice are two numbers that eventually disagree.
+     * The numbers that actually bound the run are the Stage 3 constants, not these env values - the
+     * budget anchor reads the constants. So the job's own timeout has to be pinned to the same
+     * authority: lowering timeout-minutes without lowering the constant would leave the anchor
+     * computing a hard stop past the point GitHub cancels the job, and the sequence would outlive
+     * both evidence uploads. Pinning only "env equals timeout" would not have caught that.
      */
-    it("derives the sequence budget from the job ceiling it actually runs under", () => {
+    it("pins every budget number to the constants the anchor actually uses", () => {
         const value = workflow();
-        assert.equal(Number(value.env.EXECUTE_JOB_CEILING_SECONDS),
-            value.jobs.execute["timeout-minutes"] * 60);
-        assert.ok(Number(value.env.EVIDENCE_RETENTION_RESERVE_SECONDS) > 0);
-        assert.ok(Number(value.env.MINIMUM_SEQUENCE_SECONDS)
-            < Number(value.env.EXECUTE_JOB_CEILING_SECONDS));
+        assert.equal(value.jobs.execute["timeout-minutes"] * 60 * 1_000,
+            STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS);
+        assert.equal(Number(value.env.EXECUTE_JOB_CEILING_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.JOB_CEILING_MILLISECONDS);
+        assert.equal(Number(value.env.EVIDENCE_RETENTION_RESERVE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.RETENTION_RESERVE_MILLISECONDS);
+        assert.equal(Number(value.env.MINIMUM_SEQUENCE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.MINIMUM_SEQUENCE_MILLISECONDS);
+        const step = value.jobs.execute.steps.find(item => item.id === "run-sequence");
+        assert.equal(Number(step.env.SEQUENCE_KILL_GRACE_SECONDS) * 1_000,
+            STAGE3_BUDGET_CONSTANTS.SEQUENCE_KILL_GRACE_MILLISECONDS);
+    });
+
+    /*
+     * The guest system disk is tens of gigabytes and nothing extracts evidence from it. Leaving it
+     * in makes the upload that matters - the one taken when a sequence stalled - unlikely to finish
+     * inside the retention reserve held back for it.
+     */
+    it("keeps the guest system disk out of the evidence upload", () => {
+        const step = workflow().jobs.execute.steps.find(item =>
+            String(item.name).includes("Upload non-qualifying evidence"));
+        const paths = String(step.with.path).split("\n").map(value => value.trim());
+        assert.ok(paths.some(value => value.startsWith("!") && value.endsWith("/stage3.qcow2")),
+            "the system disk must be excluded");
+        assert.ok(paths.some(value => !value.startsWith("!") && value.includes("myspeed-stage3-")),
+            "the rest of the Stage 3 root must still be uploaded");
     });
 
     it("stages the executable by its real name inside the artifact", () => {
