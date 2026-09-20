@@ -156,7 +156,12 @@ describe("Windows CPU-floor branch workflow", () => {
              * inventory three consumers hard-code. Both contracts are this workflow's to rely on,
              * so both are proven before anything is sealed.
              */
-            "buildBinariesWindowsOnly", "fixtureInventoryParity"]) {
+            "buildBinariesWindowsOnly", "fixtureInventoryParity",
+            /*
+             * The guest runs these modules from the bundle with no node_modules and no
+             * repository, so an import that escapes the bundle surfaces only inside the VM.
+             */
+            "windowsBaselineGuestRuntimeBundleClosure"]) {
             assert.ok(lines.some(line =>
                 /^(bun test )?tests\/server\/[A-Za-z0-9]+\.test\.js( \\)?$/u.test(line)
                 && line.includes(`tests/server/${suite}.test.js`)),
