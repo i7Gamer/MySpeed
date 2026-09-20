@@ -104,6 +104,31 @@ describe("Windows CPU-floor branch workflow", () => {
             POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS.NODE_RUNTIME_SHA256);
     });
 
+    /*
+     * Both registries are generated rather than committed, and the fixture seeding imports them.
+     * Without this step the handoff fails on a fresh checkout with ERR_MODULE_NOT_FOUND, which no
+     * unit test can reach because every test fixture builds the inventory by hand.
+     */
+    it("generates the server registries before seeding the fixture", () => {
+        const steps = workflow().jobs.bundle.steps.map(item => String(item.name));
+        const generate = steps.findIndex(name => name.includes("Generate the server registries"));
+        const seed = steps.findIndex(name => name.includes("Stage the guest runtime files"));
+        assert.ok(generate >= 0, "the registries must be generated");
+        assert.ok(generate < seed, "they must be generated before the handoff that imports them");
+        const step = workflow().jobs.bundle.steps[generate];
+        assert.match(step.run, /generate-migrations\.js/u);
+        assert.match(step.run, /generate-integrations\.js/u);
+    });
+
+    /*
+     * The artifact API does not report which attempt produced an artifact, so a re-run that skips
+     * the build job would bind an attempt-1 artifact and label it attempt 2.
+     */
+    it("refuses to bind evidence on a re-run attempt", () => {
+        const step = workflow().jobs.execute.steps.find(item => item.id === "candidate-metadata");
+        assert.match(step.with.script, /GITHUB_RUN_ATTEMPT !== '1'/u);
+    });
+
     it("requires the complete prior probe artifact identity at dispatch", () => {
         const inputs = workflow().on.workflow_dispatch.inputs;
         for (const name of ["probe_artifact_id", "probe_run_id", "probe_run_attempt",

@@ -228,10 +228,17 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
         launcherExecutablePath: toolchain.runtime.loader.path, terminationReason: null};
     const operations = {async replayStage2(input) { return {identity: input.identity, result: stage2Observation,
         guestEvidence: {identity: stage2GuestIdentity, bytesBase64: rawGuestEncoding.bytesBase64}}; },
-    async acquireCandidate(input) { return {candidate: input.candidate,
-        stagedFile: {...input.candidate.file, path: `${root}/candidate/MySpeed.exe`},
-        stagedSummary: {...input.candidate.qualificationSummary, path: `${root}/candidate/qualification-summary.json`},
-        stagedManifest: {...input.candidate.manifest, path: `${root}/candidate/qualification-manifest.json`}}; },
+    /* A branch build stages the executable alone; only a published release carries the two records. */
+    async acquireCandidate(input) {
+        const staged = {candidate: input.candidate,
+            stagedFile: {...input.candidate.file, path: `${root}/candidate/MySpeed.exe`}};
+        if (input.candidate.provenance !== "published-release") return staged;
+        return {...staged,
+            stagedSummary: {...input.candidate.qualificationSummary,
+                path: `${root}/candidate/qualification-summary.json`},
+            stagedManifest: {...input.candidate.manifest,
+                path: `${root}/candidate/qualification-manifest.json`}};
+    },
     async prepareBaselineMedia() { return {seedIso: {path: stage3Paths.seedIso, bytes: "4096", sha256: SHA("8")},
         outputDisk: {path: stage3Paths.outputDisk, bytes: String(OUTPUT_DISK_BYTES), sha256: SHA("9")},
         systemDisk: {path: stage3Paths.systemDisk, bytes: "8388608", sha256: SHA("a"),

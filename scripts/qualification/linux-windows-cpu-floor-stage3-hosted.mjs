@@ -258,6 +258,14 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
              * inventing two files to keep the shape.
              */
             const published = candidate.provenance === CANDIDATE_PROVENANCE.published;
+            /*
+             * Named rather than inferred from "not published". The request validator has already
+             * rejected an unknown discriminant, but a caller reaching this operation directly must
+             * not get the shorter file list by supplying a provenance nobody recognises.
+             */
+            if (!published && candidate.provenance !== CANDIDATE_PROVENANCE.branch) {
+                throw new TypeError("acquired candidate provenance differs");
+            }
             const expected = [[candidate.file, "MySpeed.exe"]];
             if (published) {
                 expected.push([candidate.qualificationSummary, "qualification-summary.json"],

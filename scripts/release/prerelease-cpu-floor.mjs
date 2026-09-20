@@ -2,8 +2,8 @@ import {createHash} from "node:crypto";
 import {isDeepStrictEqual} from "node:util";
 
 import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
-import {CANDIDATE_PROVENANCE, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS, STAGE3_MEDIA_NAMES}
-    from "../qualification/linux-windows-cpu-floor-stage3.mjs";
+import {CANDIDATE_PROVENANCE, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS, STAGE3_MEDIA_NAMES,
+    validateCompletedStage3Result} from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
 import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     INSTALLER_BOOT_CONFIRMATION_CADENCE}
@@ -305,6 +305,14 @@ export function buildPrereleaseCpuFloorStage3Request(binding, sameExecutionStage
 
 /** Binds the executed request back to the identity the binding sealed. */
 function requireRequestBoundToBinding(request, binding) {
+    /*
+     * The context first. Without it a request from an entirely different run could satisfy every
+     * candidate field below, because the candidate identity says nothing about which run executed
+     * it.
+     */
+    if (!isDeepStrictEqual(request.context, binding.hostedContext)) {
+        fail("request context differs from the bound hosted context");
+    }
     const {candidate} = request;
     if (!candidate || typeof candidate !== "object") fail("request candidate is missing");
     requireEqual(candidate.provenance, binding.candidate.provenance, "request candidate provenance");
@@ -320,29 +328,45 @@ function requireRequestBoundToBinding(request, binding) {
     requireEqual(candidate.archive?.sha256,
         binding.candidate.artifact.archiveDigest.slice(DIGEST_PREFIX.length),
         "request candidate archive digest");
+    /*
+     * Only the name, because the launcher hands this function the identity binding rather than the
+     * acquired one, and the executable's size and digest are admitted at acquisition. They are not
+     * unchecked: the completed-result validator below re-derives the request in full and binds the
+     * staged file to what the guest actually ran.
+     */
     requireEqual(candidate.file?.name, STAGE3_STAGED_CANDIDATE_NAME,
         "request candidate staged file name");
-    requireEqual(candidate.file?.bytes, binding.candidate.file.bytes,
-        "request candidate staged file size");
-    requireEqual(candidate.file?.sha256, binding.candidate.file.sha256,
-        "request candidate staged file digest");
 }
 
 export function inspectPrereleaseCpuFloorEvidence(input) {
     exactKeys(input, INSPECTION_KEYS, "evidence inspection input");
     const {binding, request, result, retainedStage2Bytes} = input;
-    requireAcquiredBinding(binding, "evidence inspection");
+    /*
+     * The launcher hands the identity binding here, not the acquired one - the acquired binding is
+     * what built the request, and the request is what gets re-derived below. Requiring the acquired
+     * brand refused every run before it could produce any evidence at all.
+     */
+    requireIdentityBinding(binding, "evidence inspection");
     requireRequestBoundToBinding(request, binding);
-    if (!Buffer.isBuffer(retainedStage2Bytes) || retainedStage2Bytes.length === 0) {
-        fail("retained Stage 2 bytes must be a non-empty Buffer");
+
+    /*
+     * The whole result is re-derived from the raw retained evidence by the Stage 3 core validator:
+     * guest CPUID bytes, the verifier summary bytes, the Stage 2 replay, the QEMU vector, the
+     * process record and the output disk. This is the check that makes the claim below mean
+     * anything - reading `result.status` and taking its word for it would let a status projection
+     * stand in for a CPU-floor run.
+     */
+    const validated = validateCompletedStage3Result(result, request, retainedStage2Bytes);
+
+    if (result.qualifying !== false || result.releaseGateCleared !== false) {
+        fail("evidence must remain non-qualifying");
     }
-    requireEqual(sha256(retainedStage2Bytes), request.stage2?.result?.sha256,
-        "retained Stage 2 digest");
-    if (result?.status !== "observed") fail("evidence inspection requires an observed Stage 3 result");
+    if (result.classification !== STAGE3_CONSTANTS.CLASSIFICATION) fail("evidence classification differs");
 
     return deepFreeze({
         schemaVersion: SCHEMA_VERSION,
         kind: "myspeed-prerelease-cpu-floor-evidence",
+        accepted: true,
         qualifying: false,
         releaseGateCleared: false,
         releaseGatesCleared: [],
@@ -352,8 +376,14 @@ export function inspectPrereleaseCpuFloorEvidence(input) {
          * an unreleased commit has none to reproduce.
          */
         establishes: "branch-build-runs-on-cpu-floor",
-        candidate: structuredClone(binding.candidate),
-        harness: {sourceSha: binding.harness.sourceSha},
-        observedAt: binding.observedAt
+        classification: result.classification,
+        context: structuredClone(result.context),
+        candidate: structuredClone(request.candidate),
+        acquiredCandidate: structuredClone(validated.candidate),
+        guest: structuredClone(result.guest),
+        qemuProcess: structuredClone(result.qemuProcess),
+        media: structuredClone(validated.media),
+        stage2: structuredClone(validated.stage2),
+        harness: {sourceSha: binding.harness.sourceSha}
     });
 }

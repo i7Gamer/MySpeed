@@ -149,6 +149,16 @@ jobs:
           set -euo pipefail
           bun install --frozen-lockfile --ignore-scripts
 
+      # Both registries are generated, not committed (.gitignore), and seeding imports them
+      # through the migration runner and the integrations controller. A fresh checkout without
+      # them fails the handoff with ERR_MODULE_NOT_FOUND. The published producer does the same.
+      - name: Generate the server registries the fixture seeding imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/generate-migrations.js
+          node scripts/generate-integrations.js
+
       - name: Acquire the pinned Windows Node runtime
         shell: bash
         run: |
@@ -366,6 +376,15 @@ jobs:
           script: |
             const {owner, repo} = context.repo;
             const wanted = process.env.BASELINE_ARTIFACT_NAME;
+            /*
+              * The artifact API reports the run and head SHA that produced an artifact, but not the
+              * producing attempt. On a re-run that skips the build job, an attempt-1 artifact would
+              * be admitted and then labelled with this attempt, so the binding would record an
+              * attempt the build never ran under. Refusing later attempts outright is the honest
+              * option: a re-run has to rebuild, which is also what a partial re-run cannot seal.
+              */
+            if (process.env.GITHUB_RUN_ATTEMPT !== '1')
+              throw new Error('Branch CPU-floor evidence is only bound on the first attempt; dispatch a fresh run');
             const {data} = await github.rest.actions.listWorkflowRunArtifacts({owner, repo,
               run_id: Number(process.env.GITHUB_RUN_ID), per_page: 100});
             const matching = data.artifacts.filter(value => value.name === wanted);

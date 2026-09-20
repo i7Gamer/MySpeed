@@ -12,6 +12,7 @@ import {
     inspectPrereleaseCpuFloorEvidence
 } from "../../scripts/release/prerelease-cpu-floor.mjs";
 import {validateRequest} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
+import {buildAcceptedStage3Fixture} from "../helpers/windows-cpu-floor-stage3-fixture.mjs";
 
 const SHA = character => character.repeat(64);
 const HARNESS_SHA = "d".repeat(40);
@@ -20,7 +21,8 @@ const NONCE = "2".repeat(32);
 const REPOSITORY = "i7Gamer/MySpeed";
 const RUN_ID = 123;
 const RUN_ATTEMPT = 1;
-const ARCHIVE_BYTES = 46649471;
+const ARTIFACT_ID = 10500000001;
+const ARCHIVE_BYTES = 1048576;
 const ARCHIVE_SHA = SHA("c");
 const EXE_BYTES = "524288";
 const EXE_SHA = SHA("d");
@@ -32,7 +34,7 @@ const target = (overrides = {}) => bindPrereleaseCpuFloorTarget({
     harnessSourceSha: HARNESS_SHA, observedAt: OBSERVED_AT,
     candidate: {repository: REPOSITORY, sourceSha: HARNESS_SHA, version: "1.6.2",
         windowsStamp: "1.6.2.1", ...overrides.candidate},
-    buildArtifact: {repository: REPOSITORY, id: 10500000001,
+    buildArtifact: {repository: REPOSITORY, id: ARTIFACT_ID,
         name: "MySpeed-windows-x64-baseline.exe", size: ARCHIVE_BYTES, digest: `sha256:${ARCHIVE_SHA}`,
         expired: false, createdAt: "2026-09-20T09:00:00Z", updatedAt: "2026-09-20T09:00:00Z",
         expiresAt: "2026-12-19T09:00:00Z", runId: RUN_ID, runAttempt: RUN_ATTEMPT,
@@ -165,36 +167,68 @@ describe("pre-release CPU-floor Stage 3 request", () => {
 });
 
 describe("pre-release CPU-floor evidence", () => {
-    const inspection = (overrides = {}) => {
-        const value = acquired();
-        return {binding: value, request: buildPrereleaseCpuFloorStage3Request(value, stage2Receipts(),
-            plan()), result: {status: "observed"}, retainedStage2Bytes: stage2Bytes, ...overrides};
+    /*
+     * Composed from the real Stage 3 fixture rather than a status stub. The inspector re-derives the
+     * whole result from the retained evidence, so a test that hands it `{status: "observed"}` proves
+     * only that the string was read - which is how an inspector that validated nothing stayed green
+     * through two reviews.
+     */
+    const composed = async (overrides = {}) => {
+        const fixture = await buildAcceptedStage3Fixture({
+            sourceSha: HARNESS_SHA, eventSha: HARNESS_SHA, candidateSourceSha: HARNESS_SHA,
+            nonce: NONCE, runId: String(RUN_ID), runAttempt: String(RUN_ATTEMPT),
+            candidate: {provenance: "branch-build", artifactId: String(ARTIFACT_ID),
+                artifactName: "MySpeed-windows-x64-baseline.exe",
+                archive: {bytes: String(ARCHIVE_BYTES), sha256: ARCHIVE_SHA},
+                sourceSha: HARNESS_SHA, runId: String(RUN_ID), runAttempt: String(RUN_ATTEMPT),
+                file: {name: "MySpeed.exe", bytes: EXE_BYTES, sha256: EXE_SHA}},
+            ...overrides.fixture});
+        const bound = createPrereleaseCpuFloorBinding({hostedContext: fixture.request.context,
+            target: target()});
+        return {fixture, binding: bound, input: {binding: bound, request: fixture.request,
+            result: fixture.completedResult, retainedStage2Bytes: fixture.retainedStage2Bytes,
+            ...overrides.input}};
     };
 
-    it("states what a branch run establishes, and clears no gate", () => {
-        const evidence = inspectPrereleaseCpuFloorEvidence(inspection());
+    it("accepts a real completed branch run and says what it establishes", async () => {
+        const {input} = await composed();
+        const evidence = inspectPrereleaseCpuFloorEvidence(input);
+        /* The launcher refuses anything that does not say so explicitly. */
+        assert.equal(evidence.accepted, true);
         assert.equal(evidence.establishes, "branch-build-runs-on-cpu-floor");
         assert.equal(evidence.qualifying, false);
         assert.equal(evidence.releaseGateCleared, false);
         assert.deepEqual(evidence.releaseGatesCleared, []);
+        assert.equal(evidence.candidate.provenance, "branch-build");
+        assert.equal(evidence.harness.sourceSha, HARNESS_SHA);
     });
 
-    it("refuses a request that was not built from this binding", () => {
-        const value = inspection();
-        const request = structuredClone(value.request);
-        request.candidate.file.sha256 = SHA("f");
-        assert.throws(() => inspectPrereleaseCpuFloorEvidence({...value, request}),
-            /staged file digest/u);
+    /*
+     * The claim rests on the completed-result validator, not on a status field. Each of these was
+     * accepted before the inspector called it.
+     */
+    it("refuses a result that only claims to have run", async () => {
+        const {input} = await composed();
+        for (const result of [{status: "observed"},
+            {...structuredClone(input.result), cpuFloorAccepted: false},
+            {...structuredClone(input.result), cleanupProven: false},
+            {...structuredClone(input.result), qualifying: true}]) {
+            assert.throws(() => inspectPrereleaseCpuFloorEvidence({...input, result}),
+                /./u, JSON.stringify(Object.keys(result).slice(0, 3)));
+        }
     });
 
-    it("refuses Stage 2 bytes that are not the ones the request names", () => {
+    it("refuses a request executed under a different run", async () => {
+        const {input, binding: bound} = await composed();
+        const request = structuredClone(input.request);
+        request.context = {...request.context, runId: "999"};
+        assert.throws(() => inspectPrereleaseCpuFloorEvidence({...input, binding: bound, request}),
+            /request context differs/u);
+    });
+
+    it("refuses Stage 2 bytes that are not the ones the request names", async () => {
+        const {input} = await composed();
         assert.throws(() => inspectPrereleaseCpuFloorEvidence(
-            inspection({retainedStage2Bytes: Buffer.from("different", "utf8")})),
-        /retained Stage 2 digest/u);
-    });
-
-    it("refuses a Stage 3 result that was not observed", () => {
-        assert.throws(() => inspectPrereleaseCpuFloorEvidence(
-            inspection({result: {status: "failed"}})), /observed Stage 3 result/u);
+            {...input, retainedStage2Bytes: Buffer.from("different", "utf8")}), /./u);
     });
 });
