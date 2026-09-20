@@ -161,6 +161,7 @@ export async function buildAcceptedStage3Fixture(overrides = {}) {
     const stage2Identity = {path: `/home/runner/work/_temp/myspeed-stage2-transport-${nonce}/stage2-result.json`,
         bytes: String(stage2Encoding.bytes.length), sha256: stage2Encoding.sha256};
     const candidate = structuredClone(overrides.candidate ?? {
+        provenance: "published-release",
         artifactId: "563103679",
         artifactName: "MySpeed-windows-x64-baseline.exe",
         releaseAssetId: "563103679",

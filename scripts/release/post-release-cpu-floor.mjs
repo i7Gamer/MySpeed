@@ -334,6 +334,8 @@ export function buildV161PostReleaseCpuFloorStage3Template(binding, plan) {
             serialLog: `${root}/${STAGE3_SERIAL_LOG_NAME}`
         },
         candidate: {
+            /* The schema is a tagged union; this path is always the published one. */
+            provenance: "published-release",
             sourceSha: binding.candidate.sourceSha,
             tagName: binding.candidate.tagName,
             artifactId: binding.candidate.artifact.id,

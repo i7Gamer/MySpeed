@@ -29,6 +29,7 @@ const guestFiles = () => [record("node.exe", "6", "52428800"), record("request.j
     record("execution.json", "8"), record("fixture-bundle.json", "9"), record("guest-runtime.json", "a"),
     record("runtime-installer.ps1", "b"), ...PROBE_NAMES.map((name, index) => record(name, String(index + 1)))];
 const candidate = () => ({
+    provenance: "published-release",
     artifactId: "563103679",
     artifactName: "MySpeed-windows-x64-baseline.exe",
     releaseAssetId: "563103679",
@@ -64,6 +65,18 @@ const EARLY_BOOT = Object.freeze({schemaVersion: 1, kind: "qemu-early-boot-obser
     version: {major: 8, minor: 2, micro: 2}, status: "running", running: true,
     screenshots: [1, 2].map(index => ({path: `${ROOT}/early-boot-${index}.png`, bytes: String(PNG.length),
         sha256: crypto.createHash("sha256").update(PNG).digest("hex"), bytesBase64: PNG.toString("base64")}))});
+
+/*
+ * The same candidate with a branch build's provenance: no tag, no release assets, and none of the
+ * published records. Its source SHA is the harness commit, which is what a branch build is.
+ */
+const RELEASE_ONLY = ["tagName", "releaseAssetId", "releaseAssetDigest", "qualificationSummary",
+    "manifest"];
+const branchCandidate = () => {
+    const value = {...candidate(), provenance: "branch-build", sourceSha: context().sourceSha};
+    for (const key of RELEASE_ONLY) delete value[key];
+    return value;
+};
 
 function fixture(overrides = {}) {
     const calls = [];
@@ -200,6 +213,36 @@ describe("hosted Windows CPU-floor Stage 3 operations", () => {
         const acquired = await value.operations.acquireCandidate({candidate: candidate()});
         assert.equal(acquired.stagedFile.path, `${ROOT}/candidate/MySpeed.exe`);
         assert.equal(acquired.stagedManifest.sha256, candidate().manifest.sha256);
+    });
+    /*
+     * Staging exactly one file is the point. The guest must not be handed two files whose
+     * provenance nothing validated, and the host must not go looking for files a branch build
+     * never produced - an inspect of a missing path is a hard failure, not a shrug.
+     */
+    it("stages only the executable for a branch build, and looks for nothing else", async () => {
+        const value = fixture();
+        const acquired = await value.operations.acquireCandidate({candidate: branchCandidate()});
+        assert.deepEqual(Object.keys(acquired).sort(), ["candidate", "stagedFile"]);
+        assert.equal(acquired.stagedFile.path, `${ROOT}/candidate/MySpeed.exe`);
+        const inspected = value.calls.filter(call => call[0] === "inspect").map(call => call[1]);
+        for (const name of ["qualification-summary.json", "qualification-manifest.json"]) {
+            assert.ok(!inspected.includes(`${ROOT}/candidate/${name}`), name);
+        }
+    });
+
+    it("seeds a branch build with the executable and without the published records", async () => {
+        const value = fixture();
+        await value.operations.replayStage2({identity: value.stage2ResultIdentity,
+            guestIdentity: value.stage2GuestResultIdentity});
+        const acquired = await value.operations.acquireCandidate({candidate: branchCandidate()});
+        await value.operations.prepareBaselineMedia({candidate: acquired, paths: paths(),
+            stage2: stage2(), toolchain: toolchain()});
+        const seeded = value.calls.find(call => call[0] === "media")[1].seedSpec.files
+            .map(file => file.name);
+        assert.ok(seeded.includes("MySpeed.exe"), "the branch build's executable must still be seeded");
+        for (const name of ["qualification-summary.json", "qualification-manifest.json"]) {
+            assert.ok(!seeded.includes(name), name);
+        }
     });
 
     it("rejects a raw Stage 2 guest identity that differs from the retained file", async () => {

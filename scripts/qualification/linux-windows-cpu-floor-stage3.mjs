@@ -27,6 +27,23 @@ const MAX_FAILURE_MESSAGE_CHARACTERS = 512;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const DECIMAL_PATTERN = /^(?:0|[1-9][0-9]{0,19})$/u;
 const BASELINE_ARTIFACT = "MySpeed-windows-x64-baseline.exe";
+export const CANDIDATE_PROVENANCE = Object.freeze({
+    published: "published-release", branch: "branch-build"
+});
+const PUBLISHED_CANDIDATE_KEYS = ["archive", "artifactId", "artifactName", "file", "manifest",
+    "provenance", "qualificationSummary", "releaseAssetDigest", "releaseAssetId", "runAttempt",
+    "runId", "sourceSha", "tagName"];
+const BRANCH_CANDIDATE_KEYS = ["archive", "artifactId", "artifactName", "file", "provenance",
+    "runAttempt", "runId", "sourceSha"];
+/*
+ * The one authority for what the Stage 3 media are called. The validator below enforces these, so
+ * any caller building a request has to agree with it; exported rather than restated so a second
+ * caller cannot drift from the names its own request will be judged against.
+ */
+export const STAGE3_MEDIA_NAMES = Object.freeze({
+    systemDisk: "stage3.qcow2", seedIso: "baseline-seed.iso", outputDisk: "baseline-output.img",
+    ovmfVars: "OVMF_VARS.fd", qemuPid: "baseline-qemu.pid", serialLog: "baseline-serial.log"
+});
 const STAGED_CANDIDATE = "MySpeed.exe";
 const SUMMARY_NAME = "qualification-summary.json";
 const MANIFEST_NAME = "qualification-manifest.json";
@@ -294,10 +311,9 @@ function validatePaths(value, context) {
         "Stage 3 paths");
     const expectedRoot = `/home/runner/work/_temp/myspeed-stage3-${context.nonce}`;
     if (value.root !== expectedRoot) throw new TypeError("Stage 3 root is invalid");
-    const names = {systemDisk: "stage3.qcow2", seedIso: "baseline-seed.iso",
-        outputDisk: "baseline-output.img", ovmfVars: "OVMF_VARS.fd", qemuPid: "baseline-qemu.pid",
-        serialLog: "baseline-serial.log"};
-    for (const [field, name] of Object.entries(names)) directChild(expectedRoot, value[field], name);
+    for (const [field, name] of Object.entries(STAGE3_MEDIA_NAMES)) {
+        directChild(expectedRoot, value[field], name);
+    }
     return structuredClone(value);
 }
 
@@ -616,25 +632,48 @@ function modelBitsOfLeaf1Ebx(register) {
     return (Number.parseInt(register.slice(2), 16) & LEAF1_EBX_MODEL_MASK) >>> 0;
 }
 
+/*
+ * The candidate is a tagged union. A published release carries a tag and two release assets; a
+ * branch build has no equivalent of either, because nothing has been tagged or published yet. The
+ * discriminant is explicit rather than inferred from which keys happen to be present, so that a
+ * candidate carrying no provenance is refused before either branch is chosen instead of falling
+ * into whichever one asks for less.
+ */
 function validateCandidate(value, context) {
-    keys(value, ["archive", "artifactId", "artifactName", "file", "manifest", "qualificationSummary",
-        "releaseAssetDigest", "releaseAssetId", "runAttempt", "runId", "sourceSha", "tagName"],
-    "baseline candidate");
-    if (value.artifactName !== BASELINE_ARTIFACT || value.sourceSha === context.sourceSha)
+    if (!value || typeof value !== "object" || Array.isArray(value))
+        throw new TypeError("baseline candidate keys are invalid");
+    const published = value.provenance === CANDIDATE_PROVENANCE.published;
+    if (!published && value.provenance !== CANDIDATE_PROVENANCE.branch)
+        throw new TypeError("baseline candidate provenance is invalid");
+    keys(value, published ? PUBLISHED_CANDIDATE_KEYS : BRANCH_CANDIDATE_KEYS, "baseline candidate");
+    if (value.artifactName !== BASELINE_ARTIFACT)
+        throw new TypeError("baseline candidate provenance differs");
+    /*
+     * Same question, opposite answer. A published candidate is a frozen release that some later
+     * commit is testing, so the two commits must differ. A branch candidate is built by the very
+     * commit under test, so they must match. Read either one backwards and the run stops meaning
+     * what it claims to mean.
+     */
+    const isHarnessCommit = value.sourceSha === context.sourceSha;
+    if (published ? isHarnessCommit : !isHarnessCommit)
         throw new TypeError("baseline candidate provenance differs");
     exactString(value.sourceSha, /^[a-f0-9]{40}$/u, "baseline candidate source SHA");
-    exactString(value.tagName, /^v[0-9]+\.[0-9]+\.[0-9]+$/u, "baseline candidate tag name");
     exactString(value.artifactId, /^[1-9][0-9]{0,19}$/u, "baseline artifact ID");
-    exactString(value.releaseAssetId, /^[1-9][0-9]{0,19}$/u, "baseline release asset ID");
-    exactString(value.releaseAssetDigest, /^sha256:[a-f0-9]{64}$/u, "baseline release asset digest");
     for (const name of ["runId", "runAttempt"])
         exactString(value[name], /^[1-9][0-9]{0,19}$/u, `baseline candidate ${name}`);
     keys(value.archive, ["bytes", "sha256"], "baseline archive");
     decimal(value.archive.bytes, "baseline archive bytes", {positive: true});
     exactString(value.archive.sha256, SHA256_PATTERN, "baseline archive hash");
-    for (const [record, expectedName, label] of [[value.file, STAGED_CANDIDATE, "baseline file"],
-        [value.qualificationSummary, SUMMARY_NAME, "baseline summary"], [value.manifest, MANIFEST_NAME,
-            "baseline manifest"]]) {
+    const records = [[value.file, STAGED_CANDIDATE, "baseline file"]];
+    if (published) {
+        exactString(value.tagName, /^v[0-9]+\.[0-9]+\.[0-9]+$/u, "baseline candidate tag name");
+        exactString(value.releaseAssetId, /^[1-9][0-9]{0,19}$/u, "baseline release asset ID");
+        exactString(value.releaseAssetDigest, /^sha256:[a-f0-9]{64}$/u,
+            "baseline release asset digest");
+        records.push([value.qualificationSummary, SUMMARY_NAME, "baseline summary"],
+            [value.manifest, MANIFEST_NAME, "baseline manifest"]);
+    }
+    for (const [record, expectedName, label] of records) {
         keys(record, ["bytes", "name", "sha256"], label);
         if (record.name !== expectedName) throw new TypeError(`${label} name differs`);
         decimal(record.bytes, `${label} bytes`, {positive: true});
@@ -699,11 +738,20 @@ export function buildBaselineQemuArguments({paths: value, toolchain, windowsIso}
 }
 
 function validateAcquiredCandidate(value, candidate, root) {
-    keys(value, ["candidate", "stagedFile", "stagedManifest", "stagedSummary"], "acquired candidate");
+    /*
+     * A branch build stages one file. The summary and manifest exist only for a published release,
+     * and admitting them here for a branch candidate would let a caller stage two extra files that
+     * nothing had validated the provenance of.
+     */
+    const published = candidate.provenance === CANDIDATE_PROVENANCE.published;
+    keys(value, published ? ["candidate", "stagedFile", "stagedManifest", "stagedSummary"]
+        : ["candidate", "stagedFile"], "acquired candidate");
     if (!same(value.candidate, candidate)) throw new TypeError("acquired candidate provenance differs");
-    const records = [[value.stagedFile, candidate.file, "candidate/MySpeed.exe"],
-        [value.stagedSummary, candidate.qualificationSummary, `candidate/${SUMMARY_NAME}`],
-        [value.stagedManifest, candidate.manifest, `candidate/${MANIFEST_NAME}`]];
+    const records = [[value.stagedFile, candidate.file, "candidate/MySpeed.exe"]];
+    if (published) {
+        records.push([value.stagedSummary, candidate.qualificationSummary, `candidate/${SUMMARY_NAME}`],
+            [value.stagedManifest, candidate.manifest, `candidate/${MANIFEST_NAME}`]);
+    }
     for (const [actual, expected, relative] of records) {
         keys(actual, ["bytes", "name", "path", "sha256"], "staged candidate file");
         if (actual.path !== `${root}/${relative}` || actual.name !== expected.name || actual.bytes !== expected.bytes ||

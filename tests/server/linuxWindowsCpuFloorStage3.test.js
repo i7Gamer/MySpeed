@@ -168,6 +168,7 @@ const stage2 = () => ({result: {path: `/home/runner/work/_temp/myspeed-stage2-tr
     bytes: "65536", sha256: SHA("b")}, guestResult: stage2GuestEvidence().identity});
 
 const candidate = () => ({
+    provenance: "published-release",
     artifactId: "563103679",
     artifactName: "MySpeed-windows-x64-baseline.exe",
     releaseAssetId: "563103679",
