@@ -28,6 +28,7 @@ export const STAGE3_EXECUTION_PATHS = Object.freeze([
     "scripts/qualification/windows-baseline-guest-fixture-bundle.mjs",
     "scripts/qualification/windows-baseline-guest-runtime-bundle.mjs",
     "scripts/qualification/windows-baseline-guest-seed-documents.mjs",
+    "scripts/qualification/windows-cpu-floor-candidate-provenance.mjs",
     "scripts/qualification/linux-windows-msi-lifecycle-host.mjs",
     "scripts/qualification/windows-msi-containment-preflight-host.mjs",
     "scripts/qualification/windows-msi-containment-preflight.mjs",

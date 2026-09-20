@@ -69,7 +69,8 @@ const hostRequest = () => ({schemaVersion: 1, context: hostedContext(), profile:
 /* The real seed builder, fed the real hosted context - not a narrowed copy of it. */
 const seedDocuments = () => buildWindowsBaselineGuestSeedDocuments({
     context: hostedContext(),
-    candidate: {artifactName: ARTIFACT_NAME, sourceSha: CANDIDATE_SOURCE_SHA, bytes: CANDIDATE_BYTES,
+    candidate: {provenance: "published-release", artifactName: ARTIFACT_NAME,
+        sourceSha: CANDIDATE_SOURCE_SHA, bytes: CANDIDATE_BYTES,
         sha256: CANDIDATE_FILE_SHA},
     fixtureBundle: {bytes: "8192", sha256: SHA("5")},
     candidateController: {bytes: "4096", sha256: SHA("7")},

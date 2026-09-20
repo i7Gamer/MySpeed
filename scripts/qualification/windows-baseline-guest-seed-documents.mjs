@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 
+import {CANDIDATE_PROVENANCE} from "./windows-cpu-floor-candidate-provenance.mjs";
+
 const SCHEMA_VERSION = 1;
 const REQUEST_KIND = "myspeed-windows-baseline-guest-request";
 const EXECUTION_KIND = "myspeed-windows-baseline-guest-execution-manifest";
@@ -89,7 +91,8 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
     exactKeys(input, ["candidate", "candidateController", "cleanStopController", "context", "cpuidProbe",
         "fixtureBundle", "imageVersion", "manifestSha256"], "baseline seed input");
     const context = validateContext(input.context);
-    exactKeys(input.candidate, ["artifactName", "bytes", "sha256", "sourceSha"], "baseline seed candidate");
+    exactKeys(input.candidate, ["artifactName", "bytes", "provenance", "sha256", "sourceSha"],
+        "baseline seed candidate");
     if (input.candidate.artifactName !== ARTIFACT_NAME)
         throw new TypeError("baseline seed candidate artifact name differs");
     decimal(input.candidate.bytes, MAX_CANDIDATE_BYTES, "baseline seed candidate bytes");
@@ -97,7 +100,16 @@ export function buildWindowsBaselineGuestSeedDocuments(input) {
     exactString(input.candidate.sourceSha, /^[0-9a-f]{40}$/u, "baseline seed candidate source SHA");
     // The candidate is a different release than the harness that stages this guest; the fixture
     // bundle is stamped with this SHA, so it must never collapse onto the harness context SHA.
-    if (input.candidate.sourceSha === context.sourceSha)
+    /*
+     * A published release must not be the commit running the harness; a branch build must be. The
+     * seed carries the candidate SHA that the guest materializer later checks the fixture bundle
+     * against, so getting this wrong would stamp the bundle with an identity the guest rejects.
+     */
+    const {provenance} = input.candidate;
+    if (provenance !== CANDIDATE_PROVENANCE.published && provenance !== CANDIDATE_PROVENANCE.branch)
+        throw new TypeError("baseline seed candidate provenance differs");
+    const isHarnessCommit = input.candidate.sourceSha === context.sourceSha;
+    if (provenance === CANDIDATE_PROVENANCE.published ? isHarnessCommit : !isHarnessCommit)
         throw new TypeError("baseline seed candidate source SHA differs");
     const candidate = structuredClone(input.candidate);
     const fixture = validateInputIdentity(input.fixtureBundle, MAX_FIXTURE_BYTES, "baseline seed fixture");

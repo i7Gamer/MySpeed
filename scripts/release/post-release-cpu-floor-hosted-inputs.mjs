@@ -112,6 +112,7 @@ export async function runV161PostReleaseCpuFloorHostedInputs(input, dependencies
         sha256: observed.execution.runtime.sha256};
     const guestProbes = probes.map(probe => ({...probe, bytes: String(probe.bytes)}));
     const preparedGuest = prepareGuest({context: hostedContext, candidate: {
+        provenance: "published-release",
         sourceSha: binding.candidate.sourceSha, artifactName: binding.candidate.artifact.name,
         file: {name: "MySpeed.exe", bytes: String(binding.candidate.exeAsset.bytes),
             sha256: binding.candidate.exeAsset.sha256}}, runtimeNode, fixture,

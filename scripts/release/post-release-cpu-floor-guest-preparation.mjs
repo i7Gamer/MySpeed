@@ -9,6 +9,7 @@ import {buildWindowsBaselineGuestRuntimeBundle, WINDOWS_BASELINE_RUNTIME_BUNDLE_
 import {buildWindowsBaselineGuestSeedDocuments} from
     "../qualification/windows-baseline-guest-seed-documents.mjs";
 import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
+import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
 
 const SCHEMA_VERSION = 1;
 const KIND = "myspeed-v1.6.1-post-release-cpu-floor-guest-preparation";
@@ -83,8 +84,21 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
         "probes", "runtimeInstaller", "runtimeNode", "runtimeSources"], "CPU-floor guest preparation input");
     const {context} = input;
     validateHostedContext(context);
-    if (context.sourceSha !== context.eventSha ||
-        input.candidate.sourceSha !== CANDIDATE_SOURCE_SHA || input.candidate.sourceSha === context.sourceSha)
+    /*
+     * A published release is a frozen commit that some later harness tests, so the two source SHAs
+     * must differ and the candidate must be the release this module is pinned to. A branch build is
+     * produced by the harness commit itself, so the two roles are one commit and the pin does not
+     * apply. The discriminant is explicit: an unrecognised one is refused rather than defaulted to
+     * whichever branch asks for less.
+     */
+    const {provenance} = input.candidate;
+    if (provenance !== CANDIDATE_PROVENANCE.published && provenance !== CANDIDATE_PROVENANCE.branch)
+        throw new TypeError("CPU-floor guest candidate provenance differs");
+    const rolesHold = provenance === CANDIDATE_PROVENANCE.published
+        ? input.candidate.sourceSha === CANDIDATE_SOURCE_SHA
+            && input.candidate.sourceSha !== context.sourceSha
+        : input.candidate.sourceSha === context.sourceSha;
+    if (context.sourceSha !== context.eventSha || !rolesHold)
         throw new TypeError("CPU-floor guest source roles differ");
     exactKeys(input.candidate.file, ["bytes", "name", "sha256"], "candidate file");
     if (input.candidate.file.name !== "MySpeed.exe" || !/^[1-9][0-9]*$/u.test(input.candidate.file.bytes) ||
@@ -133,7 +147,8 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
     const documents = buildWindowsBaselineGuestSeedDocuments({context: structuredClone(context),
         cpuidProbe: ((probe) => ({bytes: probe.bytes, sha256: probe.sha256}))(
             input.probes[PROBES.findIndex(([role]) => role === CPUID_PROBE_ROLE)]),
-    candidate: {artifactName: input.candidate.artifactName, sourceSha: input.candidate.sourceSha,
+    candidate: {artifactName: input.candidate.artifactName, provenance,
+        sourceSha: input.candidate.sourceSha,
         bytes: input.candidate.file.bytes, sha256: input.candidate.file.sha256},
     fixtureBundle: {bytes: String(fixtureBytes.length),
         sha256: sha256(fixtureBytes)}, candidateController: ((source) => ({bytes: source.bytes,

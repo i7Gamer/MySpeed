@@ -17,7 +17,8 @@ const CONTEXT = {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOU
         ImageVersion: "20260901.1"}};
 
 const input = () => ({context: {...CONTEXT}, imageVersion: "windows-server-2025-standard-eval",
-    manifestSha256: SHA("4"), candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+    manifestSha256: SHA("4"), candidate: {provenance: "published-release",
+        artifactName: "MySpeed-windows-x64-baseline.exe",
         sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("5")}, fixtureBundle: {bytes: "8192", sha256: SHA("6")},
     candidateController: {bytes: "65536", sha256: SHA("7")},
     cleanStopController: {bytes: "131072", sha256: SHA("8")},

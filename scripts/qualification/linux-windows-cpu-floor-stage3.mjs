@@ -10,6 +10,7 @@ import {validateInstallerBootConfirmation} from "./linux-windows-cpu-floor-stage
 import {buildWindowsMsiSetupCompleteActivation,
     getCompletedWindowsMsiActivationEvidence} from "./windows-msi-post-setup-activation.mjs";
 import {OPEN_GRAPH_QUALIFICATION_TIMEOUT_MS} from "./safety.mjs";
+import {CANDIDATE_PROVENANCE} from "./windows-cpu-floor-candidate-provenance.mjs";
 
 const SCHEMA_VERSION = 1;
 const PROFILE = "baseline-cpu";
@@ -27,9 +28,7 @@ const MAX_FAILURE_MESSAGE_CHARACTERS = 512;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const DECIMAL_PATTERN = /^(?:0|[1-9][0-9]{0,19})$/u;
 const BASELINE_ARTIFACT = "MySpeed-windows-x64-baseline.exe";
-export const CANDIDATE_PROVENANCE = Object.freeze({
-    published: "published-release", branch: "branch-build"
-});
+export {CANDIDATE_PROVENANCE};
 const PUBLISHED_CANDIDATE_KEYS = ["archive", "artifactId", "artifactName", "file", "manifest",
     "provenance", "qualificationSummary", "releaseAssetDigest", "releaseAssetId", "runAttempt",
     "runId", "sourceSha", "tagName"];

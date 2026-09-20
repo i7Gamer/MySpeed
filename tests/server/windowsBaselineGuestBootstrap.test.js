@@ -552,7 +552,7 @@ describe("Windows baseline guest bootstrap", () => {
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+            candidate: {provenance: "published-release", artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
@@ -620,7 +620,7 @@ describe("Windows baseline guest bootstrap", () => {
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+            candidate: {provenance: "published-release", artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},
@@ -677,7 +677,7 @@ describe("Windows baseline guest bootstrap", () => {
             const digest = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
             const documents = buildWindowsBaselineGuestSeedDocuments({context: {...hostedContext(), nonce},
             imageVersion: "windows-server-2025-standard-eval", manifestSha256: SHA("4"),
-            candidate: {artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
+            candidate: {provenance: "published-release", artifactName: "MySpeed-windows-x64-baseline.exe", sourceSha: CANDIDATE_SHA,
                 bytes: String(candidateBytes.length),
                 sha256: digest(candidateBytes)}, fixtureBundle: {bytes: String(fixtureBytes.length),
                 sha256: digest(fixtureBytes)}, candidateController: {bytes: "65536", sha256: SHA("7")},

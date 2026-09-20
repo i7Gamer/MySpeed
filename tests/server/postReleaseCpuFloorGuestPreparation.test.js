@@ -34,10 +34,10 @@ const inventory = root => Object.fromEntries(fs.readdirSync(root, {recursive: tr
     .filter(entry => entry.isFile()).map(entry => { const target = path.join(entry.parentPath, entry.name);
         return [path.relative(root, target).replaceAll(path.sep, "/"), hash(fs.readFileSync(target))]; })
     .sort(([left], [right]) => left.localeCompare(right)));
-function fixture(root) {
+function fixture(root, commit = CANDIDATE_SHA) {
     const populatedRoot = path.join(root, "populated"); const resetRoot = path.join(root, "reset");
     fs.mkdirSync(populatedRoot); fs.mkdirSync(resetRoot); tree(populatedRoot, true); tree(resetRoot, false);
-    const manifest = {schemaVersion: 1, source: {commit: CANDIDATE_SHA, bunLockSha256: "1".repeat(64),
+    const manifest = {schemaVersion: 1, source: {commit, bunLockSha256: "1".repeat(64),
         packageSha256: "2".repeat(64)}, populated: {root: "C:\\producer\\populated", nonce: "3".repeat(48),
         markerSha256: hash(fs.readFileSync(path.join(populatedRoot, ".myspeed-qualification.json"))),
         databaseSha256: hash(fs.readFileSync(path.join(populatedRoot, "data", "storage.db"))),
@@ -48,7 +48,7 @@ function fixture(root) {
     const bytes = Buffer.from(`${JSON.stringify(manifest)}\n`); const target = path.join(root, "transport.json");
     fs.writeFileSync(target, bytes); return {manifest: identity(target), populatedRoot, resetRoot};
 }
-function input(root) {
+function input(root, {candidateSha = CANDIDATE_SHA, provenance = "published-release"} = {}) {
     const node = path.join(root, "node.exe"); fs.writeFileSync(node, "inert-node-runtime");
     const probes = PROBES.map(([role, name]) => { const target = path.join(root, `probe-${name}`);
         fs.writeFileSync(target, role); return {role, name, ...identity(target)}; });
@@ -56,15 +56,70 @@ function input(root) {
         eventSha: HARNESS_SHA, runId: "40000000001", runAttempt: "1", nonce: NONCE,
         environment: {GITHUB_ACTIONS: "true", CI: "true", RUNNER_OS: "Linux", RUNNER_ARCH: "X64",
             RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24", ImageVersion: "20260901.1"}},
-    candidate: {sourceSha: CANDIDATE_SHA, artifactName: "MySpeed-windows-x64-baseline.exe",
+    candidate: {provenance, sourceSha: candidateSha, artifactName: "MySpeed-windows-x64-baseline.exe",
         file: {name: "MySpeed.exe", bytes: "111524352", sha256: "8".repeat(64)}}, runtimeNode: identity(node),
-    fixture: fixture(root), runtimeSources: WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS.map(relativePath =>
+    fixture: fixture(root, candidateSha), runtimeSources: WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS.map(relativePath =>
         ({relativePath, source: identity(path.join(REPOSITORY, ...relativePath.split("/")))})),
     runtimeInstaller: identity(path.join(REPOSITORY,
         "scripts/qualification/windows-baseline-guest-runtime-installer.ps1")), probes,
     imageVersion: "20260901.1", manifestSha256: "9".repeat(64),
     outputRoot: path.join(root, `myspeed-stage3-${NONCE}`, "candidate")};
 }
+
+describe("CPU-floor guest preparation for a branch build", () => {
+    /*
+     * A branch build is produced by the commit running the harness, so the two source SHAs that the
+     * published path requires to differ are necessarily one. The fixture bundle is stamped with the
+     * candidate SHA and the guest materializer checks it against that same value, so a branch run
+     * stamps it with the harness commit and stays self-consistent.
+     */
+    it("accepts the harness commit as the candidate and stamps the bundle with it", () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-branch-prep-")));
+        try {
+            const value = input(root, {candidateSha: HARNESS_SHA, provenance: "branch-build"});
+            fs.mkdirSync(path.dirname(value.outputRoot));
+            const result = prepareV161PostReleaseCpuFloorGuestFiles(value,
+                {expectedNodeSha256: value.runtimeNode.sha256});
+            assert.equal(result.status, "prepared");
+            const request = JSON.parse(fs.readFileSync(
+                result.files.find(file => file.name === "request.json").path));
+            assert.equal(request.candidate.sourceSha, HARNESS_SHA);
+            assert.equal(request.candidate.sourceSha, request.context.sourceSha);
+            const bundle = JSON.parse(fs.readFileSync(path.join(value.outputRoot, "fixture-bundle.json")));
+            assert.equal(bundle.sourceSha, HARNESS_SHA);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    it("still refuses a branch candidate that is not the harness commit", () => {
+        const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-branch-prep-")));
+        try {
+            const value = input(root, {candidateSha: CANDIDATE_SHA, provenance: "branch-build"});
+            fs.mkdirSync(path.dirname(value.outputRoot));
+            assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+                {expectedNodeSha256: value.runtimeNode.sha256}), /source roles differ/u);
+        } finally { fs.rmSync(root, {recursive: true, force: true}); }
+    });
+
+    /* A provenance nobody recognises must not fall through to whichever branch checks less. */
+    it("refuses a candidate whose provenance is missing or unknown", () => {
+        /* A fresh root per case: the fixture builder creates its own directories. */
+        const attempt = prepare => {
+            const root = fs.realpathSync.native(
+                fs.mkdtempSync(path.join(os.tmpdir(), "cpu-floor-branch-prep-")));
+            try {
+                const value = input(root, {candidateSha: HARNESS_SHA});
+                prepare(value);
+                assert.throws(() => prepareV161PostReleaseCpuFloorGuestFiles(value,
+                    {expectedNodeSha256: value.runtimeNode.sha256}), /candidate provenance differs/u);
+            } finally { fs.rmSync(root, {recursive: true, force: true}); }
+        };
+        for (const provenance of ["", "released", null]) {
+            attempt(value => { value.candidate.provenance = provenance; });
+        }
+        /* Absent entirely, rather than present and wrong. */
+        attempt(value => { delete value.candidate.provenance; });
+    });
+});
 
 describe("post-release CPU-floor guest preparation", () => {
     it("uses the real fixture, runtime and seed builders to stage the exact inert 14-file closure", () => {
