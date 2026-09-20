@@ -16,8 +16,14 @@ const MAX_OWNED_DEPTH = 16;
 const MAX_OWNED_BYTES = 1024 * 1024 * 1024;
 const EXPECTED_PING = "123.456";
 const EXPECTED_RESULT_ID = "qualification-seed-row";
+/*
+ * Every provider binary the fixture producer emits. This list was four entries for a year after
+ * ost-cli shipped, because the only caller ran an older producer and nothing compared the two; the
+ * mismatch surfaced the first time the producer and the guest came from the same commit.
+ */
 const COMMON_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
-    "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
+    "bin/ost-cli.exe", "bin/speedtest.exe", "data/servers/librespeed.json",
+    "data/servers/ookla.json"]);
 const POPULATED_FILES = Object.freeze([...COMMON_FILES, "data/storage.db"].sort());
 const RESET_FILES = Object.freeze([...COMMON_FILES].sort());
 const OPTIONAL_EMPTY_WAL = "data/storage.db-wal";
@@ -97,9 +103,10 @@ function validateBundle(bytes, request) {
     catch { throw new TypeError("baseline fixture bundle is not valid UTF-8 JSON"); }
     exactKeys(value, ["schemaVersion", "kind", "sourceSha", "expected", "populated", "reset"],
         "baseline fixture bundle");
-    // The bundle is built and stamped with the candidate release SHA, which is a different release
-    // than the harness context SHA that stages this guest. Validate against the candidate SHA the
-    // request carries, never the harness context SHA (run 35285135433 rejected every real bundle).
+    // The bundle is stamped with the candidate source SHA. Validate against the SHA the request
+    // carries, never the harness context SHA - for a published release those are different commits
+    // and using the harness one rejected every real bundle (run 35285135433); for a branch build
+    // they are the same commit, so the rule is stated as "use the candidate's" either way.
     if (value.schemaVersion !== SCHEMA_VERSION || value.kind !== BUNDLE_KIND ||
         value.sourceSha !== request.candidate.sourceSha) throw new TypeError("baseline fixture bundle identity differs");
     exactKeys(value.expected, ["passwordValueSha256", "ping", "resultId"], "baseline fixture expectation");

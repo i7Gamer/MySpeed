@@ -9,11 +9,14 @@ import {buildWindowsBaselineGuestRuntimeBundle, WINDOWS_BASELINE_RUNTIME_BUNDLE_
 import {buildWindowsBaselineGuestSeedDocuments} from
     "../qualification/windows-baseline-guest-seed-documents.mjs";
 import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
+import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
 
 const SCHEMA_VERSION = 1;
-const KIND = "myspeed-v1.6.1-post-release-cpu-floor-guest-preparation";
+const KIND = "myspeed-cpu-floor-guest-preparation";
 const NODE_RUNTIME_SHA256 = "995a3fb3cefad590cd3f4b321532a4b9582fb9c6575320ed2e3e894caac3e362";
-const CANDIDATE_SOURCE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
+/* The published release this module is pinned to. Meaningless on the branch path, which pins
+ * the candidate to the harness commit instead. */
+const PUBLISHED_CANDIDATE_SOURCE_SHA = "4fa4dd40a89a062735f98bd85d685e0624ff46a8";
 const MAX_SOURCE_BYTES = 512 * 1024 * 1024;
 const DIRECTORY_MODE = 0o700;
 const FILE_MODE = 0o600;
@@ -76,15 +79,29 @@ function writeVerified(root, name, bytes) {
     return Object.freeze({name, path: target, bytes: String(bytes.length), sha256: sha256(bytes)});
 }
 
-// Caller obligation: runtimeNode must be extracted from the already authenticated same-run MSI preparation;
-// this bounded module re-observes its physical identity but does not authenticate that upstream document.
-export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {}) {
+// Caller obligation: runtimeNode must come from an already authenticated same-run source - the MSI
+// preparation for a published release, or the guest bundle artifact for a branch build. This bounded
+// module re-observes its physical identity but does not authenticate that upstream document.
+export function prepareCpuFloorGuestFiles(input, dependencies = {}) {
     exactKeys(input, ["candidate", "context", "fixture", "imageVersion", "manifestSha256", "outputRoot",
         "probes", "runtimeInstaller", "runtimeNode", "runtimeSources"], "CPU-floor guest preparation input");
     const {context} = input;
     validateHostedContext(context);
-    if (context.sourceSha !== context.eventSha ||
-        input.candidate.sourceSha !== CANDIDATE_SOURCE_SHA || input.candidate.sourceSha === context.sourceSha)
+    /*
+     * A published release is a frozen commit that some later harness tests, so the two source SHAs
+     * must differ and the candidate must be the release this module is pinned to. A branch build is
+     * produced by the harness commit itself, so the two roles are one commit and the pin does not
+     * apply. The discriminant is explicit: an unrecognised one is refused rather than defaulted to
+     * whichever branch asks for less.
+     */
+    const {provenance} = input.candidate;
+    if (provenance !== CANDIDATE_PROVENANCE.published && provenance !== CANDIDATE_PROVENANCE.branch)
+        throw new TypeError("CPU-floor guest candidate provenance differs");
+    const rolesHold = provenance === CANDIDATE_PROVENANCE.published
+        ? input.candidate.sourceSha === PUBLISHED_CANDIDATE_SOURCE_SHA
+            && input.candidate.sourceSha !== context.sourceSha
+        : input.candidate.sourceSha === context.sourceSha;
+    if (context.sourceSha !== context.eventSha || !rolesHold)
         throw new TypeError("CPU-floor guest source roles differ");
     exactKeys(input.candidate.file, ["bytes", "name", "sha256"], "candidate file");
     if (input.candidate.file.name !== "MySpeed.exe" || !/^[1-9][0-9]*$/u.test(input.candidate.file.bytes) ||
@@ -133,7 +150,8 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
     const documents = buildWindowsBaselineGuestSeedDocuments({context: structuredClone(context),
         cpuidProbe: ((probe) => ({bytes: probe.bytes, sha256: probe.sha256}))(
             input.probes[PROBES.findIndex(([role]) => role === CPUID_PROBE_ROLE)]),
-    candidate: {artifactName: input.candidate.artifactName, sourceSha: input.candidate.sourceSha,
+    candidate: {artifactName: input.candidate.artifactName, provenance,
+        sourceSha: input.candidate.sourceSha,
         bytes: input.candidate.file.bytes, sha256: input.candidate.file.sha256},
     fixtureBundle: {bytes: String(fixtureBytes.length),
         sha256: sha256(fixtureBytes)}, candidateController: ((source) => ({bytes: source.bytes,
@@ -156,5 +174,6 @@ export function prepareV161PostReleaseCpuFloorGuestFiles(input, dependencies = {
         files: Object.freeze(files)});
 }
 
-export const POST_RELEASE_CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CANDIDATE_SOURCE_SHA, CPUID_PROBE_ROLE,
-    DIRECTORY_MODE, FILE_MODE, KIND, NODE_RUNTIME_SHA256, PROBES, SCHEMA_VERSION});
+export const CPU_FLOOR_GUEST_PREPARATION_CONSTANTS = Object.freeze({CPUID_PROBE_ROLE,
+    DIRECTORY_MODE, FILE_MODE, KIND, NODE_RUNTIME_SHA256, PROBES, PUBLISHED_CANDIDATE_SOURCE_SHA,
+    SCHEMA_VERSION});

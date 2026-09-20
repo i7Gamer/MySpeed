@@ -15,7 +15,7 @@ const SHA = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 const SOURCE_SHA = "1".repeat(40);
 const CANDIDATE_SHA = "2".repeat(40);
 const NONCE = "3".repeat(32);
-const EXPECTED_FILES = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
+const EXPECTED_FILES = ["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe", "bin/ost-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"];
 const record = (name, contents) => {
     const bytes = Buffer.from(contents);

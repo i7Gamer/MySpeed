@@ -56,7 +56,8 @@ function fixture() {
 function actualFactoryFixture() {
     const value = fixture();
     value.request = {schemaVersion: 1, kind: "myspeed-windows-baseline-guest-request", profile: "baseline-cpu",
-        qualifying: false, context: HOSTED_CONTEXT(), candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+        qualifying: false, context: HOSTED_CONTEXT(), candidate: {provenance: "published-release",
+            artifactName: "MySpeed-windows-x64-baseline.exe",
             path: `${WINDOWS_ROOT}\\MySpeed.exe`, sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")},
         fixture: {path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")},
         paths: {taskRoot: WINDOWS_ROOT, populatedWork: `${WINDOWS_ROOT}\\populated`,

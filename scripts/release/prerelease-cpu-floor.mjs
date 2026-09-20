@@ -1,0 +1,395 @@
+import {createHash} from "node:crypto";
+import {isDeepStrictEqual} from "node:util";
+
+import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
+import {CANDIDATE_PROVENANCE, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS, STAGE3_MEDIA_NAMES,
+    validateCompletedStage3Result} from "../qualification/linux-windows-cpu-floor-stage3.mjs";
+import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
+import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
+    INSTALLER_BOOT_CONFIRMATION_CADENCE}
+    from "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
+import {buildPrereleaseWindowsExeAcquisitionPlan} from "./prerelease-cpu-floor-target.mjs";
+
+/*
+ * Drives the CPU-floor guest against a branch build.
+ *
+ * The published sibling (post-release-cpu-floor.mjs) proves that the exact bytes a release
+ * published behave correctly on a floor-level CPU, and reads the digests it checks them against out
+ * of a manifest sealed at release time. Nothing here has been released, so there is no sealed
+ * manifest and no prior result to reproduce. What this establishes instead is narrower and stated
+ * plainly rather than dressed up: the CPU-floor build produced by this commit, in this run, starts
+ * on a floor-level CPU, binds a loopback listener it owns, and stops cleanly.
+ *
+ * Where trust comes from, stated without inflating it. The artifact's identity is GitHub's own
+ * record of what this run produced - read from the API listing scoped to this run id and head SHA,
+ * never from hashing the downloaded file, because a local hash proves the bytes are self-consistent
+ * and nothing about which run produced them. The download action validates the archive against that
+ * record before anything here runs, so everything inside it inherits that validation.
+ *
+ * What acquisition adds on top, and the reason it is a separate step rather than a field on the
+ * binding, is a comparison between two genuinely different sources: the executable as downloaded,
+ * against the digest the build wrote beside it at compile time. Re-asserting the archive's own
+ * digest here would compare the API's value with itself, since a branch artifact is new every run
+ * and has no independently fixed digest to check against.
+ */
+
+const SCHEMA_VERSION = 1;
+const KIND = "myspeed-prerelease-cpu-floor-binding";
+const REPOSITORY = "i7Gamer/MySpeed";
+const RUNNER_TEMP_PREFIX = "/home/runner/work/_temp";
+const STAGE3_ROOT_PREFIX = `${RUNNER_TEMP_PREFIX}/myspeed-stage3-`;
+const STAGE3_STAGED_CANDIDATE_NAME = "MySpeed.exe";
+const DIGEST_PREFIX = "sha256:";
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+const UTC_SECONDS_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/u;
+const MINIMUM_CANDIDATE_BYTES = 1;
+const MAXIMUM_CANDIDATE_BYTES = 512 * 1024 * 1024;
+
+const STAGE3_NO_INPUT = "no-input";
+const STAGE3_INSTALLER_CONFIRMATIONS = Object.freeze([STAGE3_NO_INPUT, INSTALLER_BOOT_CONFIRMATION,
+    INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME, INSTALLER_BOOT_CONFIRMATION_CADENCE]);
+const STAGE3_PLAN_KEYS = ["installerConfirmation", "wallDeadlineUnixMilliseconds"];
+const ACQUISITION_KEYS = ["declaredSha256", "file", "observedAt"];
+const RECORD_KEYS = ["bytes", "sha256"];
+const STAGE2_RECEIPT_KEYS = ["guestResult", "result"];
+const IDENTITY_KEYS = ["bytes", "path", "sha256"];
+const INSPECTION_KEYS = ["binding", "request", "result", "retainedStage2Bytes"];
+
+// Trusted by brand, never by the kind string: a literal carrying the kind is not a binding, and
+// neither is a structural clone of one.
+const IDENTITY_BRAND = Symbol("prerelease-cpu-floor-identity-binding");
+const ACQUIRED_BRAND = Symbol("prerelease-cpu-floor-acquired-binding");
+
+export const PRERELEASE_CPU_FLOOR_CONSTANTS = Object.freeze({
+    KIND, REPOSITORY, SCHEMA_VERSION, STAGE3_INSTALLER_CONFIRMATIONS, STAGE3_NO_INPUT,
+    STAGE3_STAGED_CANDIDATE_NAME, MAXIMUM_CANDIDATE_BYTES
+});
+
+function fail(message) {
+    throw new Error(`Invalid pre-release CPU-floor operation: ${message}`);
+}
+
+function deepFreeze(value) {
+    if (!value || typeof value !== "object" || Object.isFrozen(value) || ArrayBuffer.isView(value)) {
+        return value;
+    }
+    for (const child of Object.values(value)) deepFreeze(child);
+    return Object.freeze(value);
+}
+
+function brand(value, ...symbols) {
+    for (const symbol of symbols) {
+        Object.defineProperty(value, symbol, {value: true, enumerable: false, writable: false});
+    }
+    return value;
+}
+
+function exactKeys(value, keys, label) {
+    if (!value || typeof value !== "object" || Array.isArray(value)
+            || !isDeepStrictEqual(Object.keys(value).sort(), [...keys].sort())) {
+        fail(`${label} must use the closed schema`);
+    }
+}
+
+function requireEqual(actual, expected, label) {
+    if (actual !== expected) fail(`${label} differs from the bound identity`);
+}
+
+function sha256(bytes) {
+    return createHash("sha256").update(bytes).digest("hex");
+}
+
+function requireIdentityBinding(value, label) {
+    if (!value || typeof value !== "object" || value[IDENTITY_BRAND] !== true || value.kind !== KIND) {
+        fail(`${label} requires a binding produced by createPrereleaseCpuFloorBinding`);
+    }
+}
+
+function requireAcquiredBinding(value, label) {
+    requireIdentityBinding(value, label);
+    if (value[ACQUIRED_BRAND] !== true) {
+        fail(`${label} requires an acquired candidate; call acquirePrereleaseCpuFloorCandidate first`);
+    }
+}
+
+function requireBoundedRecord(value, label) {
+    exactKeys(value, RECORD_KEYS, label);
+    const bytes = Number(value.bytes);
+    if (!Number.isSafeInteger(bytes) || bytes < MINIMUM_CANDIDATE_BYTES
+            || bytes > MAXIMUM_CANDIDATE_BYTES) {
+        fail(`${label} size is outside the qualified bound`);
+    }
+    if (typeof value.sha256 !== "string" || !SHA256_PATTERN.test(value.sha256)) {
+        fail(`${label} digest must be a sha256 hex digest`);
+    }
+}
+
+export function createPrereleaseCpuFloorBinding(input) {
+    exactKeys(input, ["hostedContext", "target"], "binding input");
+    const {target} = input;
+
+    // Brand-checks the target: a structural clone of a bound target is refused here.
+    const acquisitionPlan = buildPrereleaseWindowsExeAcquisitionPlan(target);
+    const [asset] = acquisitionPlan.assets;
+
+    const hostedContext = validateHostedContext(input.hostedContext);
+    requireEqual(hostedContext.repository, REPOSITORY, "hosted context repository");
+    if (hostedContext.sourceSha !== target.harness.sourceSha
+            || hostedContext.eventSha !== target.harness.sourceSha) {
+        fail("hosted context source and event SHA must both be the harness source SHA");
+    }
+    /*
+     * Inverted from the published path, which requires the harness and the candidate to be
+     * different commits. A branch build is produced by the commit under test, so they must be the
+     * same one.
+     *
+     * Unreachable as written, and kept deliberately: the target binder already refuses a candidate
+     * that is not the harness commit, so on any branded target these two are the same SHA and the
+     * check above has already compared the context against it. It stands as the statement of this
+     * path's invariant at the point that depends on it, so that weakening the binder's rule fails
+     * here too rather than silently widening what a binding will accept.
+     */
+    if (hostedContext.sourceSha !== target.candidate.sourceSha) {
+        fail("harness source SHA must equal the candidate source SHA");
+    }
+    /*
+     * And the artifact has to be this run's. Without this, an artifact left by any earlier run of
+     * the workflow would satisfy the binding and a green result would say nothing about the commit
+     * that was dispatched.
+     */
+    requireEqual(String(hostedContext.runId), String(target.build.runId), "hosted context run ID");
+    requireEqual(String(hostedContext.runAttempt), String(target.build.runAttempt),
+        "hosted context run attempt");
+
+    const binding = {
+        schemaVersion: SCHEMA_VERSION,
+        kind: KIND,
+        qualifying: false,
+        releaseGateCleared: false,
+        releaseGatesCleared: [],
+        candidate: {
+            provenance: CANDIDATE_PROVENANCE.branch,
+            sourceSha: target.candidate.sourceSha,
+            version: target.candidate.version,
+            windowsStamp: target.candidate.windowsStamp,
+            artifact: {
+                id: String(asset.id),
+                name: asset.name,
+                runId: target.build.runId,
+                runAttempt: target.build.runAttempt,
+                headSha: target.build.headSha,
+                archiveDigest: target.build.digest,
+                archiveSize: target.build.size
+            }
+        },
+        harness: {sourceSha: target.harness.sourceSha},
+        hostedContext: structuredClone(hostedContext)
+    };
+    return deepFreeze(brand(binding, IDENTITY_BRAND));
+}
+
+/**
+ * Admits the executable's identity.
+ *
+ * Be precise about where the integrity comes from, because it is easy to overstate and this
+ * function used to. The archive's own digest is GitHub's record of what this run produced, and the
+ * download action validates the archive against it before anything here runs; re-asserting that
+ * digest here would only compare the API's value with itself, because a branch artifact is new
+ * every run and there is no independently fixed digest to compare it against. The published path
+ * can make that check because its expected digest is a constant settled at release time.
+ *
+ * So the one thing this adds is a check with two genuinely different sources: the executable's
+ * digest as computed from the downloaded file, against the digest the build wrote into a sidecar
+ * beside it at compile time. Both travel inside the archive the download action validated, and a
+ * caller cannot skip the comparison.
+ */
+export function acquirePrereleaseCpuFloorCandidate(binding, acquisition) {
+    requireIdentityBinding(binding, "candidate acquisition");
+    exactKeys(acquisition, ACQUISITION_KEYS, "candidate acquisition");
+    requireBoundedRecord(acquisition.file, "candidate executable");
+    if (typeof acquisition.declaredSha256 !== "string"
+            || !SHA256_PATTERN.test(acquisition.declaredSha256)) {
+        fail("declared executable digest must be a sha256 hex digest");
+    }
+    requireEqual(acquisition.file.sha256, acquisition.declaredSha256,
+        "candidate executable digest against the digest the build declared");
+
+    if (typeof acquisition.observedAt !== "string" || !UTC_SECONDS_PATTERN.test(acquisition.observedAt)
+            || !Number.isFinite(Date.parse(acquisition.observedAt))) {
+        fail("observation time must be a UTC second-resolution timestamp");
+    }
+    const acquired = {
+        ...structuredClone(binding),
+        candidate: {
+            ...structuredClone(binding.candidate),
+            file: {
+                name: STAGE3_STAGED_CANDIDATE_NAME,
+                bytes: String(acquisition.file.bytes),
+                sha256: acquisition.file.sha256
+            }
+        },
+        observedAt: acquisition.observedAt
+    };
+    return deepFreeze(brand(acquired, IDENTITY_BRAND, ACQUIRED_BRAND));
+}
+
+export function buildPrereleaseCpuFloorStage2Request(binding, probeArtifact, identity) {
+    requireIdentityBinding(binding, "Stage 2 request");
+    const request = buildWindowsMsiStage2Request({
+        context: structuredClone(binding.hostedContext),
+        probe: probeArtifact,
+        identity
+    });
+    /*
+     * The same two opt-ins the published path makes, and for the same reasons: the installer
+     * preparation needs the confirmation cadence rather than a single keystroke at a fixed offset,
+     * and this CPU-specific caller takes the optional mid-window diagnostic frames.
+     */
+    request.authorization.bootConfirmation = INSTALLER_BOOT_CONFIRMATION_CADENCE;
+    request.authorization.midWindowFrames = true;
+    return request;
+}
+
+function validateStage3ExecutionPlan(value) {
+    exactKeys(value, STAGE3_PLAN_KEYS, "Stage 3 execution plan");
+    if (!STAGE3_INSTALLER_CONFIRMATIONS.includes(value.installerConfirmation)) {
+        fail("Stage 3 installer confirmation is not one of the admitted policies");
+    }
+    const deadline = value.wallDeadlineUnixMilliseconds;
+    if (!Number.isSafeInteger(deadline) || deadline <= 0) {
+        fail("Stage 3 wall deadline must be a whole number of milliseconds");
+    }
+    return Object.freeze({...value});
+}
+
+export function buildPrereleaseCpuFloorStage3Template(binding, plan) {
+    requireAcquiredBinding(binding, "Stage 3 template");
+    const executionPlan = validateStage3ExecutionPlan(plan);
+    const root = `${STAGE3_ROOT_PREFIX}${binding.hostedContext.nonce}`;
+    return deepFreeze({
+        schemaVersion: SCHEMA_VERSION,
+        profile: STAGE3_CONSTANTS.PROFILE,
+        context: structuredClone(binding.hostedContext),
+        authorization: {
+            candidate: true,
+            confirmation: STAGE3_CONSTANTS.CONFIRMATION,
+            qemu: true,
+            scope: STAGE3_CONSTANTS.AUTHORIZATION_SCOPE,
+            ...(executionPlan.installerConfirmation === STAGE3_NO_INPUT
+                ? {} : {bootConfirmation: executionPlan.installerConfirmation})
+        },
+        budget: {
+            label: STAGE3_BUDGET_CONSTANTS.RESERVATION_LABEL,
+            wallDeadlineUnixMilliseconds: executionPlan.wallDeadlineUnixMilliseconds
+        },
+        paths: Object.fromEntries([["root", root], ...Object.entries(STAGE3_MEDIA_NAMES)
+            .map(([field, name]) => [field, `${root}/${name}`])]),
+        candidate: {
+            provenance: binding.candidate.provenance,
+            sourceSha: binding.candidate.sourceSha,
+            artifactId: binding.candidate.artifact.id,
+            artifactName: binding.candidate.artifact.name,
+            runId: String(binding.candidate.artifact.runId),
+            runAttempt: String(binding.candidate.artifact.runAttempt),
+            archive: {
+                bytes: String(binding.candidate.artifact.archiveSize),
+                sha256: binding.candidate.artifact.archiveDigest.slice(DIGEST_PREFIX.length)
+            },
+            file: {...structuredClone(binding.candidate.file)}
+        }
+    });
+}
+
+export function buildPrereleaseCpuFloorStage3Request(binding, sameExecutionStage2, plan) {
+    const template = buildPrereleaseCpuFloorStage3Template(binding, plan);
+    exactKeys(sameExecutionStage2, STAGE2_RECEIPT_KEYS, "same-execution Stage 2 receipts");
+    for (const key of STAGE2_RECEIPT_KEYS) {
+        exactKeys(sameExecutionStage2[key], IDENTITY_KEYS, `same-execution Stage 2 ${key} identity`);
+    }
+    return deepFreeze({...template, stage2: structuredClone(sameExecutionStage2)});
+}
+
+/** Binds the executed request back to the identity the binding sealed. */
+function requireRequestBoundToBinding(request, binding) {
+    /*
+     * The context first. Without it a request from an entirely different run could satisfy every
+     * candidate field below, because the candidate identity says nothing about which run executed
+     * it.
+     */
+    if (!isDeepStrictEqual(request.context, binding.hostedContext)) {
+        fail("request context differs from the bound hosted context");
+    }
+    const {candidate} = request;
+    if (!candidate || typeof candidate !== "object") fail("request candidate is missing");
+    requireEqual(candidate.provenance, binding.candidate.provenance, "request candidate provenance");
+    requireEqual(candidate.sourceSha, binding.candidate.sourceSha, "request candidate source SHA");
+    requireEqual(candidate.artifactId, binding.candidate.artifact.id, "request candidate artifact ID");
+    requireEqual(candidate.artifactName, binding.candidate.artifact.name,
+        "request candidate artifact name");
+    requireEqual(candidate.runId, String(binding.candidate.artifact.runId), "request candidate run ID");
+    requireEqual(candidate.runAttempt, String(binding.candidate.artifact.runAttempt),
+        "request candidate run attempt");
+    requireEqual(candidate.archive?.bytes, String(binding.candidate.artifact.archiveSize),
+        "request candidate archive size");
+    requireEqual(candidate.archive?.sha256,
+        binding.candidate.artifact.archiveDigest.slice(DIGEST_PREFIX.length),
+        "request candidate archive digest");
+    /*
+     * Only the name, because the launcher hands this function the identity binding rather than the
+     * acquired one, and the executable's size and digest are admitted at acquisition. They are not
+     * unchecked: the completed-result validator below re-derives the request in full and binds the
+     * staged file to what the guest actually ran.
+     */
+    requireEqual(candidate.file?.name, STAGE3_STAGED_CANDIDATE_NAME,
+        "request candidate staged file name");
+}
+
+export function inspectPrereleaseCpuFloorEvidence(input) {
+    exactKeys(input, INSPECTION_KEYS, "evidence inspection input");
+    const {binding, request, result, retainedStage2Bytes} = input;
+    /*
+     * The launcher hands the identity binding here, not the acquired one - the acquired binding is
+     * what built the request, and the request is what gets re-derived below. Requiring the acquired
+     * brand refused every run before it could produce any evidence at all.
+     */
+    requireIdentityBinding(binding, "evidence inspection");
+    requireRequestBoundToBinding(request, binding);
+
+    /*
+     * The whole result is re-derived from the raw retained evidence by the Stage 3 core validator:
+     * guest CPUID bytes, the verifier summary bytes, the Stage 2 replay, the QEMU vector, the
+     * process record and the output disk. This is the check that makes the claim below mean
+     * anything - reading `result.status` and taking its word for it would let a status projection
+     * stand in for a CPU-floor run.
+     */
+    const validated = validateCompletedStage3Result(result, request, retainedStage2Bytes);
+
+    if (result.qualifying !== false || result.releaseGateCleared !== false) {
+        fail("evidence must remain non-qualifying");
+    }
+    if (result.classification !== STAGE3_CONSTANTS.CLASSIFICATION) fail("evidence classification differs");
+
+    return deepFreeze({
+        schemaVersion: SCHEMA_VERSION,
+        kind: "myspeed-prerelease-cpu-floor-evidence",
+        accepted: true,
+        qualifying: false,
+        releaseGateCleared: false,
+        releaseGatesCleared: [],
+        /*
+         * Said in the evidence itself, not only in a comment: a branch run establishes that this
+         * commit's build works on a floor-level CPU. It does not reproduce a sealed result, because
+         * an unreleased commit has none to reproduce.
+         */
+        establishes: "branch-build-runs-on-cpu-floor",
+        classification: result.classification,
+        context: structuredClone(result.context),
+        candidate: structuredClone(request.candidate),
+        acquiredCandidate: structuredClone(validated.candidate),
+        guest: structuredClone(result.guest),
+        qemuProcess: structuredClone(result.qemuProcess),
+        media: structuredClone(validated.media),
+        stage2: structuredClone(validated.stage2),
+        harness: {sourceSha: binding.harness.sourceSha}
+    });
+}

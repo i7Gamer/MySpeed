@@ -389,6 +389,7 @@ function stage2InertOperations(rawGuest, overrides = {}) {
 
 function candidateRecord() {
     return {
+        provenance: "published-release",
         artifactId: "563103679",
         artifactName: "MySpeed-windows-x64-baseline.exe",
         releaseAssetId: "563103679",

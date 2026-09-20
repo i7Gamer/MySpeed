@@ -1,8 +1,12 @@
-name: Windows CPU-floor post-release v1.6.1 qualification
+name: Windows CPU-floor branch qualification
 
 # Manual, hosted-only, non-publishing execution.
-# Validates post-release candidate CPU-floor Stage 3 against historical v1.6.1 baseline.
-# All outputs remain strictly non-qualifying (qualifying: false, releaseGateCleared: false).
+# Runs the CPU-floor guest against the Windows build produced by the dispatched commit.
+# A branch run establishes that this commit's CPU-floor build starts, binds a loopback
+# listener it owns and stops cleanly on a floor-level CPU. It does not reproduce a result
+# sealed at release time, because an unreleased commit has none - see the published
+# sibling workflow for that claim. All outputs are strictly non-qualifying
+# (qualifying: false, releaseGateCleared: false).
 on:
   workflow_dispatch:
     inputs:
@@ -45,19 +49,17 @@ on:
 permissions:
   actions: read
   contents: read
-
 env:
-  CANDIDATE_TAG_NAME: v1.6.1
-  CANDIDATE_SOURCE_SHA: 4fa4dd40a89a062735f98bd85d685e0624ff46a8
-  EXPECTED_HARNESS_SHA: ${{ github.sha }}
-  BASELINE_ARTIFACT_ID: 10341896645
   BASELINE_ARTIFACT_NAME: MySpeed-windows-x64-baseline.exe
-  BASELINE_ARCHIVE_BYTES: 46649471
-  BASELINE_ARCHIVE_DIGEST: sha256:280b4a99c8a1f20aca5958c065b12ecb14519125769ee0460840168963db07ed
-  BASELINE_EXE_ASSET_ID: 563103679
-  QUALIFICATION_RUN_ID: 34829932391
-  QUALIFICATION_RUN_ATTEMPT: 1
+  BUNDLE_ARTIFACT_NAME: myspeed-branch-guest-bundle
   WORKFLOW_CONFIRMATION: RUN-WINDOWS-BASELINE-CPU-FLOOR
+  # The Windows Node runtime the guest runs the candidate under. Pinned to the same build the
+  # published path acquires; a test binds this digest to NODE_RUNTIME_SHA256 in the guest
+  # preparation module so the two cannot drift.
+  NODE_RUNTIME_URL: https://nodejs.org/dist/v22.19.0/node-v22.19.0-win-x64.zip
+  NODE_RUNTIME_ARCHIVE_BYTES: '35424607'
+  NODE_RUNTIME_MEMBER: node-v22.19.0-win-x64/node.exe
+  NODE_RUNTIME_SHA256: 995a3fb3cefad590cd3f4b321532a4b9582fb9c6575320ed2e3e894caac3e362
   # The execute job's own timeout-minutes, restated so the budget is derived from the same ceiling
   # rather than from a second number that could drift away from it.
   EXECUTE_JOB_CEILING_SECONDS: '5400'
@@ -69,21 +71,194 @@ env:
   MINIMUM_SEQUENCE_SECONDS: '1500'
 
 jobs:
-  prepare:
-    name: Prepare exact Windows inputs in this run
+  # The candidate's own version, read from the commit under test rather than supplied by the
+  # dispatcher, so a branch run cannot be told it is testing some other version.
+  version:
+    name: Read candidate version from the dispatched commit
     if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-WINDOWS-BASELINE-CPU-FLOOR'
-    uses: ./.github/workflows/post-release-msi-prepare.yml
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      windows_stamp: ${{ steps.read.outputs.windows_stamp }}
+    steps:
+      - name: Checkout exact harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Read version
+        id: read
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -e 'process.stdout.write(require("./package.json").version)')"
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::package.json version is not a three-part version: $version"
+            exit 1
+          fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'windows_stamp=%s.0\n' "$version" >> "$GITHUB_OUTPUT"
+
+  # Built through the release recipe rather than inline bun commands: the binary under test has to
+  # be the one that would ship, or a green run says nothing about the release build.
+  build:
+    name: Build the CPU-floor Windows executable
+    needs: [version]
+    if: github.repository == 'i7Gamer/MySpeed'
+    uses: ./.github/workflows/build-binaries.yml
     permissions:
-      actions: read
       contents: read
+    with:
+      version: ${{ needs.version.outputs.version }}
+      ref: ${{ github.sha }}
+      windows_stamp: ${{ needs.version.outputs.windows_stamp }}
+      windows_only: true
+
+  # Everything the guest needs besides the candidate: its Node runtime, the guest runtime files,
+  # the runtime installer, and the database fixtures. All of it comes from the commit under test,
+  # so unlike the published path there is no second source SHA to reconcile.
+  bundle:
+    name: Assemble the guest bundle from the dispatched commit
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-WINDOWS-BASELINE-CPU-FLOOR'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout exact harness source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up pinned Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22.19.0
+
+      - name: Set up pinned Bun runtime
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install locked dependencies without lifecycle scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile --ignore-scripts
+
+      # Both registries are generated, not committed (.gitignore), and seeding imports them
+      # through the migration runner and the integrations controller. A fresh checkout without
+      # them fails the handoff with ERR_MODULE_NOT_FOUND. The published producer does the same.
+      - name: Generate the server registries the fixture seeding imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/generate-migrations.js
+          node scripts/generate-integrations.js
+
+      - name: Acquire the pinned Windows Node runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="$RUNNER_TEMP/myspeed-branch-bundle"
+          install -d -m 700 "$bundle_root"
+          archive="$RUNNER_TEMP/node-win-x64.zip"
+          curl --fail --silent --show-error --location --output "$archive" "$NODE_RUNTIME_URL"
+          actual_bytes="$(stat -c '%s' "$archive")"
+          if [ "$actual_bytes" != "$NODE_RUNTIME_ARCHIVE_BYTES" ]; then
+            echo "::error::Node runtime archive size differs: $actual_bytes"
+            exit 1
+          fi
+          unzip -p "$archive" "$NODE_RUNTIME_MEMBER" > "$bundle_root/node.exe"
+          actual_sha="$(sha256sum "$bundle_root/node.exe" | cut -d' ' -f1)"
+          if [ "$actual_sha" != "$NODE_RUNTIME_SHA256" ]; then
+            echo "::error::Node runtime digest differs: $actual_sha"
+            exit 1
+          fi
+
+      - name: Stage the guest runtime files and database fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_root="$RUNNER_TEMP/myspeed-branch-bundle"
+          # The handoff opens both work directories rather than creating them, so they have to
+          # exist first. The published caller does the same before its own handoff.
+          install -d -m 700 "$bundle_root/fixture"
+          install -d -m 700 "$bundle_root/fixture/populated"
+          install -d -m 700 "$bundle_root/fixture/reset"
+          # The fixture binaries are inert placeholders, so the platform only selects the filename
+          # suffix. This job runs on Linux and the guest is Windows, so it has to be named.
+          node scripts/qualification/fixture.mjs handoff --repo "$PWD" --platform win32 \
+            --work "$bundle_root/fixture/populated" --reset-work "$bundle_root/fixture/reset" \
+            --manifest "$bundle_root/fixture/transport.json" --source-sha "$GITHUB_SHA"
+          node --input-type=module - "$bundle_root" <<'NODE'
+          import fs from "node:fs";
+          import path from "node:path";
+          import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
+            "./scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
+          const [bundleRoot] = process.argv.slice(2);
+          const installer = "scripts/qualification/windows-baseline-guest-runtime-installer.ps1";
+          for (const relative of [...WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS.RUNTIME_PATHS, installer]) {
+            const target = path.join(bundleRoot, "runtime", ...relative.split("/"));
+            fs.mkdirSync(path.dirname(target), {recursive: true, mode: 0o700});
+            fs.copyFileSync(path.join(process.cwd(), ...relative.split("/")), target);
+          }
+          NODE
+
+      - name: Record the bundle manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - "$RUNNER_TEMP/myspeed-branch-bundle" <<'NODE'
+          import crypto from "node:crypto";
+          import fs from "node:fs";
+          import path from "node:path";
+          const [bundleRoot] = process.argv.slice(2);
+          const sourceSha = process.env.GITHUB_SHA;
+          /*
+           * Every declared file is hashed here, in the job that produced it, so the execute job
+           * compares what it downloads against an identity recorded before the upload rather than
+           * one derived from the same bytes it is checking.
+           */
+          const declared = ["node.exe", "fixture/transport.json"];
+          const walk = relative => {
+            const target = path.join(bundleRoot, ...relative.split("/"));
+            for (const entry of fs.readdirSync(target, {withFileTypes: true})) {
+              const child = `${relative}/${entry.name}`;
+              if (entry.isDirectory()) walk(child);
+              else if (entry.isFile()) declared.push(child);
+            }
+          };
+          walk("runtime");
+          const files = declared.map(relativePath => {
+            const target = path.join(bundleRoot, ...relativePath.split("/"));
+            const bytes = fs.readFileSync(target);
+            return {relativePath, sourceSha, bytes: bytes.length,
+              sha256: crypto.createHash("sha256").update(bytes).digest("hex")};
+          });
+          fs.writeFileSync(path.join(bundleRoot, "bundle-manifest.json"),
+            `${JSON.stringify({schemaVersion: 1, sourceSha, files})}\n`);
+          NODE
+
+      - name: Upload the non-qualifying guest bundle
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ env.BUNDLE_ARTIFACT_NAME }}
+          path: ${{ runner.temp }}/myspeed-branch-bundle
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
 
   seal:
     name: Test and seal Stage 3 sequence closure
-    if: github.repository == 'i7Gamer/MySpeed'
+    if: github.repository == 'i7Gamer/MySpeed' && inputs.confirmation == 'RUN-WINDOWS-BASELINE-CPU-FLOOR'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact-id }}
       nonce: ${{ steps.seal.outputs.nonce }}
       closure_sha256: ${{ steps.seal.outputs.closure_sha256 }}
       bootstrap_sha256: ${{ steps.seal.outputs.bootstrap_sha256 }}
@@ -136,7 +311,14 @@ jobs:
             tests/server/postReleaseCpuFloor.test.js \
             tests/server/cpuFloorGuestPreparation.test.js \
             tests/server/postReleaseCpuFloorHostedInputs.test.js \
-            tests/server/postReleaseCpuFloorWorkflow.test.js
+            tests/server/postReleaseCpuFloorWorkflow.test.js \
+            tests/server/prereleaseCpuFloorTarget.test.js \
+            tests/server/prereleaseCpuFloor.test.js \
+            tests/server/prereleaseCpuFloorHostedInputs.test.js \
+            tests/server/linuxWindowsCpuFloorStage3CandidateProvenance.test.js \
+            tests/server/branchCpuFloorWorkflow.test.js \
+            tests/server/buildBinariesWindowsOnly.test.js \
+            tests/server/fixtureInventoryParity.test.js
 
       - name: Seal complete transitive execution closure
         id: seal
@@ -165,18 +347,18 @@ jobs:
           path: ${{ runner.temp }}/myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
           retention-days: 1
           if-no-files-found: error
-
   execute:
     name: Execute Stage 3 sequence under KVM
-    needs: [prepare, seal]
+    needs: [version, build, bundle, seal]
     if: github.repository == 'i7Gamer/MySpeed'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       EXPECTED_NONCE: ${{ needs.seal.outputs.nonce }}
       MYSPEED_SOURCE_SHA: ${{ github.sha }}
-      PREPARATION_ARTIFACT_ID: ${{ needs.prepare.outputs.artifact_id }}
-      PREPARATION_ARTIFACT_NAME: post-release-v1.6.1-msi-appassets
+      BUNDLE_ARTIFACT_ID: ${{ needs.bundle.outputs.artifact_id }}
+      CANDIDATE_VERSION: ${{ needs.version.outputs.version }}
+      CANDIDATE_WINDOWS_STAMP: ${{ needs.version.outputs.windows_stamp }}
       PROBE_ARTIFACT_ID: ${{ inputs.probe_artifact_id }}
       PROBE_RUN_ID: ${{ inputs.probe_run_id }}
       PROBE_RUN_ATTEMPT: ${{ inputs.probe_run_attempt }}
@@ -190,55 +372,81 @@ jobs:
         with:
           node-version: 22.19.0
 
-      - name: Authenticate same-run Windows preparation artifact metadata
-        id: preparation-metadata
+      - name: Authenticate this run's Windows build artifact
+        id: candidate-metadata
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         with:
           script: |
-            const artifactId = Number(process.env.PREPARATION_ARTIFACT_ID);
-            if (!Number.isSafeInteger(artifactId) || artifactId < 1) throw new Error('Preparation artifact id is invalid');
             const {owner, repo} = context.repo;
-            const {data: artifact} = await github.rest.actions.getArtifact({owner, repo, artifact_id: artifactId});
-            if (artifact.name !== process.env.PREPARATION_ARTIFACT_NAME || artifact.expired !== false ||
+            const wanted = process.env.BASELINE_ARTIFACT_NAME;
+            /*
+              * The artifact API reports the run and head SHA that produced an artifact, but not the
+              * producing attempt. On a re-run that skips the build job, an attempt-1 artifact would
+              * be admitted and then labelled with this attempt, so the binding would record an
+              * attempt the build never ran under. Refusing later attempts outright is the honest
+              * option: a re-run has to rebuild, which is also what a partial re-run cannot seal.
+              */
+            if (process.env.GITHUB_RUN_ATTEMPT !== '1')
+              throw new Error('Branch CPU-floor evidence is only bound on the first attempt; dispatch a fresh run');
+            const {data} = await github.rest.actions.listWorkflowRunArtifacts({owner, repo,
+              run_id: Number(process.env.GITHUB_RUN_ID), per_page: 100});
+            const matching = data.artifacts.filter(value => value.name === wanted);
+            if (matching.length !== 1) throw new Error('This run did not produce exactly one candidate artifact');
+            const [artifact] = matching;
+            /*
+             * Every field the binding trusts is read from the API's record of this run, never from a
+             * dispatch input and never from hashing the downloaded file. Hashing locally would prove
+             * the bytes are self-consistent and nothing about which run produced them.
+             */
+            if (artifact.expired !== false ||
                 String(artifact.workflow_run?.id) !== process.env.GITHUB_RUN_ID ||
-                artifact.workflow_run?.head_sha !== process.env.GITHUB_SHA ||
+                String(artifact.workflow_run?.head_sha) !== process.env.GITHUB_SHA ||
                 typeof artifact.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest))
-              throw new Error('Preparation artifact metadata differs');
-            core.setOutput('id', String(artifact.id)); core.setOutput('bytes', String(artifact.size_in_bytes));
-            core.setOutput('digest', artifact.digest);
-
-      - name: Download authenticated same-run Windows preparation
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
-        with:
-          artifact-ids: ${{ needs.prepare.outputs.artifact_id }}
-          merge-multiple: true
-          path: ${{ runner.temp }}/myspeed-windows-msi-${{ needs.seal.outputs.nonce }}/appassets
-
-      - name: Authenticate fresh retained baseline artifact metadata
-        id: baseline-metadata
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
-        with:
-          script: |
-            const {owner, repo} = context.repo;
-            const {data: artifact} = await github.rest.actions.getArtifact({owner, repo,
-              artifact_id: Number(process.env.BASELINE_ARTIFACT_ID)});
-            if (String(artifact.id) !== process.env.BASELINE_ARTIFACT_ID ||
-                artifact.name !== process.env.BASELINE_ARTIFACT_NAME || artifact.expired !== false ||
-                String(artifact.size_in_bytes) !== process.env.BASELINE_ARCHIVE_BYTES ||
-                artifact.digest !== process.env.BASELINE_ARCHIVE_DIGEST ||
-                String(artifact.workflow_run?.id) !== process.env.QUALIFICATION_RUN_ID ||
-                artifact.workflow_run?.head_sha !== process.env.CANDIDATE_SOURCE_SHA)
-              throw new Error('Retained baseline artifact metadata differs');
-            const {data: run} = await github.rest.actions.getWorkflowRunAttempt({owner, repo,
-              run_id: Number(process.env.QUALIFICATION_RUN_ID), attempt_number: Number(process.env.QUALIFICATION_RUN_ATTEMPT)});
-            if (String(run.id) !== process.env.QUALIFICATION_RUN_ID ||
-                String(run.run_attempt) !== process.env.QUALIFICATION_RUN_ATTEMPT ||
-                run.head_sha !== process.env.CANDIDATE_SOURCE_SHA || run.repository?.full_name !== `${owner}/${repo}` ||
-                run.conclusion !== 'success') throw new Error('Baseline workflow attempt differs');
+              throw new Error('Candidate artifact metadata differs');
             const observedAt = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
             if (typeof artifact.expires_at !== 'string' || Date.parse(observedAt) >= Date.parse(artifact.expires_at))
-              throw new Error('Retained baseline artifact has no fresh expiry authority');
-            core.setOutput('expires_at', artifact.expires_at); core.setOutput('observed_at', observedAt);
+              throw new Error('Candidate artifact has no fresh expiry authority');
+            core.setOutput('id', String(artifact.id));
+            core.setOutput('bytes', String(artifact.size_in_bytes));
+            core.setOutput('digest', artifact.digest);
+            core.setOutput('created_at', artifact.created_at);
+            core.setOutput('updated_at', artifact.updated_at);
+            core.setOutput('expires_at', artifact.expires_at);
+            core.setOutput('observed_at', observedAt);
+
+      - name: Authenticate this run's guest bundle artifact
+        id: bundle-metadata
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        with:
+          script: |
+            const {owner, repo} = context.repo;
+            const artifactId = Number(process.env.BUNDLE_ARTIFACT_ID);
+            if (!Number.isSafeInteger(artifactId) || artifactId < 1) throw new Error('Bundle artifact id is invalid');
+            const {data: artifact} = await github.rest.actions.getArtifact({owner, repo, artifact_id: artifactId});
+            if (artifact.name !== process.env.BUNDLE_ARTIFACT_NAME || artifact.expired !== false ||
+                String(artifact.workflow_run?.id) !== process.env.GITHUB_RUN_ID ||
+                String(artifact.workflow_run?.head_sha) !== process.env.GITHUB_SHA ||
+                typeof artifact.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest))
+              throw new Error('Bundle artifact metadata differs');
+            core.setOutput('id', String(artifact.id));
+
+      - name: Download this run's authenticated Windows build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ steps.candidate-metadata.outputs.id }}
+          merge-multiple: true
+          # Stated rather than inherited: the binding's provenance rests on this validation, and a
+          # future default that only warned would void it silently.
+          digest-mismatch: error
+          path: ${{ runner.temp }}/myspeed-branch-candidate-${{ needs.seal.outputs.nonce }}
+
+      - name: Download this run's authenticated guest bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          artifact-ids: ${{ steps.bundle-metadata.outputs.id }}
+          merge-multiple: true
+          digest-mismatch: error
+          path: ${{ runner.temp }}/myspeed-branch-bundle-${{ needs.seal.outputs.nonce }}
 
       - name: Download sealed Stage 3 closure
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -313,7 +521,10 @@ jobs:
           closure_root="$RUNNER_TEMP/myspeed-stage3-closure-$EXPECTED_NONCE"
           kvm_root="$RUNNER_TEMP/linux-kvm-capability-closure"
           work_root="$RUNNER_TEMP/myspeed-kvm-capability-$EXPECTED_NONCE"
-          test ! -e "$kvm_root" && test ! -e "$work_root"
+          # Separate statements on purpose: under `set -e` a failing left operand of `&&` does not
+          # abort, so writing these as one line silently tests only the second.
+          test ! -e "$kvm_root"
+          test ! -e "$work_root"
           install -d -m 700 "$kvm_root"
           install -m 600 "$closure_root/scripts/qualification/linux-kvm-capability.mjs" "$kvm_root/"
           install -m 600 "$closure_root/scripts/qualification/linux-kvm-privileged-capability.mjs" "$kvm_root/"
@@ -427,10 +638,13 @@ jobs:
           SEQUENCE_DEADLINE_MILLISECONDS: ${{ steps.budget.outputs.deadline_ms }}
           SEQUENCE_HARD_STOP_MILLISECONDS: ${{ steps.budget.outputs.hard_stop_ms }}
           SEQUENCE_KILL_GRACE_SECONDS: '30'
-          PREPARATION_BYTES: ${{ steps.preparation-metadata.outputs.bytes }}
-          PREPARATION_DIGEST: ${{ steps.preparation-metadata.outputs.digest }}
-          BASELINE_EXPIRES_AT: ${{ steps.baseline-metadata.outputs.expires_at }}
-          BASELINE_OBSERVED_AT: ${{ steps.baseline-metadata.outputs.observed_at }}
+          CANDIDATE_ARTIFACT_ID: ${{ steps.candidate-metadata.outputs.id }}
+          CANDIDATE_ARCHIVE_BYTES: ${{ steps.candidate-metadata.outputs.bytes }}
+          CANDIDATE_ARCHIVE_DIGEST: ${{ steps.candidate-metadata.outputs.digest }}
+          CANDIDATE_CREATED_AT: ${{ steps.candidate-metadata.outputs.created_at }}
+          CANDIDATE_UPDATED_AT: ${{ steps.candidate-metadata.outputs.updated_at }}
+          CANDIDATE_EXPIRES_AT: ${{ steps.candidate-metadata.outputs.expires_at }}
+          CANDIDATE_OBSERVED_AT: ${{ steps.candidate-metadata.outputs.observed_at }}
         run: |
           set -euo pipefail
           # The deadline is when TERM is sent; the hard stop is one kill grace later, and the anchor
@@ -467,9 +681,7 @@ jobs:
           import {pathToFileURL} from "node:url";
           const [closureRoot, transportRoot, envelopeRoot] = process.argv.slice(2);
           const nonce = process.env.EXPECTED_NONCE; const inputRoot = `${process.env.RUNNER_TEMP}/myspeed-stage2-input-${nonce}`;
-            const msiTaskRoot = `${process.env.RUNNER_TEMP}/myspeed-windows-msi-${nonce}`;
-          const artifactRoot = `${msiTaskRoot}/appassets`; const hash = bytes =>
-            crypto.createHash("sha256").update(bytes).digest("hex");
+          const hash = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
           const identity = target => { const bytes = fs.readFileSync(target);
             return {path: target, bytes: String(bytes.length), sha256: hash(bytes)}; };
           const context = {schemaVersion: 1, repository: process.env.GITHUB_REPOSITORY,
@@ -479,13 +691,21 @@ jobs:
               RUNNER_OS: process.env.RUNNER_OS, RUNNER_ARCH: process.env.RUNNER_ARCH,
               RUNNER_ENVIRONMENT: process.env.RUNNER_ENVIRONMENT, ImageOS: process.env.ImageOS,
               ImageVersion: process.env.ImageVersion}};
-          const {observeV161PostReleaseMsiPreparation} = await import(pathToFileURL(path.join(closureRoot,
-            "scripts/release/post-release-msi-linux-controller.mjs")).href);
-          const observed = await observeV161PostReleaseMsiPreparation({context, taskRoot: msiTaskRoot, artifactRoot,
-            artifact: {repository: process.env.GITHUB_REPOSITORY, id: process.env.PREPARATION_ARTIFACT_ID,
-              name: process.env.PREPARATION_ARTIFACT_NAME, bytes: process.env.PREPARATION_BYTES,
-              digest: process.env.PREPARATION_DIGEST, runId: process.env.GITHUB_RUN_ID,
-              runAttempt: process.env.GITHUB_RUN_ATTEMPT, headSha: process.env.GITHUB_SHA}});
+          const candidateRoot = `${process.env.RUNNER_TEMP}/myspeed-branch-candidate-${nonce}`;
+          /*
+           * The build wrote this digest next to the executable, inside the same artifact whose
+           * archive digest the download action validated against the API record. Reading it here
+           * and letting the binding compare it with the executable's own hash is a check the
+           * caller cannot skip; hashing the executable twice would prove nothing.
+           */
+          const declaredCandidateSha256 = fs.readFileSync(
+            path.join(candidateRoot, "MySpeed.exe.sha256"), "utf8").trim().split(/\s+/u)[0];
+          if (!/^[a-f0-9]{64}$/u.test(declaredCandidateSha256))
+            throw new Error("declared candidate digest sidecar is malformed");
+          const bundleRoot = `${process.env.RUNNER_TEMP}/myspeed-branch-bundle-${nonce}`;
+          const bundleManifest = JSON.parse(fs.readFileSync(path.join(bundleRoot, "bundle-manifest.json"), "utf8"));
+          if (bundleManifest.sourceSha !== process.env.GITHUB_SHA)
+            throw new Error("guest bundle was built from another commit");
           const evidence = JSON.parse(fs.readFileSync(path.join(inputRoot, "result.json"), "utf8"));
           const roles = ["avx", "avx2", "cpuid", "illegal", "known-bad", "known-good", "popcnt", "sse42"];
           const probes = roles.map(role => { const name = `${role.replaceAll("-", "_")}.exe`;
@@ -499,17 +719,26 @@ jobs:
             archiveBytes: process.env.PROBE_ARCHIVE_BYTES, archiveSha256: process.env.PROBE_ARCHIVE_SHA256,
             files: probes.map(({role, name, bytes, sha256}) => ({role, name, bytes, sha256}))};
           const closureManifest = JSON.parse(fs.readFileSync(path.join(closureRoot, "execution-closure.json"), "utf8"));
-          const {runV161PostReleaseCpuFloorHostedInputs} = await import(pathToFileURL(path.join(closureRoot,
-            "scripts/release/post-release-cpu-floor-hosted-inputs.mjs")).href);
-          const result = await runV161PostReleaseCpuFloorHostedInputs({observedMsiPreparation: observed,
-            hostedContext: context, artifactRoot, baselineArtifact: {id: process.env.BASELINE_ARTIFACT_ID,
-              name: process.env.BASELINE_ARTIFACT_NAME, runId: process.env.QUALIFICATION_RUN_ID,
-              runAttempt: process.env.QUALIFICATION_RUN_ATTEMPT, headSha: process.env.CANDIDATE_SOURCE_SHA,
-              archiveSize: process.env.BASELINE_ARCHIVE_BYTES, archiveDigest: process.env.BASELINE_ARCHIVE_DIGEST,
-              expired: false, expiresAt: process.env.BASELINE_EXPIRES_AT},
-            baselineSummaryBytes: fs.readFileSync(path.join(closureRoot,
-              "tests/fixtures/post-release-native-v1.6.1/baseline-qualification-summary.json")),
-            observedAt: process.env.BASELINE_OBSERVED_AT, probeArtifact, probes,
+          const {bindPrereleaseCpuFloorTarget} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/release/prerelease-cpu-floor-target.mjs")).href);
+          const {runPrereleaseCpuFloorHostedInputs} = await import(pathToFileURL(path.join(closureRoot,
+            "scripts/release/prerelease-cpu-floor-hosted-inputs.mjs")).href);
+          const target = bindPrereleaseCpuFloorTarget({
+            harnessSourceSha: process.env.GITHUB_SHA, observedAt: process.env.CANDIDATE_OBSERVED_AT,
+            candidate: {repository: process.env.GITHUB_REPOSITORY, sourceSha: process.env.GITHUB_SHA,
+              version: process.env.CANDIDATE_VERSION, windowsStamp: process.env.CANDIDATE_WINDOWS_STAMP},
+            buildArtifact: {repository: process.env.GITHUB_REPOSITORY,
+              id: Number(process.env.CANDIDATE_ARTIFACT_ID), name: process.env.BASELINE_ARTIFACT_NAME,
+              size: Number(process.env.CANDIDATE_ARCHIVE_BYTES), digest: process.env.CANDIDATE_ARCHIVE_DIGEST,
+              expired: false, createdAt: process.env.CANDIDATE_CREATED_AT,
+              updatedAt: process.env.CANDIDATE_UPDATED_AT, expiresAt: process.env.CANDIDATE_EXPIRES_AT,
+              runId: Number(process.env.GITHUB_RUN_ID), runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+              headSha: process.env.GITHUB_SHA}});
+          const result = await runPrereleaseCpuFloorHostedInputs({target, hostedContext: context,
+            bundle: {root: bundleRoot, files: bundleManifest.files},
+            candidateExe: identity(path.join(candidateRoot, "MySpeed.exe")),
+            candidateDeclaredSha256: declaredCandidateSha256,
+            observedAt: process.env.CANDIDATE_OBSERVED_AT, probeArtifact, probes,
             stage3Plan: {installerConfirmation: process.env.STAGE3_INSTALLER_CONFIRMATION,
               wallDeadlineUnixMilliseconds: Number(process.env.SEQUENCE_DEADLINE_MILLISECONDS)},
             roots: {stage3: `${process.env.RUNNER_TEMP}/myspeed-stage3-${nonce}`,
@@ -594,7 +823,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: windows-cpu-floor-post-release-v1.6.1-diagnostics
+          name: windows-cpu-floor-branch-diagnostics-${{ needs.seal.outputs.nonce }}
           path: |
             ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.seal.outputs.nonce }}/*.json
             ${{ runner.temp }}/myspeed-stage3-sequence-envelope-${{ needs.seal.outputs.nonce }}/request.json
@@ -607,11 +836,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: windows-cpu-floor-post-release-v1.6.1-evidence
+          name: windows-cpu-floor-branch-evidence-${{ needs.seal.outputs.nonce }}
           path: |
             ${{ runner.temp }}/myspeed-stage2-transport-${{ needs.seal.outputs.nonce }}
             ${{ runner.temp }}/myspeed-stage3-sequence-envelope-${{ needs.seal.outputs.nonce }}
             ${{ runner.temp }}/myspeed-stage3-logs-${{ needs.seal.outputs.nonce }}
             ${{ runner.temp }}/myspeed-stage3-${{ needs.seal.outputs.nonce }}
+            # The guest system disk is tens of gigabytes and is the one member nobody extracts
+            # evidence from - the output volume beside it is the 64 MB file that gets read. Its
+            # bulk is what makes this upload unable to finish inside the retention reserve, which
+            # is spent precisely when a sequence stalled and the evidence is most wanted.
+            !${{ runner.temp }}/myspeed-stage3-${{ needs.seal.outputs.nonce }}/stage3.qcow2
           retention-days: 7
           if-no-files-found: error

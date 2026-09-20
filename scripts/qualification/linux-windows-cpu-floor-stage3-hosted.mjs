@@ -9,8 +9,8 @@ import {
     createHostedStage2Operations,
     runHostedOwnedProcess
 } from "./linux-windows-cpu-floor-stage2-hosted.mjs";
-import {admitStage3Reservation, buildStage3LaunchDiagnostic, buildStage3LaunchFailure} from
-    "./linux-windows-cpu-floor-stage3.mjs";
+import {CANDIDATE_PROVENANCE, admitStage3Reservation, buildStage3LaunchDiagnostic,
+    buildStage3LaunchFailure} from "./linux-windows-cpu-floor-stage3.mjs";
 import {renderWindowsBaselineGuestBootstrap} from "./windows-baseline-guest-bootstrap.mjs";
 import {buildWindowsMsiSetupCompleteActivation, createWindowsBaselineCpuHandoff} from
     "./windows-msi-post-setup-activation.mjs";
@@ -175,7 +175,10 @@ function seedSpec(candidate, guestFiles, selectedImage, context) {
         requestSha256: filesByName.get("request.json").sha256,
         executionSha256: filesByName.get("execution.json").sha256,
         runtimeBundleSha256: filesByName.get("guest-runtime.json").sha256});
-    const owned = [candidate.stagedFile, candidate.stagedSummary, candidate.stagedManifest, ...guestFiles].map(record => ({
+    /* A branch build stages no summary or manifest, so the seed carries whichever records exist. */
+    const staged = [candidate.stagedFile, candidate.stagedSummary,
+        candidate.stagedManifest].filter(record => record !== undefined);
+    const owned = [...staged, ...guestFiles].map(record => ({
         name: PROBE_ARTIFACT_NAMES.has(record.name) ? probeSeedName(record.name) : record.name,
         kind: "owned-file", bytes: record.bytes, sha256: record.sha256, sourcePath: record.path
     }));
@@ -249,16 +252,33 @@ export function createHostedStage3Operations({context, paths, guestFiles, depend
                 guestEvidence: {identity: structuredClone(guest.identity), bytesBase64: guest.bytesBase64}};
         },
         async acquireCandidate({candidate}) {
-            const expected = [[candidate.file, "MySpeed.exe"], [candidate.qualificationSummary,
-                "qualification-summary.json"], [candidate.manifest, "qualification-manifest.json"]];
+            /*
+             * The summary and manifest are a published release's own records, carried alongside the
+             * executable. A branch build has neither, so it stages the executable alone rather than
+             * inventing two files to keep the shape.
+             */
+            const published = candidate.provenance === CANDIDATE_PROVENANCE.published;
+            /*
+             * Named rather than inferred from "not published". The request validator has already
+             * rejected an unknown discriminant, but a caller reaching this operation directly must
+             * not get the shorter file list by supplying a provenance nobody recognises.
+             */
+            if (!published && candidate.provenance !== CANDIDATE_PROVENANCE.branch) {
+                throw new TypeError("acquired candidate provenance differs");
+            }
+            const expected = [[candidate.file, "MySpeed.exe"]];
+            if (published) {
+                expected.push([candidate.qualificationSummary, "qualification-summary.json"],
+                    [candidate.manifest, "qualification-manifest.json"]);
+            }
             const staged = expected.map(([record, name]) => {
                 const target = `${candidateRoot}/${name}`;
                 const actualIdentity = inspect(target, MAX_CANDIDATE_BYTES);
                 assertIdentity(actualIdentity, {...record, path: target}, `candidate ${name}`);
                 return {...record, path: target};
             });
-            return {candidate: structuredClone(candidate), stagedFile: staged[0], stagedSummary: staged[1],
-                stagedManifest: staged[2]};
+            return {candidate: structuredClone(candidate), stagedFile: staged[0],
+                ...(published ? {stagedSummary: staged[1], stagedManifest: staged[2]} : {})};
         },
         async prepareBaselineMedia({candidate, paths: inputPaths, stage2, toolchain}) {
             const compatible = stage2CompatiblePaths(context, inputPaths);

@@ -12,8 +12,12 @@ export const TEST_RESULT_SENTINEL = "qualification-seed-row";
 export const FIXTURE_MARKER = ".myspeed-qualification.json";
 export const HANDOFF_SCHEMA_VERSION = 1;
 
-const PROVIDER_CATALOGUES = ["ookla.json", "librespeed.json"];
-const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3", "ost-cli"];
+/*
+ * What the producer emits. Exported because three separate consumers hard-code the Windows form
+ * of this list and one of them drifted for a year: a test now holds all three to these.
+ */
+export const PROVIDER_CATALOGUES = ["ookla.json", "librespeed.json"];
+export const PROVIDER_BINARIES = ["speedtest", "librespeed-cli", "cfspeedtest", "iperf3", "ost-cli"];
 const WINDOWS_SUFFIX = ".exe";
 const DIRECTORY_MODE = 0o700;
 const EXECUTABLE_MODE = 0o700;
@@ -228,10 +232,11 @@ export const prepareStaticFixtures = ({work, nonce, platform = process.platform,
 
 const importFrom = (repo, relativePath) => import(pathToFileURL(path.join(repo, relativePath)).href);
 
-export const seedDatabase = async ({repo, work, nonce, "allow-existing-binary": allowedExistingBinary}) => {
+export const seedDatabase = async ({repo, work, nonce, platform = process.platform,
+    "allow-existing-binary": allowedExistingBinary}) => {
     const repository = containedDirectory(repo, "Repository directory");
     const allowedExistingBinaries = allowedExistingBinary ? [allowedExistingBinary] : [];
-    const marker = prepareStaticFixtures({work, nonce, allowedExistingBinaries});
+    const marker = prepareStaticFixtures({work, nonce, platform, allowedExistingBinaries});
     const previousDirectory = process.cwd();
     const previousEnvironment = {
         DB_TYPE: process.env.DB_TYPE,
@@ -318,7 +323,8 @@ export const checkDatabase = async ({repo, work, nonce}) => {
     }
 };
 
-export const createHandoffFixture = async ({repo, work, resetWork, manifest, sourceSha}) => {
+export const createHandoffFixture = async ({repo, work, resetWork, manifest, sourceSha,
+    platform = process.platform}) => {
     const repository = containedDirectory(repo, "Repository directory");
     const populatedRoot = containedDirectory(work, "Populated handoff work directory");
     const resetRoot = containedDirectory(resetWork, "Reset handoff work directory");
@@ -338,9 +344,10 @@ export const createHandoffFixture = async ({repo, work, resetWork, manifest, sou
     const resetNonce = crypto.randomBytes(NONCE_BYTES).toString("hex");
     const fixtureScript = fileURLToPath(import.meta.url);
     runJsonCommand(process.execPath, [
-        fixtureScript, "seed", "--repo", repository, "--work", populatedRoot, "--nonce", populatedNonce
+        fixtureScript, "seed", "--repo", repository, "--work", populatedRoot, "--nonce", populatedNonce,
+        "--platform", platform
     ], {cwd: repository, env: process.env});
-    prepareStaticFixtures({work: resetRoot, nonce: resetNonce});
+    prepareStaticFixtures({work: resetRoot, nonce: resetNonce, platform});
 
     const databaseFile = path.join(populatedRoot, "data", SQLITE_FILE);
     const sqliteCheckScript = fileURLToPath(new URL("./sqlite-check.mjs", import.meta.url));
@@ -429,7 +436,8 @@ const main = async () => {
             work: options.work,
             resetWork: options["reset-work"],
             manifest: options.manifest,
-            sourceSha: options["source-sha"]
+            sourceSha: options["source-sha"],
+            ...(options.platform ? {platform: options.platform} : {})
         })
         : options.command === "seed"
         ? await seedDatabase(options)

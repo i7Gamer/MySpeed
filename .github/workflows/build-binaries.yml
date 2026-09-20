@@ -14,6 +14,12 @@ on:
       windows_stamp:
         required: true
         type: string
+      # The CPU-floor branch workflow needs only the Windows executable. Defaulting to
+      # false leaves every existing caller building the full set exactly as before.
+      windows_only:
+        required: false
+        type: boolean
+        default: false
 
 # Dependency scripts and compiled artifacts execute only with repository read access.
 permissions:
@@ -150,6 +156,7 @@ jobs:
 
   build-linux:
     name: "Linux (${{ matrix.label }})"
+    if: ${{ !inputs.windows_only }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -307,6 +314,7 @@ jobs:
 
   build-macos:
     name: "macOS (${{ matrix.arch }})"
+    if: ${{ !inputs.windows_only }}
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -433,6 +441,7 @@ jobs:
 
   build-zip:
     name: "Source ZIP"
+    if: ${{ !inputs.windows_only }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
@@ -541,6 +550,7 @@ jobs:
 
   build-static:
     name: "Install scripts"
+    if: ${{ !inputs.windows_only }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project

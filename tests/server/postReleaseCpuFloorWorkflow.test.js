@@ -167,7 +167,7 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         const tests = workflow.jobs.seal.steps.find(step => String(step.name).includes("unit tests")).run;
         for (const name of ["linuxWindowsCpuFloorStage2Closure.test.js",
             "linuxWindowsCpuFloorStage3Cleanup.test.js",
-            "linuxWindowsCpuFloorStage3Closure.test.js", "postReleaseCpuFloorGuestPreparation.test.js",
+            "linuxWindowsCpuFloorStage3Closure.test.js", "cpuFloorGuestPreparation.test.js",
             "postReleaseCpuFloorHostedInputs.test.js", "postReleaseCpuFloorWorkflow.test.js"])
             assert.match(tests, new RegExp(name.replaceAll(".", "\\."), "u"));
     });

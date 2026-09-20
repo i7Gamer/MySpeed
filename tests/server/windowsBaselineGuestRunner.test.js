@@ -14,7 +14,8 @@ const request = () => ({schemaVersion: 1, kind: "myspeed-windows-baseline-guest-
     qualifying: false, context: {schemaVersion: 1, repository: "i7Gamer/MySpeed", sourceSha: SOURCE_SHA, eventSha: EVENT_SHA,
     runId: "123", runAttempt: "1", nonce: NONCE, environment: {GITHUB_ACTIONS: "true", CI: "true",
         RUNNER_OS: "Linux", RUNNER_ARCH: "X64", RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24",
-        ImageVersion: "20260901.1"}}, candidate: {artifactName: "MySpeed-windows-x64-baseline.exe",
+        ImageVersion: "20260901.1"}}, candidate: {provenance: "published-release",
+        artifactName: "MySpeed-windows-x64-baseline.exe",
         path: "D:\\MySpeed.exe", sourceSha: CANDIDATE_SHA, bytes: "524288", sha256: SHA("4")}, fixture: {
         path: "D:\\fixture-bundle.json", bytes: "8192", sha256: SHA("5")}, paths: {
         taskRoot: `C:\\Windows\\Temp\\myspeed-baseline-${NONCE}`,

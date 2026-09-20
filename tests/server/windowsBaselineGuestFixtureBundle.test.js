@@ -10,7 +10,7 @@ import {materializeWindowsBaselineGuestFixture} from "../../scripts/qualificatio
 
 const SOURCE_SHA = "a".repeat(40);
 const NONCE = "b".repeat(32);
-const EXPECTED_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe",
+const EXPECTED_FILES = Object.freeze(["bin/cfspeedtest.exe", "bin/iperf3.exe", "bin/librespeed-cli.exe", "bin/ost-cli.exe",
     "bin/speedtest.exe", "data/servers/librespeed.json", "data/servers/ookla.json"]);
 const sha256 = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 

@@ -5,6 +5,7 @@ import {validateHostedContext} from "../qualification/linux-kvm-capability.mjs";
 import {validateCompletedStage3Result, STAGE3_BUDGET_CONSTANTS, STAGE3_CONSTANTS}
     from "../qualification/linux-windows-cpu-floor-stage3.mjs";
 import {buildWindowsMsiStage2Request} from "../qualification/windows-msi-stage2-request.mjs";
+import {CANDIDATE_PROVENANCE} from "../qualification/windows-cpu-floor-candidate-provenance.mjs";
 import {INSTALLER_BOOT_CONFIRMATION, INSTALLER_BOOT_CONFIRMATION_AFTER_FIRST_FRAME,
     INSTALLER_BOOT_CONFIRMATION_CADENCE} from
     "../qualification/linux-windows-cpu-floor-stage2-qmp.mjs";
@@ -334,6 +335,8 @@ export function buildV161PostReleaseCpuFloorStage3Template(binding, plan) {
             serialLog: `${root}/${STAGE3_SERIAL_LOG_NAME}`
         },
         candidate: {
+            /* The schema is a tagged union; this path is always the published one. */
+            provenance: CANDIDATE_PROVENANCE.published,
             sourceSha: binding.candidate.sourceSha,
             tagName: binding.candidate.tagName,
             artifactId: binding.candidate.artifact.id,
