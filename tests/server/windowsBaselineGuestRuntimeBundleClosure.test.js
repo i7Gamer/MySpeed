@@ -306,8 +306,23 @@ const sitesOfSource = (source, label = "source") => {
             /* The loader owns import specifiers; pinning them too would double every change. */
             const owned = ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"]
                 .includes(parent?.type) && parent.source === node;
-            triggered = !owned && NAMES_A_SCRIPT.test(node.value);
-        } else if (node.type === "TemplateElement") triggered = NAMES_A_SCRIPT.test(node.value.raw);
+            /*
+             * process["cwd"] reaches the same place as process.cwd, but espree calls the property a
+             * string rather than an identifier, so the location check below never sees it.
+             */
+            const location = parent?.type === "MemberExpression" && parent.computed
+                && parent.property === node && parent.object?.name === "process"
+                && PROCESS_LOCATION.has(node.value);
+            triggered = !owned && (location || NAMES_A_SCRIPT.test(node.value));
+        } else if (node.type === "TemplateElement") {
+            /*
+             * The cooked value is what the file name actually is: `x.ps1` is a .ps1 at run time
+             * and matches nothing as written. A string literal is already read cooked; a template is
+             * the only place the raw text was being trusted on its own.
+             */
+            triggered = NAMES_A_SCRIPT.test(node.value.raw)
+                || NAMES_A_SCRIPT.test(node.value.cooked ?? "");
+        }
         else if (node.type === "MetaProperty") triggered = true;
         else if (node.type === "ImportExpression") {
             /*
@@ -433,6 +448,21 @@ describe("Windows baseline guest runtime bundle closure", () => {
             linesOfSource(String.raw`. "$PSScriptRoot\a b.ps1"`),
             linesOfSource(String.raw`. "$PSScriptRoot\a  b.ps1"`),
             "two controller lines that reach different scripts share one approved pin");
+    });
+
+    /*
+     * Two spellings that reach the same place as a site the suite already sees. A member edited into
+     * either of these would drop out of the snapshot silently, because nothing else in the file would
+     * change: the escape cooks to a script name only at run time, and the computed property is a
+     * string rather than the identifier the location check reads.
+     */
+    it("sees a location and a script name through the spellings that hide them", () => {
+        assert.notDeepEqual(sitesOfSource(`const base = path.join(process["cwd"](), name);`), [],
+            "a computed process location reaches the module's directory unpinned");
+        assert.notDeepEqual(sitesOfSource(`const first = process["argv"][2];`), [],
+            "a computed process argv reaches a caller-supplied path unpinned");
+        assert.notDeepEqual(sitesOfSource("const s = `./review-missing.\\u0070s1`;"), [],
+            "an escaped script name in a template is invisible until it is read");
     });
 
     it("names scripts and its own location only at approved sites", () => {
