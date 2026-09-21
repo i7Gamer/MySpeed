@@ -274,10 +274,15 @@ for (const adapter of [false, true]) for (const failure of ['auth', 'greeting', 
   });
   try {
     const start = Date.now();
-    await assert.rejects(send(options(fixture, 'plain', adapter ? {
-      ...STAGE_TIMEOUTS,
-      getSocket: createGuardedSocket()
-    } : STAGE_TIMEOUTS)), error => error.message !== 'fixture safety deadline' && error.code === (failure === 'auth' ? 'EAUTH' : 'ETIMEDOUT'));
+    await assert.rejects(send(options(fixture, 'plain', {
+      // Only the two stalls are about timeouts. The auth case asserts EAUTH and gets no budget,
+      // because keeping one there would preserve exactly the sensitivity this scoping removes: a
+      // greeting slower than the budget would fail it with ETIMEDOUT instead of the code it wants.
+      ...(failure === 'auth' ? {} : STAGE_TIMEOUTS),
+      ...(adapter ? {
+        getSocket: createGuardedSocket()
+      } : {})
+    })), error => error.message !== 'fixture safety deadline' && error.code === (failure === 'auth' ? 'EAUTH' : 'ETIMEDOUT'));
     const elapsed = Date.now() - start;
     assert.ok(elapsed < DEADLINE_MS - STAGE_MS, 'safety deadline must not produce this failure');
     assert.equal(fixture.seen.messages.length, 0);
@@ -303,9 +308,14 @@ for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-
     await send(options(fixture, 'plain', adapter ? {
       getSocket: createGuardedSocket()
     } : {}));
+    const elapsed = Date.now() - start;
+    // Without this the scenario is vacuous: the runner ignores what a scenario returns, so if
+    // greetingDelayMs were renamed or dropped the option would be silently ignored, the session
+    // would finish in single-digit milliseconds, and this would still pass while guarding nothing.
+    assert.ok(elapsed > STAGE_MS, `the greeting was not delayed (${elapsed}ms)`);
     assert.equal(fixture.seen.messages.length, 1);
     return {
-      elapsed: Date.now() - start
+      elapsed
     };
   } finally {
     await fixture.close();
