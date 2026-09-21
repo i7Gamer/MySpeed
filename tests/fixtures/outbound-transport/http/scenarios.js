@@ -9,6 +9,8 @@ const CHILD_TIMEOUT_MS = 9000;
 const SHORT_REQUEST_MS = 150;
 const BODY_HEADER_DELAY_MS = SHORT_REQUEST_MS * 2;
 const DELAYED_HEADER_OBSERVATION_MS = BODY_HEADER_DELAY_MS + SHORT_REQUEST_MS;
+// Longer than the client's old default request deadline, shorter than the child ceiling above.
+const SLOW_HEADER_MS = 2600;
 const IDLE_LEASE_LIMIT = 16;
 const SOCKETS_PER_TUNNEL = 3;
 const REUSE_REQUESTS = 3;
@@ -144,6 +146,14 @@ scenario("custom-port proxy preserves strict SNI and original Host", {strictSni:
     assert.equal(seen.posts[0].headers.host, `${HOST}:${peer.originPort}`);
     assert.equal(seen.posts[0].servername, HOST);
 });
+
+// A scenario that asserts a deadline passes its own. The rest must not inherit one tight enough to
+// measure the host: a stalled CI runner would arrive as a TimeoutError and read as a broken request,
+// which is what the two deliberate deadlines below are for. The child ceiling still bounds this.
+scenario("a response slower than any deliberate deadline still arrives",
+    {headerDelayMs: SLOW_HEADER_MS}, ({results}) => {
+        assert.equal(results[0].status, 200);
+    });
 
 scenario("hostname NO_PROXY bypass is selected before numeric rewriting", {noProxy: HOST}, ({results}, seen) => {
     assert.equal(results[0].status, 200);
