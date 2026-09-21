@@ -14,6 +14,7 @@ export async function smtpFixture({
   stallGreeting = false,
   stallData = false,
   delayMs = 0,
+  greetingDelayMs = 0,
   host = '127.0.0.1',
   port = 0
 } = {}) {
@@ -24,6 +25,7 @@ export async function smtpFixture({
     stallGreeting,
     stallData,
     delayMs,
+    greetingDelayMs,
     host,
     port
   });
@@ -41,12 +43,14 @@ export async function smtpFixture({
     enumerable: true,
     get: () => [...sockets].filter(socket => !socket.destroyed).length
   });
-  const later = fn => {
-    if (!delayMs) return fn();
+  // greetingDelayMs slows only the first reply, so a scenario can make one stage slow without
+  // multiplying the whole session by the delay the way delayMs does.
+  const later = (fn, delay = delayMs) => {
+    if (!delay) return fn();
     const timer = setTimeout(() => {
       timers.delete(timer);
       fn();
-    }, delayMs);
+    }, delay);
     timers.add(timer);
   };
   const track = s => {
@@ -64,9 +68,9 @@ export async function smtpFixture({
       dataMode = false,
       message = [],
       authStep = false;
-    const reply = line => later(() => {
+    const reply = (line, delay) => later(() => {
       if (!socket.destroyed) socket.write(line + '\r\n');
-    });
+    }, delay);
     const onData = chunk => {
       pending += chunk.toString('utf8');
       while (pending.includes('\r\n')) {
@@ -129,7 +133,7 @@ export async function smtpFixture({
       }
     };
     socket.on('data', onData);
-    if (greet && !stallGreeting) reply('220 fixture ESMTP');
+    if (greet && !stallGreeting) reply('220 fixture ESMTP', greetingDelayMs || delayMs);
   };
   const accepted = s => {
     seen.connections++;

@@ -10,7 +10,18 @@ import { createSmtpResolver } from '../../../../server/util/smtpResolver.js';
 import { transportOptions } from '../../../../server/util/smtpOptions.js';
 const STAGE_MS = 400,
   DEADLINE_MS = 5000,
-  DELAY_MS = 90;
+  DELAY_MS = 90,
+  SLOW_GREETING_MS = 900,
+  // Spread into the scenarios that assert a timeout, and only those. Applying it to every scenario
+  // put a 400ms budget on each stage of an ordinary loopback session that takes about ten
+  // milliseconds, so a stalled CI host - Defender on the first socket, a cold TLS init, the
+  // scheduler - arrived as ETIMEDOUT and read as a delivery failure. The safety deadline in send()
+  // already bounds every scenario, so the ones that are not about timeouts do not need their own.
+  STAGE_TIMEOUTS = {
+    connectionTimeout: STAGE_MS,
+    greetingTimeout: STAGE_MS,
+    socketTimeout: STAGE_MS
+  };
 const mail = {
   from: 'sender@fixture.invalid',
   to: 'receiver@fixture.invalid',
@@ -71,9 +82,6 @@ function options(fixture, mode, extra = {}) {
       password: 'synthetic'
     }),
     getSocket: undefined,
-    connectionTimeout: STAGE_MS,
-    greetingTimeout: STAGE_MS,
-    socketTimeout: STAGE_MS,
     tls: {
       ca: cert,
       servername: HOST
@@ -267,8 +275,9 @@ for (const adapter of [false, true]) for (const failure of ['auth', 'greeting', 
   try {
     const start = Date.now();
     await assert.rejects(send(options(fixture, 'plain', adapter ? {
+      ...STAGE_TIMEOUTS,
       getSocket: createGuardedSocket()
-    } : {})), error => error.message !== 'fixture safety deadline' && error.code === (failure === 'auth' ? 'EAUTH' : 'ETIMEDOUT'));
+    } : STAGE_TIMEOUTS)), error => error.message !== 'fixture safety deadline' && error.code === (failure === 'auth' ? 'EAUTH' : 'ETIMEDOUT'));
     const elapsed = Date.now() - start;
     assert.ok(elapsed < DEADLINE_MS - STAGE_MS, 'safety deadline must not produce this failure');
     assert.equal(fixture.seen.messages.length, 0);
@@ -282,6 +291,26 @@ for (const adapter of [false, true]) for (const failure of ['auth', 'greeting', 
     await fixture.close();
   }
 });
+// A stage slower than any deliberate timeout must still deliver. Nothing here asserts a timeout, so
+// the only bound is the safety deadline: a loopback greeting that takes the better part of a second
+// is a stalled CI host, not a defect, and this suite used to read one as the other.
+for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-slow-greeting`, async () => {
+  const fixture = await smtpFixture({
+    greetingDelayMs: SLOW_GREETING_MS
+  });
+  try {
+    const start = Date.now();
+    await send(options(fixture, 'plain', adapter ? {
+      getSocket: createGuardedSocket()
+    } : {}));
+    assert.equal(fixture.seen.messages.length, 1);
+    return {
+      elapsed: Date.now() - start
+    };
+  } finally {
+    await fixture.close();
+  }
+});
 for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-slow-progress`, async () => {
   const fixture = await smtpFixture({
     delayMs: DELAY_MS
@@ -289,9 +318,12 @@ for (const adapter of [false, true]) check(`${adapter ? 'adapter' : 'baseline'}-
   try {
     const start = Date.now();
     await send(options(fixture, 'plain', adapter ? {
+      ...STAGE_TIMEOUTS,
       getSocket: createGuardedSocket()
-    } : {}));
+    } : STAGE_TIMEOUTS));
     const elapsed = Date.now() - start;
+    // The point of the scenario: every stage stayed inside its own budget while the session as a
+    // whole ran past it, so repeated sub-timeout delays never abort a delivery.
     assert.ok(elapsed > STAGE_MS);
     assert.equal(fixture.seen.messages.length, 1);
     return {
