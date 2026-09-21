@@ -10,7 +10,12 @@ import {httpsProxyRoute, sendHttpsProxy} from "../../../../server/util/outboundH
 
 const HOST = "outbound-fixture.invalid";
 const LOCAL = "127.0.0.1";
-const REQUEST_MS = 2000;
+// A backstop, not a budget. A scenario that asserts a deadline passes its own `timeout`; every other
+// request only needs to fail before the parent's 9s child ceiling, so that the failure arrives as a
+// result rather than as a killed child. At 2000ms this measured the host instead: an ordinary
+// loopback request takes a few hundred milliseconds, and a stalled CI runner arrived as a
+// TimeoutError on a scenario that was asserting SNI.
+const REQUEST_MS = 6000;
 const CLEANUP_MS = 75;
 const KEEP_PROCESS_ALIVE_MS = 1000;
 const REUSE_REQUESTS = 3;
