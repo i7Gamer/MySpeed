@@ -249,16 +249,37 @@ const taintedNames = (tree, blanked) => {
             const declaration = node.type === "ExportNamedDeclaration" ? node.declaration : node;
             if (declaration?.type !== "VariableDeclaration") continue;
             for (const declarator of declaration.declarations) {
-                if (declarator.id.type !== "Identifier" || tainted.has(declarator.id.name)) continue;
                 const initialiser = declarator.init;
                 if (initialiser === null || initialiser === undefined) continue;
                 if (["ArrowFunctionExpression", "FunctionExpression"].includes(initialiser.type)) continue;
                 const text = blanked.slice(...initialiser.range);
-                if (NAMES_A_SCRIPT.test(text) || /import\s*\.\s*meta/u.test(text)
+                const bearsLocation = NAMES_A_SCRIPT.test(text) || /import\s*\.\s*meta/u.test(text)
                     || [...LOCATION_NAMES].some(name => new RegExp(`\\b${name}\\b`, "u").test(text))
-                    || [...tainted].some(name => new RegExp(`\\b${name}\\b`, "u").test(text))) {
-                    tainted.add(declarator.id.name);
-                    changed = true;
+                    || [...tainted].some(name => new RegExp(`\\b${name}\\b`, "u").test(text));
+                if (declarator.id.type === "Identifier") {
+                    if (!tainted.has(declarator.id.name) && bearsLocation) {
+                        tainted.add(declarator.id.name);
+                        changed = true;
+                    }
+                    continue;
+                }
+                /*
+                 * `const {cwd} = process` is the same location under a new name, and the new name is
+                 * in neither set, so the uses that follow it were invisible. Destructuring off an
+                 * already tainted value carries the taint the same way a plain assignment does.
+                 */
+                if (declarator.id.type !== "ObjectPattern") continue;
+                for (const property of declarator.id.properties) {
+                    if (property.type !== "Property" || property.value.type !== "Identifier") continue;
+                    const bound = property.value.name;
+                    if (tainted.has(bound)) continue;
+                    const offProcess = initialiser.type === "Identifier" && initialiser.name === "process"
+                        && !property.computed && property.key.type === "Identifier"
+                        && PROCESS_LOCATION.has(property.key.name);
+                    if (offProcess || bearsLocation) {
+                        tainted.add(bound);
+                        changed = true;
+                    }
                 }
             }
         }
@@ -463,6 +484,12 @@ describe("Windows baseline guest runtime bundle closure", () => {
             "a computed process argv reaches a caller-supplied path unpinned");
         assert.notDeepEqual(sitesOfSource("const s = `./review-missing.\\u0070s1`;"), [],
             "an escaped script name in a template is invisible until it is read");
+        assert.notDeepEqual(
+            sitesOfSource("const {cwd} = process;\nconst base = path.join(cwd(), name);"), [],
+            "a location destructured off process loses its name and its pin");
+        assert.notDeepEqual(
+            sitesOfSource("const {argv: supplied} = process;\nconst target = supplied[3];"), [],
+            "a renamed destructured location loses its pin");
     });
 
     it("names scripts and its own location only at approved sites", () => {
