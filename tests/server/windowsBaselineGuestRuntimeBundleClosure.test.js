@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import {spawnSync} from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {isBuiltin} from "node:module";
 import {before, describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
-
-import {parse} from "espree";
 
 import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
     "../../scripts/qualification/windows-baseline-guest-runtime-bundle.mjs";
@@ -18,64 +16,44 @@ import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
  * file a member reaches that is not in the list fails inside a virtual machine, half an hour into a
  * thirty-five minute sequence, on a host nobody can attach a debugger to.
  *
- * What this suite guarantees, in one sentence: the bundle loads by itself under the guest's layout,
- * and every place a member names a script - or asks where it is, or a controller mentions one - has
- * been approved by a human.
+ * This suite guarantees two things. The bundle loads by itself under the guest's layout, proven by
+ * running it rather than by reading it. And every byte of every member is content a human approved,
+ * proven by hashing the files rather than by understanding them.
  *
- * "Script" is literal: the pin triggers on .mjs, .js, .cjs, .ps1, .psm1 and .psd1. A member naming a
- * non-script asset is not a site and is not pinned, and members do name them - the materializer's
- * ownership marker, the fixture's bin/ost-cli.exe and data/servers/*.json. Those belong to the
- * request and fixture contracts, which fixtureInventoryParity and the materializer's own suite hold;
- * they are not bundle members and reaching them wrong is not what this test is for.
+ * The second half used to be cleverer, and the story is worth keeping because it is the reason this
+ * is not. Five versions of this file tried to single out the *interesting* parts of each member -
+ * the expressions that name a script or ask where the module is - so that ordinary edits would not
+ * cost an approval. The earlier ones matched import syntax and scanned strings; the last pinned the
+ * source text of the expressions it recognised. Eight rounds of adversarial review found
+ * a way past every one of them: an import behind a comment, a filename moved into a constant, a
+ * computed key, an escaped template, a destructured binding, a renamed one, a default value,
+ * `globalThis.process`. Each fix closed the reported spelling; the next round found another, twice
+ * inside the fix for the one before.
  *
- * It gets there two ways, neither of which interprets a path.
+ * It ended on an example that cannot be recognised at all:
  *
- * The first is to stop modelling and start running. Four earlier versions of this test each
- * re-implemented part of Node's resolver - matching import syntax, then scanning strings, then
- * resolving path.join arguments - and every one of them had both failure kinds, because a
- * re-implementation always does: a shape it does not model is an escape, and a shape it models too
- * strictly is a false positive that gets the test relaxed. Adversarial review found, across four
- * rounds, an import hidden behind a comment, a regular expression read as code, a filename moved
- * into a constant, an inverted Bun condition, a guard that loaded before it returned - and equally,
- * refusals of the materializer's own correct write and of console.warn("Run repair.ps1").
+ *     const base = path.resolve();
  *
- * So the bundle is copied into a bare directory laid out the way the guest installer lays it out,
- * and every module is imported by a child Node process with no repository and no node_modules above
- * it. Node's own loader gives the verdict, which is the same loader that will give it in the VM.
- * Three probes then exercise the seams that a load alone cannot reach: the SQLite shim's Node
- * branch, the macOS guard on win32, and the executor reading its own PowerShell wrapper.
+ * `path.resolve()` with no arguments returns the working directory. There is no `process`, no `cwd`,
+ * no member read, no pattern - nothing for any recogniser to match, and it is ordinary code. A named
+ * import (`import {cwd} from "node:process"`) and `Reflect.get(process, "cwd")` are the same shape of
+ * counterexample. So the recogniser was not incomplete in a way more rules could fix; the premise was
+ * wrong. Deciding which edits matter requires understanding what the code does, and a test that
+ * understood that would need to be more trustworthy than the code it guards.
  *
- * The second is to pin rather than resolve. Where a module names a script or asks where it is, the
- * source text of that expression is compared against a list a human approved. No semantics, so no
- * semantic mistakes: a change is shown, not judged, and the failure prints the new text to paste.
- * Controller lines are pinned the same way, matched on substrings, because no PowerShell layout can
- * hide a substring on a line.
+ * So it stopped deciding. The gate is now "did this file change at all", which no spelling can slip
+ * past because it does not look at spellings. The price is that any edit to a bundle member needs an
+ * approval line, including edits that have nothing to do with reaching files. That is the honest cost
+ * of the guarantee, and the promise the old design was built on - only bother the reviewer for
+ * relevant changes - is exactly the promise that could not be kept.
  *
  * Stated so nobody reads more into a green run than it says:
- * - A path assembled entirely from run-time values, with no file name and no module-location anchor
- *   in the expression, is invisible. The materializer's reads under the task root are of that kind;
- *   they belong to the request contract, and the fixture inventory to fixtureInventoryParity.
- * - A function-local alias of the module directory is pinned where it is introduced, not where it
- *   is later used. Module-level aliases are followed and their uses are pinned.
+ * - An approved hash means a human said this content is correct for the guest. It does not mean the
+ *   content is correct. A hash updated without reading the diff proves nothing at all, and that is a
+ *   review risk no test can remove.
  * - Nothing inside a scenario runs here. The wrapper hashes the controllers it is handed.
- * - A controller line reaching a script through a value with no extension, no Import-Module and no
- *   script-root variable is invisible to the line pin.
- * - A site is pinned as its whole enclosing statement, so a long one carries text that has nothing to
- *   do with reaching a file. The SQLite adapter is the case in the bundle: its two engine imports pin
- *   the entire openDatabase initialiser, and editing anything inside it asks for a snapshot update.
- *   Splitting the holder finer would hide which condition guards which import, which is the thing
- *   round 3 found worth pinning, so the noisy update is the deliberate trade.
- * - Whitespace is collapsed outside string, template and regular-expression literals and preserved
- *   inside them, so a reformat that moves a line break into a pinned statement asks for a snapshot
- *   update it does not strictly need. Splitting an argument list over lines and spacing out `${ x }`
- *   both cost one. That is the price of never removing whitespace, which is what let an earlier
- *   version read `${root}` and `$ {root}` as the same approved string.
- * - This guards against mistakes, not against a member written to defeat it. A member that writes a
- *   complete forged closure-report.json and exits, or that replaces fs with a facade satisfying both
- *   the probe and its control, would pass. Both need the member to know this file; neither is a shape
- *   anyone reaches by accident, and defending them would buy nothing a reviewer does not already do.
- * - The pin does not judge a site; it makes a change visible. A snapshot updated without looking is
- *   the residual risk, and that is a review risk rather than a parsing one.
+ * - The fixture's own inventory belongs to fixtureInventoryParity, and the request contract to the
+ *   materializer's suite. This is about the bundle standing alone, not about what it then does.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -86,25 +64,7 @@ const CONTROLLERS = RUNTIME_PATHS.filter(name => name.endsWith(".ps1"));
 const LOAD_TIMEOUT_MILLISECONDS = 60_000;
 const REPORT_NAME = "closure-report.json";
 const PROBE_SENTINEL = "closure-probe-reached-operations";
-
-/* A string that names a script, and the PowerShell tokens that reach one. */
-const NAMES_A_SCRIPT = /\.(?:m?js|cjs|ps1|psm1|psd1)(?![\w])/iu;
-const CONTROLLER_TRIGGER =
-    /\.(?:ps1|psm1|psd1|m?js|cjs)\b|Import-Module|\$PSScriptRoot|\$PSCommandPath|\$MyInvocation|Invoke-Expression|using module/iu;
-/* Asking where you are is how you reach a sibling, so it is pinned like naming one. */
-const LOCATION_NAMES = new Set(["__dirname", "__filename", "require", "createRequire"]);
-/*
- * Properties of `process`, recognised by the property name wherever it appears rather than by
- * whether the object is literally called `process`. Three rounds of review each found one more way
- * to reach the same place under another name - a computed key, a destructured binding, a renamed
- * one - and a fourth found globalThis.process and a destructuring default. They all had one cause:
- * the selector asked what the object was called. It no longer asks. The cost is that a property
- * named cwd on something else is pinned too, which is an entry a reader can see and approve rather
- * than a hole nobody can see at all.
- */
-const PROCESS_LOCATION = new Set(["argv", "cwd", "execPath"]);
-
-const sourceOf = member => fs.readFileSync(path.join(REPOSITORY, member), "utf8");
+const MANIFEST = path.join(HERE, "windowsBaselineGuestRuntimeBundleClosure.approved.json");
 
 const PROBE = `
 import fs from "node:fs"; import path from "node:path"; import {pathToFileURL} from "node:url";
@@ -198,269 +158,18 @@ const loadBundle = (omit = null) => {
     }
 };
 
-const treeOf = (source, label) => {
-    try {
-        return parse(source,
-            {ecmaVersion: "latest", sourceType: "module", range: true, comment: true});
-    } catch (error) {
-        const where = error.lineNumber === undefined ? "" : ` at line ${error.lineNumber}:${error.column}`;
-        throw new Error(`${label} could not be parsed${where}: ${error.message}`, {cause: error});
-    }
-};
-
-const walk = (node, visit, ancestors = []) => {
-    if (node === null || typeof node !== "object") return;
-    if (Array.isArray(node)) {
-        for (const child of node) walk(child, visit, ancestors);
-        return;
-    }
-    const inside = typeof node.type === "string" ? (visit(node, ancestors), [...ancestors, node]) : ancestors;
-    for (const key of Object.keys(node)) {
-        if (key !== "parent" && key !== "comments") walk(node[key], visit, inside);
-    }
-};
-
-const SITE_HOLDERS = new Set(["Property", "VariableDeclarator", "AssignmentExpression", "AssignmentPattern",
-    "ExpressionStatement", "ReturnStatement", "ThrowStatement", "ExportDefaultDeclaration"]);
-
 /*
- * Collapses the whitespace a formatter owns - indentation, line breaks between arguments - and
- * nothing else. An earlier version also stripped spaces around punctuation, which erased the
- * difference between `${root}` and `$ {root}`: one interpolates, the other is a literal dollar and
- * brace, and both normalised to the same approved string. Characters inside a literal are never
- * touched, because a space there is part of the value rather than of the layout.
+ * Line endings are a checkout mode, not content: this repository stores LF and checks out CRLF, so
+ * hashing the bytes on disk would fail on a colleague's machine rather than on a change. Everything
+ * else is hashed exactly as written, including whitespace, because deciding which bytes matter is
+ * the judgement this file no longer makes.
  */
-const normalise = (text, protectedRanges = [], offset = 0) => {
-    let out = "";
-    let whitespace = false;
-    for (let index = 0; index < text.length; index += 1) {
-        const at = offset + index;
-        const inside = protectedRanges.some(([from, to]) => at >= from && at < to);
-        if (!inside && /\s/u.test(text[index])) { whitespace = true; continue; }
-        if (whitespace && out !== "") out += " ";
-        whitespace = false;
-        out += text[index];
-    }
-    return out.trim();
-};
+const approvedHash = member =>
+    crypto.createHash("sha256")
+        .update(fs.readFileSync(path.join(REPOSITORY, member), "utf8").replaceAll("\r\n", "\n"))
+        .digest("hex");
 
-/*
- * Module-level constants whose initialiser already names a script or asks where the module is. A
- * filename moved into a constant is ordinary refactoring, so a use of that constant is a site too.
- * Function bodies are not descended into: a local binding is pinned where it is introduced.
- */
-/*
- * The name a key resolves to, or null when it only resolves at run time. `cwd`, "cwd" and `cwd` as a
- * template are the same property; an interpolated key is not a name this file can know.
- */
-const staticKeyName = node => {
-    if (node.type === "Identifier") return node.name;
-    if (node.type === "Literal") return typeof node.value === "string" ? node.value : null;
-    if (node.type !== "TemplateLiteral" || node.expressions.length > 0) return null;
-    return node.quasis[0]?.value.cooked ?? null;
-};
-
-/* The property a member expression reads, however the key is written. */
-const memberName = node => node.computed
-    ? staticKeyName(node.property)
-    : (node.property.type === "Identifier" ? node.property.name : null);
-
-/* Whether an expression reads a location off anything, as `process.cwd` or `globalThis.process.cwd`. */
-const readsLocation = expression => {
-    let found = false;
-    walk(expression, node => {
-        if (node.type !== "MemberExpression" || found) return;
-        const name = memberName(node);
-        if (name !== null && PROCESS_LOCATION.has(name)) found = true;
-    });
-    return found;
-};
-
-/*
- * The names an object pattern binds, and whether each one is a location. `{cwd}`, `{cwd: alias}` and
- * `{cwd = fallback}` all take the same property; only the name it lands under differs.
- */
-const patternBindings = pattern => pattern.properties.flatMap(property => {
-    if (property.type !== "Property") return [];
-    const target = property.value.type === "AssignmentPattern" ? property.value.left : property.value;
-    if (target.type !== "Identifier") return [];
-    const key = staticKeyName(property.key);
-    return [{name: target.name, location: key !== null && PROCESS_LOCATION.has(key)}];
-});
-
-const taintedNames = (tree, blanked) => {
-    const tainted = new Set();
-    let changed = true;
-    while (changed) {
-        changed = false;
-        for (const node of tree.body) {
-            const declaration = node.type === "ExportNamedDeclaration" ? node.declaration : node;
-            if (declaration?.type !== "VariableDeclaration") continue;
-            for (const declarator of declaration.declarations) {
-                const initialiser = declarator.init;
-                if (initialiser === null || initialiser === undefined) continue;
-                if (["ArrowFunctionExpression", "FunctionExpression"].includes(initialiser.type)) continue;
-                const text = blanked.slice(...initialiser.range);
-                /*
-                 * A location name carries into whatever is assigned from it, which is how
-                 * `const dir = __dirname` has always worked, and `const here = process.cwd` now
-                 * carries on to `here()` rather than going dark one hop after the pinned
-                 * declaration. The process names are matched on the tree rather than on the text,
-                 * because `cwd` is an ordinary word: `const config = {cwd: 12}` contains it and
-                 * reads nothing, while `__dirname` is distinctive enough for the text to do.
-                 */
-                const bearsLocation = NAMES_A_SCRIPT.test(text) || /import\s*\.\s*meta/u.test(text)
-                    || readsLocation(initialiser)
-                    || [...LOCATION_NAMES, ...tainted]
-                        .some(name => new RegExp(`\\b${name}\\b`, "u").test(text));
-                if (declarator.id.type === "Identifier") {
-                    if (!tainted.has(declarator.id.name) && bearsLocation) {
-                        tainted.add(declarator.id.name);
-                        changed = true;
-                    }
-                    continue;
-                }
-                /* A destructured binding is the location under a new name, default value and all. */
-                if (declarator.id.type !== "ObjectPattern") continue;
-                for (const bound of patternBindings(declarator.id)) {
-                    if (tainted.has(bound.name)) continue;
-                    if (bound.location || bearsLocation) {
-                        tainted.add(bound.name);
-                        changed = true;
-                    }
-                }
-            }
-        }
-    }
-    return tainted;
-};
-
-/*
- * Comments are blanked, never removed, so ranges stay valid and a comment can never be pinned. The
- * replace is deliberately not unicode-aware: espree measures ranges in UTF-16 code units, and a `u`
- * flag would match an astral character as one unit and blank it to one space, shortening the text
- * and sliding every later range. Line breaks are kept so a line number still means something.
- */
-const blankComments = (source, comments) => {
-    let blanked = source;
-    for (const comment of comments ?? []) {
-        blanked = blanked.slice(0, comment.range[0])
-            + blanked.slice(...comment.range).replace(/[^\n]/g, " ")
-            + blanked.slice(comment.range[1]);
-    }
-    assert.equal(blanked.length, source.length, "blanking comments moved the source ranges");
-    return blanked;
-};
-
-/* Every expression that names a script or asks where the module is, as source text. */
-const sitesOfSource = (source, label = "source") => {
-    const tree = treeOf(source, label);
-    const blanked = blankComments(source, tree.comments);
-    const tainted = taintedNames(tree, blanked);
-    /*
-     * A regular expression is a literal too: `/ +/` and `/  +/` turn "a b.ps1" into different file
-     * names, and collapsing the space inside them would pin both as the same text.
-     */
-    const protectedRanges = [];
-    walk(tree, node => {
-        const literal = node.type === "Literal"
-            && (typeof node.value === "string" || node.regex !== undefined);
-        if (literal || node.type === "TemplateLiteral") protectedRanges.push(node.range);
-    });
-    const found = new Map();
-    walk(tree, (node, ancestors) => {
-        const parent = ancestors.at(-1);
-        let triggered = false;
-        if (node.type === "Literal" && typeof node.value === "string") {
-            /* The loader owns import specifiers; pinning them too would double every change. */
-            const owned = ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"]
-                .includes(parent?.type) && parent.source === node;
-            triggered = !owned && NAMES_A_SCRIPT.test(node.value);
-        } else if (node.type === "TemplateElement") {
-            /*
-             * The cooked value is what the file name actually is: `x.ps1` is a .ps1 at run time
-             * and matches nothing as written. A string literal is already read cooked; a template is
-             * the only place the raw text was being trusted on its own.
-             */
-            triggered = NAMES_A_SCRIPT.test(node.value.raw)
-                || NAMES_A_SCRIPT.test(node.value.cooked ?? "");
-        }
-        else if (node.type === "MetaProperty") triggered = true;
-        else if (node.type === "ImportExpression") {
-            /*
-             * A dynamic import of a real builtin reaches no file, so pinning it would charge a
-             * snapshot update for `import("node:fs")` and teach the next reader that updates are
-             * routine. Everything else - a sibling, a package, bun:sqlite - is a site.
-             */
-            const specifier = node.source.type === "Literal" ? node.source.value : null;
-            triggered = typeof specifier !== "string" || !isBuiltin(specifier);
-        }
-        /* Read as a property, `.cwd` is the location whatever the object in front of it is called. */
-        else if (node.type === "MemberExpression") {
-            const name = memberName(node);
-            triggered = name !== null && PROCESS_LOCATION.has(name);
-        }
-        /*
-         * Written as a pattern key, it introduces the location under whatever name follows, so it is
-         * pinned where it enters - which is also the only place a loop or parameter binding can be
-         * pinned, since neither is a declaration this file follows. An object literal's key is not a
-         * read of anything, which is what keeps every `{cwd: root}` option bag out of the snapshot.
-         */
-        else if (node.type === "Property" && parent?.type === "ObjectPattern") {
-            const name = staticKeyName(node.key);
-            triggered = name !== null && PROCESS_LOCATION.has(name);
-        }
-        else if (node.type === "Identifier") {
-            const named = parent?.type === "MemberExpression" && parent.property === node && !parent.computed;
-            const key = parent?.type === "Property" && parent.key === node && !parent.computed;
-            triggered = !named && !key && (LOCATION_NAMES.has(node.name) || tainted.has(node.name));
-        }
-        if (!triggered) return;
-        const holder = [...ancestors].reverse().find(candidate => SITE_HOLDERS.has(candidate.type)
-            || /(?:Statement|Declaration)$/u.test(candidate.type)) ?? node;
-        const range = holder.type === "IfStatement" || holder.type === "WhileStatement"
-            ? [holder.range[0], holder.test.range[1] + 1]
-            : holder.range;
-        found.set(range[0], normalise(blanked.slice(...range), protectedRanges, range[0]));
-    });
-    return [...found.entries()].sort(([left], [right]) => left - right).map(([, text]) => text);
-};
-
-const sitesOf = member => sitesOfSource(sourceOf(member), member);
-
-/*
- * A controller line is pinned whole and only trimmed. Collapsing runs of whitespace the way a module
- * site is collapsed would read `"$PSScriptRoot\a  b.ps1"` and `"$PSScriptRoot\a b.ps1"` as the same
- * approved line, and there is no AST here to say which spaces are inside a string. Indentation is the
- * only whitespace a PowerShell formatter owns on these lines, and trimming removes exactly that.
- */
-const linesOfSource = source => source.split(/\r?\n/u)
-    .filter(line => CONTROLLER_TRIGGER.test(line))
-    .map(line => line.trim());
-
-const linesOf = controller => linesOfSource(sourceOf(controller));
-
-const compare = (file, actual, expected) => {
-    if (JSON.stringify(actual) === JSON.stringify(expected)) return;
-    const added = actual.filter(entry => !expected.includes(entry));
-    const removed = expected.filter(entry => !actual.includes(entry));
-    assert.fail(`${file} changed where it names a script or asks where it is.\n`
-        + `${added.map(entry => `  + ${entry}`).join("\n")}\n`
-        + `${removed.map(entry => `  - ${entry}`).join("\n")}\n`
-        + "If every added entry is correct inside the guest, replace this file's list with:\n"
-        + `${JSON.stringify(actual, null, 4)}\n`
-        + "Each entry is a place this file names a script or its own location. Look before pasting.");
-};
-
-/*
- * Exported so the snapshot can be regenerated with exactly the functions that check it. A generator
- * that drifts from its checker is the oldest way to write a test that proves nothing.
- */
-export {blankComments, sitesOf, sitesOfSource, linesOf, linesOfSource};
-
-/* Approved sites, keyed by base name. Regenerate only by reading the diff the failure prints. */
-const SITES = Object.freeze(JSON.parse(fs.readFileSync(
-    path.join(HERE, "windowsBaselineGuestRuntimeBundleClosure.sites.json"), "utf8")));
+const APPROVED = Object.freeze(JSON.parse(fs.readFileSync(MANIFEST, "utf8")));
 
 describe("Windows baseline guest runtime bundle closure", () => {
     let report = null;
@@ -491,117 +200,28 @@ describe("Windows baseline guest runtime bundle closure", () => {
             "the wrapper probe did not fail on the missing wrapper, so it proves nothing");
     });
 
-    /*
-     * Every pin is a slice of the blanked source at a range espree measured on the original, so the
-     * two must agree on what a position is. Espree counts UTF-16 code units; a unicode-aware replace
-     * treats an astral character as one match and blanks it to one space, which shortens the text and
-     * slides every later range by one. The pin then comes from the wrong bytes, and a renamed field
-     * next to an emoji comment can keep its approved text while the request it builds is broken.
-     */
-    it("blanks a comment without moving the ranges after it", () => {
-        const source = `/* \u{1F680} */\nconst NAME = "windows-clean-stop-controller.ps1";\n`;
-        const tree = parse(source,
-            {ecmaVersion: "latest", sourceType: "module", range: true, comment: true});
-        const blanked = blankComments(source, tree.comments);
-        assert.equal(blanked.length, source.length,
-            "blanking changed the length, so every range after the comment now reads the wrong bytes");
-        assert.equal(blanked.slice(...tree.body[0].declarations[0].init.range),
-            `"windows-clean-stop-controller.ps1"`);
-        assert.doesNotMatch(blanked, /\u{1F680}/u, "the comment survived blanking");
+    it("carries only the content a human approved", () => {
+        const changed = RUNTIME_PATHS
+            .map(member => ({member, actual: approvedHash(member), approved: APPROVED[member]}))
+            .filter(entry => entry.actual !== entry.approved);
+        if (changed.length === 0) return;
+        assert.fail(`${changed.length} bundle member(s) differ from the approved content.\n`
+            + changed.map(entry => `  ${entry.member}\n`
+                + `    approved ${entry.approved ?? "(none - this member is new)"}\n`
+                + `    actual   ${entry.actual}\n`
+                + `    read it: git diff -- ${entry.member}`).join("\n")
+            + "\n\nEvery member runs in the guest with no node_modules and no repository, so read the"
+            + "\ndiff for anything it now reaches - an import, a path, a spawn, a PowerShell dot-source"
+            + "\n- and check the file is in RUNTIME_PATHS. Then approve it by replacing the entries in"
+            + `\n${path.relative(REPOSITORY, MANIFEST).replaceAll("\\", "/")} with:\n`
+            + `${JSON.stringify(Object.fromEntries(
+                RUNTIME_PATHS.map(member => [member, approvedHash(member)])), null, 4)}`);
     });
 
-    /*
-     * Approving a site approves its text, so two sources that reach different files must never
-     * produce the same text. Both of these differ only in whitespace a literal owns, and both build
-     * a different file name from it.
-     */
-    it("keeps the whitespace a literal owns, so two spellings never share a pin", () => {
-        assert.notDeepEqual(
-            sitesOfSource(`const name = "a b.ps1".replace(/ +/gu, "_");`),
-            sitesOfSource(`const name = "a b.ps1".replace(/  +/gu, "_");`),
-            "two regular expressions that build different names share one approved pin");
-        assert.notDeepEqual(
-            linesOfSource(String.raw`. "$PSScriptRoot\a b.ps1"`),
-            linesOfSource(String.raw`. "$PSScriptRoot\a  b.ps1"`),
-            "two controller lines that reach different scripts share one approved pin");
-    });
-
-    /*
-     * Two spellings that reach the same place as a site the suite already sees. A member edited into
-     * either of these would drop out of the snapshot silently, because nothing else in the file would
-     * change: the escape cooks to a script name only at run time, and the computed property is a
-     * string rather than the identifier the location check reads.
-     */
-    it("sees a location and a script name through the spellings that hide them", () => {
-        assert.notDeepEqual(sitesOfSource(`const base = path.join(process["cwd"](), name);`), [],
-            "a computed process location reaches the module's directory unpinned");
-        assert.notDeepEqual(sitesOfSource(`const first = process["argv"][2];`), [],
-            "a computed process argv reaches a caller-supplied path unpinned");
-        assert.notDeepEqual(sitesOfSource("const s = `./review-missing.\\u0070s1`;"), [],
-            "an escaped script name in a template is invisible until it is read");
-        assert.notDeepEqual(
-            sitesOfSource("const {cwd} = process;\nconst base = path.join(cwd(), name);"), [],
-            "a location destructured off process loses its name and its pin");
-        assert.notDeepEqual(
-            sitesOfSource("const {argv: supplied} = process;\nconst target = supplied[3];"), [],
-            "a renamed destructured location loses its pin");
-    });
-
-    /*
-     * A location is recognised by the property name, not by whether the object it hangs off is
-     * literally called `process`. Four earlier spellings reached the same place under another name,
-     * and each was invisible for the same reason: the selector asked what the object was called.
-     */
-    it("sees a location however the object holding it is spelled", () => {
-        for (const [label, source] of [
-            ["globalThis", "const base = path.join(globalThis.process.cwd(), name);"],
-            ["global", "const base = path.join(global.process.cwd(), name);"],
-            ["computed off globalThis", `const base = globalThis.process["cwd"]();`],
-            ["a template key", "const base = path.join(process[`cwd`](), name);"],
-            ["a template key off globalThis", "const target = globalThis.process[`argv`][3];"],
-            ["a template key in a pattern", "const {[`cwd`]: where} = process;\nconst base = where();"],
-            ["a destructuring default", "const {cwd = fallback} = process;\nconst base = cwd();"],
-            ["a loop binding", "for (const {cwd} of [process]) { use(cwd()); }"],
-            ["a parameter", "function run({cwd}) { return cwd(); }"]
-        ]) assert.notDeepEqual(sitesOfSource(source), [], `${label} reaches a location unpinned`);
-        /* An alias carries the location on, the way a __dirname alias already does. */
-        const aliased = sitesOfSource("const here = process.cwd;\nconst base = path.join(here(), name);");
-        assert.ok(aliased.length > 1, `an alias was pinned where it was made but not where it was used: ${JSON.stringify(aliased)}`);
-    });
-
-    /*
-     * The widening above is by property name, so it has to stop at things that merely share one.
-     * These are the shapes that would make every spawn in the bundle a site if it did not.
-     */
-    it("does not pin a name that merely matches a location", () => {
-        for (const [label, source] of [
-            ["an unrelated object literal", "const config = {cwd: 12};"],
-            ["a spawn option", "spawnSync(command, args, {cwd: root, env});"],
-            ["a string key", `const config = {"cwd": root};`],
-            ["a template key that is not a location", "const mode = options[`mode`];"],
-            /* A key assembled at run time resolves to nothing here, as documented in the header. */
-            ["an interpolated key", "const value = process[`cw${d}`];"]
-        ]) assert.deepEqual(sitesOfSource(source), [], `${label} was pinned as a location`);
-    });
-
-    it("names scripts and its own location only at approved sites", () => {
-        for (const member of MEMBERS) {
-            compare(member, sitesOf(member), SITES.members[member.split("/").at(-1)] ?? []);
-        }
-    });
-
-    it("mentions scripts in its controllers only on approved lines", () => {
-        for (const controller of CONTROLLERS) {
-            compare(controller, linesOf(controller), SITES.controllers[controller.split("/").at(-1)] ?? []);
-        }
-    });
-
-    it("checks every file the bundle declares", () => {
+    it("approves every file the bundle declares, and nothing else", () => {
         assert.equal(MEMBERS.length + CONTROLLERS.length, RUNTIME_PATHS.length,
             "the bundle should carry only modules and PowerShell controllers");
-        assert.deepEqual(Object.keys(SITES.members).sort(),
-            MEMBERS.map(member => member.split("/").at(-1)).sort());
-        assert.deepEqual(Object.keys(SITES.controllers).sort(),
-            CONTROLLERS.map(controller => controller.split("/").at(-1)).sort());
+        assert.deepEqual(Object.keys(APPROVED).sort(), [...RUNTIME_PATHS].sort(),
+            "the approved list and the bundle's own list have drifted apart");
     });
 });

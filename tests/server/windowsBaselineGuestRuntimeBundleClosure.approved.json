@@ -1,0 +1,15 @@
+{
+    "scripts/qualification/windows-baseline-guest-executor.mjs": "51b374804a02394477dabfc49faaef9806b0417bd65429d8852550caf35c06dc",
+    "scripts/qualification/windows-baseline-guest-runner.mjs": "7b737b7274bae2d7d6c35c08534900fbefb10628263a8f8ffa556e4384a92930",
+    "scripts/qualification/windows-baseline-guest-composer.mjs": "133ab940449348f584523de1052dbe23e1b5d4ace11a19d9517c78482fc62af1",
+    "scripts/qualification/windows-baseline-guest-operations.mjs": "70f275bb53c1827a7e11e1a4cbe034685bf8d5f4b237bfa4f292ff6d0b8eed8f",
+    "scripts/qualification/windows-baseline-guest-runtime.mjs": "a55e1eb2ce62adf623a061b29225b81a20d2d9b1671d05b0439859da5f2afb80",
+    "scripts/qualification/windows-baseline-guest-materializer.mjs": "e8d07618616751f3daa8a62dbabf5dfe832e8d0be595ece17ebdbe437e75a13e",
+    "scripts/qualification/windows-baseline-guest-candidate-wrapper.ps1": "93e1272d9dbd9818d6e94cb100d058b42cbb20c82b4c003d3887295c9efe2212",
+    "scripts/qualification/windows-native-candidate-controller.ps1": "104017297c81a99cc87f94bb76b164c9130cf544e5f9ac3a2a8685d824be8a24",
+    "scripts/qualification/windows-clean-stop-controller.ps1": "5828e359b10317fea3668a480d9f189845067e2a87683068afa4861470c291f1",
+    "scripts/qualification/check-artifact.mjs": "8d76a507ab0b75242a04b3b972d94bfedaf26a1da167ae792ee973da27cd634d",
+    "scripts/qualification/safety.mjs": "f181b760521411a7f94993aa0a2c80c0b6264ad13f0d4fb32a19f82f5f80ed88",
+    "scripts/qualification/fixture.mjs": "25da20c4a6a276ddbcf309037454daf1f405ee14ffaaf2a92e2bbed47424726f",
+    "scripts/qualification/sqlite-check.mjs": "214a1075851ccf4d94ed42f49f5e2d775e1b52d6c5bde509de94ecbdbca80ce0"
+}
