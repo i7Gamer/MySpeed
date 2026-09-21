@@ -93,6 +93,15 @@ const CONTROLLER_TRIGGER =
     /\.(?:ps1|psm1|psd1|m?js|cjs)\b|Import-Module|\$PSScriptRoot|\$PSCommandPath|\$MyInvocation|Invoke-Expression|using module/iu;
 /* Asking where you are is how you reach a sibling, so it is pinned like naming one. */
 const LOCATION_NAMES = new Set(["__dirname", "__filename", "require", "createRequire"]);
+/*
+ * Properties of `process`, recognised by the property name wherever it appears rather than by
+ * whether the object is literally called `process`. Three rounds of review each found one more way
+ * to reach the same place under another name - a computed key, a destructured binding, a renamed
+ * one - and a fourth found globalThis.process and a destructuring default. They all had one cause:
+ * the selector asked what the object was called. It no longer asks. The cost is that a property
+ * named cwd on something else is pinned too, which is an entry a reader can see and approve rather
+ * than a hole nobody can see at all.
+ */
 const PROCESS_LOCATION = new Set(["argv", "cwd", "execPath"]);
 
 const sourceOf = member => fs.readFileSync(path.join(REPOSITORY, member), "utf8");
@@ -240,6 +249,45 @@ const normalise = (text, protectedRanges = [], offset = 0) => {
  * filename moved into a constant is ordinary refactoring, so a use of that constant is a site too.
  * Function bodies are not descended into: a local binding is pinned where it is introduced.
  */
+/*
+ * The name a key resolves to, or null when it only resolves at run time. `cwd`, "cwd" and `cwd` as a
+ * template are the same property; an interpolated key is not a name this file can know.
+ */
+const staticKeyName = node => {
+    if (node.type === "Identifier") return node.name;
+    if (node.type === "Literal") return typeof node.value === "string" ? node.value : null;
+    if (node.type !== "TemplateLiteral" || node.expressions.length > 0) return null;
+    return node.quasis[0]?.value.cooked ?? null;
+};
+
+/* The property a member expression reads, however the key is written. */
+const memberName = node => node.computed
+    ? staticKeyName(node.property)
+    : (node.property.type === "Identifier" ? node.property.name : null);
+
+/* Whether an expression reads a location off anything, as `process.cwd` or `globalThis.process.cwd`. */
+const readsLocation = expression => {
+    let found = false;
+    walk(expression, node => {
+        if (node.type !== "MemberExpression" || found) return;
+        const name = memberName(node);
+        if (name !== null && PROCESS_LOCATION.has(name)) found = true;
+    });
+    return found;
+};
+
+/*
+ * The names an object pattern binds, and whether each one is a location. `{cwd}`, `{cwd: alias}` and
+ * `{cwd = fallback}` all take the same property; only the name it lands under differs.
+ */
+const patternBindings = pattern => pattern.properties.flatMap(property => {
+    if (property.type !== "Property") return [];
+    const target = property.value.type === "AssignmentPattern" ? property.value.left : property.value;
+    if (target.type !== "Identifier") return [];
+    const key = staticKeyName(property.key);
+    return [{name: target.name, location: key !== null && PROCESS_LOCATION.has(key)}];
+});
+
 const taintedNames = (tree, blanked) => {
     const tainted = new Set();
     let changed = true;
@@ -253,9 +301,18 @@ const taintedNames = (tree, blanked) => {
                 if (initialiser === null || initialiser === undefined) continue;
                 if (["ArrowFunctionExpression", "FunctionExpression"].includes(initialiser.type)) continue;
                 const text = blanked.slice(...initialiser.range);
+                /*
+                 * A location name carries into whatever is assigned from it, which is how
+                 * `const dir = __dirname` has always worked, and `const here = process.cwd` now
+                 * carries on to `here()` rather than going dark one hop after the pinned
+                 * declaration. The process names are matched on the tree rather than on the text,
+                 * because `cwd` is an ordinary word: `const config = {cwd: 12}` contains it and
+                 * reads nothing, while `__dirname` is distinctive enough for the text to do.
+                 */
                 const bearsLocation = NAMES_A_SCRIPT.test(text) || /import\s*\.\s*meta/u.test(text)
-                    || [...LOCATION_NAMES].some(name => new RegExp(`\\b${name}\\b`, "u").test(text))
-                    || [...tainted].some(name => new RegExp(`\\b${name}\\b`, "u").test(text));
+                    || readsLocation(initialiser)
+                    || [...LOCATION_NAMES, ...tainted]
+                        .some(name => new RegExp(`\\b${name}\\b`, "u").test(text));
                 if (declarator.id.type === "Identifier") {
                     if (!tainted.has(declarator.id.name) && bearsLocation) {
                         tainted.add(declarator.id.name);
@@ -263,21 +320,12 @@ const taintedNames = (tree, blanked) => {
                     }
                     continue;
                 }
-                /*
-                 * `const {cwd} = process` is the same location under a new name, and the new name is
-                 * in neither set, so the uses that follow it were invisible. Destructuring off an
-                 * already tainted value carries the taint the same way a plain assignment does.
-                 */
+                /* A destructured binding is the location under a new name, default value and all. */
                 if (declarator.id.type !== "ObjectPattern") continue;
-                for (const property of declarator.id.properties) {
-                    if (property.type !== "Property" || property.value.type !== "Identifier") continue;
-                    const bound = property.value.name;
-                    if (tainted.has(bound)) continue;
-                    const offProcess = initialiser.type === "Identifier" && initialiser.name === "process"
-                        && !property.computed && property.key.type === "Identifier"
-                        && PROCESS_LOCATION.has(property.key.name);
-                    if (offProcess || bearsLocation) {
-                        tainted.add(bound);
+                for (const bound of patternBindings(declarator.id)) {
+                    if (tainted.has(bound.name)) continue;
+                    if (bound.location || bearsLocation) {
+                        tainted.add(bound.name);
                         changed = true;
                     }
                 }
@@ -327,14 +375,7 @@ const sitesOfSource = (source, label = "source") => {
             /* The loader owns import specifiers; pinning them too would double every change. */
             const owned = ["ImportDeclaration", "ExportNamedDeclaration", "ExportAllDeclaration"]
                 .includes(parent?.type) && parent.source === node;
-            /*
-             * process["cwd"] reaches the same place as process.cwd, but espree calls the property a
-             * string rather than an identifier, so the location check below never sees it.
-             */
-            const location = parent?.type === "MemberExpression" && parent.computed
-                && parent.property === node && parent.object?.name === "process"
-                && PROCESS_LOCATION.has(node.value);
-            triggered = !owned && (location || NAMES_A_SCRIPT.test(node.value));
+            triggered = !owned && NAMES_A_SCRIPT.test(node.value);
         } else if (node.type === "TemplateElement") {
             /*
              * The cooked value is what the file name actually is: `x.ps1` is a .ps1 at run time
@@ -354,11 +395,25 @@ const sitesOfSource = (source, label = "source") => {
             const specifier = node.source.type === "Literal" ? node.source.value : null;
             triggered = typeof specifier !== "string" || !isBuiltin(specifier);
         }
+        /* Read as a property, `.cwd` is the location whatever the object in front of it is called. */
+        else if (node.type === "MemberExpression") {
+            const name = memberName(node);
+            triggered = name !== null && PROCESS_LOCATION.has(name);
+        }
+        /*
+         * Written as a pattern key, it introduces the location under whatever name follows, so it is
+         * pinned where it enters - which is also the only place a loop or parameter binding can be
+         * pinned, since neither is a declaration this file follows. An object literal's key is not a
+         * read of anything, which is what keeps every `{cwd: root}` option bag out of the snapshot.
+         */
+        else if (node.type === "Property" && parent?.type === "ObjectPattern") {
+            const name = staticKeyName(node.key);
+            triggered = name !== null && PROCESS_LOCATION.has(name);
+        }
         else if (node.type === "Identifier") {
             const named = parent?.type === "MemberExpression" && parent.property === node && !parent.computed;
             const key = parent?.type === "Property" && parent.key === node && !parent.computed;
             triggered = !named && !key && (LOCATION_NAMES.has(node.name) || tainted.has(node.name));
-            if (named && PROCESS_LOCATION.has(node.name) && parent.object?.name === "process") triggered = true;
         }
         if (!triggered) return;
         const holder = [...ancestors].reverse().find(candidate => SITE_HOLDERS.has(candidate.type)
@@ -490,6 +545,43 @@ describe("Windows baseline guest runtime bundle closure", () => {
         assert.notDeepEqual(
             sitesOfSource("const {argv: supplied} = process;\nconst target = supplied[3];"), [],
             "a renamed destructured location loses its pin");
+    });
+
+    /*
+     * A location is recognised by the property name, not by whether the object it hangs off is
+     * literally called `process`. Four earlier spellings reached the same place under another name,
+     * and each was invisible for the same reason: the selector asked what the object was called.
+     */
+    it("sees a location however the object holding it is spelled", () => {
+        for (const [label, source] of [
+            ["globalThis", "const base = path.join(globalThis.process.cwd(), name);"],
+            ["global", "const base = path.join(global.process.cwd(), name);"],
+            ["computed off globalThis", `const base = globalThis.process["cwd"]();`],
+            ["a template key", "const base = path.join(process[`cwd`](), name);"],
+            ["a template key off globalThis", "const target = globalThis.process[`argv`][3];"],
+            ["a template key in a pattern", "const {[`cwd`]: where} = process;\nconst base = where();"],
+            ["a destructuring default", "const {cwd = fallback} = process;\nconst base = cwd();"],
+            ["a loop binding", "for (const {cwd} of [process]) { use(cwd()); }"],
+            ["a parameter", "function run({cwd}) { return cwd(); }"]
+        ]) assert.notDeepEqual(sitesOfSource(source), [], `${label} reaches a location unpinned`);
+        /* An alias carries the location on, the way a __dirname alias already does. */
+        const aliased = sitesOfSource("const here = process.cwd;\nconst base = path.join(here(), name);");
+        assert.ok(aliased.length > 1, `an alias was pinned where it was made but not where it was used: ${JSON.stringify(aliased)}`);
+    });
+
+    /*
+     * The widening above is by property name, so it has to stop at things that merely share one.
+     * These are the shapes that would make every spawn in the bundle a site if it did not.
+     */
+    it("does not pin a name that merely matches a location", () => {
+        for (const [label, source] of [
+            ["an unrelated object literal", "const config = {cwd: 12};"],
+            ["a spawn option", "spawnSync(command, args, {cwd: root, env});"],
+            ["a string key", `const config = {"cwd": root};`],
+            ["a template key that is not a location", "const mode = options[`mode`];"],
+            /* A key assembled at run time resolves to nothing here, as documented in the header. */
+            ["an interpolated key", "const value = process[`cw${d}`];"]
+        ]) assert.deepEqual(sitesOfSource(source), [], `${label} was pinned as a location`);
     });
 
     it("names scripts and its own location only at approved sites", () => {
