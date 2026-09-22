@@ -119,7 +119,15 @@ fs.writeFileSync(path.join(root, ${JSON.stringify(REPORT_NAME)}), JSON.stringify
  * NODE_PATH stripped, no repository, and none of the test harness's loader hooks. That is the guest.
  */
 const loadBundle = (omit = null) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-bundle-closure-"));
+    /*
+     * Canonical, because the scan below climbs `path.dirname` while Node resolves a module's
+     * dependencies from its real path. A symlink anywhere in the temporary root makes those two
+     * chains different directories, and a node_modules on the real one would be invisible to the
+     * scan and perfectly visible to the child - the scan would then prove nothing while saying it
+     * had. On this machine they are already the same; the point is not to depend on that.
+     */
+    const root = fs.realpathSync(
+        fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-bundle-closure-")));
     try {
         for (const member of RUNTIME_PATHS) {
             if (member === omit) continue;
@@ -138,6 +146,10 @@ const loadBundle = (omit = null) => {
             `the temporary directory is at ${root}, and this proves nothing about a bundle laid out`
             + " there: Node's search from a UNC or device path reaches shares this scan does not"
             + " walk. Point TMP at a local drive.");
+        /* The chain below is only the chain the child walks while this holds. */
+        assert.equal(root, fs.realpathSync(root),
+            "the temporary root is not canonical, so climbing it does not follow the directories"
+            + " Node resolves through");
         /* Includes the filesystem root: a package at / would resolve for the child like any other. */
         for (let ancestor = root; ; ancestor = path.dirname(ancestor)) {
             assert.ok(!fs.existsSync(path.join(ancestor, "node_modules")),
