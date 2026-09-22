@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import {spawnSync} from "node:child_process";
+import {execFileSync, spawnSync} from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -34,11 +34,13 @@ import {WINDOWS_BASELINE_RUNTIME_BUNDLE_CONSTANTS} from
  *
  *     const base = path.resolve();
  *
- * `path.resolve()` with no arguments returns the working directory. There is no `process`, no `cwd`,
- * no member read, no pattern - nothing for any recogniser to match, and it is ordinary code. A named
- * import (`import {cwd} from "node:process"`) and `Reflect.get(process, "cwd")` are the same shape of
- * counterexample. So the recogniser was not incomplete in a way more rules could fix; the premise was
- * wrong. Deciding which edits matter requires understanding what the code does, and a test that
+ * `path.resolve()` with no arguments returns the working directory. Nothing in it names a location -
+ * no `process`, no `cwd`, no `__dirname` - so no rule about which properties mean "where am I" can
+ * reach it, and it is ordinary code. A named import (`import {cwd} from "node:process"`) and
+ * `Reflect.get(process, "cwd")` are the same shape of counterexample. Each could of course be added
+ * to the list; the point is that the list was never finishable, because the set of ways to obtain a
+ * location is the set of things code can do. So the recogniser was not incomplete in a way more
+ * rules could fix; the premise was wrong. Deciding which edits matter requires understanding what the code does, and a test that
  * understood that would need to be more trustworthy than the code it guards.
  *
  * So it stopped deciding. The gate is now "did this file change at all", which no spelling can slip
@@ -65,6 +67,9 @@ const LOAD_TIMEOUT_MILLISECONDS = 60_000;
 const REPORT_NAME = "closure-report.json";
 const PROBE_SENTINEL = "closure-probe-reached-operations";
 const MANIFEST = path.join(HERE, "windowsBaselineGuestRuntimeBundleClosure.approved.json");
+const MANIFEST_PATH = path.relative(REPOSITORY, MANIFEST).replaceAll("\\", "/");
+/* The commit that last moved the manifest is the point the content was last approved. */
+const SINCE_APPROVAL = `"$(git log -1 --format=%H -- ${MANIFEST_PATH})"`;
 
 const PROBE = `
 import fs from "node:fs"; import path from "node:path"; import {pathToFileURL} from "node:url";
@@ -122,6 +127,17 @@ const loadBundle = (omit = null) => {
             fs.mkdirSync(path.dirname(target), {recursive: true});
             fs.copyFileSync(path.join(REPOSITORY, member), target);
         }
+        /*
+         * The scan below walks to the root of the volume holding the temporary directory. Under a
+         * UNC root that is not where Node stops: from \\server\share\x it also searches
+         * \\server\node_modules, which is a sibling share this loop never reaches. Rather than claim
+         * an isolation the scan cannot establish, refuse the root it cannot reason about.
+         */
+        const localRoot = process.platform === "win32" ? /^[a-z]:[\\/]/iu : /^\/(?!\/)/u;
+        assert.match(root, localRoot,
+            `the temporary directory is at ${root}, and this proves nothing about a bundle laid out`
+            + " there: Node's search from a UNC or device path reaches shares this scan does not"
+            + " walk. Point TMP at a local drive.");
         /* Includes the filesystem root: a package at / would resolve for the child like any other. */
         for (let ancestor = root; ; ancestor = path.dirname(ancestor)) {
             assert.ok(!fs.existsSync(path.join(ancestor, "node_modules")),
@@ -166,17 +182,45 @@ const loadBundle = (omit = null) => {
  *
  * The normalisation runs through latin1, which maps every byte to one code unit and back without
  * loss. Decoding as utf8 first would lose bytes instead: an invalid one becomes U+FFFD, so two
- * members differing only there would share an approved hash. Every member is ASCII today, where the
- * two agree, which is why this correction moved no approved entry - see the test below.
+ * members differing only there would share an approved hash.
+ *
+ * Removing every CR LF pair is only sound where that pair can only be a line ending, and that is a
+ * property of the encoding rather than of the bytes. In UTF-16LE it is also how U+0A0D is written,
+ * so a file holding two of those characters normalises to the same bytes as one holding a single
+ * U+0A0A - different content, one digest, with nothing wrong with SHA-256. So the digest is refused
+ * outside the domain where the rule holds, rather than quietly taken under an assumption that has
+ * stopped being true. The test below builds that collision to prove the refusal guards something.
+ *
+ * Printable ASCII is a narrower domain than the rule strictly needs, and deliberately so. A wider
+ * one - "valid UTF-8", say - is not obviously wrong and is wrong: the four colliding bytes above are
+ * themselves valid UTF-8, and BOM-less UTF-16LE of ASCII text is too, so the collision walks back in.
+ * Getting that boundary right means enumerating encodings, and a growing list of recognised cases is
+ * how the five versions before this one failed. A member that stops being ASCII should stop this
+ * suite and start a conversation instead.
  */
+const CANONICAL_BYTE = byte =>
+    byte === 0x09 || byte === 0x0a || byte === 0x0d || (byte >= 0x20 && byte <= 0x7e);
+
+const uncanonicalByteAt = bytes => bytes.findIndex(byte => !CANONICAL_BYTE(byte));
+
 const digestOf = bytes =>
     crypto.createHash("sha256")
         .update(Buffer.from(bytes.toString("latin1").replaceAll("\r\n", "\n"), "latin1"))
         .digest("hex");
 
-const approvedHash = member => digestOf(fs.readFileSync(path.join(REPOSITORY, member)));
+const approvedHash = member => {
+    const bytes = fs.readFileSync(path.join(REPOSITORY, member));
+    const offset = uncanonicalByteAt(bytes);
+    assert.equal(offset, -1, `${member} holds byte 0x${bytes[offset]?.toString(16).padStart(2, "0")}`
+        + ` at offset ${offset}, outside the printable ASCII this digest is sound for.\n`
+        + "It removes every CR LF pair as a line ending, which holds only while that pair cannot be\n"
+        + "anything else - in UTF-16 it is also the character U+0A0D. Decide what the canonical form\n"
+        + "of this member is and teach digestOf that, or keep the member ASCII.");
+    return digestOf(bytes);
+};
 
-const APPROVED = Object.freeze(JSON.parse(fs.readFileSync(MANIFEST, "utf8")));
+const MANIFEST_TEXT = fs.readFileSync(MANIFEST, "utf8").replaceAll("\r\n", "\n");
+const APPROVED = Object.freeze(JSON.parse(MANIFEST_TEXT));
 
 describe("Windows baseline guest runtime bundle closure", () => {
     let report = null;
@@ -214,13 +258,20 @@ describe("Windows baseline guest runtime bundle closure", () => {
         if (changed.length === 0) return;
         assert.fail(`${changed.length} bundle member(s) differ from the approved content.\n`
             + changed.map(entry => `  ${entry.member}\n`
-                + `    approved ${entry.approved ?? "(none - this member is new)"}\n`
+                + `    approved ${Object.hasOwn(APPROVED, entry.member)
+                    ? String(entry.approved) : "(none - this member is new)"}\n`
                 + `    actual   ${entry.actual}\n`
-                + `    read it: git diff -- ${entry.member}`).join("\n")
+                + `    read it: git diff ${SINCE_APPROVAL} -- ${entry.member}`).join("\n")
+            /*
+             * Against HEAD rather than bare `git diff`, which compares the working tree to the index
+             * and so prints nothing at all once the change is staged - and nothing on CI, where it
+             * is committed. The base above is the commit that last moved the manifest: the point the
+             * content was last approved, which is the comparison the reviewer actually wants.
+             */
             + "\n\nEvery member runs in the guest with no node_modules and no repository, so read the"
             + "\ndiff for anything it now reaches - an import, a path, a spawn, a PowerShell dot-source"
             + "\n- and check the file is in RUNTIME_PATHS. Then approve it by replacing the entries in"
-            + `\n${path.relative(REPOSITORY, MANIFEST).replaceAll("\\", "/")} with:\n`
+            + `\n${MANIFEST_PATH} with:\n`
             + `${JSON.stringify(Object.fromEntries(
                 RUNTIME_PATHS.map(member => [member, approvedHash(member)])), null, 4)}`);
     });
@@ -245,6 +296,62 @@ describe("Windows baseline guest runtime bundle closure", () => {
             "a CRLF checkout would need its own manifest");
         assert.notEqual(digestOf(Buffer.from("a\rb\n")), digestOf(Buffer.from("a\nb\n")),
             "a lone carriage return is content, not a checkout mode");
+    });
+
+    /*
+     * The refusal in approvedHash is only worth its weight if the domain it refuses is a domain where
+     * the digest is genuinely wrong. This builds that case: in UTF-16LE the bytes 0D 0A spell U+0A0D,
+     * so two of that character and one U+0A0A are different content that normalises to one digest.
+     * Neither holds a line break. If the two ever stop colliding, the refusal is guarding nothing.
+     */
+    it("refuses the encodings where removing a CR LF pair is not removing a line ending", () => {
+        const pair = Buffer.from([0x0d, 0x0a, 0x0d, 0x0a]);
+        const single = Buffer.from([0x0a, 0x0a]);
+        assert.equal(pair.toString("utf16le"), "਍਍");
+        assert.equal(single.toString("utf16le"), "ਊ");
+        assert.equal(digestOf(pair), digestOf(single),
+            "the collision this refusal exists for is gone, so reconsider the refusal");
+
+        /* A real file in that encoding carries a BOM and NUL-padded ASCII, which is what is caught. */
+        const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("$a = 1", "utf16le")]);
+        assert.notEqual(uncanonicalByteAt(utf16), -1, "a UTF-16 member would be digested anyway");
+        assert.equal(uncanonicalByteAt(Buffer.from("$a = 1\r\n")), -1,
+            "an ordinary ASCII member is being refused");
+    });
+
+    /*
+     * Removing line endings assumes git's canonical form for these members is LF, which is what
+     * `text=auto` gives them. A member marked `-text` or `binary` is stored byte for byte instead, so
+     * its line endings become content and normalising them away would hide a real change. This
+     * repository already marks four fixtures that way, so it is an ordinary thing for someone to do.
+     */
+    it("keeps every member on the attribute that makes a line ending a checkout mode", () => {
+        /* -z rather than the readable form: a path is not guaranteed to be free of ": " or newlines. */
+        const fields = execFileSync("git", ["check-attr", "-z", "text", "--", ...RUNTIME_PATHS],
+            {cwd: REPOSITORY, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]}).split("\0");
+        const reported = RUNTIME_PATHS.map((unused, index) => fields.slice(index * 3, index * 3 + 3));
+        assert.deepEqual(reported.map(([member]) => member), [...RUNTIME_PATHS],
+            "git did not report on every member, in order");
+        assert.deepEqual(reported.filter(([, , value]) => value !== "auto" && value !== "set"), [],
+            "these members are not stored with LF in the index, so the digest's line-ending"
+            + " normalisation would hide a real change to them");
+    });
+
+    /*
+     * The manifest is what a reviewer reads to see what was approved, so it has to say one thing.
+     * JSON.parse keeps the last of a duplicated key, which would let a stale line sit above the live
+     * one and read as the approval. Holding the file to exactly the block the failure message prints
+     * rejects that, and keeps the paste workflow from drifting into a hand-edited file.
+     */
+    it("holds the manifest to the one form the failure message prints", () => {
+        assert.deepEqual(
+            Object.entries(APPROVED).filter(([, digest]) => !/^[0-9a-f]{64}$/u.test(digest)), [],
+            "an approved entry is not a sha256 digest");
+        assert.deepEqual(Object.keys(APPROVED), [...RUNTIME_PATHS],
+            "the manifest lists members in a different order from the bundle");
+        assert.equal(MANIFEST_TEXT, `${JSON.stringify(APPROVED, null, 4)}\n`,
+            `${MANIFEST_PATH} is not the canonical serialisation of what it parses to - a duplicated`
+            + " key, or whitespace that was hand-edited. Replace it with the block printed above.");
     });
 
     it("approves every file the bundle declares, and nothing else", () => {
