@@ -68,8 +68,8 @@ const REPORT_NAME = "closure-report.json";
 const PROBE_SENTINEL = "closure-probe-reached-operations";
 const MANIFEST = path.join(HERE, "windowsBaselineGuestRuntimeBundleClosure.approved.json");
 const MANIFEST_PATH = path.relative(REPOSITORY, MANIFEST).replaceAll("\\", "/");
-/* The commit that last moved the manifest is the point the content was last approved. */
-const SINCE_APPROVAL = `"$(git log -1 --format=%H -- ${MANIFEST_PATH})"`;
+const APPROVAL_SEARCH_LIMIT = 25;
+const MAX_BLOB_BYTES = 8 * 1024 * 1024;
 
 const PROBE = `
 import fs from "node:fs"; import path from "node:path"; import {pathToFileURL} from "node:url";
@@ -175,50 +175,82 @@ const loadBundle = (omit = null) => {
 };
 
 /*
- * Line endings are a checkout mode, not content: this repository stores LF and checks out CRLF, so
- * hashing the bytes on disk as they are would fail on a colleague's machine rather than on a change.
- * Everything else is hashed exactly as written, including whitespace, because deciding which bytes
- * matter is the judgement this file no longer makes.
+ * The bytes on disk, hashed exactly as they are. Nothing is normalised, excused or interpreted,
+ * because every rule about which bytes do not count has turned out to be a rule about which changes
+ * are invisible.
  *
- * The normalisation runs through latin1, which maps every byte to one code unit and back without
- * loss. Decoding as utf8 first would lose bytes instead: an invalid one becomes U+FFFD, so two
- * members differing only there would share an approved hash.
+ * Two versions of this got that wrong in the same shape. The first decoded the file as utf8 before
+ * hashing, and an invalid byte decodes to U+FFFD, so two members differing only there shared a hash.
+ * The second hashed bytes but removed every CR LF pair as a line ending, which is a claim about the
+ * encoding rather than about the bytes: in UTF-16LE that pair is the character U+0A0D. Fencing the
+ * digest to ASCII closed that and left a smaller version of it - a file holding a bare CR is stored
+ * by Git verbatim while `check-attr` still calls it `text=auto`, so two versions differing by one CR
+ * are both committable under one approved hash. Measured, not reasoned: two such files produce
+ * different blobs and one digest.
  *
- * Removing every CR LF pair is only sound where that pair can only be a line ending, and that is a
- * property of the encoding rather than of the bytes. In UTF-16LE it is also how U+0A0D is written,
- * so a file holding two of those characters normalises to the same bytes as one holding a single
- * U+0A0A - different content, one digest, with nothing wrong with SHA-256. So the digest is refused
- * outside the domain where the rule holds, rather than quietly taken under an assumption that has
- * stopped being true. The test below builds that collision to prove the refusal guards something.
- *
- * Printable ASCII is a narrower domain than the rule strictly needs, and deliberately so. A wider
- * one - "valid UTF-8", say - is not obviously wrong and is wrong: the four colliding bytes above are
- * themselves valid UTF-8, and BOM-less UTF-16LE of ASCII text is too, so the collision walks back in.
- * Getting that boundary right means enumerating encodings, and a growing list of recognised cases is
- * how the five versions before this one failed. A member that stops being ASCII should stop this
- * suite and start a conversation instead.
+ * So the normalisation is gone, and the property it was standing in for is enforced where it belongs.
+ * .gitattributes pins these thirteen paths to `text eol=lf`, which makes Git store and check out one
+ * form on every machine, and the test below holds it there. Drift in that attribute now shows up as a
+ * failed hash rather than as two files Git considers equally correct.
  */
-const CANONICAL_BYTE = byte =>
-    byte === 0x09 || byte === 0x0a || byte === 0x0d || (byte >= 0x20 && byte <= 0x7e);
+const digestOf = bytes => crypto.createHash("sha256").update(bytes).digest("hex");
 
-const uncanonicalByteAt = bytes => bytes.findIndex(byte => !CANONICAL_BYTE(byte));
+const approvedHash = member => digestOf(fs.readFileSync(path.join(REPOSITORY, member)));
 
-const digestOf = bytes =>
-    crypto.createHash("sha256")
-        .update(Buffer.from(bytes.toString("latin1").replaceAll("\r\n", "\n"), "latin1"))
-        .digest("hex");
+const git = (args, encoding) => execFileSync("git", args,
+    {cwd: REPOSITORY, encoding, maxBuffer: MAX_BLOB_BYTES, stdio: ["ignore", "pipe", "ignore"]});
 
-const approvedHash = member => {
-    const bytes = fs.readFileSync(path.join(REPOSITORY, member));
-    const offset = uncanonicalByteAt(bytes);
-    assert.equal(offset, -1, `${member} holds byte 0x${bytes[offset]?.toString(16).padStart(2, "0")}`
-        + ` at offset ${offset}, outside the printable ASCII this digest is sound for.\n`
-        + "It removes every CR LF pair as a line ending, which holds only while that pair cannot be\n"
-        + "anything else - in UTF-16 it is also the character U+0A0D. Decide what the canonical form\n"
-        + "of this member is and teach digestOf that, or keep the member ASCII.");
-    return digestOf(bytes);
+/*
+ * Where to diff a changed member from. The obvious answer - the commit that last moved the manifest -
+ * is wrong often enough to matter: in a single-commit CI checkout it resolves to HEAD, whose member
+ * is the changed one, and the printed diff comes back empty. That is the same silence this whole
+ * message replaced, so the base is not guessed. A commit is only offered once the member stored there
+ * digests to the approved value, which is exact now that nothing is normalised. When none of the
+ * recent approvals holds it, that is said rather than papered over with a command that prints nothing.
+ */
+/*
+ * Hashing raw bytes has one failure that looks like tampering and is not. A clone made before these
+ * paths were pinned to `eol=lf` still holds them with CRLF, and git will not report that as a change
+ * - it normalises on comparison - so the digest differs while every diff comes back empty. Saying
+ * "this member differs, here is nothing" is precisely the silence the rest of this message exists to
+ * avoid, so the case is named and answered instead.
+ */
+const isStaleCheckout = member => {
+    try {
+        const stored = git(["cat-file", "blob", `:${member}`]).toString("latin1");
+        const onDisk = fs.readFileSync(path.join(REPOSITORY, member)).toString("latin1");
+        return stored !== onDisk && stored.replaceAll("\r\n", "\n") === onDisk.replaceAll("\r\n", "\n");
+    } catch {
+        return false;
+    }
 };
 
+const approvalBaseFor = member => {
+    let commits;
+    try {
+        commits = git(["log", `--max-count=${APPROVAL_SEARCH_LIMIT}`, "--format=%H", "--",
+            MANIFEST_PATH], "utf8").split("\n").filter(line => line.trim() !== "");
+    } catch {
+        return null;
+    }
+    for (const commit of commits) {
+        try {
+            if (digestOf(git(["cat-file", "blob", `${commit}:${member}`])) === APPROVED[member]) {
+                return commit;
+            }
+        } catch {
+            continue;
+        }
+    }
+    return null;
+};
+
+/*
+ * The manifest is read as text and normalised, unlike the members below, because it is compared for
+ * shape rather than hashed - and it stays under `text=auto`, so it checks out either way. Nothing can
+ * hide in that difference: JSON has no raw CR or LF inside a string, and every key and value here is
+ * held to an exact path or a 64-character digest.
+ */
 const MANIFEST_TEXT = fs.readFileSync(MANIFEST, "utf8").replaceAll("\r\n", "\n");
 const APPROVED = Object.freeze(JSON.parse(MANIFEST_TEXT));
 
@@ -254,20 +286,24 @@ describe("Windows baseline guest runtime bundle closure", () => {
     it("carries only the content a human approved", () => {
         const changed = RUNTIME_PATHS
             .map(member => ({member, actual: approvedHash(member), approved: APPROVED[member]}))
-            .filter(entry => entry.actual !== entry.approved);
+            .filter(entry => entry.actual !== entry.approved)
+            .map(entry => ({...entry, stale: isStaleCheckout(entry.member),
+                base: approvalBaseFor(entry.member)}));
         if (changed.length === 0) return;
         assert.fail(`${changed.length} bundle member(s) differ from the approved content.\n`
             + changed.map(entry => `  ${entry.member}\n`
                 + `    approved ${Object.hasOwn(APPROVED, entry.member)
                     ? String(entry.approved) : "(none - this member is new)"}\n`
                 + `    actual   ${entry.actual}\n`
-                + `    read it: git diff ${SINCE_APPROVAL} -- ${entry.member}`).join("\n")
-            /*
-             * Against HEAD rather than bare `git diff`, which compares the working tree to the index
-             * and so prints nothing at all once the change is staged - and nothing on CI, where it
-             * is committed. The base above is the commit that last moved the manifest: the point the
-             * content was last approved, which is the comparison the reviewer actually wants.
-             */
+                + `    ${entry.stale
+                    ? "nothing in this member changed - your checkout holds it with the line endings"
+                      + "\n    it had before these paths were pinned to eol=lf. Refresh it:"
+                      + `\n    rm ${entry.member} && git checkout -- ${entry.member}`
+                    : entry.base === null
+                        ? `no commit within the last ${APPROVAL_SEARCH_LIMIT} to touch the manifest`
+                          + "\n    holds the approved content, so there is nothing to diff against -"
+                          + `\n    read the whole file: git show HEAD:${entry.member}`
+                        : `read it: git diff ${entry.base} -- ${entry.member}`}`).join("\n")
             + "\n\nEvery member runs in the guest with no node_modules and no repository, so read the"
             + "\ndiff for anything it now reaches - an import, a path, a spawn, a PowerShell dot-source"
             + "\n- and check the file is in RUNTIME_PATHS. Then approve it by replacing the entries in"
@@ -277,64 +313,45 @@ describe("Windows baseline guest runtime bundle closure", () => {
     });
 
     /*
-     * Both bytes below are invalid UTF-8 on their own, so a digest taken over decoded text sees one
-     * U+FFFD either way and cannot tell the two apart. A BOM-less .ps1 is read by Windows PowerShell
-     * in the system codepage, where they are different characters - so that blindness would let a
-     * controller change what it runs without ever asking for an approval.
+     * Nothing is normalised away, so a line ending is content like any other byte. Two earlier
+     * versions of this digest excused a class of byte - a utf8 decode, then a CR LF pair - and each
+     * excuse turned out to be a pair of different files sharing one approval.
      */
-    it("digests the bytes rather than a decoding of them", () => {
-        const left = Buffer.from([0x80]);
-        const right = Buffer.from([0x81]);
-        assert.equal(left.toString("utf8"), right.toString("utf8"),
-            "these bytes no longer decode alike, so this test no longer tests anything");
-        assert.notEqual(digestOf(left), digestOf(right),
-            "two members differing by one byte share an approved hash");
-    });
-
-    it("reads a line ending as a checkout mode and a lone carriage return as content", () => {
-        assert.equal(digestOf(Buffer.from("a\r\nb\r\n")), digestOf(Buffer.from("a\nb\n")),
-            "a CRLF checkout would need its own manifest");
-        assert.notEqual(digestOf(Buffer.from("a\rb\n")), digestOf(Buffer.from("a\nb\n")),
-            "a lone carriage return is content, not a checkout mode");
+    it("digests the bytes as they are, excusing nothing", () => {
+        assert.notEqual(digestOf(Buffer.from("a\r\nb")), digestOf(Buffer.from("a\nb")),
+            "a line ending is being excused again, so a CRLF checkout would hide a change");
+        assert.notEqual(digestOf(Buffer.from([0x80])), digestOf(Buffer.from([0x81])),
+            "the digest is decoding before hashing, so invalid bytes collapse together");
+        assert.equal(digestOf(Buffer.from("")), digestOf(Buffer.alloc(0)),
+            "the same bytes are digesting differently");
     });
 
     /*
-     * The refusal in approvedHash is only worth its weight if the domain it refuses is a domain where
-     * the digest is genuinely wrong. This builds that case: in UTF-16LE the bytes 0D 0A spell U+0A0D,
-     * so two of that character and one U+0A0A are different content that normalises to one digest.
-     * Neither holds a line break. If the two ever stop colliding, the refusal is guarding nothing.
+     * Hashing raw bytes only gives the same answer everywhere if Git hands everyone the same bytes.
+     * `text=auto` does not promise that: it reports "auto" for a file holding a bare CR while storing
+     * that file verbatim, and two versions differing by one CR are then both committable under one
+     * hash. `eol=lf` forces a single stored and checked-out form, so this is where the guarantee
+     * actually lives - the digest above only measures it.
      */
-    it("refuses the encodings where removing a CR LF pair is not removing a line ending", () => {
-        const pair = Buffer.from([0x0d, 0x0a, 0x0d, 0x0a]);
-        const single = Buffer.from([0x0a, 0x0a]);
-        assert.equal(pair.toString("utf16le"), "਍਍");
-        assert.equal(single.toString("utf16le"), "ਊ");
-        assert.equal(digestOf(pair), digestOf(single),
-            "the collision this refusal exists for is gone, so reconsider the refusal");
-
-        /* A real file in that encoding carries a BOM and NUL-padded ASCII, which is what is caught. */
-        const utf16 = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("$a = 1", "utf16le")]);
-        assert.notEqual(uncanonicalByteAt(utf16), -1, "a UTF-16 member would be digested anyway");
-        assert.equal(uncanonicalByteAt(Buffer.from("$a = 1\r\n")), -1,
-            "an ordinary ASCII member is being refused");
-    });
-
-    /*
-     * Removing line endings assumes git's canonical form for these members is LF, which is what
-     * `text=auto` gives them. A member marked `-text` or `binary` is stored byte for byte instead, so
-     * its line endings become content and normalising them away would hide a real change. This
-     * repository already marks four fixtures that way, so it is an ordinary thing for someone to do.
-     */
-    it("keeps every member on the attribute that makes a line ending a checkout mode", () => {
+    it("pins every member to the line ending the digests were taken over", () => {
         /* -z rather than the readable form: a path is not guaranteed to be free of ": " or newlines. */
-        const fields = execFileSync("git", ["check-attr", "-z", "text", "--", ...RUNTIME_PATHS],
+        const fields = execFileSync("git", ["check-attr", "-z", "text", "eol", "--", ...RUNTIME_PATHS],
             {cwd: REPOSITORY, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"]}).split("\0");
-        const reported = RUNTIME_PATHS.map((unused, index) => fields.slice(index * 3, index * 3 + 3));
-        assert.deepEqual(reported.map(([member]) => member), [...RUNTIME_PATHS],
-            "git did not report on every member, in order");
-        assert.deepEqual(reported.filter(([, , value]) => value !== "auto" && value !== "set"), [],
-            "these members are not stored with LF in the index, so the digest's line-ending"
-            + " normalisation would hide a real change to them");
+        const records = [];
+        for (let index = 0; index + 2 < fields.length; index += 3) {
+            records.push({member: fields[index], attribute: fields[index + 1], value: fields[index + 2]});
+        }
+        /* Two attributes asked for, so two records per member, in the order they were asked for. */
+        assert.equal(records.length, RUNTIME_PATHS.length * 2,
+            "git did not report both attributes for every member");
+        const wrong = RUNTIME_PATHS.filter((member, index) => {
+            const [text, eol] = [records[index * 2], records[index * 2 + 1]];
+            return text.member !== member || eol.member !== member
+                || text.value !== "set" || eol.value !== "lf";
+        });
+        assert.deepEqual(wrong, [],
+            "these members are not pinned to `text eol=lf` in .gitattributes, so git may store or"
+            + " check them out with endings the approved digests were not taken over");
     });
 
     /*
@@ -351,7 +368,8 @@ describe("Windows baseline guest runtime bundle closure", () => {
             "the manifest lists members in a different order from the bundle");
         assert.equal(MANIFEST_TEXT, `${JSON.stringify(APPROVED, null, 4)}\n`,
             `${MANIFEST_PATH} is not the canonical serialisation of what it parses to - a duplicated`
-            + " key, or whitespace that was hand-edited. Replace it with the block printed above.");
+            + " key, or whitespace that was hand-edited. This failure's expected value below is the"
+            + " form to write; nothing else about the approvals has to change.");
     });
 
     it("approves every file the bundle declares, and nothing else", () => {
