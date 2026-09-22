@@ -160,14 +160,21 @@ const loadBundle = (omit = null) => {
 
 /*
  * Line endings are a checkout mode, not content: this repository stores LF and checks out CRLF, so
- * hashing the bytes on disk would fail on a colleague's machine rather than on a change. Everything
- * else is hashed exactly as written, including whitespace, because deciding which bytes matter is
- * the judgement this file no longer makes.
+ * hashing the bytes on disk as they are would fail on a colleague's machine rather than on a change.
+ * Everything else is hashed exactly as written, including whitespace, because deciding which bytes
+ * matter is the judgement this file no longer makes.
+ *
+ * The normalisation runs through latin1, which maps every byte to one code unit and back without
+ * loss. Decoding as utf8 first would lose bytes instead: an invalid one becomes U+FFFD, so two
+ * members differing only there would share an approved hash. Every member is ASCII today, where the
+ * two agree, which is why this correction moved no approved entry - see the test below.
  */
-const approvedHash = member =>
+const digestOf = bytes =>
     crypto.createHash("sha256")
-        .update(fs.readFileSync(path.join(REPOSITORY, member), "utf8").replaceAll("\r\n", "\n"))
+        .update(Buffer.from(bytes.toString("latin1").replaceAll("\r\n", "\n"), "latin1"))
         .digest("hex");
+
+const approvedHash = member => digestOf(fs.readFileSync(path.join(REPOSITORY, member)));
 
 const APPROVED = Object.freeze(JSON.parse(fs.readFileSync(MANIFEST, "utf8")));
 
@@ -216,6 +223,28 @@ describe("Windows baseline guest runtime bundle closure", () => {
             + `\n${path.relative(REPOSITORY, MANIFEST).replaceAll("\\", "/")} with:\n`
             + `${JSON.stringify(Object.fromEntries(
                 RUNTIME_PATHS.map(member => [member, approvedHash(member)])), null, 4)}`);
+    });
+
+    /*
+     * Both bytes below are invalid UTF-8 on their own, so a digest taken over decoded text sees one
+     * U+FFFD either way and cannot tell the two apart. A BOM-less .ps1 is read by Windows PowerShell
+     * in the system codepage, where they are different characters - so that blindness would let a
+     * controller change what it runs without ever asking for an approval.
+     */
+    it("digests the bytes rather than a decoding of them", () => {
+        const left = Buffer.from([0x80]);
+        const right = Buffer.from([0x81]);
+        assert.equal(left.toString("utf8"), right.toString("utf8"),
+            "these bytes no longer decode alike, so this test no longer tests anything");
+        assert.notEqual(digestOf(left), digestOf(right),
+            "two members differing by one byte share an approved hash");
+    });
+
+    it("reads a line ending as a checkout mode and a lone carriage return as content", () => {
+        assert.equal(digestOf(Buffer.from("a\r\nb\r\n")), digestOf(Buffer.from("a\nb\n")),
+            "a CRLF checkout would need its own manifest");
+        assert.notEqual(digestOf(Buffer.from("a\rb\n")), digestOf(Buffer.from("a\nb\n")),
+            "a lone carriage return is content, not a checkout mode");
     });
 
     it("approves every file the bundle declares, and nothing else", () => {
