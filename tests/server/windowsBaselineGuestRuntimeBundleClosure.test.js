@@ -258,7 +258,15 @@ const reportOn = entry => {
             + "\n    ending, and so does an edit to a character whose bytes contain CR LF, and this"
             + "\n    cannot tell them apart. The index "
             + `${entry.checkout.indexApproved ? "does" : "does NOT"} hold the approved bytes.`
-            + "\n    To overwrite your copy with the index, losing anything only your copy has:"
+            /*
+             * Removed first rather than overwritten in place. `checkout-index -f` decides whether to
+             * rewrite by consulting the index's cached stat for the file, and a reviewer who has just
+             * run the diff above has given git every chance to record the stale file's stat as clean.
+             * Deleting takes that decision away. Two commands rather than one chained with `&&`,
+             * which is a parse error in the Windows PowerShell this repository is developed in.
+             */
+            + "\n    To replace your copy with the index, losing anything only your copy has:"
+            + `\n      rm ${entry.member}`
             + `\n      git checkout-index -f -- ${entry.member}`);
     }
     return lines.join("\n");
@@ -344,6 +352,22 @@ describe("Windows baseline guest runtime bundle closure", () => {
      * versions of this digest excused a class of byte - a utf8 decode, then a CR LF pair - and each
      * excuse turned out to be a pair of different files sharing one approval.
      */
+    /*
+     * The advice is the product of a failure, so it is pinned like one. Both of these were real:
+     * `&&` does not parse in Windows PowerShell 5.1, and overwriting in place leaves `checkout-index`
+     * free to decide the file is already current from its cached stat.
+     */
+    it("prescribes a recovery that runs in this repository's shell and cannot no-op", () => {
+        const advice = reportOn({member: MEMBERS[0], actual: "a".repeat(64),
+            approved: APPROVED[MEMBERS[0]], base: null, checkout: {indexApproved: true}});
+        assert.ok(advice.includes(`\n      rm ${MEMBERS[0]}\n`),
+            "the refresh no longer removes the file first, so git may decide it is already current");
+        assert.ok(advice.includes(`git checkout-index -f -- ${MEMBERS[0]}`),
+            "the refresh no longer restores the index content");
+        assert.ok(!advice.includes("&&"),
+            "&& is a parse error in Windows PowerShell 5.1, where this repository is developed");
+    });
+
     it("digests the bytes as they are, excusing nothing", () => {
         assert.notEqual(digestOf(Buffer.from("a\r\nb")), digestOf(Buffer.from("a\nb")),
             "a line ending is being excused again, so a CRLF checkout would hide a change");
