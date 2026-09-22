@@ -15,6 +15,43 @@ const TEST_TIMEOUT_MS = 30_000;
 const powershellAvailable = process.platform === "win32" && fs.existsSync(POWERSHELL);
 const powershellIt = (name, body) => (powershellAvailable ? it : it.skip)(name,
     {timeout: TEST_TIMEOUT_MS}, body);
+/*
+ * The hosted-context gate and the controller load, spelled as the script spells them. Two tests
+ * depend on finding them: the static check below reads their positions, and the canary control
+ * moves the gate past the load to prove that check fails on the regression.
+ */
+const GATE_STATEMENT = "if($Mode -ceq $script:NativeMode){Assert-MyspeedProofEarlyHostedContext}";
+/*
+ * Where the controller load begins, and where it ends. New-Module runs the script block, so the
+ * controller is loaded when the statement completes; the Import-Module below only publishes what
+ * New-Module already dot-sourced. Ordering is read against the first - a gate placed anywhere after
+ * it is after the load, including inside the block, which runs during the dot-source. The second is
+ * where the control inserts the gate to move it past the load.
+ */
+const CONTROLLER_LOAD_BEGINS = "$script:ControllerModule=New-Module -ScriptBlock {";
+const CONTROLLER_LOAD_ENDS = "} -ArgumentList $controllerPath";
+/* A load the bare `New-Module -ScriptBlock` spelling no longer matches, for the control below. */
+const RENAMED_CONTROLLER_LOAD = "$script:ControllerModule=New-Module -Name 'controller' -ScriptBlock {";
+/*
+ * Returns what is wrong with the ordering, or "" when nothing is. A predicate rather than an
+ * assertion in place, because the control below has to feed it mutated sources and watch it object:
+ * a check that only ever runs on the real file cannot be shown to fail on anything.
+ */
+const orderingFault = source => {
+    const gate = source.indexOf(GATE_STATEMENT);
+    /*
+     * Anchored to the controller's own assignment, not to a bare `New-Module -ScriptBlock`: the
+     * script builds three modules that way, and the other two are ordinary factories hundreds of
+     * lines below the gate. Matching the bare spelling meant a controller load that was deleted or
+     * renamed found one of those instead, and the check passed with nothing loading the controller
+     * after the gate - or with something loading it before.
+     */
+    const load = source.indexOf(CONTROLLER_LOAD_BEGINS);
+    if (gate < 0) return "the hosted-context gate is absent";
+    if (load < 0) return `the controller load is not spelled ${CONTROLLER_LOAD_BEGINS} any more`;
+    if (gate > load) return "the hosted-context gate runs after the controller module is loaded";
+    return "";
+};
 const sha = value => crypto.createHash("sha256").update(value).digest("hex");
 const sealJson = value => {
     const bytes = Buffer.from(JSON.stringify(value), "utf8");
@@ -363,10 +400,40 @@ describe("Windows clean-stop native proof coordinator", () => {
          * canary tests below prove this by executing it, and they are skipped wherever PowerShell is
          * absent - which is every Linux leg, where this line is the only thing left guarding it.
          */
-        const hostedGate = source.indexOf("if($Mode -ceq $script:NativeMode){Assert-MyspeedProofEarlyHostedContext}");
-        const controllerLoad = source.indexOf("New-Module -ScriptBlock");
-        assert.ok(hostedGate >= 0 && controllerLoad >= 0 && hostedGate < controllerLoad,
-            "the hosted-context gate must run before the controller module is loaded");
+        assert.equal(orderingFault(source), "");
+    });
+
+    /*
+     * The control for the line above, and the only one that runs on a Linux leg, where the canaries
+     * are skipped and that line is all there is. Each mutant is a way the ordering can be broken;
+     * the check has to object to every one of them, or it is guarding a spelling rather than an
+     * order.
+     */
+    it("that ordering check objects to each way the load can outrun the gate", () => {
+        const source = fs.readFileSync(SCRIPT, "utf8");
+        assert.ok(source.includes(GATE_STATEMENT), `the gate is not spelled ${GATE_STATEMENT}`);
+        assert.ok(source.includes(CONTROLLER_LOAD_ENDS),
+            `the controller load is not spelled ${CONTROLLER_LOAD_ENDS}`);
+        const moved = source.replace(GATE_STATEMENT, "")
+            .replace(CONTROLLER_LOAD_ENDS, `${CONTROLLER_LOAD_ENDS}\n${GATE_STATEMENT}`);
+        assert.notEqual(orderingFault(moved), "", "a gate moved below the load passed");
+        assert.notEqual(orderingFault(source.replace(GATE_STATEMENT, "")), "", "a deleted gate passed");
+        /*
+         * The load deleted, and the load renamed. Neither is a plausible edit on its own, but both
+         * are what a refactor of these three lines looks like from the check's side, and under a
+         * bare `New-Module -ScriptBlock` both find one of the two ordinary module factories the
+         * script builds hundreds of lines below the gate - so the check passes while nothing loads
+         * the controller before it, or while something does and the gate no longer precedes it.
+         */
+        assert.notEqual(orderingFault(source.replace(CONTROLLER_LOAD_BEGINS, "")), "",
+            "a deleted controller load passed, matching a later module factory instead");
+        const renamedAndMoved = source.replace(GATE_STATEMENT, "")
+            .replace(CONTROLLER_LOAD_BEGINS, RENAMED_CONTROLLER_LOAD)
+            .replace(CONTROLLER_LOAD_ENDS, `${CONTROLLER_LOAD_ENDS}\n${GATE_STATEMENT}`);
+        assert.ok(renamedAndMoved.indexOf(GATE_STATEMENT) > renamedAndMoved.indexOf(RENAMED_CONTROLLER_LOAD),
+            "the mutant does not express the regression it is named for");
+        assert.notEqual(orderingFault(renamedAndMoved), "",
+            "a controller load renamed out of the way, with the gate below it, passed");
     });
 
     powershellIt("returns the exact observer contract", () => {
@@ -613,7 +680,6 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
      * sanitises errors, so PowerShell prints `At <path>:<line>`, and a checkout directory named
      * `...-closure-...` put the forbidden word into stderr with nothing forbidden executed.
      */
-    const GATE = "if($Mode -ceq $script:NativeMode){Assert-MyspeedProofEarlyHostedContext}";
     const MARKER_NAME = "controller-was-loaded";
     /*
      * An identity whose *shape* the gate accepts, so the checks behind the shape check are reached:
@@ -625,10 +691,6 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
         "-ExpectedEventSha", "a".repeat(40), "-ExpectedSourceSha", "b".repeat(40),
         "-ExpectedImageVersion", "20260101.1", "-Nonce", "c".repeat(32),
         "-ExpectedClosureSha256", "d".repeat(64)];
-    /* New-Module runs the script block, so the controller is loaded when this statement completes;
-     * the Import-Module below only publishes what New-Module already dot-sourced. Moving the gate
-     * after this line is therefore moving it after the load. */
-    const CONTROLLER_LOAD = "} -ArgumentList $controllerPath";
 
     const proofBesideStubController = () => {
         const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-proof-canary-")));
@@ -701,11 +763,12 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
         const {root, copied, loaded} = proofBesideStubController();
         try {
             const source = fs.readFileSync(copied, "utf8");
-            assert.ok(source.includes(GATE), `the gate is not spelled ${GATE} any more`);
-            assert.ok(source.includes(CONTROLLER_LOAD),
-                `the controller load is not spelled ${CONTROLLER_LOAD} any more`);
+            assert.ok(source.includes(GATE_STATEMENT), `the gate is not spelled ${GATE_STATEMENT} any more`);
+            assert.ok(source.includes(CONTROLLER_LOAD_ENDS),
+                `the controller load is not spelled ${CONTROLLER_LOAD_ENDS} any more`);
             fs.writeFileSync(copied,
-                source.replace(GATE, "").replace(CONTROLLER_LOAD, `${CONTROLLER_LOAD}\n${GATE}`));
+                source.replace(GATE_STATEMENT, "")
+                    .replace(CONTROLLER_LOAD_ENDS, `${CONTROLLER_LOAD_ENDS}\n${GATE_STATEMENT}`));
             const result = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile",
                 "-NonInteractive", "-File", copied, "-Mode", "InvokeHostedProof"],
             {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
