@@ -22,3 +22,24 @@ tests/fixtures/post-release-native-v1.6.1/baseline-qualification-summary.json -t
 # Retained KVM receipts are also byte-hashed evidence; CRLF conversion invalidates them.
 tests/fixtures/linux-kvm-privileged-capability-evidence/result.json -text
 tests/fixtures/linux-kvm-privileged-capability-evidence/privileged-result.json -text
+
+# The guest runtime bundle is approved by hashing each file's bytes, so those bytes have
+# to be the same on every machine - text=auto is not enough for that. It reports "auto"
+# for a file holding a bare CR while quietly storing that file verbatim, and two versions
+# differing by one CR then both check out unchanged under one approved hash. Forcing the
+# ending here means Git stores exactly one form, and any drift shows up as a failed hash
+# rather than as two files Git considers equally correct.
+# windowsBaselineGuestRuntimeBundleClosure.test.js asserts this list against the bundle's.
+scripts/qualification/windows-baseline-guest-executor.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-runner.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-composer.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-operations.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-runtime.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-materializer.mjs text eol=lf
+scripts/qualification/windows-baseline-guest-candidate-wrapper.ps1 text eol=lf
+scripts/qualification/windows-native-candidate-controller.ps1 text eol=lf
+scripts/qualification/windows-clean-stop-controller.ps1 text eol=lf
+scripts/qualification/check-artifact.mjs text eol=lf
+scripts/qualification/safety.mjs text eol=lf
+scripts/qualification/fixture.mjs text eol=lf
+scripts/qualification/sqlite-check.mjs text eol=lf

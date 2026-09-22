@@ -136,7 +136,8 @@ jobs:
             tests/server/postReleaseCpuFloor.test.js \
             tests/server/cpuFloorGuestPreparation.test.js \
             tests/server/postReleaseCpuFloorHostedInputs.test.js \
-            tests/server/postReleaseCpuFloorWorkflow.test.js
+            tests/server/postReleaseCpuFloorWorkflow.test.js \
+            tests/server/windowsBaselineGuestRuntimeBundleClosure.test.js
 
       - name: Seal complete transitive execution closure
         id: seal

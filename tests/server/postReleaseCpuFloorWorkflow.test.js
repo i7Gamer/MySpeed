@@ -168,7 +168,8 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         for (const name of ["linuxWindowsCpuFloorStage2Closure.test.js",
             "linuxWindowsCpuFloorStage3Cleanup.test.js",
             "linuxWindowsCpuFloorStage3Closure.test.js", "cpuFloorGuestPreparation.test.js",
-            "postReleaseCpuFloorHostedInputs.test.js", "postReleaseCpuFloorWorkflow.test.js"])
+            "postReleaseCpuFloorHostedInputs.test.js", "postReleaseCpuFloorWorkflow.test.js",
+            "windowsBaselineGuestRuntimeBundleClosure.test.js"])
             assert.match(tests, new RegExp(name.replaceAll(".", "\\."), "u"));
     });
 
