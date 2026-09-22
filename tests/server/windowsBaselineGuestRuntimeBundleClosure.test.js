@@ -213,16 +213,55 @@ const git = (args, encoding) => execFileSync("git", args,
  * paths were pinned to `eol=lf` still holds them with CRLF, and git will not report that as a change
  * - it normalises on comparison - so the digest differs while every diff comes back empty. Saying
  * "this member differs, here is nothing" is precisely the silence the rest of this message exists to
- * avoid, so the case is named and answered instead.
+ * avoid, so the case is named.
+ *
+ * Named, not diagnosed. Bytes that match after line endings are set aside are also what you get from
+ * an edit *to* a line ending, and from an edit to a character whose bytes happen to contain CR LF -
+ * two U+0A0D in UTF-16 against one U+0A0A is a different word, and this comparison cannot tell it
+ * from a stale checkout. So this reports the relationship and whether the index is the approved
+ * content, and leaves the conclusion to the reader.
  */
-const isStaleCheckout = member => {
+const checkoutNote = member => {
     try {
-        const stored = git(["cat-file", "blob", `:${member}`]).toString("latin1");
-        const onDisk = fs.readFileSync(path.join(REPOSITORY, member)).toString("latin1");
-        return stored !== onDisk && stored.replaceAll("\r\n", "\n") === onDisk.replaceAll("\r\n", "\n");
+        const stored = git(["cat-file", "blob", `:${member}`]);
+        const onDisk = fs.readFileSync(path.join(REPOSITORY, member));
+        if (stored.equals(onDisk)) return null;
+        const alike = stored.toString("latin1").replaceAll("\r\n", "\n")
+            === onDisk.toString("latin1").replaceAll("\r\n", "\n");
+        return alike ? {indexApproved: digestOf(stored) === APPROVED[member]} : null;
     } catch {
-        return false;
+        return null;
     }
+};
+
+/*
+ * What one changed member gets told to the reader. The file on disk comes first and unconditionally,
+ * because those are the bytes the replacement digest is taken over: a command that shows any other
+ * version - HEAD, the index, a base - describes something the reviewer is not being asked to approve.
+ * A diff narrows that down when there is a base worth trusting, and it is an addition to the file,
+ * never a substitute, because git normalises the working side of a comparison and can print nothing
+ * at all for a difference that is really there.
+ */
+const reportOn = entry => {
+    const lines = [`  ${entry.member}`,
+        `    approved ${Object.hasOwn(APPROVED, entry.member)
+            ? String(entry.approved) : "(none - this member is new)"}`,
+        `    actual   ${entry.actual}`,
+        `    the bytes being approved are the ones on disk, so read that file: ${entry.member}`,
+        entry.base === null
+            ? `    no verified base was found in the last ${APPROVAL_SEARCH_LIMIT} commits to touch`
+              + "\n    the manifest, so there is no diff to narrow it down with"
+            : `    what changed since it was approved: git diff ${entry.base} -- ${entry.member}`];
+    if (entry.checkout !== null) {
+        lines.push("    your copy and the index agree once every CR LF in each is read as LF. A"
+            + "\n    checkout older than the eol=lf rule looks like that - so does an edit to a line"
+            + "\n    ending, and so does an edit to a character whose bytes contain CR LF, and this"
+            + "\n    cannot tell them apart. The index "
+            + `${entry.checkout.indexApproved ? "does" : "does NOT"} hold the approved bytes.`
+            + "\n    To overwrite your copy with the index, losing anything only your copy has:"
+            + `\n      git checkout-index -f -- ${entry.member}`);
+    }
+    return lines.join("\n");
 };
 
 const approvalBaseFor = member => {
@@ -287,23 +326,11 @@ describe("Windows baseline guest runtime bundle closure", () => {
         const changed = RUNTIME_PATHS
             .map(member => ({member, actual: approvedHash(member), approved: APPROVED[member]}))
             .filter(entry => entry.actual !== entry.approved)
-            .map(entry => ({...entry, stale: isStaleCheckout(entry.member),
+            .map(entry => ({...entry, checkout: checkoutNote(entry.member),
                 base: approvalBaseFor(entry.member)}));
         if (changed.length === 0) return;
         assert.fail(`${changed.length} bundle member(s) differ from the approved content.\n`
-            + changed.map(entry => `  ${entry.member}\n`
-                + `    approved ${Object.hasOwn(APPROVED, entry.member)
-                    ? String(entry.approved) : "(none - this member is new)"}\n`
-                + `    actual   ${entry.actual}\n`
-                + `    ${entry.stale
-                    ? "nothing in this member changed - your checkout holds it with the line endings"
-                      + "\n    it had before these paths were pinned to eol=lf. Refresh it:"
-                      + `\n    rm ${entry.member} && git checkout -- ${entry.member}`
-                    : entry.base === null
-                        ? `no commit within the last ${APPROVAL_SEARCH_LIMIT} to touch the manifest`
-                          + "\n    holds the approved content, so there is nothing to diff against -"
-                          + `\n    read the whole file: git show HEAD:${entry.member}`
-                        : `read it: git diff ${entry.base} -- ${entry.member}`}`).join("\n")
+            + changed.map(reportOn).join("\n")
             + "\n\nEvery member runs in the guest with no node_modules and no repository, so read the"
             + "\ndiff for anything it now reaches - an import, a path, a spawn, a PowerShell dot-source"
             + "\n- and check the file is in RUNTIME_PATHS. Then approve it by replacing the entries in"
