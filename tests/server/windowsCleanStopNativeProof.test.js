@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -357,6 +358,15 @@ describe("Windows clean-stop native proof coordinator", () => {
         assert.ok(outerFailureGate >= 0 && outerFailureGate < failedStreamRead && failedStreamRead < outerValidation
             && outerValidation < evidenceGate,
             "outer failure and exit proofs must precede evidence-file collection");
+        /*
+         * The same ordering for the hosted-context gate, read from the source rather than run. The
+         * canary tests below prove this by executing it, and they are skipped wherever PowerShell is
+         * absent - which is every Linux leg, where this line is the only thing left guarding it.
+         */
+        const hostedGate = source.indexOf("if($Mode -ceq $script:NativeMode){Assert-MyspeedProofEarlyHostedContext}");
+        const controllerLoad = source.indexOf("New-Module -ScriptBlock");
+        assert.ok(hostedGate >= 0 && controllerLoad >= 0 && hostedGate < controllerLoad,
+            "the hosted-context gate must run before the controller module is loaded");
     });
 
     powershellIt("returns the exact observer contract", () => {
@@ -580,21 +590,161 @@ $valid=Assert-MyspeedProofClockNumber ([decimal]1.25) 'clock' 0 10
         }
     });
 
-    powershellIt("rejects the native proof entry before closure or helper access", () => {
-        const result = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive",
-            "-File", SCRIPT, "-Mode", "InvokeHostedProof"], {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
-        assert.equal(result.error, undefined, result.error?.message);
-        assert.notEqual(result.status, 0);
-        assert.match(result.stderr, /Hosted proof identity input is invalid/u);
-        assert.doesNotMatch(result.stderr, /closure|file-identity|Add-Type/u);
+    /*
+     * The script joins its sibling controller off $PSScriptRoot and dot-sources it immediately after
+     * the hosted-context gate, so a copy of the script beside a stub controller says whether the gate
+     * stopped it: the stub writes a marker as its first act, and the marker is the load.
+     *
+     * Stated so nobody reads more into a green run than it says:
+     * - Two of the rejection cases drive the gate's first line, the identity-shape check, and the
+     *   third gets past it to the environment comparison. The PowerShell-identity and owned-path
+     *   checks behind *that* are still never reached, because the environment fails first on any
+     *   machine that is not the hosted runner - so moving those two below the load would leave this
+     *   green. Measured, not assumed.
+     * - The marker witnesses one file. Work hoisted above the gate that touches nothing else is
+     *   invisible here.
+     * - All three are `powershellIt`, so they do not run where PowerShell is absent. On those legs
+     *   the ordering assertion in "is a pure nonqualifying four-case slice" is the only guard.
+     *
+     * This replaces a pair of assertions that searched stderr for `closure|file-identity|Add-Type`.
+     * They could not see the regression they guarded - `-Mode Library` loads the controller cleanly
+     * and prints nothing at all, so the words are absent exactly when the forbidden work succeeds -
+     * and they failed for a reason of their own: the gate throws outside the dispatcher that
+     * sanitises errors, so PowerShell prints `At <path>:<line>`, and a checkout directory named
+     * `...-closure-...` put the forbidden word into stderr with nothing forbidden executed.
+     */
+    const GATE = "if($Mode -ceq $script:NativeMode){Assert-MyspeedProofEarlyHostedContext}";
+    const MARKER_NAME = "controller-was-loaded";
+    /*
+     * An identity whose *shape* the gate accepts, so the checks behind the shape check are reached:
+     * the environment comparison is the first of them and fails on any machine that is not the
+     * hosted runner this expects. Without a case like this the suite only ever exercises the gate's
+     * first line, and the rest of it could be moved below the load unnoticed.
+     */
+    const WELL_FORMED_IDENTITY = ["-ExpectedRunId", "1", "-ExpectedRunAttempt", "1",
+        "-ExpectedEventSha", "a".repeat(40), "-ExpectedSourceSha", "b".repeat(40),
+        "-ExpectedImageVersion", "20260101.1", "-Nonce", "c".repeat(32),
+        "-ExpectedClosureSha256", "d".repeat(64)];
+    /* New-Module runs the script block, so the controller is loaded when this statement completes;
+     * the Import-Module below only publishes what New-Module already dot-sourced. Moving the gate
+     * after this line is therefore moving it after the load. */
+    const CONTROLLER_LOAD = "} -ArgumentList $controllerPath";
 
-        const newlineIdentity = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile", "-NonInteractive",
-            "-File", SCRIPT, "-Mode", "InvokeHostedProof", "-ExpectedRunId", "1\n"],
-        {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
-        assert.equal(newlineIdentity.error, undefined, newlineIdentity.error?.message);
-        assert.notEqual(newlineIdentity.status, 0);
-        assert.match(newlineIdentity.stderr, /Hosted proof identity input is invalid/u);
-        assert.doesNotMatch(newlineIdentity.stderr, /closure|file-identity|Add-Type/u);
+    const proofBesideStubController = () => {
+        const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-proof-canary-")));
+        try {
+            return stubControllerBeside(root);
+        } catch (error) {
+            /* The directory exists from here on, so nothing after it may leave one behind. */
+            fs.rmSync(root, {recursive: true, force: true});
+            throw error;
+        }
+    };
+
+    const stubControllerBeside = root => {
+        const copied = path.join(root, path.basename(SCRIPT));
+        fs.copyFileSync(SCRIPT, copied);
+        const marker = path.join(root, MARKER_NAME);
+        /*
+         * The stub derives the marker from $PSScriptRoot rather than having the path written into
+         * it. Interpolating it would put the temporary directory's name inside a single-quoted
+         * PowerShell string, and an apostrophe in it - `C:\Users\O'Brien\...` is an ordinary Windows
+         * home - would end the literal and break every test here. That is the same shape of trap as
+         * the assertions this replaces, so it is not worth reintroducing for one fewer line.
+         */
+        fs.writeFileSync(path.join(root, "windows-clean-stop-controller.ps1"),
+            "param([string]$Mode)\n"
+            + `Set-Content -LiteralPath (Join-Path $PSScriptRoot '${MARKER_NAME}') -Value 'loaded'\n`
+            + "function Assert-MyspeedCleanExactKeys{};function Assert-MyspeedCleanString{}\n"
+            + "function Assert-MyspeedCleanInteger{};function Assert-MyspeedCleanBoolean{}\n"
+            + "function Assert-MyspeedCleanArray{};function Assert-MyspeedCleanPath{}\n"
+            + "function Assert-MyspeedCleanLaunchRequest{};function Assert-MyspeedCleanStdoutReadiness{}\n"
+            + "function Assert-MyspeedCleanStopRequest{};function Assert-MyspeedCleanResult{}\n"
+            + "function Assert-MyspeedCleanAbiObservation{};function Get-MyspeedCleanExpectedAbiMeasurements{}\n");
+        return {root, copied, loaded: () => fs.existsSync(marker)};
+    };
+
+    powershellIt("rejects the native proof entry before loading the controller", () => {
+        const rejections = [
+            {identity: [], refusal: /Hosted proof identity input is invalid/u},
+            {identity: ["-ExpectedRunId", "1\n"], refusal: /Hosted proof identity input is invalid/u},
+            /* Past the shape check, so this one is refused by the environment behind it. */
+            {identity: WELL_FORMED_IDENTITY, refusal: /Hosted proof context differs/u}];
+        for (const {identity, refusal} of rejections) {
+            const {root, copied, loaded} = proofBesideStubController();
+            try {
+                const result = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile",
+                    "-NonInteractive", "-File", copied, "-Mode", "InvokeHostedProof", ...identity],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+                assert.equal(result.error, undefined, result.error?.message);
+                assert.notEqual(result.status, 0);
+                assert.match(result.stderr, refusal);
+                assert.equal(loaded(), false,
+                    "the controller was loaded despite the identity being rejected");
+            } finally {
+                fs.rmSync(root, {recursive: true, force: true});
+            }
+        }
+    });
+
+    /*
+     * The control for the regression itself. Moving the gate below the load is what this pair exists
+     * to catch, so the assertion above has to fail on it. Measured on the moved version: the
+     * controller loads, the exit status is still 1, the message is still "Hosted proof identity
+     * input is invalid", and searching stderr for the forbidden words still passes. Every assertion
+     * the old test made survived the regression it was written for.
+     *
+     * The second assertion here is not decoration. Without it a botched re-insertion would leave the
+     * gate deleted rather than moved, and a script with no gate at all would satisfy the first.
+     */
+    powershellIt("fails when the gate moves below the load, which searching stderr did not", () => {
+        const {root, copied, loaded} = proofBesideStubController();
+        try {
+            const source = fs.readFileSync(copied, "utf8");
+            assert.ok(source.includes(GATE), `the gate is not spelled ${GATE} any more`);
+            assert.ok(source.includes(CONTROLLER_LOAD),
+                `the controller load is not spelled ${CONTROLLER_LOAD} any more`);
+            fs.writeFileSync(copied,
+                source.replace(GATE, "").replace(CONTROLLER_LOAD, `${CONTROLLER_LOAD}\n${GATE}`));
+            const result = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile",
+                "-NonInteractive", "-File", copied, "-Mode", "InvokeHostedProof"],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+            assert.equal(result.error, undefined, result.error?.message);
+            assert.equal(loaded(), true,
+                "moving the gate below the load did not load the controller, so the assertion above"
+                + " is not pinned by anything");
+            /*
+             * The regression is invisible from the outside: same exit, same message. Searching
+             * stderr for the forbidden words passed it too, measured while writing this - not
+             * asserted here, because that assertion would carry the same fragility this replaces,
+             * against the temporary directory's name instead of the checkout's.
+             */
+            assert.match(result.stderr, /Hosted proof identity input is invalid/u);
+        } finally {
+            fs.rmSync(root, {recursive: true, force: true});
+        }
+    });
+
+    /*
+     * The other control. Without it the first assertion would pass a stub that never ran for any
+     * reason - a wrong filename, a load that does not reach it, a marker written somewhere else.
+     * `-Mode Library` is an ordinary supported mode that skips the gate, so this observes a load
+     * rather than arranging one. It varies the mode where the control above varies the ordering;
+     * neither stands in for the other.
+     */
+    powershellIt("loads that controller when the gate does not stop it, so the check is not vacuous", () => {
+        const {root, copied, loaded} = proofBesideStubController();
+        try {
+            const result = childProcess.spawnSync(POWERSHELL, ["-NoLogo", "-NoProfile",
+                "-NonInteractive", "-File", copied, "-Mode", "Library"],
+            {encoding: "utf8", timeout: TEST_TIMEOUT_MS});
+            assert.equal(result.error, undefined, result.error?.message);
+            assert.equal(loaded(), true,
+                `the stub controller was never reached, so the check above proves nothing: ${
+                    result.stderr}`);
+        } finally {
+            fs.rmSync(root, {recursive: true, force: true});
+        }
     });
 
     powershellIt("reads an active append log through the writer's restrictive share mode", () => {
