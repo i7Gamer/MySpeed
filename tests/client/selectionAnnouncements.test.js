@@ -37,7 +37,16 @@ it("an empty menu never references a nonexistent active item", () => {
     assert.equal(container.querySelector('[role="menu"]').hasAttribute("aria-activedescendant"), false);
 });
 
-it("announces the next date-selection step and exposes today's and selected days", () => {
+const DATE_SELECTION_CASES = [
+    {label: "mid-month", now: "2026-10-15T12:00:00", initialPressed: "false"},
+    {label: "month start", now: "2026-10-01T12:00:00", initialPressed: "true"},
+    {label: "year start", now: "2027-01-01T12:00:00", initialPressed: "true"},
+    {label: "leap day", now: "2028-02-29T12:00:00", initialPressed: "false"}
+];
+
+for (const {label, now, initialPressed} of DATE_SELECTION_CASES)
+it(`announces the next date-selection step and exposes today's and selected days (${label})`, context => {
+    context.mock.timers.enable({apis: ["Date"], now: new Date(now)});
     const dates = [];
     const {container} = render(createElement(DateRangePicker, {
         from: null, to: new Date(), onChange: (...range) => dates.push(range)
@@ -46,9 +55,12 @@ it("announces the next date-selection step and exposes today's and selected days
     click(container.querySelector(".date-range-trigger"));
     const instruction = container.querySelector(".calendar-selecting");
     assert.equal(instruction.getAttribute("aria-live"), "polite");
-    assert.equal(container.querySelector(".day-btn.today").getAttribute("aria-current"), "date");
+    const today = container.querySelector(".day-btn.today");
+    assert.equal(today.getAttribute("aria-current"), "date");
+    assert.equal(today.getAttribute("aria-pressed"), "true");
     const day = container.querySelector(".day-btn:not(.other-month):not(:disabled)");
-    assert.equal(day.getAttribute("aria-pressed"), "false");
+    // On day one, the first enabled day is already the selected end date.
+    assert.equal(day.getAttribute("aria-pressed"), initialPressed);
     const initialInstruction = instruction.textContent;
     click(day);
     assert.notEqual(instruction.textContent, initialInstruction);
