@@ -34,7 +34,7 @@
     "cron-parser": "^5.10.0",
     "cron-validator": "^1.4.0",
     "express": "^5.2.1",
-    "harfbuzzjs": "0.10.0",
+    "harfbuzzjs": "1.6.2",
     "htm": "^3.1.1",
     "moment-timezone": "^0.6.3",
     "mysql2": "^3.24.4",
