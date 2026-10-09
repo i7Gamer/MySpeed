@@ -10,7 +10,7 @@ const manifest = JSON.parse(readSource("package.json"));
 const setup = (job, action) => job.steps.find(step => step.uses?.startsWith(`${action}@`));
 
 it("declares the Node floor required by the pinned Undici release", () => {
-    assert.equal(manifest.dependencies.undici, "8.10.2");
+    assert.equal(manifest.dependencies.undici, "8.11.2");
     assert.equal(manifest.engines.node, `>=${MINIMUM_NODE}`);
 });
 
