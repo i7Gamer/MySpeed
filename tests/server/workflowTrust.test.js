@@ -192,6 +192,15 @@ it("Dependabot watches both Bun lockfiles, actions and Docker as structured entr
     }
 });
 
+it("Dependabot leaves the server pins that need a manual review alone", () => {
+    const config = parse(readSource(".github/dependabot.yml"));
+    const server = config.updates.find((entry) => entry["package-ecosystem"] === "bun" && entry.directory === "/");
+    const rules = server.ignore ?? [];
+    assert.deepEqual(rules.map((rule) => rule["dependency-name"]).sort(), ["harfbuzzjs", "tar-stream"]);
+    for (const rule of rules)
+        assert.equal(rule.versions ?? rule["update-types"], undefined, rule["dependency-name"]);
+});
+
 it("Dependabot reuses one test run without skipping human, fork, push or release tests", () => {
     const config = workflow("test");
     assert.equal(config.on.workflow_call.inputs["dependabot-call"].default, false);
