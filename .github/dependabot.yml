@@ -25,6 +25,15 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Exact pins that a bump alone cannot keep correct, so they move by hand.
+    # harfbuzzjs must equal the version satori pins (the standalone compile
+    # swaps it in for satori's copy and checkInstalledHarfBuzz enforces it), and
+    # its notices are kept per version. tar-stream is also resolved by the
+    # extractor closure, whose reviewed notice manifest breaks when a newer
+    # direct pin pushes the extractor's copy into nested lock keys.
+    ignore:
+      - dependency-name: "harfbuzzjs"
+      - dependency-name: "tar-stream"
 
   - package-ecosystem: "bun"
     directory: "/client"
