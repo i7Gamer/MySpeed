@@ -1,6 +1,7 @@
 import os from 'node:os';
 import https from 'node:https';
 import * as config from '../controller/config.js';
+import {getDefaultRouteInterface} from './routeInterface.js';
 
 export let interfaces = {};
 
@@ -302,6 +303,14 @@ export const requestInterfaces = () => {
                 console.warn("No usable network interface was found; keeping the configured one.");
 
             return;
+        }
+
+        // Look up a route only once the existing grace rule permits a write.
+        // If neither family has a route, retain the answered-first fallback.
+        const routedInterface = await getDefaultRouteInterface(interfacesNode);
+        if (routedInterface && interfaces[routedInterface.name]) {
+            interfaces[routedInterface.name] = routedInterface.address;
+            decision.write = routedInterface.name;
         }
 
         // The old value is named, because this is the one place the operator's own
