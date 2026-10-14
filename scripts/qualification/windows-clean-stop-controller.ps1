@@ -940,7 +940,8 @@ function Assert-MyspeedCleanHostedContext {
 
 function Read-MyspeedCleanBoundedJson {
     param([string]$Path,[string]$ExpectedSha)
-    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::None)
+    # Allow the observer's concurrent identity/hash read while still denying writers.
+    $stream=[IO.File]::Open($Path,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
     try{
         if($stream.Length -lt 2 -or $stream.Length -gt $script:MaximumJsonBytes){throw 'JSON file size is outside its bound'}
         $bytes=New-Object byte[] ([int]$stream.Length);$offset=0

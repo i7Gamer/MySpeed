@@ -785,6 +785,36 @@ if($captured.Count -ne 0){throw 'Hosted dispatcher wrote pipeline output'}
         } finally { fs.rmSync(directory, {recursive: true, force: true}); }
     });
 
+    powershellIt("reads published JSON while a read-only identity verifier holds it", () => {
+        const directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-shared-json-")));
+        const jsonPath = path.join(directory, "published.json");
+        const content = '{"ready":true}';
+        fs.writeFileSync(jsonPath, content);
+        const expectedSha = cryptoSha256(content);
+        const quote = value => `'${value.replaceAll("'", "''")}'`;
+        try {
+            const script = `
+                $ErrorActionPreference='Stop'
+                . ${quote(SCRIPT)} -Mode Library
+                $path=${quote(jsonPath)}
+                $verifier=[IO.File]::Open($path,'Open','Read','Read')
+                try {
+                    $loaded=Read-MyspeedCleanBoundedJson $path '${expectedSha}'
+                    $rejected=$false
+                    try {[void](Read-MyspeedCleanBoundedJson $path ('0'*64))}
+                    catch {$rejected=$_.Exception.Message -eq 'JSON file SHA differs'}
+                    @{ready=$loaded.value.ready;sha=$loaded.sha256;wrongHashRejected=$rejected}|ConvertTo-Json -Compress
+                } finally {$verifier.Dispose()}`;
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+            assert.equal(result.status, 0, result.stderr || result.error?.message);
+            assert.deepEqual(JSON.parse(result.stdout), {ready: true, sha: expectedSha, wrongHashRejected: true});
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
+    });
+
     powershellIt("waits only for an in-progress exclusive JSON publication", () => {
         const command = [
             ". $env:MYSPEED_SCRIPT -Mode Library;",
