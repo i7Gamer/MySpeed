@@ -38,7 +38,7 @@ const transport = (outcomes) => {
 describe("route-aware interface discovery", () => {
     it("chooses the routed adapter rather than enumeration order and closes its socket", async () => {
         const fake = transport({udp4: IPV4});
-        assert.equal(await getDefaultRouteInterface(adapters, fake), "eth0");
+        assert.deepEqual(await getDefaultRouteInterface(adapters, fake), {name: "eth0", address: IPV4});
         assert.equal(fake.sockets.length, 1);
         assert.ok(fake.sockets.every((socket) => socket.closed));
     });
@@ -46,7 +46,7 @@ describe("route-aware interface discovery", () => {
     for (const outcome of ["error", "throw", "192.0.2.99", "127.0.0.1"])
         it(`tries IPv6 when IPv4 returns ${outcome}, retaining VPN eligibility`, async () => {
             const fake = transport({udp4: outcome, udp6: IPV6});
-            assert.equal(await getDefaultRouteInterface(adapters, fake), "wg0");
+            assert.deepEqual(await getDefaultRouteInterface(adapters, fake), {name: "wg0", address: IPV6});
             assert.ok(fake.sockets.every((socket) => socket.closed));
         });
 
@@ -72,7 +72,7 @@ describe("route-aware interface discovery", () => {
         };
         const pending = getDefaultRouteInterface(adapters, {createSocket});
         t.mock.timers.tick(ROUTE_LOOKUP_TIMEOUT);
-        assert.equal(await pending, "wg0");
+        assert.deepEqual(await pending, {name: "wg0", address: IPV6});
         late();
         assert.ok(fake.sockets.every((socket) => socket.closed));
     });

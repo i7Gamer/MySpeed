@@ -308,7 +308,10 @@ export const requestInterfaces = () => {
         // Look up a route only once the existing grace rule permits a write.
         // If neither family has a route, retain the answered-first fallback.
         const routedInterface = await getDefaultRouteInterface(interfacesNode);
-        if (routedInterface && interfaces[routedInterface]) decision.write = routedInterface;
+        if (routedInterface && interfaces[routedInterface.name]) {
+            interfaces[routedInterface.name] = routedInterface.address;
+            decision.write = routedInterface.name;
+        }
 
         // The old value is named, because this is the one place the operator's own
         // choice is overwritten by the server and nothing records what it was.

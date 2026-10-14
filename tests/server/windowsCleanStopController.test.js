@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import childProcess from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {fileURLToPath} from "node:url";
 
@@ -13,6 +14,11 @@ const POWERSHELL = (process.env.SystemRoot || "C:\\Windows")
 const TEST_TIMEOUT_MS = 15_000;
 const TEST_CASE_TIMEOUT_MS = 30_000;
 const EXCLUSIVE_PUBLICATION_DEADLINE_MS = 2_000;
+const NATIVE_READINESS_TIMEOUT_MS = 10_000;
+const NATIVE_READINESS_POLL_MS = 25;
+const NATIVE_HANDLER_EXIT_TIMEOUT_MS = 3_000;
+const FIXTURE_INVALID_MODE_EXIT = 65;
+const FIXTURE_INHERITED_HANDLE_EXIT = 67;
 const RUN_ID = "12345";
 const RUN_ATTEMPT = "2";
 const EVENT_SHA = "a".repeat(40);
@@ -542,6 +548,89 @@ describe("Windows clean-stop controller prototype", () => {
         assert.match(fixture.source, /Console\.Out\.Flush\(\)/u);
         assert.match(fixture.source, /Environment\.Exit\(0\)/u);
         assert.doesNotMatch(fixture.source, /Socket|Http|WebRequest|TcpClient|UdpClient/u);
+    });
+
+    powershellIt("rejects the omitted file itself but permits a handle number reused for another file", () => {
+        const directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-handle-")));
+        try {
+            const quote = value => `'${value.replaceAll("'", "''")}'`;
+            const script = `
+                $ErrorActionPreference='Stop'
+                . ${quote(SCRIPT)} -Mode Library
+                Add-Type -TypeDefinition (Get-MyspeedCleanFixtureSource)
+                $omitted=[IO.File]::Open(${quote(path.join(directory, "omitted"))},'CreateNew','ReadWrite','Read')
+                $recycled=[IO.File]::Open(${quote(path.join(directory, "recycled"))},'CreateNew','ReadWrite','Read')
+                try {
+                    $expected=[MySpeedCleanStopFixture]::FileIdentity($omitted.SafeFileHandle.DangerousGetHandle())
+                    $leaked=[MySpeedCleanStopFixture]::IsOmittedHandleAbsent($omitted.SafeFileHandle.DangerousGetHandle(),$expected)
+                    $reused=[MySpeedCleanStopFixture]::IsOmittedHandleAbsent($recycled.SafeFileHandle.DangerousGetHandle(),$expected)
+                    $invalid=[MySpeedCleanStopFixture]::IsOmittedHandleAbsent([IntPtr](-1),$expected)
+                    $env:MYSPEED_OMITTED_FILE_IDENTITY=$expected
+                    $env:MYSPEED_OMITTED_INHERITABLE_HANDLE=$recycled.SafeFileHandle.DangerousGetHandle().ToInt64().ToString()
+                    $reusedExit=[MySpeedCleanStopFixture]::Main(@('invalid-mode'))
+                    $env:MYSPEED_OMITTED_INHERITABLE_HANDLE=$omitted.SafeFileHandle.DangerousGetHandle().ToInt64().ToString()
+                    $leakedExit=[MySpeedCleanStopFixture]::Main(@('invalid-mode'))
+                    @{leaked=$leaked;reused=$reused;invalid=$invalid;reusedExit=$reusedExit;leakedExit=$leakedExit}|ConvertTo-Json -Compress
+                } finally {$omitted.Dispose();$recycled.Dispose()}`;
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+            assert.equal(result.status, 0, result.stderr || result.error?.message);
+            assert.deepEqual(JSON.parse(result.stdout), {leaked: false, reused: true, invalid: true,
+                reusedExit: FIXTURE_INVALID_MODE_EXIT, leakedExit: FIXTURE_INHERITED_HANDLE_EXIT});
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
+    });
+
+    powershellIt("runs the inert native handler with excluded-handle identity and removes its sentinel", () => {
+        const directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-native-handler-")));
+        try {
+            const quote = value => `'${value.replaceAll("'", "''")}'`;
+            const script = `
+                $ErrorActionPreference='Stop'
+                . ${quote(SCRIPT)} -Mode Library
+                $root=${quote(directory)};$exe=Join-Path $root 'fixture.exe'
+                Add-Type -TypeDefinition (Get-MyspeedCleanFixtureSource) -OutputAssembly $exe -OutputType ConsoleApplication
+                Add-Type -TypeDefinition (Get-MyspeedCleanNativeSource)
+                Add-Type -AssemblyName System.Web.Extensions
+                $serializer=[Web.Script.Serialization.JavaScriptSerializer]::new()
+                $algorithm=[Security.Cryptography.SHA256]::Create()
+                try {$sha=[BitConverter]::ToString($algorithm.ComputeHash([IO.File]::ReadAllBytes($exe))).Replace('-','').ToLowerInvariant()}
+                finally {$algorithm.Dispose()}
+                $identity=[MySpeed.Qualification.CleanStop.Session]::InspectCandidate($exe,$sha,([IO.FileInfo]::new($exe)).Length)
+                $environment=[Collections.Generic.Dictionary[string,string]]::new()
+                $environment.Add('MYSPEED_CLEAN_STOP_FIXTURE_MODE','handler')
+                $environment.Add('MYSPEED_CLEAN_STOP_NONCE','${NONCE}')
+                $stdout=Join-Path $root 'stdout.log';$stderr=Join-Path $root 'stderr.log'
+                if([MySpeed.Qualification.CleanStop.Session]::ObserveInitialConsole().processIds.Count -gt 0){
+                    [void][MySpeed.Qualification.CleanStop.Session]::DetachInitialConsole()}
+                $session=[MySpeed.Qualification.CleanStop.Session]::Launch($exe,$sha,$identity.VolumeSerial,$identity.FileId,
+                    @('handler'),$root,$environment,$stdout,$stderr,${NATIVE_READINESS_TIMEOUT_MS},${TEST_TIMEOUT_MS})
+                try {
+                    $watch=[Diagnostics.Stopwatch]::StartNew();$text=''
+                    do {
+                        $reader=[IO.StreamReader]::new([IO.File]::Open($stdout,'Open','Read','ReadWrite'))
+                        try {$text=$reader.ReadToEnd()} finally {$reader.Dispose()}
+                        if($text -eq "MYSPEED_CLEAN_STOP_FIXTURE_READY_V1\r\n"){break}
+                        Start-Sleep -Milliseconds ${NATIVE_READINESS_POLL_MS}
+                    } while($watch.ElapsedMilliseconds -lt ${NATIVE_READINESS_TIMEOUT_MS})
+                    if($text -ne "MYSPEED_CLEAN_STOP_FIXTURE_READY_V1\r\n"){throw 'Native fixture readiness absent'}
+                    $result=$session.Stop([MySpeed.Qualification.CleanStop.Session]::CurrentProcessId(),
+                        ${NATIVE_HANDLER_EXIT_TIMEOUT_MS},${NATIVE_READINESS_TIMEOUT_MS})
+                    $record=@{exitCode=$result.exitCode;forced=$result.forced;jobZero=$result.jobZero;
+                        sentinelAbsent=(-not[IO.File]::Exists([IO.Path]::Combine($root,'omitted-handle.sentinel')))}
+                    [IO.File]::WriteAllText([IO.Path]::Combine($root,'observation.json'),$serializer.Serialize($record))
+                } finally {$session.Dispose()}`;
+            const result = childProcess.spawnSync(POWERSHELL,
+                ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+                {encoding: "utf8", timeout: TEST_TIMEOUT_MS, windowsHide: true});
+            assert.equal(result.status, 0, result.stderr || result.error?.message);
+            assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, "observation.json"), "utf8")),
+                {exitCode: 0, forced: false, jobZero: true, sentinelAbsent: true});
+        } finally {
+            fs.rmSync(directory, {recursive: true, force: true});
+        }
     });
 
     it("pins x64 ABI, handle-list, Job, and Ctrl+C mechanics", () => {

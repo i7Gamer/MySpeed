@@ -46,7 +46,7 @@ export const getDefaultRouteInterface = async (adapters, {createSocket = dgram.c
         if (!localAddress) continue;
         const match = Object.entries(adapters).find(([, addresses]) =>
             addresses.some((entry) => !entry.internal && entry.address === localAddress));
-        if (match) return match[0];
+        if (match) return {name: match[0], address: localAddress};
     }
     return null;
 };

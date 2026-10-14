@@ -482,16 +482,36 @@ using System;
 using System.Diagnostics;
 using System.Threading;
 public static class MySpeedCleanStopFixture {
+  const int ERROR_INVALID_FUNCTION=1,ERROR_INVALID_HANDLE=6;
+  [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+  struct FileInformation {
+    public uint attributes,creationLow,creationHigh,accessLow,accessHigh,writeLow,writeHigh;
+    public uint volumeSerial,sizeHigh,sizeLow,links,fileIndexHigh,fileIndexLow;
+  }
   [System.Runtime.InteropServices.DllImport("kernel32.dll",SetLastError=true)]
-  static extern uint GetFileType(IntPtr handle);
+  static extern bool GetFileInformationByHandle(IntPtr handle,out FileInformation information);
+  public static string FileIdentity(IntPtr handle) {
+    FileInformation information;
+    if(!GetFileInformationByHandle(handle,out information)) {
+      int error=System.Runtime.InteropServices.Marshal.GetLastWin32Error();
+      if(error==ERROR_INVALID_HANDLE||error==ERROR_INVALID_FUNCTION)return null;
+      throw new System.ComponentModel.Win32Exception(error);
+    }
+    return information.volumeSerial.ToString("x8")+":"+information.fileIndexHigh.ToString("x8")+information.fileIndexLow.ToString("x8");
+  }
+  public static bool IsOmittedHandleAbsent(IntPtr handle,string expectedIdentity) {
+    if(String.IsNullOrEmpty(expectedIdentity))throw new ArgumentException("Omitted file identity is absent");
+    return FileIdentity(handle)!=expectedIdentity;
+  }
   static readonly ManualResetEvent Stop = new ManualResetEvent(false);
   public static int Main(string[] args) {
     if(args.Length != 1) return 64;
     string omitted=Environment.GetEnvironmentVariable("MYSPEED_OMITTED_INHERITABLE_HANDLE");
     long raw;if(!Int64.TryParse(omitted,out raw))return 66;
-    System.Runtime.InteropServices.Marshal.GetLastWin32Error();
-    uint inheritedType=GetFileType(new IntPtr(raw));
-    if(inheritedType!=0||System.Runtime.InteropServices.Marshal.GetLastWin32Error()!=6)return 67;
+    string expectedIdentity=Environment.GetEnvironmentVariable("MYSPEED_OMITTED_FILE_IDENTITY");
+    if(String.IsNullOrEmpty(expectedIdentity))return 66;
+    // CLR startup can reuse the omitted handle's numeric slot for a different object.
+    if(!IsOmittedHandleAbsent(new IntPtr(raw),expectedIdentity))return 67;
     string mode=args[0];
     if(mode=="participant"){Thread.Sleep(Timeout.Infinite);return 0;}
     if(mode=="handler") Console.CancelKeyPress += delegate(object sender,ConsoleCancelEventArgs e){e.Cancel=true;Stop.Set();};
@@ -560,6 +580,8 @@ namespace MySpeed.Qualification.CleanStop {
     const uint NATIVE_CLEANUP_TIMEOUT_MS=10000,NATIVE_CLEANUP_POLL_MS=10,MAX_ATTRIBUTE_LIST_BYTES=1048576,MAX_INITIAL_CONSOLE_PROCESSES=64;
     const uint STOP_FAILURE_EXIT_CODE=197,LAUNCH_FAILURE_EXIT_CODE=199;
     const uint GENERIC_READ=0x80000000,FILE_APPEND_DATA=4,FILE_SHARE_READ=1,CREATE_NEW=1,OPEN_EXISTING=3,FILE_ATTRIBUTE_NORMAL=0x80;
+    const uint DELETE_ACCESS=0x10000,FILE_FLAG_DELETE_ON_CLOSE=0x04000000;
+    const string OMITTED_HANDLE_FILE="omitted-handle.sentinel";
     IntPtr job=IntPtr.Zero,process=IntPtr.Zero; FileStream image; uint pid; ulong creation; string imagePath,volumeSerial,fileId;
     NativeResult lastResult;
     NativeResult NewResult(){NativeResult r=new NativeResult();r.candidatePid=pid;r.candidateCreationTime=creation;r.candidateImagePath=imagePath;r.candidateVolumeSerial=volumeSerial;r.candidateFileId=fileId;return r;}
@@ -690,13 +712,14 @@ namespace MySpeed.Qualification.CleanStop {
         input=CreateFile("NUL",GENERIC_READ,FILE_SHARE_READ,ref sa,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);
         output=CreateFile(stdout,FILE_APPEND_DATA,FILE_SHARE_READ,ref sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);
         error=CreateFile(stderr,FILE_APPEND_DATA,FILE_SHARE_READ,ref sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);
-        omitted=CreateFile("NUL",GENERIC_READ,FILE_SHARE_READ,ref sa,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,IntPtr.Zero);
+        omitted=CreateFile(Path.Combine(cwd,OMITTED_HANDLE_FILE),GENERIC_READ|DELETE_ACCESS,FILE_SHARE_READ,ref sa,CREATE_NEW,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_DELETE_ON_CLOSE,IntPtr.Zero);
         if(input.ToInt64()==-1||output.ToInt64()==-1||error.ToInt64()==-1||omitted.ToInt64()==-1)throw Error("CreateFile standard handle");
         UIntPtr size=UIntPtr.Zero;bool sizeQuery=InitializeProcThreadAttributeList(IntPtr.Zero,1,0,ref size);int sizeError=Marshal.GetLastWin32Error();ulong attributeBytes=size.ToUInt64();if(sizeQuery||sizeError!=(int)ERROR_INSUFFICIENT_BUFFER||attributeBytes==0||attributeBytes>MAX_ATTRIBUTE_LIST_BYTES)throw new InvalidOperationException("Attribute-list size query differs");list=Marshal.AllocHGlobal((int)attributeBytes);if(!InitializeProcThreadAttributeList(list,1,0,ref size))throw Error("InitializeProcThreadAttributeList");attributeListInitialized=true;
         IntPtr[] handles=new[]{input,output,error};values=Marshal.AllocHGlobal(IntPtr.Size*handles.Length);Marshal.Copy(handles,0,values,handles.Length);
         if(!UpdateProcThreadAttribute(list,0,(UIntPtr)PROC_THREAD_ATTRIBUTE_HANDLE_LIST,values,(UIntPtr)(IntPtr.Size*handles.Length),IntPtr.Zero,IntPtr.Zero))throw Error("UpdateProcThreadAttribute");s.HandleListConfigured=true;
         STARTUPINFOEXW si=new STARTUPINFOEXW();si.StartupInfo.cb=(uint)Marshal.SizeOf(typeof(STARTUPINFOEXW));si.StartupInfo.dwFlags=STARTF_USESHOWWINDOW|STARTF_USESTDHANDLES;si.StartupInfo.wShowWindow=SW_HIDE;si.StartupInfo.hStdInput=input;si.StartupInfo.hStdOutput=output;si.StartupInfo.hStdError=error;si.lpAttributeList=list;
         env["MYSPEED_OMITTED_INHERITABLE_HANDLE"]=omitted.ToInt64().ToString();
+        env["MYSPEED_OMITTED_FILE_IDENTITY"]=Volume(omitted)+":"+Id(omitted);
         StringBuilder command=new StringBuilder(Quote(exe));foreach(string a in args)command.Append(' ').Append(Quote(a));block=EnvironmentBlock(env);
         if(!CreateProcess(exe,command,IntPtr.Zero,IntPtr.Zero,true,CREATE_SUSPENDED|CREATE_NEW_CONSOLE|CREATE_UNICODE_ENVIRONMENT|EXTENDED_STARTUPINFO_PRESENT,block,cwd,ref si,out pi))throw Error("CreateProcessW");s.CandidateCreatedSuspended=true;s.PrivateConsoleRequested=true;
         s.process=pi.hProcess;s.pid=pi.dwProcessId;if(!AssignProcessToJobObject(s.job,s.process))throw Error("AssignProcessToJobObject");assigned=true;s.JobAssignedBeforeResume=true;bool member;if(!IsProcessInJob(s.process,s.job,out member)||!member)throw Error("IsProcessInJob");s.InitialJobMembership=true;
