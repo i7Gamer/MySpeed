@@ -56,8 +56,8 @@ updates:
       prefix: "chore(ci)"
 
   # The Dockerfile pins oven/bun and rust to specific minor.patch alpine tags
-  # rather than the rolling "1-alpine" tags, so nothing keeps those pins fresh
-  # unless dependabot watches the Dockerfile itself.
+  # rather than the rolling "1-alpine" tags, so nothing keeps the rust pin fresh
+  # unless dependabot watches the Dockerfile itself (oven/bun is ignored below).
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
