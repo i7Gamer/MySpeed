@@ -56,7 +56,7 @@ jobs:
       # script, and which ships node:sqlite - the branch of the database shim
       # that the compiled binary does not take but the tests do.
       - name: Set up node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
 
@@ -125,7 +125,7 @@ jobs:
           # Match build-binaries.yml: this is the runtime shipped to users.
           bun-version: 1.4.2
       - name: Set up node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ matrix.node }}
       - name: Install dependencies
@@ -180,7 +180,7 @@ jobs:
           bun-version: 1.4.2
 
       - name: Set up node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
 
