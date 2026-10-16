@@ -38,16 +38,36 @@ it('initializes the ESM mailer once and changes only the fixture-owned table', a
     assert.deepEqual(shared.networkInterfaces, previous);
 });
 
-it('rejects a real early Nodemailer import and restores the OS reader in a fresh process', () => {
+it('accepts an early Nodemailer import that has not read the interface table yet', () => {
+    const harnessUrl = new URL('../fixtures/outbound-transport/smtp/nodemailerHarness.js', import.meta.url).href;
+    const source = `
+        import assert from 'node:assert/strict';
+        await import('nodemailer');
+        const harness = await import(${JSON.stringify(harnessUrl)});
+        await harness.bootstrapNodemailer();
+        assert.equal(harness.shared.networkInterfaces, harness.fixtureInterfaces);
+    `;
+    const child = spawnSync(process.execPath, ['--input-type=module', '--eval', source], {
+        cwd: new URL('../../', import.meta.url),
+        encoding: 'utf8',
+        timeout: CHILD_TIMEOUT_MS,
+        windowsHide: true
+    });
+    assert.equal(child.error, undefined);
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+});
+
+it('rejects an early Nodemailer interface read and restores the OS reader in a fresh process', () => {
     const harnessUrl = new URL('../fixtures/outbound-transport/smtp/nodemailerHarness.js', import.meta.url).href;
     const source = `
         import assert from 'node:assert/strict';
         import os from 'node:os';
         const original = os.networkInterfaces;
-        await import('nodemailer');
+        const early = await import('nodemailer/lib/shared');
+        early._readNetworkInterfaces();
         const harness = await import(${JSON.stringify(harnessUrl)});
         await assert.rejects(harness.bootstrapNodemailer(),
-            /bootstrap must run before importing Nodemailer or SMTP scenarios/);
+            /bootstrap must run before Nodemailer reads the interface table/);
         assert.equal(os.networkInterfaces, original);
         assert.equal(harness.shared, undefined);
         assert.equal(harness.nodemailer, undefined);

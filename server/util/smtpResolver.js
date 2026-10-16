@@ -23,9 +23,11 @@ const blocked = () => Object.assign(new Error("SMTP destination has no permitted
 /**
  * Nodemailer's resolver runs before its native socket lookup. An ordinary
  * `lookup` option cannot filter those already-resolved addresses. Keep its
- * A/AAAA precedence, cached-answer availability and per-query timeout policy
- * here, filtering each fresh or cached candidate before the socket adapter can
- * dial it. The parity tests compare these rules with the installed mailer.
+ * A/AAAA precedence, cached-answer availability and timeout policy here (both
+ * families queried at once, one deadline over the whole lookup, as in
+ * Nodemailer 10.1), filtering each fresh or cached candidate before the socket
+ * adapter can dial it. The parity tests compare these rules with the installed
+ * mailer.
  *
  * Dependencies and the cache can be supplied by isolated tests. The shared
  * production instance below persists across notifications, just as the mailer's
@@ -47,9 +49,11 @@ export const createSmtpResolver = ({dnsApi = dns, networkInterfaces = defaultInt
     const lookup = (configuredHost, options, callback) => {
         const host = bareHost(configuredHost);
         let finished = false;
+        let deadline;
         const finish = (error, addresses) => {
             if (finished) return;
             finished = true;
+            clearTimeout(deadline);
             if (error) return callback(error);
             const safe = permitted(addresses);
             if (!safe.length) return callback(blocked());
@@ -85,17 +89,29 @@ export const createSmtpResolver = ({dnsApi = dns, networkInterfaces = defaultInt
         }
 
         const store = addresses => {
+            // An answer arriving after the deadline must not reach the cache.
+            if (finished) return;
             const safe = permitted(addresses);
             if (!safe.length) return finish(blocked());
             cache.set(host, {addresses: safe, expires: now() + (options.dnsTtl || SMTP_DNS_TTL_MS)});
             finish(null, safe);
         };
         const stale = error => cached ? store(cached.addresses) : finish(error);
+        const resolvers = [];
+        // The query timeout below applies to each resolver attempt on its
+        // own; this one bounds the lookup as a whole.
+        const timeout = Number(options.timeout) || 0;
+        if (timeout > 0) deadline = setTimeout(() => {
+            for (const resolver of resolvers)
+                if (typeof resolver.cancel === "function") resolver.cancel();
+            stale(Object.assign(new Error(`DNS lookup for ${host} timed out`), {code: dns.TIMEOUT}));
+        }, timeout);
         const resolveFamily = (family, done) => {
             if (!supported(family, options.allowInternalNetworkInterfaces)) return done(null, []);
             try {
                 const resolver = dnsApi.Resolver
                     ? new dnsApi.Resolver({timeout: options.timeout || SMTP_DNS_QUERY_TIMEOUT_MS}) : dnsApi;
+                resolvers.push(resolver);
                 resolver[`resolve${family}`](host, (error, addresses) => {
                     if (error) return done(EMPTY_DNS_ERRORS.has(error.code) ? null : error, []);
                     done(null, Array.isArray(addresses) ? addresses : [].concat(addresses || []));
@@ -103,7 +119,14 @@ export const createSmtpResolver = ({dnsApi = dns, networkInterfaces = defaultInt
             } catch (error) { done(error, []); }
         };
 
-        resolveFamily(4, (ipv4Error, ipv4) => resolveFamily(6, (ipv6Error, ipv6) => {
+        const families = {};
+        const resolved = family => (error, addresses) => {
+            families[family] = {error, addresses};
+            if (families[4] && families[6]) settle(families[4].error, families[4].addresses,
+                families[6].error, families[6].addresses);
+        };
+        const settle = (ipv4Error, ipv4, ipv6Error, ipv6) => {
+            if (finished) return;
             const addresses = [...ipv4, ...ipv6];
             if (addresses.length) return store(addresses);
             if (ipv4Error && ipv6Error && cached) return stale(ipv4Error);
@@ -120,7 +143,9 @@ export const createSmtpResolver = ({dnsApi = dns, networkInterfaces = defaultInt
                     store(available.length ? available : (answers || []).map(answer => answer.address));
                 });
             } catch (error) { stale(ipv4Error || ipv6Error || error); }
-        }));
+        };
+        resolveFamily(4, resolved(4));
+        resolveFamily(6, resolved(6));
     };
     return {lookup};
 };

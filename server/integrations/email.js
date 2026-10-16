@@ -173,7 +173,8 @@ const refuseBlocked = (host, activity) => {
  * literal guard and guarded socket resolver enforce the destination policy.
  *
  * These are connection, greeting and socket-inactivity limits, not a total-send
- * deadline. DNS retains the mailer's per-query limits and cache behavior.
+ * deadline. DNS retains the mailer's per-query limits, its one deadline over
+ * the whole lookup and its cache behavior.
  */
 export {transportOptions};
 

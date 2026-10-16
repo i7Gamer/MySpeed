@@ -180,25 +180,11 @@ const readAsset = async (path) => {
   return embeddedClient?.readEmbeddedFile?.(path) ?? null;
 };
 
-async function renderOpenGraphImage() {
-  const test = await readStatistics();
-
-  if (!hasValues(test)) return null;
-
-  const font = await readAsset("/assets/fonts/inter-v12-latin-regular.ttf");
-  const logo = await readAsset("/assets/img/logo192.png");
-
-  // satori cannot render without a font, and the markup embeds the logo - the
-  // loader documents null as an ordinary answer for both, and the route shows
-  // the project banner instead. The logo used to be embedded unchecked, which
-  // turned its absence into a TypeError on every request.
-  if (!font || !logo) return null;
-
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const date = moment().tz(timeZone).format("MM/DD/YYYY");
-  const time = moment().tz(timeZone).format("h:mm A z");
-
-  const markup = html`
+/**
+ * The image's element tree. Exported so its layout can be rendered in tests.
+ */
+export function openGraphMarkup({ date, time, logo, test }) {
+  return html`
     <div
       tw="bg-[#1d2332] text-white rounded-lg w-full h-full flex flex-col p-16 justify-between"
     >
@@ -222,7 +208,7 @@ async function renderOpenGraphImage() {
               ></path>
             </svg>
           </div>
-          <p tw="text-[100px] leading-[74px] font-bold m-0 ml-4 p-0">MySpeed</p>
+          <p tw="text-[100px] leading-[74px] m-0 ml-4 p-0">MySpeed</p>
         </div>
         <div tw="flex flex-row h-full">
           <div tw="flex flex-col h-full justify-around items-end pr-1">
@@ -233,7 +219,7 @@ async function renderOpenGraphImage() {
           </div>
           <div tw="flex h-[100px] w-[100px] mr-[50px]">
             <img
-              tw="-mt-[50px]"
+              tw="-mt-[50px] shrink-0"
               height=${200}
               width=${200}
               src="data:image/png;base64,${logo.toString("base64")}"
@@ -261,11 +247,11 @@ async function renderOpenGraphImage() {
               <line x1="12" x2="12" y1="15" y2="3" />
             </svg>
             <div tw="flex flex-row items-end">
-              <p tw="text-6xl m-0 p-0 font-semibold">DOWNLOAD</p>
+              <p tw="text-6xl m-0 p-0">DOWNLOAD</p>
               <p tw="text-4xl m-0 p-0 text-slate-500 ml-1">Mbps</p>
             </div>
           </div>
-          <p tw="text-[160px] font-bold m-0 p-0">
+          <p tw="text-[160px] m-0 p-0">
             ${String(test.download.avg)}
           </p>
         </div>
@@ -288,11 +274,11 @@ async function renderOpenGraphImage() {
               <line x1="12" x2="12" y1="3" y2="15" />
             </svg>
             <div tw="flex flex-row items-end">
-              <p tw="text-6xl m-0 p-0 font-semibold">UPLOAD</p>
+              <p tw="text-6xl m-0 p-0">UPLOAD</p>
               <p tw="text-4xl m-0 p-0 text-slate-500 ml-1">Mbps</p>
             </div>
           </div>
-          <p tw="text-[160px] font-bold m-0 -mr-5 p-0">
+          <p tw="text-[160px] m-0 -mr-5 p-0">
             ${String(test.upload.avg)}
           </p>
         </div>
@@ -324,8 +310,11 @@ async function renderOpenGraphImage() {
       </div>
     </div>
   `;
+}
 
-  const image = await satori(markup, {
+/** Lays the markup out as an SVG with the bundled font. */
+export function renderOpenGraphSvg(markup, font) {
+  return satori(markup, {
     width: 1200,
     height: 600,
     fonts: [
@@ -337,6 +326,29 @@ async function renderOpenGraphImage() {
       },
     ],
   });
+}
+
+async function renderOpenGraphImage() {
+  const test = await readStatistics();
+
+  if (!hasValues(test)) return null;
+
+  const font = await readAsset("/assets/fonts/inter-v12-latin-regular.ttf");
+  const logo = await readAsset("/assets/img/logo192.png");
+
+  // satori cannot render without a font, and the markup embeds the logo - the
+  // loader documents null as an ordinary answer for both, and the route shows
+  // the project banner instead. The logo used to be embedded unchecked, which
+  // turned its absence into a TypeError on every request.
+  if (!font || !logo) return null;
+
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const date = moment().tz(timeZone).format("MM/DD/YYYY");
+  const time = moment().tz(timeZone).format("h:mm A z");
+
+  const markup = openGraphMarkup({ date, time, logo, test });
+
+  const image = await renderOpenGraphSvg(markup, font);
 
   const { Resvg } = await loadResvg();
   const svg = new Resvg(image);

@@ -73,10 +73,9 @@ export const createSmtpSocket = ({lookup = smtpResolver.lookup, signal, dial} = 
                 attempt.socket.removeListener("error", attempt.onError);
                 attempt.socket.removeListener("close", attempt.onClose);
                 // Nodemailer attaches its own error handler synchronously in
-                // the callback. Keep an error sink across that handoff and
-                // preserve the keepalive setting of its native connect path.
+                // the callback. Keep an error sink across that handoff. Since
+                // 10.1 it sets keepalive on every socket it is handed itself.
                 attempt.socket.on("error", ignoreError);
-                attempt.socket.setKeepAlive(true);
                 finish(null, {connection: attempt.socket, secured: options.secure === true});
             };
             attempt.timer = setTimeout(() => fail(Object.assign(new Error("Connection timeout"), {code: "ETIMEDOUT"})),
