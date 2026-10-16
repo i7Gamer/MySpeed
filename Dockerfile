@@ -3,7 +3,7 @@
 # download names are compatibility aliases, not different CPU requirements.
 # tests/server/windowsBaseline.test.js holds all Bun stages to the exact runtime
 # used for release binaries so source, container and compiled installs agree.
-FROM oven/bun:1.4.2-alpine AS client-build
+FROM oven/bun:1.4.3-alpine AS client-build
 
 WORKDIR /client
 # The lockfile is copied with the manifest so the install is reproducible and
@@ -37,7 +37,7 @@ ARG CFSPEEDTEST_VERSION=2.2.2
 RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
-FROM oven/bun:1.4.2-alpine AS server-build
+FROM oven/bun:1.4.3-alpine AS server-build
 
 WORKDIR /myspeed
 
@@ -49,7 +49,7 @@ COPY ./scripts /myspeed/scripts
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1.4.2-alpine
+FROM oven/bun:1.4.3-alpine
 
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,
