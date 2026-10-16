@@ -160,7 +160,7 @@ jobs:
 
       - name: Upload sealed Stage 3 closure
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
           path: ${{ runner.temp }}/myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
@@ -593,7 +593,7 @@ jobs:
 
       - name: Upload non-qualifying diagnostics without candidate binaries
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-cpu-floor-post-release-v1.6.1-diagnostics
           path: |
@@ -606,7 +606,7 @@ jobs:
 
       - name: Upload non-qualifying evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-cpu-floor-post-release-v1.6.1-evidence
           path: |

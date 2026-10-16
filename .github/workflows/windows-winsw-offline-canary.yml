@@ -118,7 +118,7 @@ jobs:
 
       - name: Upload immutable canary closure
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-winsw-offline-canary-closure
           path: |
@@ -686,7 +686,7 @@ jobs:
 
       - name: Retain bounded nonqualifying evidence
         if: always() && steps.bound_evidence.outputs.safe == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-winsw-offline-canary-evidence
           path: ${{ runner.temp }}/myspeed-winsw-offline-upload-${{ needs.prepare.outputs.nonce }}/

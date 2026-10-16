@@ -151,7 +151,7 @@ jobs:
           sha256sum "$RUNNER_TEMP/myspeed-multiarch.oci.tar" | cut -d ' ' -f 1 > \
             "$RUNNER_TEMP/myspeed-multiarch.oci.tar.sha256"
       - name: Upload immutable multi-platform OCI index
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qualified-oci-index
           path: |
@@ -247,7 +247,7 @@ jobs:
             --run-attempt "$GITHUB_RUN_ATTEMPT" --repository "$GITHUB_REPOSITORY"
 
       - name: Upload immutable qualification manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-qualification-manifest
           path: ${{ runner.temp }}/qualification
