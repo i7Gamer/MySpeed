@@ -201,6 +201,14 @@ it("Dependabot leaves the server pins that need a manual review alone", () => {
         assert.equal(rule.versions ?? rule["update-types"], undefined, rule["dependency-name"]);
 });
 
+it("Dependabot leaves the Bun image to a deliberate toolchain upgrade", () => {
+    const config = parse(readSource(".github/dependabot.yml"));
+    const docker = config.updates.find((entry) => entry["package-ecosystem"] === "docker" && entry.directory === "/");
+    const rules = docker.ignore ?? [];
+    assert.deepEqual(rules.map((rule) => rule["dependency-name"]), ["oven/bun"]);
+    assert.equal(rules[0].versions ?? rules[0]["update-types"], undefined);
+});
+
 it("Dependabot reuses one test run without skipping human, fork, push or release tests", () => {
     const config = workflow("test");
     assert.equal(config.on.workflow_call.inputs["dependabot-call"].default, false);
