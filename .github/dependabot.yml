@@ -70,3 +70,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
+    # Bun moves as one deliberate upgrade: the workflows' bun-version,
+    # QUALIFIED_BUN_VERSION, the digest-pinned standalone verifier image and
+    # these stages must agree (windowsBaseline enforces it), so a Dockerfile-only
+    # bump can never pass (#102). Rust still updates here.
+    ignore:
+      - dependency-name: "oven/bun"
