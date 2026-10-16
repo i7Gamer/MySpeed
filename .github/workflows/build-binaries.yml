@@ -141,7 +141,7 @@ jobs:
           bun -e 'const fs = require("fs"); const {createHash} = require("crypto"); const file = process.env.ASSET_PATH; fs.writeFileSync(file + ".sha256", createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "\n");'
 
       - name: Upload artifact for MSI
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.artifact_name }}
           path: |
@@ -301,7 +301,7 @@ jobs:
           bun -e 'const fs = require("fs"); const {createHash} = require("crypto"); const file = process.env.ASSET_PATH; fs.writeFileSync(file + ".sha256", createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "\n");'
 
       - name: Upload verified build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.artifact_name }}
           path: |
@@ -420,7 +420,7 @@ jobs:
             --repository "$GITHUB_REPOSITORY"
 
       - name: Upload verified build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.artifact_name }}
           path: |
@@ -536,7 +536,7 @@ jobs:
           bun -e 'const fs = require("fs"); const {createHash} = require("crypto"); const file = process.env.ASSET_PATH; fs.writeFileSync(file + ".sha256", createHash("sha256").update(fs.readFileSync(file)).digest("hex") + "\n");'
 
       - name: Upload verified build
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: MySpeed.zip
           path: |
@@ -579,7 +579,7 @@ jobs:
           done
 
       - name: Upload qualification scripts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-static
           path: |
