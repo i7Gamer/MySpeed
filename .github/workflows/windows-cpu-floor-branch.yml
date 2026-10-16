@@ -432,7 +432,7 @@ jobs:
             core.setOutput('id', String(artifact.id));
 
       - name: Download this run's authenticated Windows build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.candidate-metadata.outputs.id }}
           merge-multiple: true
@@ -442,7 +442,7 @@ jobs:
           path: ${{ runner.temp }}/myspeed-branch-candidate-${{ needs.seal.outputs.nonce }}
 
       - name: Download this run's authenticated guest bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.bundle-metadata.outputs.id }}
           merge-multiple: true
@@ -450,7 +450,7 @@ jobs:
           path: ${{ runner.temp }}/myspeed-branch-bundle-${{ needs.seal.outputs.nonce }}
 
       - name: Download sealed Stage 3 closure
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
           path: ${{ runner.temp }}/myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}

@@ -131,7 +131,7 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
       - name: Download verified platform OCI archives
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: qualified-oci-*
           path: ${{ runner.temp }}/platforms
@@ -218,7 +218,7 @@ jobs:
             fs.writeFileSync(process.env.OUTPUT_PATH, JSON.stringify({artifacts}));
 
       - name: Download every candidate artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: ${{ runner.temp }}/artifacts
           pattern: "*"

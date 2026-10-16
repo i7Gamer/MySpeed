@@ -40,7 +40,7 @@ jobs:
       # Both artifacts carry a MySpeed.exe, so everything below - the WiX
       # source, the service configuration, every GUID - is identical either way.
       - name: Download Windows server binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ matrix.artifact }}
           path: ./installer
