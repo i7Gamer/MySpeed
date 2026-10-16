@@ -9,6 +9,8 @@ import { checkOutboundHost } from '../../../../server/util/safeUrl.js';
 import { createSmtpResolver } from '../../../../server/util/smtpResolver.js';
 import { transportOptions } from '../../../../server/util/smtpOptions.js';
 const STAGE_MS = 400,
+  // Nodemailer 10.1 delays TCP keepalive probes by this much on every socket it sets up.
+  NODEMAILER_KEEPALIVE_DELAY_MS = 30_000,
   DEADLINE_MS = 5000,
   DELAY_MS = 90,
   SLOW_GREETING_MS = 900,
@@ -657,7 +659,7 @@ for (const adapter of [false, true]) for (const mode of ['plain', 'tls']) check(
       getSocket: createGuardedSocket()
     } : {}));
     assert.equal(fixture.seen.messages.length, 1);
-    assert.deepEqual(keepalive, [[true]]);
+    assert.deepEqual(keepalive, [[true, NODEMAILER_KEEPALIVE_DELAY_MS]]);
     return {
       keepalive
     };
@@ -724,7 +726,17 @@ for (const adapter of [false, true]) for (const mode of ['plain', 'tls']) check(
     originalConnect = socketModule.connect,
     attempts = [];
   socketModule.connect = (opts, ...args) => {
-    if (opts?.port === fixture.port) attempts.push(opts.host);
+    if (opts?.port === fixture.port && opts.autoSelectFamily && typeof opts.lookup === 'function') {
+      // Nodemailer 10.1 hands every candidate to Node's autoSelectFamily through
+      // its own lookup rather than dialling each address in turn, so record the
+      // order Node is given. Delivery then proves the fallback past the first.
+      const lookup = opts.lookup;
+      opts = {...opts, lookup: (host, lookupOptions, callback) => lookup(host, lookupOptions,
+        (error, addresses, ...rest) => {
+          if (Array.isArray(addresses)) attempts.push(...addresses.map(entry => entry.address));
+          callback(error, addresses, ...rest);
+        })};
+    } else if (opts?.port === fixture.port) attempts.push(opts.host);
     return originalConnect.call(socketModule, opts, ...args);
   };
   try {

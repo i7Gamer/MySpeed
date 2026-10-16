@@ -174,7 +174,8 @@ run('timeout-stale-callbacks-cannot-destroy-new-attempt', async () => {
   second.emit('connect');
   assert.equal((await run.complete).value.connection, second);
   assert.equal(run.observed.callbacks, 1);
-  assert.deepEqual(second.keepalive, [true]);
+  // Keepalive is Nodemailer's to set on the socket it is handed (10.1+).
+  assert.deepEqual(second.keepalive, []);
 });
 run('exhausted-timeouts-settle-and-destroy-once', async () => {
   const sockets = [];

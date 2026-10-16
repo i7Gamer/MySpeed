@@ -23,6 +23,8 @@ const original = {
   lookup: dns.lookup,
   now: Date.now,
   random: Math.random,
+  setTimeout: globalThis.setTimeout,
+  clearTimeout: globalThis.clearTimeout,
   interfaces: {...fixtureInterfaces}
 };
 export const resolverScenarios = [];
@@ -72,6 +74,17 @@ function harness() {
   };
   dns.Resolver = fake.Resolver;
   dns.lookup = fake.lookup;
+  // Both resolvers arm their overall DNS deadline on the same virtual clock as
+  // the delayed answers, so advance() fires whichever comes first.
+  globalThis.setTimeout = (fn, delay) => {
+    const timer = {at: state.now + delay, fn};
+    state.queue.push(timer);
+    return timer;
+  };
+  globalThis.clearTimeout = timer => {
+    const index = state.queue.indexOf(timer);
+    if (index >= 0) state.queue.splice(index, 1);
+  };
   Date.now = () => state.now;
   Math.random = () => state.random;
   setInterfaces(interfaces);
@@ -149,6 +162,8 @@ function test(name, fn) {
         dns.lookup = original.lookup;
         Date.now = original.now;
         Math.random = original.random;
+        globalThis.setTimeout = original.setTimeout;
+        globalThis.clearTimeout = original.clearTimeout;
         setInterfaces(original.interfaces);
         shared.dnsCache.clear();
       }
@@ -399,26 +414,59 @@ test('single-address-callback-form', ({
     family: 4
   });
 });
-test('sequential-family-timeout-scope-preserved', ({
-  state,
-  get,
-  advance
-}) => {
-  state.delays = [20_000, 20_000];
-  const start = state.now;
-  const baseline = get(false);
-  advance();
-  const baselineElapsed = state.now - start;
-  const secondStart = state.now;
-  const candidate = get();
-  advance();
-  assert.deepEqual(candidate, baseline);
-  assert.equal(state.now - secondStart, 40_000);
-  assert.equal(baselineElapsed, 40_000);
-  return {
-    elapsed: 40_000,
-    qualification: 'virtual callback time; no new overall DNS cap'
+// Runs the baseline, then the candidate, each to completion on the virtual
+// clock, and reports how long each took to answer.
+const timed = ({state, get, advance}) => {
+  const run = adapter => {
+    const start = state.now;
+    let answeredAt;
+    const out = get(adapter);
+    const settled = () => answeredAt ??= ('error' in out || 'addresses' in out) ? state.now : undefined;
+    settled();
+    while (state.queue.length && answeredAt === undefined) {
+      state.queue.sort((a, b) => a.at - b.at);
+      const item = state.queue.shift();
+      state.now = item.at;
+      item.fn();
+      settled();
+    }
+    advance();
+    return {out, answeredAt, elapsed: answeredAt - start};
   };
+  return {baseline: run(false), candidate: run(true)};
+};
+const FAMILY_DELAY_MS = 20_000,
+  BEYOND_DEADLINE_MS = 40_000;
+test('families-resolve-in-parallel', harnessed => {
+  harnessed.state.delays = [FAMILY_DELAY_MS, FAMILY_DELAY_MS];
+  const {baseline, candidate} = timed(harnessed);
+  assert.deepEqual(candidate.out, baseline.out);
+  assert.equal(baseline.elapsed, FAMILY_DELAY_MS);
+  assert.equal(candidate.elapsed, FAMILY_DELAY_MS);
+});
+test('overall-deadline-times-out-without-cache', harnessed => {
+  harnessed.state.delays = [BEYOND_DEADLINE_MS, BEYOND_DEADLINE_MS];
+  const {baseline, candidate} = timed(harnessed);
+  assert.deepEqual(candidate.out, baseline.out);
+  assert.equal(candidate.out.error, 'ETIMEOUT');
+  assert.equal(baseline.elapsed, TIMEOUT);
+  assert.equal(candidate.elapsed, TIMEOUT);
+  // Answers arriving after the deadline must not populate either cache.
+  assert.equal(shared.dnsCache.has(HOST), false);
+  assert.equal(harnessed.resolver.cache.has(HOST), false);
+});
+test('overall-deadline-answers-stale-cache', harnessed => {
+  const {state, resolver, both} = harnessed;
+  both();
+  state.now += TTL + 1;
+  state.delays = [BEYOND_DEADLINE_MS, BEYOND_DEADLINE_MS];
+  const {baseline, candidate} = timed(harnessed);
+  assert.deepEqual(candidate.out, baseline.out);
+  assert.deepEqual(candidate.out.addresses, [SAFE]);
+  assert.equal(baseline.elapsed, TIMEOUT);
+  assert.equal(candidate.elapsed, TIMEOUT);
+  // The stale answer is renewed for another TTL from when it was given.
+  assert.equal(resolver.cache.get(HOST).expires, candidate.answeredAt + TTL);
 });
 test('query-timeout-override-reaches-both-resolvers', ({
   state,

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import os from 'node:os';
 
-// Nodemailer captures this object while its ESM graph loads. Scenarios mutate
-// the owned table, never its read-only exports or the production OS reader.
+// Nodemailer captures this object the first time it reads the interface table
+// (lazily since 10.1, no longer on import). Scenarios mutate the owned table,
+// never its read-only exports or the production OS reader.
 export const fixtureInterfaces = {};
 export let shared;
 export let nodemailer;
@@ -29,8 +30,8 @@ export async function bootstrapNodemailer() {
     if (initializing) return initializing;
     initializing = withInterfaceSnapshot(fixtureInterfaces, async () => {
         const namespace = await import('nodemailer/lib/shared');
-        assert.equal(namespace.networkInterfaces, fixtureInterfaces,
-            'bootstrap must run before importing Nodemailer or SMTP scenarios');
+        assert.equal(namespace._readNetworkInterfaces(), fixtureInterfaces,
+            'bootstrap must run before Nodemailer reads the interface table');
         const mailer = await import('nodemailer');
         return {namespace, mailer};
     }).then(loaded => {
