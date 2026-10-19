@@ -721,6 +721,8 @@ namespace MySpeed.Qualification.CleanStop {
         env["MYSPEED_OMITTED_INHERITABLE_HANDLE"]=omitted.ToInt64().ToString();
         env["MYSPEED_OMITTED_FILE_IDENTITY"]=Volume(omitted)+":"+Id(omitted);
         StringBuilder command=new StringBuilder(Quote(exe));foreach(string a in args)command.Append(' ').Append(Quote(a));block=EnvironmentBlock(env);
+        // The candidate inherits the ignore-Ctrl+C flag; a parent that set it would turn a clean stop into a forced one.
+        if(!SetConsoleCtrlHandler(IntPtr.Zero,false))throw Error("SetConsoleCtrlHandler");
         if(!CreateProcess(exe,command,IntPtr.Zero,IntPtr.Zero,true,CREATE_SUSPENDED|CREATE_NEW_CONSOLE|CREATE_UNICODE_ENVIRONMENT|EXTENDED_STARTUPINFO_PRESENT,block,cwd,ref si,out pi))throw Error("CreateProcessW");s.CandidateCreatedSuspended=true;s.PrivateConsoleRequested=true;
         s.process=pi.hProcess;s.pid=pi.dwProcessId;if(!AssignProcessToJobObject(s.job,s.process))throw Error("AssignProcessToJobObject");assigned=true;s.JobAssignedBeforeResume=true;bool member;if(!IsProcessInJob(s.process,s.job,out member)||!member)throw Error("IsProcessInJob");s.InitialJobMembership=true;
         s.creation=Creation(s.process);s.imagePath=Image(s.process);if(!String.Equals(Path.GetFullPath(exe),s.imagePath,StringComparison.OrdinalIgnoreCase))throw new InvalidOperationException("Candidate image differs");s.CandidateIdentityCaptured=true;AssertLaunchBudget(launchWatch,normalRemaining,hardRemaining);
