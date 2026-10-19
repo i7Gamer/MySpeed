@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import {spawnSync} from "node:child_process";
 import {parse} from "yaml";
+import {pinned} from "../helpers/actionPins.js";
 
 const WORKFLOW = ".github/workflows/windows-winsw-offline-canary.yml";
 const SCRIPT = "scripts/qualification/windows-winsw-offline-canary.ps1";
@@ -15,11 +16,11 @@ const SOURCE_EXPRESSION = "${{ github.event_name == 'pull_request' && github.eve
 const WINSW_URL = "https://github.com/winsw/winsw/releases/download/v3.0.0-alpha.11/WinSW-x64.exe";
 const WINSW_SHA256 = "a2daa6a33a9c2b791ae31d9092e7935c339d1e03e89bfb747618ce2f4e819e20";
 const WINSW_BYTES = 18_286_774;
-const CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1";
-const SETUP_BUN = "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6";
+const CHECKOUT = pinned("actions/checkout");
+const SETUP_BUN = pinned("oven-sh/setup-bun");
 const BUN_VERSION = "1.4.2";
-const DOWNLOAD = "actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333";
-const UPLOAD = "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9";
+const DOWNLOAD = pinned("actions/download-artifact");
+const UPLOAD = pinned("actions/upload-artifact");
 const RUN_ID = "123456789";
 const RUN_ATTEMPT = "2";
 const SOURCE_SHA = "a".repeat(40);

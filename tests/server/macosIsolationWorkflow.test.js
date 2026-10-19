@@ -2,6 +2,7 @@ import {describe, it} from "node:test";
 import assert from "node:assert/strict";
 import {parse} from "yaml";
 import {readSource} from "../helpers/source.js";
+import {pinned} from "../helpers/actionPins.js";
 
 const WORKFLOW = ".github/workflows/macos-isolation.yml";
 const EVENT_CHECKOUT = "${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
@@ -35,9 +36,9 @@ describe("candidate-neutral macOS isolation workflow", () => {
     it("pins actions and Node without checking out arbitrary inputs or persisting credentials", () => {
         const job = config().jobs.canary;
         assert.deepEqual(job.steps.filter(({uses}) => uses).map(({uses}) => uses), [
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
-            "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+            pinned("actions/checkout"),
+            pinned("actions/setup-node"),
+            pinned("actions/upload-artifact")
         ]);
         assert.deepEqual(actionStep(job, "actions/checkout").with, {
             ref: EVENT_CHECKOUT, "persist-credentials": false

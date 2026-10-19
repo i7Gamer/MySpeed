@@ -5,6 +5,7 @@ import vm from "node:vm";
 import {parse} from "yaml";
 import {parse as parseJavaScript} from "espree";
 import {readSource} from "../helpers/source.js";
+import {repositoryActionPins} from "../helpers/actionPins.js";
 
 const workflow = (name) => parse(readSource(`.github/workflows/${name}.yml`));
 const all = () => fs.readdirSync(new URL("../../.github/workflows/", import.meta.url))
@@ -131,6 +132,11 @@ it("pins every external action and never persists checkout credentials", () => {
             }
         }
     }
+});
+
+it("pins each external action to one commit across every workflow", () => {
+    // Throws, naming both workflows, when an action drifts to a second SHA.
+    assert.ok(repositoryActionPins().has("actions/checkout"));
 });
 
 it("binary compilation and verification are build-only and read-only", () => {
