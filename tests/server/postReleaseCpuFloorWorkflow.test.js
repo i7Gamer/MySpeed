@@ -4,6 +4,7 @@ import path from "node:path";
 import {describe, it} from "node:test";
 import {fileURLToPath} from "node:url";
 import {parse} from "yaml";
+import {pinned} from "../helpers/actionPins.js";
 
 import {STAGE3_BUDGET_CONSTANTS} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
 import {POST_RELEASE_CPU_FLOOR_CONSTANTS} from "../../scripts/release/post-release-cpu-floor.mjs";
@@ -337,17 +338,17 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
         assert.ok(steps.indexOf(diagnostic) < steps.indexOf(evidence));
     });
 
-    it("uses verified repository-standard commit SHAs for all external actions", () => {
+    it("uses only the allowed external actions, at the repository-standard pins", () => {
         const text = fs.readFileSync(WORKFLOW_PATH, "utf8");
         const workflow = parse(text);
-        const STANDARD_PINS = Object.freeze({
-            "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
-            "actions/setup-node": "949feb2413d6458794dcd2491c4babbbce0c15c1",
-            "oven-sh/setup-bun": "0c5077e51419868618aeaa5fe8019c62421857d6",
-            "actions/upload-artifact": "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
-            "actions/download-artifact": "9000827ccba6bdab643e8b6fd33ac0654aef8333",
-            "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3"
-        });
+        const ALLOWED_ACTIONS = Object.freeze([
+            "actions/checkout",
+            "actions/setup-node",
+            "oven-sh/setup-bun",
+            "actions/upload-artifact",
+            "actions/download-artifact",
+            "actions/github-script"
+        ]);
 
         const actionUses = [];
         for (const job of Object.values(workflow.jobs)) {
@@ -360,10 +361,9 @@ describe("Windows CPU floor post-release v1.6.1 workflow", () => {
 
         assert.ok(actionUses.length > 0, "workflow must contain external action steps");
         for (const use of actionUses) {
-            const [action, sha] = use.split("@");
-            assert.ok(action in STANDARD_PINS, `Unknown action ${action} in workflow`);
-            assert.equal(sha, STANDARD_PINS[action],
-                `Action ${action} does not use standard verified pin ${STANDARD_PINS[action]}, found ${sha}`);
+            const [action] = use.split("@");
+            assert.ok(ALLOWED_ACTIONS.includes(action), `Unknown action ${action} in workflow`);
+            assert.equal(use, pinned(action), `Action ${action} does not use the repository-standard pin`);
         }
     });
 });
