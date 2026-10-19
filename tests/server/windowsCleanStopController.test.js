@@ -633,6 +633,16 @@ describe("Windows clean-stop controller prototype", () => {
         }
     });
 
+    it("launches the candidate with Ctrl+C processing whatever the controller inherited", () => {
+        // A controller started by a parent that ignores Ctrl+C passes that flag to
+        // the candidate, which then never sees the stop and is reported as forced.
+        const launch = fs.readFileSync(SCRIPT, "utf8").match(/public static Session Launch\([\s\S]*?\n {4}\}\r?\n/u)?.[0];
+        assert.ok(launch, "the native Launch method is no longer found");
+        const enable = launch.indexOf("SetConsoleCtrlHandler(IntPtr.Zero,false)");
+        assert.ok(enable >= 0, "Launch must re-enable Ctrl+C processing for the candidate");
+        assert.ok(enable < launch.indexOf("CreateProcess(exe,"), "Ctrl+C processing must be re-enabled before CreateProcess");
+    });
+
     it("pins x64 ABI, handle-list, Job, and Ctrl+C mechanics", () => {
         const source = fs.readFileSync(SCRIPT, "utf8");
         assert.match(source, /launch=\{[\s\S]*?\$environment=\[Collections\.Generic\.Dictionary\[string,string\]\]::new\(\[StringComparer\]::Ordinal\)[\s\S]*?\$environment\.Add\(\$property\.Name,\[string\]\$property\.Value\)[\s\S]*?Session\]::Launch\([^\r\n]+\$environment,/u,
