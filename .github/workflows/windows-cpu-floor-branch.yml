@@ -134,7 +134,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pinned Node runtime
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22.19.0
 
@@ -245,7 +245,7 @@ jobs:
 
       - name: Upload the non-qualifying guest bundle
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ env.BUNDLE_ARTIFACT_NAME }}
           path: ${{ runner.temp }}/myspeed-branch-bundle
@@ -281,7 +281,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up pinned Node runtime
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22.19.0
 
@@ -342,7 +342,7 @@ jobs:
 
       - name: Upload sealed Stage 3 closure
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
           path: ${{ runner.temp }}/myspeed-stage3-closure-${{ steps.seal.outputs.nonce }}
@@ -369,7 +369,7 @@ jobs:
       STAGE3_INSTALLER_CONFIRMATION: ${{ inputs.stage3_installer_confirmation }}
     steps:
       - name: Set up pinned Node runtime
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22.19.0
 
@@ -432,7 +432,7 @@ jobs:
             core.setOutput('id', String(artifact.id));
 
       - name: Download this run's authenticated Windows build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.candidate-metadata.outputs.id }}
           merge-multiple: true
@@ -442,7 +442,7 @@ jobs:
           path: ${{ runner.temp }}/myspeed-branch-candidate-${{ needs.seal.outputs.nonce }}
 
       - name: Download this run's authenticated guest bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.bundle-metadata.outputs.id }}
           merge-multiple: true
@@ -450,7 +450,7 @@ jobs:
           path: ${{ runner.temp }}/myspeed-branch-bundle-${{ needs.seal.outputs.nonce }}
 
       - name: Download sealed Stage 3 closure
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
           path: ${{ runner.temp }}/myspeed-stage3-closure-${{ needs.seal.outputs.nonce }}
@@ -822,7 +822,7 @@ jobs:
 
       - name: Upload non-qualifying diagnostics without candidate binaries
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-cpu-floor-branch-diagnostics-${{ needs.seal.outputs.nonce }}
           path: |
@@ -835,7 +835,7 @@ jobs:
 
       - name: Upload non-qualifying evidence
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: windows-cpu-floor-branch-evidence-${{ needs.seal.outputs.nonce }}
           path: |

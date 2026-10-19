@@ -40,7 +40,7 @@ jobs:
       # Both artifacts carry a MySpeed.exe, so everything below - the WiX
       # source, the service configuration, every GUID - is identical either way.
       - name: Download Windows server binary
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ${{ matrix.artifact }}
           path: ./installer
@@ -429,7 +429,7 @@ jobs:
             Set-Content -LiteralPath 'installer/msi-build-provenance.json.sha256' -Encoding ascii
 
       - name: Upload verified installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-msi-${{ matrix.asset_name }}
           path: |
