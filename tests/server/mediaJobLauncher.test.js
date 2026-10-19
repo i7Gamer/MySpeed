@@ -1,6 +1,6 @@
 import {afterEach, describe, it} from "node:test";
 import assert from "node:assert/strict";
-import {spawnSync} from "node:child_process";
+import {spawn, spawnSync} from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,6 +13,20 @@ describe("Windows PowerShell 5.1/C# kill-on-close launcher", {skip: process.plat
         assert.equal(result.status, 0, result.stderr);
         assert.equal(result.stdout, "imported");
         assert.doesNotMatch(fs.readFileSync(SCRIPT, "utf8"), /curl|https?:\/\//i);
+    });
+
+    it("counts a survivor by its command line, not by a PID another process reused", () => {
+        const root = makeRoot();
+        // The test runner is alive but was never started from this root.
+        assert.equal(processSurvives(process.pid, root), false);
+        const alive = path.join(root, "alive.mjs");
+        fs.writeFileSync(alive, "setInterval(() => {}, 1000);\n");
+        const child = spawn(process.execPath, [alive], {stdio: "ignore", windowsHide: true});
+        try {
+            assert.equal(processSurvives(child.pid, root), true);
+        } finally {
+            child.kill();
+        }
     });
 
     it("starts the supplied absolute application suspended, assigns it before resume, and preserves Windows argv", () => {
@@ -49,7 +63,7 @@ process.exit(7);
         });
         assert.ok(Number.isSafeInteger(record.processId) && record.processId > 0);
         assert.deepEqual(JSON.parse(fs.readFileSync(output, "utf8")), tricky);
-        assert.equal(processExists(Number(fs.readFileSync(descendantPidFile, "utf8"))), false,
+        assert.equal(processSurvives(Number(fs.readFileSync(descendantPidFile, "utf8")), root), false,
             "a descendant survived after the primary exited normally");
     });
 
@@ -76,9 +90,11 @@ setInterval(() => {}, 1000);
         const record = lastJson(invocation.stdout);
         assert.equal(record.timedOut, true);
         assert.equal(record.processTreeExitProven, true);
+        assert.ok(fs.existsSync(pidFile),
+            `the child did not record its PIDs within ${TIMEOUT_DURATION_MS} ms, so descendant exit is unproven`);
         const pids = JSON.parse(fs.readFileSync(pidFile, "utf8"));
         assert.equal(pids.length, 2);
-        for (const pid of pids) assert.equal(processExists(pid), false, `PID ${pid} survived job disposal`);
+        for (const pid of pids) assert.equal(processSurvives(pid, root), false, `PID ${pid} survived job disposal`);
     });
 
     it("terminates only the still-suspended child when assignment fails and never resumes it", () => {
@@ -228,11 +244,20 @@ function runPowerShell(command, timeout = POWERSHELL_TIMEOUT_MS) {
     });
 }
 
-function processExists(pid) {
-    const result = spawnSync("tasklist.exe", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], {
-        encoding: "utf8", windowsHide: true
-    });
-    return result.status === 0 && result.stdout.includes(`"${pid}"`);
+/**
+ * Whether a process this test started from `root` is still running.
+ *
+ * A PID alone is not enough: Windows reuses them quickly, and during a full
+ * run an unrelated process that took a dead child's PID read as a survivor.
+ * Every process a scenario starts names a script under its own root, so the
+ * command line tells ours apart.
+ */
+function processSurvives(pid, root) {
+    assert.ok(Number.isSafeInteger(pid) && pid > 0, `invalid PID ${pid}`);
+    const result = runPowerShell(
+        `$p=Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}';if($p){[Console]::Out.Write($p.CommandLine)}`);
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.toLowerCase().includes(root.toLowerCase());
 }
 
 function lastJson(output) {
@@ -251,7 +276,10 @@ const POWERSHELL = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.e
 const POWERSHELL_TIMEOUT_MS = 10_000;
 const ACTUAL_TEST_TIMEOUT_MS = 15_000;
 const NORMAL_DURATION_MS = 5_000;
-const TIMEOUT_DURATION_MS = 1_000;
+// The hanging child must start Node, spawn its descendant and record both PIDs
+// before the launcher kills it. One second lost that race under a loaded full
+// run; give it the same budget the normal-completion case already relies on.
+const TIMEOUT_DURATION_MS = NORMAL_DURATION_MS;
 const WALL_DEADLINE_OFFSET_MS = 10_000;
 const MAX_OUTPUT_BYTES = 1_048_576;
 const FAKE_LATE_CLOCK_MS = 10_000;
