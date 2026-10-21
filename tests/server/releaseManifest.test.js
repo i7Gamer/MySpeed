@@ -17,6 +17,9 @@ import {buildSandboxProfile} from "../../scripts/qualification/macos-isolation.m
 import {buildMacosRuntimeProfile, buildMacosSeedProfile, createMacosRuntimeIsolationRecord}
     from "../../scripts/qualification/verify-macos-standalone.mjs";
 import {readSource} from "../helpers/source.js";
+import {CPU_FLOOR_ARTIFACTS} from "../../scripts/release/windows-cpu-floor-evidence.mjs";
+import {STAGE3_CONSTANTS} from "../../scripts/qualification/linux-windows-cpu-floor-stage3.mjs";
+import {rewriteCpuFloorInspection, writeCpuFloorEvidence} from "../helpers/windows-cpu-floor-evidence-fixture.mjs";
 
 const SHA = "a".repeat(40);
 const VERSION = "1.6.1";
@@ -26,7 +29,13 @@ const RUN_ATTEMPT = 1;
 const REPOSITORY = "i7Gamer/MySpeed";
 const ARCHIVE_DIGEST = `sha256:${"b".repeat(64)}`;
 const SUCCESS_EVIDENCE = {tests: "success", binaries: "success", msi: "success",
-    docker: "success", dockerIndex: "success", ice: "success"};
+    docker: "success", dockerIndex: "success", ice: "success",
+    windowsCpuReadiness: "skipped", windowsCpuFloor: "skipped"};
+const CPU_FLOOR_EVIDENCE = {...SUCCESS_EVIDENCE, windowsCpuReadiness: "success", windowsCpuFloor: "success"};
+const BASE_ARTIFACT_COUNT = 14;
+const GATED_VERSION = "1.7.2";
+const GATED_WINDOWS_STAMP = "1.7.2.4321";
+const CPU_FLOOR_BLOCKER = "Windows native CPU-floor verification";
 const FULL_MODE = "full";
 const RESET_MODE = "listener-free-reset";
 const REDUCED_SCOPE = "owner-approved-reduced-v1.6.1";
@@ -416,7 +425,8 @@ describe("qualification manifest", () => {
         assert.ok(manifest.runtimeVerification.windows.every(({versionEvidenceSha256}) =>
             /^[a-f0-9]{64}$/.test(versionEvidenceSha256)));
         assert.equal(manifest.actionsArtifacts.length, artifactMetadata.artifacts.length);
-        assert.equal(manifest.actionsArtifacts.length, 14);
+        assert.equal(manifest.actionsArtifacts.length, BASE_ARTIFACT_COUNT);
+        assert.deepEqual(manifest.evidence, SUCCESS_EVIDENCE);
         assert.equal(manifest.releaseAssets.length, 13);
         assert.equal(manifest.containers.length, 2);
         assert.ok(manifest.actionsArtifacts.every(({id, archiveDigest}) => id > 0 && archiveDigest === ARCHIVE_DIGEST));
@@ -448,6 +458,178 @@ describe("qualification manifest", () => {
             writeCheckedFile(output, "qualification-manifest.json", JSON.stringify(manifest));
             await assert.doesNotReject(readSealedQualificationManifest(output));
             await assert.rejects(validateQualificationManifest({...options(), manifest,
+                summaryDirectory: output}), /manifest.*mismatch/i);
+        }
+    });
+
+    const rewriteVersionBoundEvidence = (version, windowsStamp) => {
+        for (const artifact of ["MySpeed-windows-x64.exe", "MySpeed-windows-x64-baseline.exe"])
+            rewriteCheckedJson(path.join(root, artifact), "windows-version.json", value => {
+                value.fileVersion = value.productVersion = value.windowsStamp = windowsStamp;
+            });
+        for (const artifact of ["release-msi-MySpeed-installer.msi", "release-msi-MySpeed-installer-baseline.msi"])
+            rewriteCheckedJson(path.join(root, artifact), "msi-build-provenance.json", value => {
+                value.version = version;
+                value.windowsStamp = windowsStamp;
+            });
+        for (const file of [path.join(root, "qualified-oci-amd64", "oci-provenance.json"),
+            path.join(root, "qualified-oci-arm64", "oci-provenance.json"),
+            path.join(root, "qualified-oci-index", "oci-index-provenance.json")]) {
+            const value = JSON.parse(fs.readFileSync(file, "utf8"));
+            value.version = version;
+            fs.writeFileSync(file, JSON.stringify(value));
+        }
+    };
+
+    // The two Windows legs are separate jobs of one recipe; the gate covers both only when they match.
+    const makeWindowsLegsIdentical = () => {
+        const baseline = path.join(root, "MySpeed-windows-x64-baseline.exe", "MySpeed.exe");
+        const x64Directory = path.join(root, "MySpeed-windows-x64.exe");
+        fs.copyFileSync(baseline, path.join(x64Directory, "MySpeed.exe"));
+        fs.copyFileSync(`${baseline}.sha256`, path.join(x64Directory, "MySpeed.exe.sha256"));
+        const executableSha256 = digest(fs.readFileSync(baseline));
+        rewriteCheckedJson(x64Directory, "qualification-summary.json", value => {
+            value.artifactSha256 = executableSha256;
+        });
+        rewriteCheckedJson(x64Directory, "windows-version.json", value => {
+            value.artifactSha256 = executableSha256;
+        });
+        rewriteCheckedJson(path.join(root, "release-msi-MySpeed-installer.msi"), "msi-build-provenance.json", value => {
+            value.binarySha256 = executableSha256;
+        });
+        return {executableSha256, executableBytes: fs.statSync(baseline).size};
+    };
+
+    const cpuFloorMetadata = () => ({artifacts: [...artifactMetadata.artifacts,
+        ...CPU_FLOOR_ARTIFACTS.map((name, index) => ({id: BASE_ARTIFACT_COUNT + index + 1, name,
+            digest: ARCHIVE_DIGEST, expired: false, size_in_bytes: 1024}))]});
+
+    const normalizedArtifact = (metadata, name) => {
+        const {id, digest: archiveDigest, size_in_bytes: archiveSize} = metadata.artifacts
+            .find(artifact => artifact.name === name);
+        return {id, archiveDigest, archiveSize};
+    };
+
+    const prepareCpuFloorRun = ({version = GATED_VERSION, windowsStamp = GATED_WINDOWS_STAMP} = {}) => {
+        if (version !== VERSION) rewriteVersionBoundEvidence(version, windowsStamp);
+        const executable = makeWindowsLegsIdentical();
+        const metadata = cpuFloorMetadata();
+        writeCpuFloorEvidence(path.join(root, "qualified-windows-cpu-floor"), {repository: REPOSITORY,
+            sourceSha: SHA, runId: RUN_ID, runAttempt: RUN_ATTEMPT, ...executable,
+            candidateArtifact: normalizedArtifact(metadata, "MySpeed-windows-x64-baseline.exe"),
+            probeArtifact: normalizedArtifact(metadata, "windows-cpu-readiness-evidence")});
+        return {...executable, metadata,
+            options: (overrides = {}) => options({version, windowsStamp, artifactMetadata: metadata,
+                evidence: CPU_FLOOR_EVIDENCE, ...overrides})};
+    };
+
+    it("records the passed CPU-floor check and clears its blocker for a gated release", async () => {
+        const run = prepareCpuFloorRun();
+        const manifest = await createQualificationManifest(run.options());
+        assert.equal(manifest.promotion.eligible, true);
+        assert.deepEqual(manifest.promotion.blockers, []);
+        assert.deepEqual(manifest.promotion.scope, {id: GATED_SCOPE, deferredChecks: GATED_DEFERRED_CHECKS});
+        assert.deepEqual(manifest.evidence, CPU_FLOOR_EVIDENCE);
+        const cpuFloor = manifest.promotion.evidence.windowsCpuFloor;
+        assert.equal(cpuFloor.status, "passed");
+        assert.equal(cpuFloor.executableSha256, run.executableSha256);
+        assert.deepEqual(manifest.releaseAssets.filter(({name}) => name.startsWith("MySpeed-windows-"))
+            .map(({sha256}) => sha256), [run.executableSha256, run.executableSha256]);
+        assert.deepEqual(cpuFloor.guestCpu, {model: STAGE3_CONSTANTS.CPU_MODEL,
+            vector: STAGE3_CONSTANTS.CPU_VECTOR, sse42: true, popcnt: true, avx: false, avx2: false, osxsave: false});
+        assert.deepEqual([cpuFloor.sourceSha, cpuFloor.runId, cpuFloor.runAttempt, cpuFloor.repository],
+            [SHA, RUN_ID, RUN_ATTEMPT, REPOSITORY]);
+        assert.equal(manifest.promotion.evidence.windowsNative, null);
+        assert.equal(manifest.promotion.evidence.msiLifecycle, null);
+        assert.equal(manifest.actionsArtifacts.length, BASE_ARTIFACT_COUNT + CPU_FLOOR_ARTIFACTS.length);
+        await assert.doesNotReject(validateQualificationManifest({...run.options(), manifest,
+            summaryDirectory: output}));
+    });
+
+    it("keeps a gated release ineligible when its CPU-floor check did not run", async () => {
+        rewriteVersionBoundEvidence(GATED_VERSION, GATED_WINDOWS_STAMP);
+        const manifest = await createQualificationManifest(options({version: GATED_VERSION,
+            windowsStamp: GATED_WINDOWS_STAMP}));
+        assert.equal(manifest.promotion.eligible, false);
+        assert.deepEqual(manifest.promotion.blockers, [CPU_FLOOR_BLOCKER]);
+        assert.deepEqual(manifest.promotion.scope, {id: GATED_SCOPE, deferredChecks: GATED_DEFERRED_CHECKS});
+        assert.equal(manifest.promotion.evidence.windowsCpuFloor, null);
+        assert.equal(manifest.actionsArtifacts.length, BASE_ARTIFACT_COUNT);
+    });
+
+    it("refuses to seal a run whose CPU-floor jobs failed, were cancelled or are inconsistent", async () => {
+        const run = prepareCpuFloorRun();
+        for (const evidence of [
+            {...CPU_FLOOR_EVIDENCE, windowsCpuFloor: "failure"},
+            {...CPU_FLOOR_EVIDENCE, windowsCpuFloor: "cancelled"},
+            {...CPU_FLOOR_EVIDENCE, windowsCpuReadiness: "failure"},
+            {...CPU_FLOOR_EVIDENCE, windowsCpuReadiness: "skipped"},
+            {...CPU_FLOOR_EVIDENCE, windowsCpuFloor: ""},
+            (({windowsCpuFloor, ...rest}) => rest)(CPU_FLOOR_EVIDENCE),
+            (({windowsCpuReadiness, ...rest}) => rest)(CPU_FLOOR_EVIDENCE)
+        ]) await assert.rejects(createQualificationManifest(run.options({evidence})),
+            /evidence windowsCpu(?:Floor|Readiness)/, JSON.stringify(evidence));
+    });
+
+    it("requires exactly the CPU-floor artifact set the job results promise", async () => {
+        const run = prepareCpuFloorRun();
+        await assert.rejects(createQualificationManifest(run.options({artifactMetadata})),
+            /artifact set mismatch/i);
+        await assert.rejects(createQualificationManifest(run.options({evidence: SUCCESS_EVIDENCE})),
+            /artifact set mismatch/i);
+        const partial = {artifacts: run.metadata.artifacts.filter(({name}) => name !== "windows-cpu-floor-evidence")};
+        await assert.rejects(createQualificationManifest(run.options({artifactMetadata: partial})),
+            /artifact set mismatch/i);
+        const oversize = {artifacts: run.metadata.artifacts.map(artifact => artifact.name === "qualified-windows-cpu-floor"
+            ? {...artifact, size_in_bytes: 10 * 1024 * 1024 + 1} : artifact)};
+        await assert.rejects(createQualificationManifest(run.options({artifactMetadata: oversize})),
+            /artifact size/i);
+    });
+
+    it("refuses a passed CPU-floor record whose evidence does not bind both Windows assets", async () => {
+        const run = prepareCpuFloorRun();
+        const x64 = path.join(root, "MySpeed-windows-x64.exe");
+        writeCheckedFile(x64, "MySpeed.exe", "different x64 bytes");
+        const x64Sha256 = digest(Buffer.from("different x64 bytes"));
+        rewriteCheckedJson(x64, "qualification-summary.json", value => { value.artifactSha256 = x64Sha256; });
+        rewriteCheckedJson(x64, "windows-version.json", value => { value.artifactSha256 = x64Sha256; });
+        rewriteCheckedJson(path.join(root, "release-msi-MySpeed-installer.msi"), "msi-build-provenance.json",
+            value => { value.binarySha256 = x64Sha256; });
+        await assert.rejects(createQualificationManifest(run.options()), /CPU-floor/);
+    });
+
+    it("refuses a gated release whose retained guest CPU had AVX", async () => {
+        const run = prepareCpuFloorRun();
+        rewriteCpuFloorInspection(path.join(root, "qualified-windows-cpu-floor"), value => {
+            value.guest.cpu.avx = true;
+        });
+        await assert.rejects(createQualificationManifest(run.options()), /CPU-floor/);
+    });
+
+    it("never records CPU-floor evidence for a legacy release even when the check ran", async () => {
+        const run = prepareCpuFloorRun({version: VERSION, windowsStamp: WINDOWS_STAMP});
+        const manifest = await createQualificationManifest(run.options());
+        assert.equal(manifest.promotion.eligible, true);
+        assert.deepEqual(manifest.promotion.scope, {id: REDUCED_SCOPE, deferredChecks: DEFERRED_WINDOWS_CHECKS});
+        assert.equal(manifest.promotion.evidence.windowsCpuFloor, null);
+        assert.equal(manifest.actionsArtifacts.length, BASE_ARTIFACT_COUNT + CPU_FLOOR_ARTIFACTS.length);
+    });
+
+    it("reconstructs the gated CPU-floor claim instead of trusting a resealed manifest", async () => {
+        const run = prepareCpuFloorRun();
+        const qualified = await createQualificationManifest(run.options());
+        for (const mutate of [
+            value => { value.promotion.evidence.windowsCpuFloor = null; },
+            value => { value.promotion.evidence.windowsCpuFloor.guestCpu.avx = true; },
+            value => { value.promotion.evidence.windowsCpuFloor.executableSha256 = "0".repeat(64); },
+            value => { value.promotion.scope.deferredChecks.push(CPU_FLOOR_BLOCKER); },
+            value => { value.promotion.scope.id = REDUCED_SCOPE; },
+            value => { value.evidence.windowsCpuFloor = "skipped"; }
+        ]) {
+            const manifest = structuredClone(qualified);
+            mutate(manifest);
+            writeCheckedFile(output, "qualification-manifest.json", JSON.stringify(manifest));
+            await assert.rejects(validateQualificationManifest({...run.options(), manifest,
                 summaryDirectory: output}), /manifest.*mismatch/i);
         }
     });
