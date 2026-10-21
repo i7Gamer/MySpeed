@@ -16,6 +16,8 @@ import {
     COMMAND_TIMEOUT_MILLISECONDS,
     SNAPSHOT_DOWNLOAD_ATTEMPTS,
     SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS,
+    ARCHIVE_FALLBACK_ATTEMPTS,
+    UBUNTU_ARCHIVE_FALLBACK_BASE_URL,
     downloadFromSnapshot,
     DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS,
     DIAGNOSTIC_CLEANUP_MINUTES,
@@ -688,10 +690,11 @@ describe("hosted Stage 2 native adapter preparation", () => {
         const request = {url: "https://snapshot.ubuntu.com/ubuntu/x/pool/a.deb", path: "/work/a.deb",
             bytes: "10", sha256: "a".repeat(64)};
         const harness = failures => {
-            const calls = {downloads: 0, waits: [], removed: []};
+            const calls = {downloads: 0, urls: [], waits: [], removed: []};
             const io = {
                 downloadPinned: async value => {
                     calls.downloads += 1;
+                    calls.urls.push(value.url);
                     const failure = failures[calls.downloads - 1];
                     if (failure) throw failure;
                     return {path: value.path, bytes: value.bytes, sha256: value.sha256};
@@ -732,7 +735,55 @@ describe("hosted Stage 2 native adapter preparation", () => {
                 assert.equal(calls.downloads, 1);
                 assert.deepEqual(calls.waits, []);
             });
+
+            it(`never falls back to the archive after an integrity failure: ${integrity}`, async () => {
+                const {io, calls} = harness([new Error(integrity)]);
+                await assert.rejects(downloadFromSnapshot(io, request, {fallbackUrl}), new RegExp(integrity, "u"));
+                assert.deepEqual(calls.urls, [request.url]);
+            });
         }
+
+        const fallbackUrl = `${UBUNTU_ARCHIVE_FALLBACK_BASE_URL}pool/a.deb`;
+        const serverFailure = () => new Error("download response identity is invalid");
+
+        it("falls back to the archive with the same pins once the snapshot attempts are spent", async () => {
+            const {io, calls} = harness(Array.from({length: SNAPSHOT_DOWNLOAD_ATTEMPTS}, serverFailure));
+            assert.deepEqual(await downloadFromSnapshot(io, request, {fallbackUrl}),
+                {path: request.path, bytes: request.bytes, sha256: request.sha256});
+            assert.deepEqual(calls.urls, [...Array(SNAPSHOT_DOWNLOAD_ATTEMPTS).fill(request.url), fallbackUrl]);
+            assert.equal(calls.waits.length, SNAPSHOT_DOWNLOAD_ATTEMPTS);
+        });
+
+        it("bounds the archive fallback too and names both sources when it gives up", async () => {
+            const total = SNAPSHOT_DOWNLOAD_ATTEMPTS + ARCHIVE_FALLBACK_ATTEMPTS;
+            const {io, calls} = harness(Array.from({length: total}, serverFailure));
+            await assert.rejects(downloadFromSnapshot(io, request, {fallbackUrl}), error => {
+                assert.equal(error.message, `snapshot download of ${request.url} failed after ` +
+                    `${SNAPSHOT_DOWNLOAD_ATTEMPTS} attempts and its archive fallback ${fallbackUrl} after ` +
+                    `${ARCHIVE_FALLBACK_ATTEMPTS} attempts: download response identity is invalid`);
+                return true;
+            });
+            assert.equal(calls.downloads, total);
+            assert.equal(calls.waits.length, total - 1);
+        });
+
+        it("points package downloads, and only package downloads, at the archive as a fallback", async () => {
+            const record = TOP_LEVEL_PACKAGE_PINS[0];
+            const urls = [];
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                downloadPinned: async value => {
+                    urls.push(value.url);
+                    if (value.url.startsWith(STAGE2_PROVENANCE.ubuntuSnapshot.baseUrl)) throw serverFailure();
+                    return {path: value.path, bytes: value.bytes, sha256: value.sha256};
+                },
+                pathExists: () => false, removeOwned: () => undefined, wait: async () => undefined
+            }});
+            const acquired = await adapter.acquirePackages({paths: paths(),
+                packageClosure: {packages: [{...record, dependsOn: []}]}});
+            assert.equal(acquired.packages[0].sha256, record.sha256);
+            assert.equal(urls.at(-1), `${UBUNTU_ARCHIVE_FALLBACK_BASE_URL}${record.filename}`);
+            assert.equal(UBUNTU_ARCHIVE_FALLBACK_BASE_URL.startsWith("https://"), true);
+        });
     });
 
 
