@@ -41,6 +41,17 @@ const TIMEOUT = "/usr/bin/timeout";
 const STAT = "/usr/bin/stat";
 const UBUNTU_KEYRING = "/usr/share/keyrings/ubuntu-archive-keyring.gpg";
 export const COMMAND_TIMEOUT_MILLISECONDS = 30_000;
+// The snapshot update fetches about 20 MB of signed indexes from snapshot.ubuntu.com, which
+// took 28 s from a test host in October 2026 and timed out at 30 s on hosted runners. It
+// gets its own budget, apt's own per-download retries and one more bounded attempt. A
+// retry is safe because apt promotes only verified lists and collectAptClosure re-verifies
+// InRelease and every index hash; the worst case adds about four minutes at the very start
+// of a sequence whose outer timeout already bounds it.
+export const APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS = 120_000;
+export const APT_SNAPSHOT_UPDATE_ATTEMPTS = 2;
+export const APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS = 10_000;
+export const APT_ACQUIRE_RETRIES = 3;
+export const APT_ACQUIRE_TIMEOUT_SECONDS = 30;
 const PRIVILEGED_COMMAND_TIMEOUT_SECONDS = 25;
 const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
@@ -114,6 +125,28 @@ function assertSuccessful(observation, label) {
         observation.process.cleanupProven !== true || observation.process.errorObserved !== false)
         throw new Error(`${label} did not complete safely`);
     return observation;
+}
+
+/**
+ * The isolated snapshot update, retried a bounded number of times. Only a failed or timed-out
+ * update whose process tree was proven gone is retried: a child that might still be running
+ * would race the next attempt over the same lists directory.
+ */
+async function runSnapshotUpdate(io, vectors) {
+    for (let attempt = 1; ; attempt++) {
+        const observation = await io.runOwned(vectors.update.command, vectors.update.argv,
+            {timeoutMs: APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS, env: vectors.aptEnvironment});
+        try {
+            return assertSuccessful(observation, "apt snapshot update");
+        } catch (error) {
+            const cleanedUp = observation?.process?.cleanupProven === true &&
+                observation.process.errorObserved === false;
+            if (!cleanedUp) throw error;
+            if (attempt >= APT_SNAPSHOT_UPDATE_ATTEMPTS)
+                throw new Error(`apt snapshot update did not complete safely after ${attempt} attempts`);
+            await io.wait(APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS);
+        }
+    }
 }
 
 function appendBounded(chunks, chunk, state, maximumBytes) {
@@ -284,7 +317,9 @@ export function buildIsolatedAptVectors(pathsValue) {
     return Object.freeze({aptRoot, aptConfig, aptConfigBytes, aptEnvironment, sourceList, status, lists, archives, common,
         sourcesBytes,
         emptyStatusBytes: Buffer.alloc(0),
-        update: {command: APT_GET, argv: [...common, "update"]},
+        update: {command: APT_GET, argv: [...common, "-o", `Acquire::Retries=${APT_ACQUIRE_RETRIES}`, "-o",
+            `Acquire::http::Timeout=${APT_ACQUIRE_TIMEOUT_SECONDS}`, "-o",
+            `Acquire::https::Timeout=${APT_ACQUIRE_TIMEOUT_SECONDS}`, "update"]},
         resolve: {command: APT_GET, argv: [...common, "--simulate", "--no-install-recommends", "install", ...pins]},
         printUris: {command: APT_GET, argv: [...common, "--print-uris", "--yes", "--no-install-recommends",
             "--download-only", "install", ...pins]}});
@@ -3000,8 +3035,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             io.writeExclusive(vectors.aptConfig, vectors.aptConfigBytes);
             io.writeExclusive(vectors.sourceList, vectors.sourcesBytes); io.writeExclusive(vectors.status,
                 vectors.emptyStatusBytes);
-            assertSuccessful(await io.runOwned(vectors.update.command, vectors.update.argv,
-                {timeoutMs: COMMAND_TIMEOUT_MILLISECONDS, env: vectors.aptEnvironment}), "apt snapshot update");
+            await runSnapshotUpdate(io, vectors);
             const resolver = io.resolveAptClosure ?? (request => collectAptClosure(io, request));
             return await resolver({context, paths: input.paths, vectors, gpgv: GPGV,
                 keyring: UBUNTU_KEYRING, pins: TOP_LEVEL_PACKAGE_PINS});

@@ -8,6 +8,12 @@ import {describe, it} from "node:test";
 import {PassThrough} from "node:stream";
 
 import {
+    APT_ACQUIRE_RETRIES,
+    APT_ACQUIRE_TIMEOUT_SECONDS,
+    APT_SNAPSHOT_UPDATE_ATTEMPTS,
+    APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS,
+    APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS,
+    COMMAND_TIMEOUT_MILLISECONDS,
     DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS,
     DIAGNOSTIC_CLEANUP_MINUTES,
     DIAGNOSTIC_EXECUTION_MINUTES,
@@ -573,6 +579,78 @@ describe("hosted Stage 2 native adapter preparation", () => {
         assert.equal(vectors.common.includes("APT::Update::Post-Invoke-Success::="), true);
         assert.deepEqual(vectors.resolve.argv.slice(-TOP_LEVEL_PACKAGE_PINS.length),
             TOP_LEVEL_PACKAGE_PINS.map(value => `${value.name}:${value.architecture}=${value.version}`));
+    });
+
+    it("bounds and retries only the snapshot update's own downloads", () => {
+        const vectors = buildIsolatedAptVectors(paths());
+        const acquire = [`Acquire::Retries=${APT_ACQUIRE_RETRIES}`,
+            `Acquire::http::Timeout=${APT_ACQUIRE_TIMEOUT_SECONDS}`,
+            `Acquire::https::Timeout=${APT_ACQUIRE_TIMEOUT_SECONDS}`];
+        for (const option of acquire) {
+            assert.equal(vectors.update.argv.includes(option), true, option);
+            assert.equal(vectors.update.argv[vectors.update.argv.indexOf(option) - 1], "-o", option);
+            assert.equal(vectors.resolve.argv.includes(option), false, option);
+            assert.equal(vectors.printUris.argv.includes(option), false, option);
+        }
+        assert.equal(vectors.update.argv.at(-1), "update");
+        // The snapshot update gets a budget of its own; every other command keeps the shared one.
+        assert.equal(APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS > COMMAND_TIMEOUT_MILLISECONDS, true);
+    });
+
+    describe("snapshot update retries", () => {
+        const failedProcess = {...okProcess, exitCode: null, signal: "SIGTERM", timedOut: true};
+        const updateAdapter = (outcomes) => {
+            const calls = {updates: [], waits: [], resolved: 0};
+            const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                mkdirExclusive: () => undefined,
+                writeExclusive: () => undefined,
+                runOwned: async (command, argv, options) => {
+                    assert.equal(argv.at(-1), "update");
+                    calls.updates.push(options);
+                    return {process: outcomes[calls.updates.length - 1], stdout: Buffer.alloc(0),
+                        stderr: Buffer.alloc(0)};
+                },
+                wait: async milliseconds => { calls.waits.push(milliseconds); },
+                resolveAptClosure: async () => { calls.resolved += 1; return {packages: []}; }
+            }});
+            return {adapter, calls};
+        };
+
+        it("gives the update its own timeout and does not retry a success", async () => {
+            const {adapter, calls} = updateAdapter([okProcess]);
+            assert.deepEqual(await adapter.resolveSignedPackageClosure({paths: paths()}), {packages: []});
+            assert.equal(calls.updates.length, 1);
+            assert.equal(calls.updates[0].timeoutMs, APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS);
+            assert.deepEqual(calls.waits, []);
+            assert.equal(calls.resolved, 1);
+        });
+
+        it("retries a timed-out update after the fixed delay and resolves on the next attempt", async () => {
+            const {adapter, calls} = updateAdapter([failedProcess, okProcess]);
+            assert.deepEqual(await adapter.resolveSignedPackageClosure({paths: paths()}), {packages: []});
+            assert.equal(calls.updates.length, 2);
+            assert.deepEqual(calls.waits, [APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS]);
+            assert.equal(calls.resolved, 1);
+        });
+
+        it("retries a failed exit, stops after the bounded attempts and names them", async () => {
+            const failedExit = {...okProcess, exitCode: 100};
+            const {adapter, calls} = updateAdapter(Array(APT_SNAPSHOT_UPDATE_ATTEMPTS).fill(failedExit));
+            await assert.rejects(adapter.resolveSignedPackageClosure({paths: paths()}),
+                new RegExp(`apt snapshot update did not complete safely after ${APT_SNAPSHOT_UPDATE_ATTEMPTS} attempts`, "u"));
+            assert.equal(calls.updates.length, APT_SNAPSHOT_UPDATE_ATTEMPTS);
+            assert.equal(calls.waits.length, APT_SNAPSHOT_UPDATE_ATTEMPTS - 1);
+            assert.equal(calls.resolved, 0);
+        });
+
+        it("does not retry an update whose child could not be proven cleaned up", async () => {
+            const leaked = {...failedProcess, cleanupProven: false};
+            const {adapter, calls} = updateAdapter([leaked, okProcess]);
+            await assert.rejects(adapter.resolveSignedPackageClosure({paths: paths()}),
+                /apt snapshot update did not complete safely/u);
+            assert.equal(calls.updates.length, 1);
+            assert.equal(calls.resolved, 0);
+        });
     });
 
     it("selects the complete signed package index set across valid zero-byte checksum rows", () => {
