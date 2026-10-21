@@ -116,8 +116,11 @@ const assertExactKeys = (value, keys, label) => {
         fail(`${label} has an unexpected shape`);
 };
 
+// Plain decimal only: Number() alone also reads " 5", "0x10" and "1e3" as integers.
+const POSITIVE_DECIMAL = /^[1-9][0-9]*$/u;
+
 const positiveInteger = (value, label) => {
-    const number = Number(value);
+    const number = typeof value === "number" || POSITIVE_DECIMAL.test(String(value)) ? Number(value) : NaN;
     if (!Number.isSafeInteger(number) || number <= 0) fail(`${label} is invalid`);
     return number;
 };

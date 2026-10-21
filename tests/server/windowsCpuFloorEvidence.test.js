@@ -96,6 +96,10 @@ describe("Windows CPU-floor release evidence", () => {
         ["invalid source SHA", {sourceSha: "A".repeat(40)}],
         ["non-positive run ID", {runId: 0}],
         ["non-integer run attempt", {runAttempt: 1.5}],
+        // Each of these reads as the right run under Number() and must still be refused.
+        ["a padded run ID string", {runId: ` ${RUN_ID}`}],
+        ["a hexadecimal run ID string", {runId: `0x${RUN_ID.toString(16)}`}],
+        ["an exponent run attempt string", {runAttempt: `${RUN_ATTEMPT}e0`}],
         ["invalid repository", {repository: "not a repository"}],
         ["a stale source SHA", {sourceSha: OTHER_SHA}],
         ["a different run", {runId: RUN_ID + 1}],

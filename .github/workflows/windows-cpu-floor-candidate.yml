@@ -356,7 +356,7 @@ jobs:
               * option: a re-run has to rebuild, which is also what a partial re-run cannot seal.
               */
             if (process.env.GITHUB_RUN_ATTEMPT !== '1')
-              throw new Error('Branch CPU-floor evidence is only bound on the first attempt; dispatch a fresh run');
+              throw new Error('CPU-floor evidence is only bound on the first attempt; dispatch a fresh run');
             const {data} = await github.rest.actions.listWorkflowRunArtifacts({owner, repo,
               run_id: Number(process.env.GITHUB_RUN_ID), per_page: 100});
             const matching = data.artifacts.filter(value => value.name === wanted);
