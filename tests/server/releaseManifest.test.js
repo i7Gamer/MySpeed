@@ -30,7 +30,7 @@ const SUCCESS_EVIDENCE = {tests: "success", binaries: "success", msi: "success",
 const FULL_MODE = "full";
 const RESET_MODE = "listener-free-reset";
 const REDUCED_SCOPE = "owner-approved-reduced-v1.6.1";
-const REDUCED_RELEASE_VERSIONS = ["1.6.1", "1.7.0"];
+const REDUCED_RELEASE_VERSIONS = ["1.6.1", "1.7.0", "1.7.1"];
 const DEFERRED_WINDOWS_CHECKS = [
     "Windows native full verification with enforced outbound denial",
     "Windows native CPU-floor verification",
@@ -203,7 +203,7 @@ describe("release qualification scope", () => {
         const approved = {repository: REPOSITORY, version: "1.7.0"};
         for (const input of [
             {...approved, version: "1.6.2"}, {...approved, version: "1.6.1-beta.1"},
-            {...approved, version: "1.6.0"}, {...approved, version: "1.7.1"},
+            {...approved, version: "1.6.0"}, {...approved, version: "1.7.2"},
             {...approved, version: "1.7"}, {...approved, version: "1.7.0.0"},
             {...approved, version: "01.7.0"}, {...approved, version: "v1.7.0"},
             {...approved, version: "1.7.0-beta.1"}, {...approved, version: "1.7.0\n"},

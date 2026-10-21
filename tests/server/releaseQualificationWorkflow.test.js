@@ -205,12 +205,13 @@ describe('trusted artifact-only promotion', () => {
             workflow('finalize-release').jobs.finalize];
         for (const job of jobs) {
             await assert.doesNotReject(executePromotionGuard(job));
-            await assert.doesNotReject(executePromotionGuard(job, ({manifest, env}) => {
-                manifest.source.version = env.VERSION = '1.7.0';
-                manifest.source.windowsStamp = env.WINDOWS_STAMP = '1.7.0.4321';
-                manifest.promotion.scope.id = 'owner-approved-reduced-v1.7.0';
-            }));
-            for (const version of ['1.6.2', '1.7.1', '1.8.0', '1.7.0-beta.1', '1.7.0\n'])
+            for (const version of ['1.7.0', '1.7.1'])
+                await assert.doesNotReject(executePromotionGuard(job, ({manifest, env}) => {
+                    manifest.source.version = env.VERSION = version;
+                    manifest.source.windowsStamp = env.WINDOWS_STAMP = `${version}.4321`;
+                    manifest.promotion.scope.id = `owner-approved-reduced-v${version}`;
+                }));
+            for (const version of ['1.6.2', '1.7.2', '1.8.0', '1.7.1-beta.1', '1.7.1\n'])
                 await assert.rejects(executePromotionGuard(job, ({manifest, env}) => {
                     manifest.source.version = env.VERSION = version;
                     manifest.source.windowsStamp = env.WINDOWS_STAMP = `${version}.4321`;
