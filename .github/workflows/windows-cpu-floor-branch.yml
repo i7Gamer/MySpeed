@@ -79,7 +79,7 @@ jobs:
             exit 1
           fi
           printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-          printf 'windows_stamp=%s.0\n' "$version" >> "$GITHUB_OUTPUT"
+          printf 'windows_stamp=%s.1\n' "$version" >> "$GITHUB_OUTPUT"
 
   # Built through the release recipe rather than inline bun commands: the binary under test has to
   # be the one that would ship, or a green run says nothing about the release build.

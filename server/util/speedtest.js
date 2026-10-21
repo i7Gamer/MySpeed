@@ -8,11 +8,8 @@ import * as config from '../controller/config.js';
 import { REGISTRY, descriptor, iperfRunSeconds, splitEndpoint, binaryPath as providerBinaryPath }
     from './providers/registry.js';
 import { measureLatency } from './providers/iperfLatency.js';
-import { ooklaServerFor } from './providers/ooklaAddressFamily.js';
-import * as serverController from '../controller/servers.js';
 import { toErrorMessage } from './helpers.js';
 import fs from 'node:fs';
-import os from 'node:os';
 
 const MS_PER_SECOND = 1000;
 const CLI_TIMEOUT = 180 * MS_PER_SECOND;
@@ -508,14 +505,6 @@ export default async (mode, serverId, serverUrl, onProgress, tuning = undefined,
     // the librespeed server file below and starting the CLI can throw and leave
     // it behind - and so a download is not counted as time the test took.
     await ensureProviderBinary(mode, binaryPath);
-
-    // An unpinned Ookla run on a dual-stack Windows host is pointed at a
-    // server it can reach from the IPv4 address it is bound to - see
-    // ooklaAddressFamily.js. Before the clock starts: the lookups are not
-    // part of the test.
-    serverId = await ooklaServerFor({mode, platform: process.platform, serverId, serverUrl,
-        address: interfaceIp, interfacesNode: os.networkInterfaces(),
-        servers: mode === "ookla" ? serverController.getOoklaServers() : undefined});
 
     const startTime = new Date().getTime();
 
