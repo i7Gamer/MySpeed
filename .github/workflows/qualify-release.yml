@@ -161,10 +161,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # Only a manual dispatch runs the CPU-floor guest: the harness requires the candidate to be the
+  # commit it checked out (a pull-request merge commit is not), the guest costs about forty minutes
+  # of KVM time, and a pull-request manifest can never be promoted anyway. A skipped check leaves
+  # every release after 1.7.1 ineligible; a failed one fails the seal below.
+  cpu-readiness:
+    name: Windows CPU readiness probe
+    if: github.event_name == 'workflow_dispatch'
+    needs: prepare
+    uses: ./.github/workflows/windows-cpu-readiness.yml
+
+  cpu-floor:
+    name: Windows CPU floor
+    if: github.event_name == 'workflow_dispatch'
+    needs: [prepare, binaries, cpu-readiness]
+    uses: ./.github/workflows/windows-cpu-floor-candidate.yml
+    with:
+      source_sha: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+      windows_stamp: ${{ needs.prepare.outputs.windows_stamp }}
+      probe_artifact_id: ${{ needs['cpu-readiness'].outputs.probe_artifact_id }}
+      probe_artifact_digest: ${{ needs['cpu-readiness'].outputs.probe_artifact_digest }}
+      # The only installer policy that has completed a Stage 3 run.
+      stage3_installer_confirmation: cadence-enter-before-setup-v3
+      # Must equal this job's name: the execute job's API name is "<this name> / <its own name>".
+      caller_job_name: Windows CPU floor
+
   summary:
     name: Seal qualification manifest
     if: ${{ always() }}
-    needs: [prepare, tests, binaries, msi, docker, docker-index]
+    needs: [prepare, tests, binaries, msi, docker, docker-index, cpu-readiness, cpu-floor]
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -188,6 +214,7 @@ jobs:
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
         env:
           OUTPUT_PATH: ${{ runner.temp }}/artifacts.json
+          CPU_FLOOR_RESULT: ${{ needs['cpu-floor'].result }}
         with:
           script: |
             const fs = require('fs');
@@ -199,16 +226,21 @@ jobs:
             });
             const mebibyte = 1024 * 1024;
             const gibibyte = 1024 * mebibyte;
+            // The readiness probe's two artifacts and the CPU-floor candidate workflow's five.
+            const cpuFloorArtifacts = ['qualified-windows-cpu-floor', 'windows-cpu-floor-closure',
+              'windows-cpu-floor-diagnostics', 'windows-cpu-floor-evidence', 'windows-cpu-floor-guest-bundle',
+              'windows-cpu-readiness-closure', 'windows-cpu-readiness-evidence'];
             const expected = ['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe',
               'MySpeed-linux-x64', 'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64',
               'MySpeed-macos-x64', 'MySpeed-macos-arm64', 'MySpeed.zip',
               'release-msi-MySpeed-installer.msi', 'release-msi-MySpeed-installer-baseline.msi',
-              'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64', 'qualified-oci-index'].sort();
+              'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64', 'qualified-oci-index',
+              ...(process.env.CPU_FLOOR_RESULT === 'success' ? cpuFloorArtifacts : [])].sort();
             const names = artifacts.map(({name}) => name).sort();
             if (JSON.stringify(names) !== JSON.stringify(expected))
               throw new Error('Actions artifact set mismatch: expected ' + expected.join(', ') + '; received ' + names.join(', '));
             for (const artifact of artifacts) {
-              const limit = artifact.name === 'release-static' ? 10 * mebibyte
+              const limit = artifact.name === 'release-static' || artifact.name === 'qualified-windows-cpu-floor' ? 10 * mebibyte
                 : artifact.name === 'MySpeed.zip' ? 2 * gibibyte
                   : artifact.name.startsWith('qualified-oci-') ? 4 * gibibyte : gibibyte;
               if (artifact.expired || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > limit
@@ -234,12 +266,14 @@ jobs:
           MSI_RESULT: ${{ needs.msi.result }}
           DOCKER_RESULT: ${{ needs.docker.result }}
           DOCKER_INDEX_RESULT: ${{ needs['docker-index'].result }}
+          CPU_READINESS_RESULT: ${{ needs['cpu-readiness'].result }}
+          CPU_FLOOR_RESULT: ${{ needs['cpu-floor'].result }}
           ARTIFACT_ROOT: ${{ runner.temp }}/artifacts
           ARTIFACT_METADATA: ${{ runner.temp }}/artifacts.json
           EVIDENCE_PATH: ${{ runner.temp }}/evidence.json
           OUTPUT_PATH: ${{ runner.temp }}/qualification
         run: |
-          node -e "require('fs').writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({tests:process.env.TESTS_RESULT,binaries:process.env.BINARIES_RESULT,msi:process.env.MSI_RESULT,docker:process.env.DOCKER_RESULT,dockerIndex:process.env.DOCKER_INDEX_RESULT,ice:process.env.MSI_RESULT}))"
+          node -e "require('fs').writeFileSync(process.env.EVIDENCE_PATH, JSON.stringify({tests:process.env.TESTS_RESULT,binaries:process.env.BINARIES_RESULT,msi:process.env.MSI_RESULT,docker:process.env.DOCKER_RESULT,dockerIndex:process.env.DOCKER_INDEX_RESULT,ice:process.env.MSI_RESULT,windowsCpuReadiness:process.env.CPU_READINESS_RESULT,windowsCpuFloor:process.env.CPU_FLOOR_RESULT}))"
           node scripts/release/qualification-manifest.mjs create \
             --root "$ARTIFACT_ROOT" --output "$OUTPUT_PATH" --artifacts "$ARTIFACT_METADATA" \
             --evidence "$EVIDENCE_PATH" --sha "$SOURCE_SHA" --version "$VERSION" \

@@ -49,14 +49,14 @@ const QUALIFICATION_ARTIFACTS = [
 
 describe('read-only release qualification', () => {
     const expectedArtifacts = QUALIFICATION_ARTIFACTS.filter(name => name !== 'release-qualification-manifest');
-    const executeArtifactPreflight = async (names) => {
+    const executeArtifactPreflight = async (names, env = {}, size = () => 1024) => {
         const step = workflow('qualify-release').jobs.summary.steps
             .find(({name}) => name === 'Preflight immutable Actions artifact metadata');
         const artifacts = names.map((name, index) => ({name, id: index + 1, expired: false,
-            size_in_bytes: 1024, digest: `sha256:${'b'.repeat(64)}`}));
+            size_in_bytes: size(name), digest: `sha256:${'b'.repeat(64)}`}));
         let written;
         await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
-            process: {env: {OUTPUT_PATH: 'synthetic-artifact-metadata.json'}},
+            process: {env: {OUTPUT_PATH: 'synthetic-artifact-metadata.json', ...env}},
             context: {repo: {owner: 'synthetic', repo: 'fixture'}, runId: 1},
             require: name => {
                 assert.equal(name, 'fs');
@@ -81,6 +81,62 @@ describe('read-only release qualification', () => {
             assert.match(error.message, /received/);
             return true;
         });
+    });
+
+    it('expects the CPU-floor artifacts exactly when the CPU-floor job succeeded', async () => {
+        const withCpuFloor = [...expectedArtifacts, ...CPU_FLOOR_ARTIFACTS];
+        const succeeded = {CPU_FLOOR_RESULT: 'success'};
+        assert.equal((await executeArtifactPreflight(withCpuFloor, succeeded)).artifacts.length, withCpuFloor.length);
+        await assert.rejects(executeArtifactPreflight(expectedArtifacts, succeeded), /artifact set mismatch/);
+        await assert.rejects(executeArtifactPreflight(withCpuFloor.slice(0, -1), succeeded), /artifact set mismatch/);
+        for (const result of ['skipped', 'failure', 'cancelled', undefined])
+            await assert.rejects(executeArtifactPreflight(withCpuFloor, {CPU_FLOOR_RESULT: result}),
+                /artifact set mismatch/, String(result));
+        await assert.rejects(executeArtifactPreflight(withCpuFloor, succeeded,
+            name => name === 'qualified-windows-cpu-floor' ? CPU_FLOOR_EVIDENCE_LIMIT + 1 : 1024),
+        /Unsafe Actions artifact metadata: qualified-windows-cpu-floor/);
+        const step = workflow('qualify-release').jobs.summary.steps
+            .find(({name}) => name === 'Preflight immutable Actions artifact metadata');
+        assert.equal(step.env.CPU_FLOOR_RESULT, "${{ needs['cpu-floor'].result }}");
+    });
+
+    /*
+     * Only a manual dispatch runs the CPU-floor guest: a pull-request merge commit is not the
+     * commit the harness checked out, the guest costs about forty minutes of KVM time, and a pull
+     * request manifest can never be promoted anyway.
+     */
+    it('runs the CPU readiness probe and the CPU-floor guest on every manual qualification', () => {
+        const {jobs} = workflow('qualify-release');
+        const readiness = jobs['cpu-readiness'];
+        assert.equal(readiness.name, 'Windows CPU readiness probe');
+        assert.equal(readiness.uses, './.github/workflows/windows-cpu-readiness.yml');
+        assert.equal(readiness.if, "github.event_name == 'workflow_dispatch'");
+        assert.deepEqual([readiness.needs].flat(), ['prepare']);
+        const floor = jobs['cpu-floor'];
+        assert.equal(floor.name, 'Windows CPU floor');
+        assert.equal(floor.uses, './.github/workflows/windows-cpu-floor-candidate.yml');
+        assert.equal(floor.if, "github.event_name == 'workflow_dispatch'");
+        assert.deepEqual(floor.needs, ['prepare', 'binaries', 'cpu-readiness']);
+        assert.deepEqual(floor.with, {
+            source_sha: '${{ needs.prepare.outputs.sha }}',
+            version: '${{ needs.prepare.outputs.version }}',
+            windows_stamp: '${{ needs.prepare.outputs.windows_stamp }}',
+            probe_artifact_id: "${{ needs['cpu-readiness'].outputs.probe_artifact_id }}",
+            probe_artifact_digest: "${{ needs['cpu-readiness'].outputs.probe_artifact_digest }}",
+            stage3_installer_confirmation: 'cadence-enter-before-setup-v3',
+            caller_job_name: floor.name
+        });
+        assert.equal(floor.secrets, undefined);
+    });
+
+    it('seals both CPU-floor job results into the qualification evidence', () => {
+        const summary = workflow('qualify-release').jobs.summary;
+        for (const job of ['cpu-readiness', 'cpu-floor']) assert.ok(summary.needs.includes(job), job);
+        const seal = summary.steps.find(({name}) => name === 'Seal complete successful qualification');
+        assert.equal(seal.env.CPU_READINESS_RESULT, "${{ needs['cpu-readiness'].result }}");
+        assert.equal(seal.env.CPU_FLOOR_RESULT, "${{ needs['cpu-floor'].result }}");
+        assert.match(seal.run, /windowsCpuReadiness:process\.env\.CPU_READINESS_RESULT/);
+        assert.match(seal.run, /windowsCpuFloor:process\.env\.CPU_FLOOR_RESULT/);
     });
 
     it('disables automatic Docker build-record uploads without weakening candidate provenance', () => {
@@ -164,7 +220,8 @@ describe('read-only release qualification', () => {
         assert.ok(releaseUses.includes('./.github/workflows/build-docker.yml'));
         assert.ok(workflow('create_release').jobs['publish-docker'].uses
             .endsWith('/publish-docker.yml'));
-        for (const [name, config] of ['qualify-release', 'create_release', 'merge-dependabot']
+        assert.ok(releaseUses.includes('./.github/workflows/windows-cpu-floor-candidate.yml'));
+        for (const [name, config] of ['qualify-release', 'create_release', 'merge-dependabot', 'windows-cpu-floor-branch']
             .map((name) => [name, workflow(name)])) {
             for (const job of Object.values(config.jobs)) {
                 if (!job.uses?.startsWith('./.github/workflows/')) continue;

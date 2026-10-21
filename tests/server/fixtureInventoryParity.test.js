@@ -36,7 +36,8 @@ const UNSUFFIXED = Object.freeze([
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPOSITORY = path.join(HERE, "..", "..");
 const PRODUCER = path.join(REPOSITORY, "scripts", "qualification", "fixture.mjs");
-const WORKFLOW = path.join(REPOSITORY, ".github", "workflows", "windows-cpu-floor-branch.yml");
+// The guest bundle (and with it the fixture handoff) is assembled by the shared candidate workflow.
+const WORKFLOW = path.join(REPOSITORY, ".github", "workflows", "windows-cpu-floor-candidate.yml");
 const NONCE = "0123456789abcdef0123456789abcdef";
 
 const relativeFiles = root => fs.readdirSync(root, {recursive: true, withFileTypes: true})
