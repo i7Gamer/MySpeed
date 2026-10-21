@@ -59,6 +59,12 @@ export const APT_ACQUIRE_TIMEOUT_SECONDS = 30;
 export const SNAPSHOT_DOWNLOAD_ATTEMPTS = 4;
 export const SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS = 15_000;
 const SNAPSHOT_INTEGRITY_FAILURES = Object.freeze(["download digest is invalid", "download exceeded its bound"]);
+// A package the snapshot keeps failing to serve is fetched from the live archive with the same
+// size and SHA-256 pins, so the fallback cannot change what is installed. Only pool files fall
+// back: the archive's current indexes differ from the dated snapshot's, and it eventually drops
+// superseded package versions, so it can never be the primary source.
+export const UBUNTU_ARCHIVE_FALLBACK_BASE_URL = "https://archive.ubuntu.com/ubuntu/";
+export const ARCHIVE_FALLBACK_ATTEMPTS = 2;
 const PRIVILEGED_COMMAND_TIMEOUT_SECONDS = 25;
 const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
@@ -157,23 +163,41 @@ async function runSnapshotUpdate(io, vectors) {
 }
 
 /**
- * A pinned download from the Ubuntu snapshot, retried on server and network failures. A
- * partial file a failed attempt left behind is removed first, because the download opens its
- * target exclusively.
+ * Tries one source a bounded number of times. Answers the download, or the last server or
+ * network failure; an integrity failure is thrown at once. A partial file a failed attempt
+ * left behind is removed before the next one, because the download opens its target
+ * exclusively, and a wait separates attempts.
  */
-export async function downloadFromSnapshot(io, request) {
-    for (let attempt = 1; ; attempt++) {
-        try {
-            return await io.downloadPinned(request);
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            if (SNAPSHOT_INTEGRITY_FAILURES.includes(message)) throw error;
-            if (attempt >= SNAPSHOT_DOWNLOAD_ATTEMPTS)
-                throw new Error(`snapshot download of ${request.url} failed after ${attempt} attempts: ${message}`);
+async function attemptPinnedDownload(io, request, attempts, waitBeforeFirst) {
+    let lastMessage;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+        if (attempt > 1 || waitBeforeFirst) {
             if (io.pathExists(request.path)) io.removeOwned(request.path);
             await io.wait(SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS);
         }
+        try {
+            return {download: await io.downloadPinned(request)};
+        } catch (error) {
+            lastMessage = error instanceof Error ? error.message : String(error);
+            if (SNAPSHOT_INTEGRITY_FAILURES.includes(lastMessage)) throw error;
+        }
     }
+    return {lastMessage};
+}
+
+/**
+ * A pinned download from the Ubuntu snapshot, retried on server and network failures, then -
+ * for a pool file given a fallbackUrl - from the live archive under the same pins.
+ */
+export async function downloadFromSnapshot(io, request, {fallbackUrl} = {}) {
+    const primary = await attemptPinnedDownload(io, request, SNAPSHOT_DOWNLOAD_ATTEMPTS, false);
+    if (primary.download) return primary.download;
+    const snapshotFailure = `snapshot download of ${request.url} failed after ${SNAPSHOT_DOWNLOAD_ATTEMPTS} attempts`;
+    if (!fallbackUrl) throw new Error(`${snapshotFailure}: ${primary.lastMessage}`);
+    const fallback = await attemptPinnedDownload(io, {...request, url: fallbackUrl}, ARCHIVE_FALLBACK_ATTEMPTS, true);
+    if (fallback.download) return fallback.download;
+    throw new Error(`${snapshotFailure} and its archive fallback ${fallbackUrl} after ${ARCHIVE_FALLBACK_ATTEMPTS} ` +
+        `attempts: ${fallback.lastMessage}`);
 }
 
 function appendBounded(chunks, chunk, state, maximumBytes) {
@@ -3073,7 +3097,8 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
                 const target = `${input.paths.packageRoot}/${record.name}_${sha256(Buffer.from(reference(record))).slice(0, 16)}.deb`;
                 packages.push({reference: reference(record), ...await downloadFromSnapshot(io, {
                     url: `${STAGE2_PROVENANCE.ubuntuSnapshot.baseUrl}${record.filename}`, path: target,
-                    bytes: record.bytes, sha256: record.sha256})});
+                    bytes: record.bytes, sha256: record.sha256},
+                {fallbackUrl: `${UBUNTU_ARCHIVE_FALLBACK_BASE_URL}${record.filename}`})});
             }
             return {complete: true, packages};
         },
