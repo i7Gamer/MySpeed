@@ -14,6 +14,9 @@ import {
     APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS,
     APT_SNAPSHOT_UPDATE_TIMEOUT_MILLISECONDS,
     COMMAND_TIMEOUT_MILLISECONDS,
+    SNAPSHOT_DOWNLOAD_ATTEMPTS,
+    SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS,
+    downloadFromSnapshot,
     DIAGNOSTIC_CLEANUP_HEADROOM_SECONDS,
     DIAGNOSTIC_CLEANUP_MINUTES,
     DIAGNOSTIC_EXECUTION_MINUTES,
@@ -652,6 +655,83 @@ describe("hosted Stage 2 native adapter preparation", () => {
             assert.equal(calls.resolved, 0);
         });
     });
+
+    describe("snapshot download retries", () => {
+        it("retries a snapshot package download that the server failed, after removing its partial file",
+            async () => {
+                const record = TOP_LEVEL_PACKAGE_PINS[0];
+                const calls = {downloads: [], waits: [], removed: []};
+                const written = new Set();
+                const adapter = createHostedStage2Operations({context: context(), paths: paths(), dependencies: {
+                    downloadPinned: async request => {
+                        calls.downloads.push(request);
+                        if (calls.downloads.length === 1) {
+                            written.add(request.path);
+                            throw new Error("download response identity is invalid");
+                        }
+                        return {path: request.path, bytes: request.bytes, sha256: request.sha256};
+                    },
+                    pathExists: target => written.has(target),
+                    removeOwned: target => { calls.removed.push(target); written.delete(target); },
+                    wait: async milliseconds => { calls.waits.push(milliseconds); }
+                }});
+                const acquired = await adapter.acquirePackages({paths: paths(),
+                    packageClosure: {packages: [{...record, dependsOn: []}]}});
+                assert.equal(acquired.packages.length, 1);
+                assert.equal(acquired.packages[0].sha256, record.sha256);
+                assert.equal(calls.downloads.length, 2);
+                assert.deepEqual(calls.downloads[0], calls.downloads[1]);
+                assert.deepEqual(calls.removed, [calls.downloads[0].path]);
+                assert.deepEqual(calls.waits, [SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS]);
+            });
+
+        const request = {url: "https://snapshot.ubuntu.com/ubuntu/x/pool/a.deb", path: "/work/a.deb",
+            bytes: "10", sha256: "a".repeat(64)};
+        const harness = failures => {
+            const calls = {downloads: 0, waits: [], removed: []};
+            const io = {
+                downloadPinned: async value => {
+                    calls.downloads += 1;
+                    const failure = failures[calls.downloads - 1];
+                    if (failure) throw failure;
+                    return {path: value.path, bytes: value.bytes, sha256: value.sha256};
+                },
+                pathExists: () => false,
+                removeOwned: target => calls.removed.push(target),
+                wait: async milliseconds => { calls.waits.push(milliseconds); }
+            };
+            return {io, calls};
+        };
+
+        it("returns the first successful download without waiting", async () => {
+            const {io, calls} = harness([]);
+            assert.deepEqual(await downloadFromSnapshot(io, request),
+                {path: request.path, bytes: request.bytes, sha256: request.sha256});
+            assert.equal(calls.downloads, 1);
+            assert.deepEqual(calls.waits, []);
+        });
+
+        it("retries network and server failures up to the bound, then names the attempts", async () => {
+            const failures = Array.from({length: SNAPSHOT_DOWNLOAD_ATTEMPTS}, (_, index) =>
+                index % 2 === 0 ? new Error("download response identity is invalid") : new TypeError("fetch failed"));
+            const {io, calls} = harness(failures);
+            await assert.rejects(downloadFromSnapshot(io, request),
+                new RegExp(`snapshot download of ${request.url} failed after ${SNAPSHOT_DOWNLOAD_ATTEMPTS} attempts: ` +
+                    "fetch failed|download response identity is invalid", "u"));
+            assert.equal(calls.downloads, SNAPSHOT_DOWNLOAD_ATTEMPTS);
+            assert.equal(calls.waits.length, SNAPSHOT_DOWNLOAD_ATTEMPTS - 1);
+        });
+
+        for (const integrity of ["download digest is invalid", "download exceeded its bound"]) {
+            it(`never retries an integrity failure: ${integrity}`, async () => {
+                const {io, calls} = harness([new Error(integrity)]);
+                await assert.rejects(downloadFromSnapshot(io, request), new RegExp(integrity, "u"));
+                assert.equal(calls.downloads, 1);
+                assert.deepEqual(calls.waits, []);
+            });
+        }
+    });
+
 
     it("selects the complete signed package index set across valid zero-byte checksum rows", () => {
         const emptyHash = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
