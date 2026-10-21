@@ -715,9 +715,12 @@ describe("hosted Stage 2 native adapter preparation", () => {
             const failures = Array.from({length: SNAPSHOT_DOWNLOAD_ATTEMPTS}, (_, index) =>
                 index % 2 === 0 ? new Error("download response identity is invalid") : new TypeError("fetch failed"));
             const {io, calls} = harness(failures);
-            await assert.rejects(downloadFromSnapshot(io, request),
-                new RegExp(`snapshot download of ${request.url} failed after ${SNAPSHOT_DOWNLOAD_ATTEMPTS} attempts: ` +
-                    "fetch failed|download response identity is invalid", "u"));
+            const lastCause = failures.at(-1).message;
+            await assert.rejects(downloadFromSnapshot(io, request), error => {
+                assert.equal(error.message, `snapshot download of ${request.url} failed after ` +
+                    `${SNAPSHOT_DOWNLOAD_ATTEMPTS} attempts: ${lastCause}`);
+                return true;
+            });
             assert.equal(calls.downloads, SNAPSHOT_DOWNLOAD_ATTEMPTS);
             assert.equal(calls.waits.length, SNAPSHOT_DOWNLOAD_ATTEMPTS - 1);
         });
