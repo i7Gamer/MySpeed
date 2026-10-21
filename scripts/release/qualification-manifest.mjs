@@ -33,7 +33,7 @@ const PROMOTION_BLOCKERS = [
     'Windows native CPU-floor verification',
     'Disposable Windows MSI lifecycle acceptance'
 ];
-const REDUCED_RELEASE_VERSIONS = Object.freeze(['1.6.1', '1.7.0']);
+const REDUCED_RELEASE_VERSIONS = Object.freeze(['1.6.1', '1.7.0', '1.7.1']);
 const REDUCED_RELEASE_REPOSITORY = 'i7Gamer/MySpeed';
 
 // This records the owner's release-specific acceptance scope, not evidence that

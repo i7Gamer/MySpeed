@@ -182,7 +182,7 @@ jobs:
             const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
             if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
             const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
-            const approvedVersions = ['1.6.1', '1.7.0'];
+            const approvedVersions = ['1.6.1', '1.7.0', '1.7.1'];
             const approvedScope = 'owner-approved-reduced-v' + manifest.source.version;
             const deferredChecks = ['Windows native full verification with enforced outbound denial',
               'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
@@ -267,7 +267,7 @@ jobs:
             const sealed = fs.readFileSync(process.env.MANIFEST + '.sha256', 'utf8').trim();
             if (!/^[a-f0-9]{64}$/.test(sealed) || createHash('sha256').update(bytes).digest('hex') !== sealed) throw new Error('Qualification manifest seal mismatch');
             const manifest = JSON.parse(bytes); const runId = Number(process.env.RUN_ID); const attempt = Number(process.env.RUN_ATTEMPT);
-            const approvedVersions = ['1.6.1', '1.7.0'];
+            const approvedVersions = ['1.6.1', '1.7.0', '1.7.1'];
             const approvedScope = 'owner-approved-reduced-v' + manifest.source.version;
             const deferredChecks = ['Windows native full verification with enforced outbound denial',
               'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
