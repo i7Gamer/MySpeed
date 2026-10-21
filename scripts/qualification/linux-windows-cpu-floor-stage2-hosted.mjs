@@ -52,6 +52,13 @@ export const APT_SNAPSHOT_UPDATE_ATTEMPTS = 2;
 export const APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS = 10_000;
 export const APT_ACQUIRE_RETRIES = 3;
 export const APT_ACQUIRE_TIMEOUT_SECONDS = 30;
+// snapshot.ubuntu.com answered 502 and 500 intermittently for the same pinned package in
+// October 2026 while archive.ubuntu.com served it. Every snapshot download is pinned by size
+// and SHA-256, so a server or network failure is retried a bounded number of times; an
+// integrity failure never is.
+export const SNAPSHOT_DOWNLOAD_ATTEMPTS = 4;
+export const SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS = 15_000;
+const SNAPSHOT_INTEGRITY_FAILURES = Object.freeze(["download digest is invalid", "download exceeded its bound"]);
 const PRIVILEGED_COMMAND_TIMEOUT_SECONDS = 25;
 const WIM_EXTRACTION_TIMEOUT_MILLISECONDS = 900_000;
 const DOWNLOAD_TIMEOUT_MILLISECONDS = 7_200_000;
@@ -145,6 +152,26 @@ async function runSnapshotUpdate(io, vectors) {
             if (attempt >= APT_SNAPSHOT_UPDATE_ATTEMPTS)
                 throw new Error(`apt snapshot update did not complete safely after ${attempt} attempts`);
             await io.wait(APT_SNAPSHOT_UPDATE_RETRY_DELAY_MILLISECONDS);
+        }
+    }
+}
+
+/**
+ * A pinned download from the Ubuntu snapshot, retried on server and network failures. A
+ * partial file a failed attempt left behind is removed first, because the download opens its
+ * target exclusively.
+ */
+export async function downloadFromSnapshot(io, request) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await io.downloadPinned(request);
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (SNAPSHOT_INTEGRITY_FAILURES.includes(message)) throw error;
+            if (attempt >= SNAPSHOT_DOWNLOAD_ATTEMPTS)
+                throw new Error(`snapshot download of ${request.url} failed after ${attempt} attempts: ${message}`);
+            if (io.pathExists(request.path)) io.removeOwned(request.path);
+            await io.wait(SNAPSHOT_DOWNLOAD_RETRY_DELAY_MILLISECONDS);
         }
     }
 }
@@ -464,7 +491,7 @@ async function collectAptClosure(io, {context, paths: pathsValue, vectors}) {
             signerFingerprint: STAGE2_PROVENANCE.ubuntuArchiveSignerFingerprint});
         for (const index of parseInReleaseIndexes(releaseBytes, suite)) {
             const target = `${vectors.aptRoot}/signed-${suite}-${index.component}-Packages.xz`;
-            await io.downloadPinned({url: `${STAGE2_PROVENANCE.ubuntuSnapshot.baseUrl}${index.path}`,
+            await downloadFromSnapshot(io, {url: `${STAGE2_PROVENANCE.ubuntuSnapshot.baseUrl}${index.path}`,
                 path: target, bytes: index.bytes, sha256: index.sha256});
             indexes.push({...index, inReleaseSha256: releaseHash});
         }
@@ -3044,7 +3071,7 @@ export function createHostedStage2Operations({context, paths: pathsValue, depend
             const packages = [];
             for (const record of input.packageClosure.packages) {
                 const target = `${input.paths.packageRoot}/${record.name}_${sha256(Buffer.from(reference(record))).slice(0, 16)}.deb`;
-                packages.push({reference: reference(record), ...await io.downloadPinned({
+                packages.push({reference: reference(record), ...await downloadFromSnapshot(io, {
                     url: `${STAGE2_PROVENANCE.ubuntuSnapshot.baseUrl}${record.filename}`, path: target,
                     bytes: record.bytes, sha256: record.sha256})});
             }
