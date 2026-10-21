@@ -4,6 +4,7 @@ import vm from 'node:vm';
 import {createHash} from 'node:crypto';
 import {parse} from 'yaml';
 import {readSource} from '../helpers/source.js';
+import {CPU_FLOOR_ARTIFACTS} from '../../scripts/release/windows-cpu-floor-evidence.mjs';
 
 const read = (name) => readSource(`.github/workflows/${name}.yml`);
 const workflow = (name) => parse(read(name));
@@ -25,6 +26,16 @@ const DEFERRED_WINDOWS_CHECKS = [
     'Windows native CPU-floor verification',
     'Disposable Windows MSI lifecycle acceptance'
 ];
+const GATED_SCOPE = 'owner-approved-reduced-cpu-floor-gated';
+const GATED_VERSION = '1.7.2';
+const GATED_DEFERRED_CHECKS = [
+    'Windows native full verification with enforced outbound denial',
+    'Disposable Windows MSI lifecycle acceptance'
+];
+const EXECUTABLE_SHA256 = '1'.repeat(64);
+const OTHER_SHA256 = '9'.repeat(64);
+const MEBIBYTE = 1024 * 1024;
+const CPU_FLOOR_EVIDENCE_LIMIT = 10 * MEBIBYTE;
 const QUALIFICATION_ARTIFACTS = [
     'MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe', 'MySpeed-linux-x64',
     'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64', 'MySpeed-macos-x64',
@@ -245,6 +256,74 @@ describe('trusted artifact-only promotion', () => {
         }
     });
 
+    // A gated release: CPU-floor evidence passed on this run for both byte-identical Windows assets.
+    const gate = (version = GATED_VERSION) => ({manifest, env}) => {
+        manifest.source.version = env.VERSION = version;
+        manifest.source.windowsStamp = env.WINDOWS_STAMP = `${version}.4321`;
+        manifest.promotion.scope = {id: GATED_SCOPE, deferredChecks: [...GATED_DEFERRED_CHECKS]};
+        manifest.releaseAssets = [
+            {name: 'MySpeed-windows-x64-baseline.exe', sha256: EXECUTABLE_SHA256},
+            {name: 'MySpeed-windows-x64.exe', sha256: EXECUTABLE_SHA256},
+            {name: 'MySpeed.zip', sha256: OTHER_SHA256}
+        ];
+        manifest.promotion.evidence.windowsCpuFloor = {status: 'passed', executableSha256: EXECUTABLE_SHA256,
+            sourceSha: SHA, runId: QUALIFICATION_RUN_ID, runAttempt: QUALIFICATION_RUN_ATTEMPT,
+            guestCpu: {model: 'Westmere-v2', avx: false, avx2: false}};
+    };
+    const gated = (mutate, version) => (fixture) => {
+        gate(version)(fixture);
+        mutate(fixture);
+    };
+
+    it('accepts a CPU-floor gated release only with passed evidence for both published executables', async () => {
+        const jobs = [workflow('create_release').jobs['create-draft'],
+            workflow('create_release').jobs['publish-assets'], workflow('publish-docker').jobs.publish,
+            workflow('finalize-release').jobs.finalize];
+        for (const job of jobs) {
+            for (const version of [GATED_VERSION, '1.7.10', '1.8.0', '2.0.0'])
+                await assert.doesNotReject(executePromotionGuard(job, gate(version)), version);
+            for (const [defect, mutate] of [
+                ['no CPU-floor evidence', ({manifest}) => { manifest.promotion.evidence.windowsCpuFloor = null; }],
+                ['missing evidence block', ({manifest}) => { delete manifest.promotion.evidence; }],
+                ['failed CPU-floor evidence', ({manifest}) => {
+                    manifest.promotion.evidence.windowsCpuFloor.status = 'failed'; }],
+                ['evidence from another run', ({manifest}) => {
+                    manifest.promotion.evidence.windowsCpuFloor.runId = QUALIFICATION_RUN_ID + 1; }],
+                ['evidence from another attempt', ({manifest}) => {
+                    manifest.promotion.evidence.windowsCpuFloor.runAttempt = QUALIFICATION_RUN_ATTEMPT + 1; }],
+                ['evidence from another commit', ({manifest}) => {
+                    manifest.promotion.evidence.windowsCpuFloor.sourceSha = 'b'.repeat(40); }],
+                ['a tested executable that is not the x64 asset', ({manifest}) => {
+                    manifest.releaseAssets[1].sha256 = OTHER_SHA256; }],
+                ['a tested executable that is not the baseline asset', ({manifest}) => {
+                    manifest.releaseAssets[0].sha256 = OTHER_SHA256; }],
+                ['a missing Windows asset', ({manifest}) => { manifest.releaseAssets.splice(1, 1); }],
+                ['a duplicated Windows asset', ({manifest}) => {
+                    manifest.releaseAssets.push({...manifest.releaseAssets[0]}); }],
+                ['no release assets', ({manifest}) => { delete manifest.releaseAssets; }],
+                ['a malformed executable digest', ({manifest}) => {
+                    for (const asset of manifest.releaseAssets) asset.sha256 = 'not-a-digest';
+                    manifest.promotion.evidence.windowsCpuFloor.executableSha256 = 'not-a-digest'; }],
+                ['an AVX guest', ({manifest}) => { manifest.promotion.evidence.windowsCpuFloor.guestCpu.avx = true; }],
+                ['an AVX2 guest', ({manifest}) => { manifest.promotion.evidence.windowsCpuFloor.guestCpu.avx2 = true; }],
+                ['no guest CPU record', ({manifest}) => { delete manifest.promotion.evidence.windowsCpuFloor.guestCpu; }],
+                ['the CPU-floor check still deferred', ({manifest}) => {
+                    manifest.promotion.scope.deferredChecks = [...DEFERRED_WINDOWS_CHECKS]; }],
+                ['an extra deferred check', ({manifest}) => { manifest.promotion.scope.deferredChecks.push('tests'); }],
+                ['the legacy scope id on a later release', ({manifest}) => {
+                    manifest.promotion.scope.id = `owner-approved-reduced-v${manifest.source.version}`; }],
+                ['native Windows evidence claimed', ({manifest}) => {
+                    manifest.promotion.evidence.windowsNative = {status: 'passed'}; }],
+                ['MSI lifecycle evidence claimed', ({manifest}) => {
+                    manifest.promotion.evidence.msiLifecycle = {status: 'passed'}; }],
+                ['an ineligible manifest', ({manifest}) => { manifest.promotion.eligible = false; }],
+                ['a fork repository', ({manifest}) => { manifest.source.repository = 'fork/MySpeed'; }]
+            ]) await assert.rejects(executePromotionGuard(job, gated(mutate)), /qualification|scope/i, defect);
+            for (const version of ['1.7.1', '1.7.0', '1.6.1', '1.6.2', '1.7.2-beta.1', '01.7.2', '1.7.2\n'])
+                await assert.rejects(executePromotionGuard(job, gate(version)), /qualification|scope/i, version);
+        }
+    });
+
     const executeRunGate = async (overrides = {}) => {
         const config = workflow('create_release');
         const script = config.jobs.validate.steps.find((step) => step.name
@@ -371,6 +450,22 @@ describe('trusted artifact-only promotion', () => {
                 expired: false, size_in_bytes: Number.MAX_SAFE_INTEGER,
                 digest: `sha256:${'b'.repeat(64)}`}))}
         ]) await assert.rejects(executeRunGate(defect), /qualification|trusted|stale|expired|default|artifact/i);
+    });
+
+    it('admits exactly the base artifact set or the base set plus every CPU-floor artifact', async () => {
+        const records = (names, size = () => 1024) => names.map((name, index) => ({name, id: index + 1,
+            expired: false, size_in_bytes: size(name), digest: `sha256:${'b'.repeat(64)}`}));
+        await assert.doesNotReject(executeRunGate({artifacts: records(QUALIFICATION_ARTIFACTS)}));
+        await assert.doesNotReject(executeRunGate({artifacts: records([...QUALIFICATION_ARTIFACTS,
+            ...CPU_FLOOR_ARTIFACTS])}));
+        for (const names of [
+            [...QUALIFICATION_ARTIFACTS, ...CPU_FLOOR_ARTIFACTS.slice(1)],
+            [...QUALIFICATION_ARTIFACTS, 'windows-cpu-readiness-evidence'],
+            [...QUALIFICATION_ARTIFACTS, ...CPU_FLOOR_ARTIFACTS, 'windows-cpu-floor-extra'],
+            [...QUALIFICATION_ARTIFACTS, ...CPU_FLOOR_ARTIFACTS].filter(name => name !== 'release-qualification-manifest')
+        ]) await assert.rejects(executeRunGate({artifacts: records(names)}), /artifact/i);
+        await assert.rejects(executeRunGate({artifacts: records([...QUALIFICATION_ARTIFACTS, ...CPU_FLOOR_ARTIFACTS],
+            name => name === 'qualified-windows-cpu-floor' ? CPU_FLOOR_EVIDENCE_LIMIT + 1 : 1024)}), /artifact/i);
     });
 
     it('publishes exact OCI archives without rebuilding and finalizes only after asset and image gates', () => {

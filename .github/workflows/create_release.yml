@@ -80,10 +80,17 @@ jobs:
               'release-static', 'qualified-oci-amd64', 'qualified-oci-arm64',
               'qualified-oci-index',
               'release-qualification-manifest'].sort();
+            // A manual qualification also runs the Windows CPU-floor check and retains its artifacts;
+            // the sealed manifest decides whether the release scope needs them.
+            const cpuFloorArtifacts = ['qualified-windows-cpu-floor', 'windows-cpu-floor-closure',
+              'windows-cpu-floor-diagnostics', 'windows-cpu-floor-evidence', 'windows-cpu-floor-guest-bundle',
+              'windows-cpu-readiness-closure', 'windows-cpu-readiness-evidence'];
+            const admitted = [expected, [...expected, ...cpuFloorArtifacts].sort()];
             const names = artifacts.map(({name}) => name).sort();
-            if (JSON.stringify(names) !== JSON.stringify(expected)) throw new Error('Actions artifact set mismatch');
+            if (!admitted.some((set) => JSON.stringify(names) === JSON.stringify(set))) throw new Error('Actions artifact set mismatch');
             for (const artifact of artifacts) {
               const limit = artifact.name === 'release-static' || artifact.name === 'release-qualification-manifest'
+                || artifact.name === 'qualified-windows-cpu-floor'
                 ? 10 * mebibyte : artifact.name === 'MySpeed.zip' ? 2 * gibibyte
                   : artifact.name.startsWith('qualified-oci-') ? 4 * gibibyte : gibibyte;
               if (artifact.expired || artifact.size_in_bytes <= 0 || artifact.size_in_bytes > limit
@@ -186,12 +193,31 @@ jobs:
             const approvedScope = 'owner-approved-reduced-v' + manifest.source.version;
             const deferredChecks = ['Windows native full verification with enforced outbound denial',
               'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
+            // Every canonical release after the last legacy one must carry passed CPU-floor evidence
+            // for the exact Windows executable it publishes under both asset names.
+            const gatedScope = 'owner-approved-reduced-cpu-floor-gated'; const lastLegacyRelease = [1, 7, 1];
+            const gatedDeferredChecks = ['Windows native full verification with enforced outbound denial',
+              'Disposable Windows MSI lifecycle acceptance'];
+            const windowsAssetNames = ['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe'];
+            const versionParts = (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(manifest.source.version) ?? []).slice(1).map(Number);
+            const firstDifference = versionParts.findIndex((part, index) => part !== lastLegacyRelease[index]);
+            const afterLegacy = versionParts.length === lastLegacyRelease.length && firstDifference !== -1
+              && versionParts[firstDifference] > lastLegacyRelease[firstDifference];
+            const cpuFloor = manifest.promotion.evidence?.windowsCpuFloor;
+            const windowsAssets = (manifest.releaseAssets ?? []).filter(({name}) => windowsAssetNames.includes(name));
+            const legacyScope = approvedVersions.includes(manifest.source.version) && manifest.promotion.scope?.id === approvedScope
+              && JSON.stringify(manifest.promotion.scope.deferredChecks) === JSON.stringify(deferredChecks) && cpuFloor === null;
+            const cpuFloorGated = afterLegacy && manifest.promotion.scope?.id === gatedScope
+              && JSON.stringify(manifest.promotion.scope.deferredChecks) === JSON.stringify(gatedDeferredChecks)
+              && cpuFloor?.status === 'passed' && cpuFloor.sourceSha === manifest.source.sha
+              && cpuFloor.runId === manifest.run.id && cpuFloor.runAttempt === manifest.run.attempt
+              && /^[a-f0-9]{64}$/.test(cpuFloor.executableSha256 ?? '') && windowsAssets.length === windowsAssetNames.length
+              && new Set(windowsAssets.map(({name}) => name)).size === windowsAssetNames.length
+              && windowsAssets.every(({sha256}) => sha256 === cpuFloor.executableSha256)
+              && cpuFloor.guestCpu?.avx === false && cpuFloor.guestCpu?.avx2 === false;
             if (context.repo.owner + '/' + context.repo.repo !== 'i7Gamer/MySpeed'
-              || manifest.source.repository !== 'i7Gamer/MySpeed' || !approvedVersions.includes(manifest.source.version)
-              || manifest.promotion.scope?.id !== approvedScope
-              || JSON.stringify(manifest.promotion.scope.deferredChecks) !== JSON.stringify(deferredChecks)
+              || manifest.source.repository !== 'i7Gamer/MySpeed' || !(legacyScope || cpuFloorGated)
               || manifest.promotion.evidence?.windowsNative !== null
-              || manifest.promotion.evidence?.windowsCpuFloor !== null
               || manifest.promotion.evidence?.msiLifecycle !== null)
               throw new Error('Qualification scope is not an approved release-specific reduced policy');
             if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
@@ -271,12 +297,31 @@ jobs:
             const approvedScope = 'owner-approved-reduced-v' + manifest.source.version;
             const deferredChecks = ['Windows native full verification with enforced outbound denial',
               'Windows native CPU-floor verification', 'Disposable Windows MSI lifecycle acceptance'];
+            // Every canonical release after the last legacy one must carry passed CPU-floor evidence
+            // for the exact Windows executable it publishes under both asset names.
+            const gatedScope = 'owner-approved-reduced-cpu-floor-gated'; const lastLegacyRelease = [1, 7, 1];
+            const gatedDeferredChecks = ['Windows native full verification with enforced outbound denial',
+              'Disposable Windows MSI lifecycle acceptance'];
+            const windowsAssetNames = ['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe'];
+            const versionParts = (/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(manifest.source.version) ?? []).slice(1).map(Number);
+            const firstDifference = versionParts.findIndex((part, index) => part !== lastLegacyRelease[index]);
+            const afterLegacy = versionParts.length === lastLegacyRelease.length && firstDifference !== -1
+              && versionParts[firstDifference] > lastLegacyRelease[firstDifference];
+            const cpuFloor = manifest.promotion.evidence?.windowsCpuFloor;
+            const windowsAssets = (manifest.releaseAssets ?? []).filter(({name}) => windowsAssetNames.includes(name));
+            const legacyScope = approvedVersions.includes(manifest.source.version) && manifest.promotion.scope?.id === approvedScope
+              && JSON.stringify(manifest.promotion.scope.deferredChecks) === JSON.stringify(deferredChecks) && cpuFloor === null;
+            const cpuFloorGated = afterLegacy && manifest.promotion.scope?.id === gatedScope
+              && JSON.stringify(manifest.promotion.scope.deferredChecks) === JSON.stringify(gatedDeferredChecks)
+              && cpuFloor?.status === 'passed' && cpuFloor.sourceSha === manifest.source.sha
+              && cpuFloor.runId === manifest.run.id && cpuFloor.runAttempt === manifest.run.attempt
+              && /^[a-f0-9]{64}$/.test(cpuFloor.executableSha256 ?? '') && windowsAssets.length === windowsAssetNames.length
+              && new Set(windowsAssets.map(({name}) => name)).size === windowsAssetNames.length
+              && windowsAssets.every(({sha256}) => sha256 === cpuFloor.executableSha256)
+              && cpuFloor.guestCpu?.avx === false && cpuFloor.guestCpu?.avx2 === false;
             if (context.repo.owner + '/' + context.repo.repo !== 'i7Gamer/MySpeed'
-              || manifest.source.repository !== 'i7Gamer/MySpeed' || !approvedVersions.includes(manifest.source.version)
-              || manifest.promotion.scope?.id !== approvedScope
-              || JSON.stringify(manifest.promotion.scope.deferredChecks) !== JSON.stringify(deferredChecks)
+              || manifest.source.repository !== 'i7Gamer/MySpeed' || !(legacyScope || cpuFloorGated)
               || manifest.promotion.evidence?.windowsNative !== null
-              || manifest.promotion.evidence?.windowsCpuFloor !== null
               || manifest.promotion.evidence?.msiLifecycle !== null)
               throw new Error('Qualification scope is not an approved release-specific reduced policy');
             if (manifest.run.id !== runId || manifest.run.attempt !== attempt || manifest.source.sha !== process.env.SOURCE_SHA
