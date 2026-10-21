@@ -36,6 +36,9 @@ const EXECUTABLE_SHA256 = '1'.repeat(64);
 const OTHER_SHA256 = '9'.repeat(64);
 const MEBIBYTE = 1024 * 1024;
 const CPU_FLOOR_EVIDENCE_LIMIT = 10 * MEBIBYTE;
+// SHA-256 of the full legacy release body (version replaced by "<version>"), captured from the
+// finalize workflow before the CPU-floor gate existed. Legacy releases must keep this exact text.
+const LEGACY_RELEASE_BODY_SHA256 = 'cf5d49d9a593ed67062521a0aa856bfdb1bd815b553576f45e005a9aabfa2b74';
 const QUALIFICATION_ARTIFACTS = [
     'MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe', 'MySpeed-linux-x64',
     'MySpeed-linux-x64-baseline', 'MySpeed-linux-arm64', 'MySpeed-macos-x64',
@@ -466,6 +469,60 @@ describe('trusted artifact-only promotion', () => {
         ]) await assert.rejects(executeRunGate({artifacts: records(names)}), /artifact/i);
         await assert.rejects(executeRunGate({artifacts: records([...QUALIFICATION_ARTIFACTS, ...CPU_FLOOR_ARTIFACTS],
             name => name === 'qualified-windows-cpu-floor' ? CPU_FLOOR_EVIDENCE_LIMIT + 1 : 1024)}), /artifact/i);
+    });
+
+    const executeReleaseNotes = async (manifest, version) => {
+        const step = workflow('finalize-release').jobs.finalize.steps
+            .find(({name}) => name === 'Generate notes and publish the existing draft');
+        let body;
+        await vm.runInNewContext(`(async () => {${step.with.script}})()`, {
+            process: {env: {RELEASE_ID: '42', SOURCE_SHA: SHA, VERSION: version, MANIFEST: 'fixture-manifest.json'}},
+            context: {repo: {owner: 'i7Gamer', repo: 'MySpeed'}},
+            require: name => {
+                assert.equal(name, 'fs');
+                return {readFileSync: file => {
+                    assert.equal(file, 'fixture-manifest.json');
+                    return Buffer.from(JSON.stringify(manifest));
+                }};
+            },
+            github: {rest: {
+                repos: {
+                    getRelease: async () => ({data: {draft: true, tag_name: `v${version}`, target_commitish: 'development'}}),
+                    generateReleaseNotes: async () => ({data: {body: 'GENERATED NOTES'}}),
+                    updateRelease: async (request) => { body = request.body; }
+                },
+                git: {getRef: async () => ({data: {object: {type: 'commit', sha: SHA}}})}
+            }}
+        });
+        return body;
+    };
+
+    const notesManifest = (scopeId, model = 'Westmere-v2') => ({promotion: {scope: {id: scopeId},
+        evidence: {windowsCpuFloor: scopeId === GATED_SCOPE ? {status: 'passed', guestCpu: {model}} : null}}});
+
+    it('keeps the legacy release text byte-identical for every legacy release', async () => {
+        for (const version of ['1.6.1', '1.7.0', '1.7.1']) {
+            const body = await executeReleaseNotes(notesManifest(`owner-approved-reduced-v${version}`), version);
+            assert.equal(createHash('sha256').update(body.replaceAll(version, '<version>')).digest('hex'),
+                LEGACY_RELEASE_BODY_SHA256, version);
+        }
+    });
+
+    it('describes the verified CPU floor only for a gated release, naming its scope and guest model', async () => {
+        const body = await executeReleaseNotes(notesManifest(GATED_SCOPE), GATED_VERSION);
+        assert.match(body, /owner-approved-reduced-cpu-floor-gated qualification scope/);
+        assert.match(body, /KVM guest on the Westmere-v2 CPU model with AVX and AVX2 disabled \(SSE4\.2\/POPCNT present\)/);
+        assert.match(body, /Both Windows executables are byte-identical; the baseline filenames are compatibility aliases\./);
+        assert.match(body, /these two checks are deferred, not passed/);
+        assert.doesNotMatch(body, /AVX-disabled Windows CPU-floor execution is not verified|AVX-disabled Windows execution remains unverified/);
+        assert.doesNotMatch(body, /Nehalem floor|floor (?:is )?verified on Nehalem/i);
+        assert.doesNotMatch(body, /owner-approved-reduced-v1\.7\.2/);
+        assert.ok(body.endsWith('GENERATED NOTES'));
+        for (const model of ['Westmere v2', 'Westmere-v2<script>', '', null])
+            await assert.rejects(executeReleaseNotes(notesManifest(GATED_SCOPE, model), GATED_VERSION),
+                /guest CPU model/i, String(model));
+        await assert.rejects(executeReleaseNotes({promotion: {scope: {id: GATED_SCOPE},
+            evidence: {windowsCpuFloor: null}}}, GATED_VERSION), /guest CPU model/i);
     });
 
     it('publishes exact OCI archives without rebuilding and finalizes only after asset and image gates', () => {

@@ -112,9 +112,16 @@ jobs:
           RELEASE_ID: ${{ inputs.release_id }}
           SOURCE_SHA: ${{ inputs.candidate_sha }}
           VERSION: ${{ inputs.version }}
+          MANIFEST: ${{ runner.temp }}/qualification/qualification-manifest.json
         with:
           script: |
             if (!/^\d+\.\d+\.\d+$/.test(process.env.VERSION)) throw new Error('Invalid release version');
+            // The guard above already verified this manifest's seal and scope; the text only follows it.
+            const manifest = JSON.parse(require('fs').readFileSync(process.env.MANIFEST));
+            const cpuFloorGated = manifest.promotion.scope.id === 'owner-approved-reduced-cpu-floor-gated';
+            const guestCpuModel = manifest.promotion.evidence?.windowsCpuFloor?.guestCpu?.model;
+            if (cpuFloorGated && (typeof guestCpuModel !== 'string' || !/^[A-Za-z0-9.-]+$/.test(guestCpuModel)))
+              throw new Error('Invalid verified guest CPU model');
             const releaseId = Number(process.env.RELEASE_ID);
             if (!Number.isSafeInteger(releaseId) || releaseId <= 0) throw new Error('Invalid release ID');
             const tag = 'v' + process.env.VERSION;
@@ -144,7 +151,9 @@ jobs:
               '| **macOS** | ' + link('Binary', 'MySpeed-macos-x64') + ' | '
                 + link('Binary', 'MySpeed-macos-arm64') + ' |',
               '',
-              'The baseline filenames are retained compatibility aliases; they do not identify a separate CPU target. AVX-disabled Windows execution remains unverified.',
+              cpuFloorGated
+                ? 'Both Windows executables are byte-identical; the baseline filenames are compatibility aliases.'
+                : 'The baseline filenames are retained compatibility aliases; they do not identify a separate CPU target. AVX-disabled Windows execution remains unverified.',
               '',
               '### Source Distribution',
               '',
@@ -167,9 +176,14 @@ jobs:
                 + link('Qualification manifest', 'qualification-manifest.json') + ' · '
                 + link('Manifest SHA-256', 'qualification-manifest.json.sha256')
             ].join('\n');
-            const compatibility = '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 compiler target is Nehalem/SSE4.2 with runtime AVX dispatch; the baseline filenames are compatibility aliases. The Windows CPU floor has not been verified on AVX-disabled hardware.';
-            const qualification = '## Qualification scope and limitations\n\n' + tag
-              + ' uses the owner-approved-reduced-' + tag + ' qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. Windows native HTTP/service runtime with enforced outbound denial is not verified. AVX-disabled Windows CPU-floor execution is not verified. The complete Windows MSI install/upgrade/rollback/uninstall lifecycle is not verified. These checks are deferred, not passed; see the qualification manifest for the exact evidence and artifact digests.';
+            const compatibility = cpuFloorGated
+              ? '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 compiler target is Nehalem/SSE4.2 with runtime AVX dispatch; the baseline filenames are compatibility aliases. The Windows executable was verified in a KVM guest on the ' + guestCpuModel + ' CPU model with AVX and AVX2 disabled (SSE4.2/POPCNT present).'
+              : '## Runtime compatibility\n\nSource installs require Bun 1.4.2 or newer, or Node.js 22.19.0 or newer for development and tests. The x64 compiler target is Nehalem/SSE4.2 with runtime AVX dispatch; the baseline filenames are compatibility aliases. The Windows CPU floor has not been verified on AVX-disabled hardware.';
+            const qualification = cpuFloorGated
+              ? '## Qualification scope and limitations\n\n' + tag
+                + ' uses the owner-approved-reduced-cpu-floor-gated qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. On the ' + guestCpuModel + ' guest CPU with AVX and AVX2 disabled, the exact published Windows executable started, served its loopback listener and stopped cleanly. Windows native HTTP/service runtime with enforced outbound denial and the complete Windows MSI install/upgrade/rollback/uninstall lifecycle are not verified; these two checks are deferred, not passed. See the qualification manifest for the exact evidence and artifact digests.'
+              : '## Qualification scope and limitations\n\n' + tag
+                + ' uses the owner-approved-reduced-' + tag + ' qualification scope. Linux, macOS, source-runtime and Docker checks passed. Windows binaries passed listener-free reset and version checks; installers passed build/provenance checks and WiX ICE validation. Windows native HTTP/service runtime with enforced outbound denial is not verified. AVX-disabled Windows CPU-floor execution is not verified. The complete Windows MSI install/upgrade/rollback/uninstall lifecycle is not verified. These checks are deferred, not passed; see the qualification manifest for the exact evidence and artifact digests.';
             const body = compatibility + '\n\n' + qualification + '\n\n---\n\n' + downloads
               + '\n\n---\n\n' + generated.body;
             await github.rest.repos.updateRelease({owner: context.repo.owner, repo: context.repo.repo,
