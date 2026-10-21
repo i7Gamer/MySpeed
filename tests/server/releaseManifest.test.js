@@ -36,6 +36,12 @@ const DEFERRED_WINDOWS_CHECKS = [
     "Windows native CPU-floor verification",
     "Disposable Windows MSI lifecycle acceptance"
 ];
+const GATED_SCOPE = "owner-approved-reduced-cpu-floor-gated";
+const GATED_RELEASE_VERSIONS = ["1.7.2", "1.7.10", "1.8.0", "2.0.0", "10.0.0"];
+const GATED_DEFERRED_CHECKS = [
+    "Windows native full verification with enforced outbound denial",
+    "Disposable Windows MSI lifecycle acceptance"
+];
 const MAC_SOURCE_ROOT = "/Users/runner/work/MySpeed/MySpeed";
 const MAC_SOURCE_SENTINEL = `${MAC_SOURCE_ROOT}/package.json`;
 const MAC_WORK_ROOT = "/Users/runner/work/_temp/myspeed-macos-standalone/runtime/populated";
@@ -203,7 +209,7 @@ describe("release qualification scope", () => {
         const approved = {repository: REPOSITORY, version: "1.7.0"};
         for (const input of [
             {...approved, version: "1.6.2"}, {...approved, version: "1.6.1-beta.1"},
-            {...approved, version: "1.6.0"}, {...approved, version: "1.7.2"},
+            {...approved, version: "1.6.0"},
             {...approved, version: "1.7"}, {...approved, version: "1.7.0.0"},
             {...approved, version: "01.7.0"}, {...approved, version: "v1.7.0"},
             {...approved, version: "1.7.0-beta.1"}, {...approved, version: "1.7.0\n"},
@@ -215,6 +221,27 @@ describe("release qualification scope", () => {
         first.deferredChecks.length = 0;
         assert.deepEqual(getQualificationScope({repository: REPOSITORY, version: "1.7.0"}).deferredChecks,
             DEFERRED_WINDOWS_CHECKS);
+    });
+
+    it("gates every later canonical release of the approved repository on the CPU floor", () => {
+        for (const version of GATED_RELEASE_VERSIONS)
+            assert.deepEqual(getQualificationScope({repository: REPOSITORY, version}), {
+                id: GATED_SCOPE, deferredChecks: GATED_DEFERRED_CHECKS
+            }, version);
+        for (const input of [
+            {repository: REPOSITORY, version: "1.6.2"}, {repository: REPOSITORY, version: "1.7.0"},
+            {repository: REPOSITORY, version: "01.7.2"}, {repository: REPOSITORY, version: "1.07.2"},
+            {repository: REPOSITORY, version: "1.7.02"}, {repository: REPOSITORY, version: "1.7.2-beta.1"},
+            {repository: REPOSITORY, version: "v1.7.2"}, {repository: REPOSITORY, version: "1.7.2\n"},
+            {repository: REPOSITORY, version: "1.8"}, {repository: REPOSITORY, version: 172},
+            {repository: "fork/MySpeed", version: "1.7.2"}, {repository: "i7gamer/MySpeed", version: "1.8.0"}
+        ]) assert.notEqual(getQualificationScope(input).id, GATED_SCOPE, JSON.stringify(input));
+        assert.deepEqual(getQualificationScope({repository: "fork/MySpeed", version: "1.7.2"}),
+            {id: "full-native", deferredChecks: []});
+        const first = getQualificationScope({repository: REPOSITORY, version: "1.7.2"});
+        first.deferredChecks.length = 0;
+        assert.deepEqual(getQualificationScope({repository: REPOSITORY, version: "1.7.2"}).deferredChecks,
+            GATED_DEFERRED_CHECKS);
     });
 });
 

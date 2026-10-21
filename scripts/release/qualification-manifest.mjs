@@ -25,24 +25,44 @@ const FULL_MODE = 'full';
 const RESET_MODE = 'listener-free-reset';
 const LINUX_STANDALONE_COMMAND = '/candidate';
 const MACOS_NATIVE_BLOCKER = 'macOS native full verification with enforced outbound denial';
+const WINDOWS_CPU_FLOOR_BLOCKER = 'Windows native CPU-floor verification';
 const MACOS_ARCHITECTURES = ['x64', 'arm64'];
 const REQUIRED_EVIDENCE_FIELDS = ['tests', 'binaries', 'msi', 'docker', 'dockerIndex', 'ice'];
 const PROMOTION_BLOCKERS = [
     'Windows native full verification with enforced outbound denial',
     MACOS_NATIVE_BLOCKER,
-    'Windows native CPU-floor verification',
+    WINDOWS_CPU_FLOOR_BLOCKER,
     'Disposable Windows MSI lifecycle acceptance'
 ];
 const REDUCED_RELEASE_VERSIONS = Object.freeze(['1.6.1', '1.7.0', '1.7.1']);
 const REDUCED_RELEASE_REPOSITORY = 'i7Gamer/MySpeed';
+// Every canonical release after the last legacy one is gated on the Windows CPU floor.
+const CPU_FLOOR_GATED_SCOPE = 'owner-approved-reduced-cpu-floor-gated';
+const LAST_LEGACY_RELEASE = Object.freeze([1, 7, 1]);
+const CANONICAL_RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+const isAfterLastLegacyRelease = (version) => {
+    const match = typeof version === 'string' ? CANONICAL_RELEASE_VERSION.exec(version) : null;
+    if (!match) return false;
+    const parts = match.slice(1).map(Number);
+    const index = parts.findIndex((part, position) => part !== LAST_LEGACY_RELEASE[position]);
+    return index !== -1 && parts[index] > LAST_LEGACY_RELEASE[index];
+};
 
 // This records the owner's release-specific acceptance scope, not evidence that
 // the deferred checks passed. All mandatory artifact checks still run below.
-export const getQualificationScope = ({version, repository}) =>
-    REDUCED_RELEASE_VERSIONS.includes(version) && repository === REDUCED_RELEASE_REPOSITORY
-        ? {id: `owner-approved-reduced-v${version}`,
-            deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)}
-        : {id: 'full-native', deferredChecks: []};
+// The legacy releases keep their frozen three-check scope; every later release
+// of the same repository has to pass the Windows CPU-floor check itself.
+export const getQualificationScope = ({version, repository}) => {
+    if (repository !== REDUCED_RELEASE_REPOSITORY) return {id: 'full-native', deferredChecks: []};
+    if (REDUCED_RELEASE_VERSIONS.includes(version))
+        return {id: `owner-approved-reduced-v${version}`,
+            deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)};
+    if (isAfterLastLegacyRelease(version))
+        return {id: CPU_FLOOR_GATED_SCOPE, deferredChecks: PROMOTION_BLOCKERS.filter((check) =>
+            check !== MACOS_NATIVE_BLOCKER && check !== WINDOWS_CPU_FLOOR_BLOCKER)};
+    return {id: 'full-native', deferredChecks: []};
+};
 
 const RELEASE_FILES = [
     ['MySpeed-windows-x64.exe', 'MySpeed.exe', 'MySpeed-windows-x64.exe'],
