@@ -5,6 +5,8 @@ import {fileURLToPath} from 'node:url';
 import {inspectCombinedOciArchive, inspectOciArchive} from './inspect-oci-archive.mjs';
 import {inspectDockerRuntimeEvidence} from './docker-runtime-evidence.mjs';
 import {inspectMacosRuntimeEvidence} from './macos-runtime-evidence.mjs';
+import {CPU_FLOOR_ARTIFACTS, WINDOWS_CPU_FLOOR_EVIDENCE_CONSTANTS, inspectWindowsCpuFloorEvidence}
+    from './windows-cpu-floor-evidence.mjs';
 
 const MANIFEST_SCHEMA_VERSION = 1;
 const SHA256 = /^[a-f0-9]{64}$/;
@@ -25,24 +27,50 @@ const FULL_MODE = 'full';
 const RESET_MODE = 'listener-free-reset';
 const LINUX_STANDALONE_COMMAND = '/candidate';
 const MACOS_NATIVE_BLOCKER = 'macOS native full verification with enforced outbound denial';
+const WINDOWS_CPU_FLOOR_BLOCKER = 'Windows native CPU-floor verification';
 const MACOS_ARCHITECTURES = ['x64', 'arm64'];
 const REQUIRED_EVIDENCE_FIELDS = ['tests', 'binaries', 'msi', 'docker', 'dockerIndex', 'ice'];
+// The CPU-floor jobs only run on a manual dispatch, so skipped is a legitimate
+// result; anything else that is not success means the run must not be sealed.
+const CPU_FLOOR_READINESS_FIELD = 'windowsCpuReadiness';
+const CPU_FLOOR_FIELD = 'windowsCpuFloor';
+const CPU_FLOOR_EVIDENCE_FIELDS = [CPU_FLOOR_READINESS_FIELD, CPU_FLOOR_FIELD];
+const CPU_FLOOR_EVIDENCE_RESULTS = ['success', 'skipped'];
 const PROMOTION_BLOCKERS = [
     'Windows native full verification with enforced outbound denial',
     MACOS_NATIVE_BLOCKER,
-    'Windows native CPU-floor verification',
+    WINDOWS_CPU_FLOOR_BLOCKER,
     'Disposable Windows MSI lifecycle acceptance'
 ];
 const REDUCED_RELEASE_VERSIONS = Object.freeze(['1.6.1', '1.7.0', '1.7.1']);
 const REDUCED_RELEASE_REPOSITORY = 'i7Gamer/MySpeed';
+// Every canonical release after the last legacy one is gated on the Windows CPU floor.
+const CPU_FLOOR_GATED_SCOPE = 'owner-approved-reduced-cpu-floor-gated';
+const LAST_LEGACY_RELEASE = Object.freeze([1, 7, 1]);
+const CANONICAL_RELEASE_VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
+const isAfterLastLegacyRelease = (version) => {
+    const match = typeof version === 'string' ? CANONICAL_RELEASE_VERSION.exec(version) : null;
+    if (!match) return false;
+    const parts = match.slice(1).map(Number);
+    const index = parts.findIndex((part, position) => part !== LAST_LEGACY_RELEASE[position]);
+    return index !== -1 && parts[index] > LAST_LEGACY_RELEASE[index];
+};
 
 // This records the owner's release-specific acceptance scope, not evidence that
 // the deferred checks passed. All mandatory artifact checks still run below.
-export const getQualificationScope = ({version, repository}) =>
-    REDUCED_RELEASE_VERSIONS.includes(version) && repository === REDUCED_RELEASE_REPOSITORY
-        ? {id: `owner-approved-reduced-v${version}`,
-            deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)}
-        : {id: 'full-native', deferredChecks: []};
+// The legacy releases keep their frozen three-check scope; every later release
+// of the same repository has to pass the Windows CPU-floor check itself.
+export const getQualificationScope = ({version, repository}) => {
+    if (repository !== REDUCED_RELEASE_REPOSITORY) return {id: 'full-native', deferredChecks: []};
+    if (REDUCED_RELEASE_VERSIONS.includes(version))
+        return {id: `owner-approved-reduced-v${version}`,
+            deferredChecks: PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER)};
+    if (isAfterLastLegacyRelease(version))
+        return {id: CPU_FLOOR_GATED_SCOPE, deferredChecks: PROMOTION_BLOCKERS.filter((check) =>
+            check !== MACOS_NATIVE_BLOCKER && check !== WINDOWS_CPU_FLOOR_BLOCKER)};
+    return {id: 'full-native', deferredChecks: []};
+};
 
 const RELEASE_FILES = [
     ['MySpeed-windows-x64.exe', 'MySpeed.exe', 'MySpeed-windows-x64.exe'],
@@ -92,13 +120,15 @@ const ALLOWED_DUPLICATES = [
     new Set(['MySpeed-windows-x64.exe', 'MySpeed-windows-x64-baseline.exe'])
 ];
 
-const expectedArtifactNames = () => [...new Set([
+const expectedArtifactNames = (cpuFloorRan) => [...new Set([
     ...RELEASE_FILES.map(([artifact]) => artifact),
     ...CONTAINER_FILES.map(([artifact]) => artifact),
-    CONTAINER_INDEX_FILE[0]
+    CONTAINER_INDEX_FILE[0],
+    ...(cpuFloorRan ? CPU_FLOOR_ARTIFACTS : [])
 ])].sort();
 
-const artifactSizeLimit = (name) => name === 'release-static' ? STATIC_ARCHIVE_LIMIT
+const artifactSizeLimit = (name) => name === 'release-static'
+    || name === WINDOWS_CPU_FLOOR_EVIDENCE_CONSTANTS.ARTIFACT_NAME ? STATIC_ARCHIVE_LIMIT
     : name === 'MySpeed.zip' ? SOURCE_ARCHIVE_LIMIT
         : name.startsWith('qualified-oci-') ? OCI_ARCHIVE_LIMIT : BUILD_ARCHIVE_LIMIT;
 
@@ -143,6 +173,11 @@ const assertInputs = ({candidateSha, version, windowsStamp, runId, runAttempt, r
     for (const field of REQUIRED_EVIDENCE_FIELDS)
         if (evidence?.[field] !== 'success')
             throw new Error(`Mandatory qualification evidence ${field} is not success`);
+    for (const field of CPU_FLOOR_EVIDENCE_FIELDS)
+        if (!CPU_FLOOR_EVIDENCE_RESULTS.includes(evidence?.[field]))
+            throw new Error(`Qualification evidence ${field} is neither success nor skipped`);
+    if (evidence[CPU_FLOOR_FIELD] === 'success' && evidence[CPU_FLOOR_READINESS_FIELD] !== 'success')
+        throw new Error(`Qualification evidence ${CPU_FLOOR_READINESS_FIELD} must succeed before ${CPU_FLOOR_FIELD}`);
 };
 
 const checkedFile = async (root, artifact, file, sizeLimit = null) => {
@@ -219,7 +254,7 @@ const checkedVerificationSummary = async (options, artifact, file, expected) => 
         summaryPath: file, summarySha256: checked.sha256};
 };
 
-const normalizeArtifactMetadata = (metadata) => {
+const normalizeArtifactMetadata = (metadata, cpuFloorRan) => {
     if (!Array.isArray(metadata?.artifacts)) throw new Error('Actions artifact metadata is missing');
     const seen = new Set();
     const normalized = metadata.artifacts.map((artifact) => {
@@ -239,7 +274,7 @@ const normalizeArtifactMetadata = (metadata) => {
     }).sort((left, right) => left.name.localeCompare(right.name));
 
     const actual = normalized.map(({name}) => name);
-    const expected = expectedArtifactNames();
+    const expected = expectedArtifactNames(cpuFloorRan);
     if (JSON.stringify(actual) !== JSON.stringify(expected))
         throw new Error(`Actions artifact set mismatch: expected ${expected.join(', ')}, got ${actual.join(', ')}`);
     return normalized;
@@ -263,7 +298,8 @@ export const validateReleaseDigestPolicy = (assets) => {
 
 const buildManifest = async (options) => {
     assertInputs(options);
-    const actionsArtifacts = normalizeArtifactMetadata(options.artifactMetadata);
+    const cpuFloorRan = options.evidence[CPU_FLOOR_FIELD] === 'success';
+    const actionsArtifacts = normalizeArtifactMetadata(options.artifactMetadata, cpuFloorRan);
     const releaseAssets = [];
     for (const [artifact, file, name] of RELEASE_FILES) {
         const checked = await checkedFile(options.root, artifact, file, artifactSizeLimit(artifact));
@@ -396,14 +432,29 @@ const buildManifest = async (options) => {
         throw new Error('Combined OCI index provenance mismatch');
 
     const scope = getQualificationScope(options);
+    // Only a scope that does not defer the CPU-floor check records it. A legacy
+    // scope keeps its frozen null even when the check happened to run.
+    const cpuFloorGated = !scope.deferredChecks.includes(WINDOWS_CPU_FLOOR_BLOCKER);
+    const windowsCpuFloor = cpuFloorGated && cpuFloorRan ? await inspectWindowsCpuFloorEvidence({
+        directory: path.join(options.root, WINDOWS_CPU_FLOOR_EVIDENCE_CONSTANTS.ARTIFACT_NAME),
+        sourceSha: options.candidateSha,
+        runId: options.runId,
+        runAttempt: options.runAttempt,
+        repository: options.repository,
+        baselineAsset: releaseAssets.find(({name}) => name === 'MySpeed-windows-x64-baseline.exe'),
+        x64Asset: releaseAssets.find(({name}) => name === 'MySpeed-windows-x64.exe'),
+        actionsArtifacts
+    }) : null;
     const blockers = PROMOTION_BLOCKERS.filter((check) => check !== MACOS_NATIVE_BLOCKER
-        && !scope.deferredChecks.includes(check));
+        && !scope.deferredChecks.includes(check)
+        && !(check === WINDOWS_CPU_FLOOR_BLOCKER && windowsCpuFloor !== null));
     return {
         schemaVersion: MANIFEST_SCHEMA_VERSION,
         source: {repository: options.repository, sha: options.candidateSha, version: options.version,
             windowsStamp: options.windowsStamp},
         run: {id: Number(options.runId), attempt: Number(options.runAttempt)},
-        evidence: Object.fromEntries(REQUIRED_EVIDENCE_FIELDS.map((field) => [field, options.evidence[field]])),
+        evidence: Object.fromEntries([...REQUIRED_EVIDENCE_FIELDS, ...CPU_FLOOR_EVIDENCE_FIELDS]
+            .map((field) => [field, options.evidence[field]])),
         runtimeVerification: {...runtimeVerification,
             dockerIndex: {indexDigest: indexProvenance.indexDigest,
                 mode: 'content-addressed-combination', result: options.evidence.dockerIndex}},
@@ -411,7 +462,7 @@ const buildManifest = async (options) => {
             eligible: blockers.length === 0,
             scope,
             evidence: {macosNative: {status: 'passed', verifications: macosNativeVerifications},
-                msiLifecycle: null, windowsCpuFloor: null, windowsNative: null},
+                msiLifecycle: null, windowsCpuFloor, windowsNative: null},
             blockers
         },
         actionsArtifacts,
