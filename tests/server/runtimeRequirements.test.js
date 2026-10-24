@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import {parse} from "yaml";
 import {readSource} from "../helpers/source.js";
 
-const BUN_VERSION = "1.4.2";
+const BUN_VERSION = "1.4.4";
 const MINIMUM_NODE = "22.19.0";
 const config = parse(readSource(".github/workflows/test.yml"));
 const manifest = JSON.parse(readSource("package.json"));

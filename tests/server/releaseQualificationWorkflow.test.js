@@ -565,6 +565,15 @@ describe('trusted artifact-only promotion', () => {
         }
     });
 
+    // Legacy releases shipped on Bun 1.4.2 and keep saying so (above); a gated
+    // release ships on 1.4.4, the first Bun with the CVE-2026-111497 fix.
+    it('names the patched Bun floor for a gated release', async () => {
+        const body = await executeReleaseNotes(notesManifest(GATED_SCOPE), GATED_VERSION);
+        assert.match(body, /MySpeed\.zip\) \(requires Bun 1\.4\.4 or newer\)/);
+        assert.match(body, /Source installs require Bun 1\.4\.4 or newer/);
+        assert.doesNotMatch(body, /1\.4\.2/);
+    });
+
     it('describes the verified CPU floor only for a gated release, naming its scope and guest model', async () => {
         const body = await executeReleaseNotes(notesManifest(GATED_SCOPE), GATED_VERSION);
         assert.match(body, /owner-approved-reduced-cpu-floor-gated qualification scope/);

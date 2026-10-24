@@ -88,7 +88,7 @@ describe("the Windows binaries a release publishes", () => {
     });
 });
 
-/** Both compatibility names use Bun 1.4.2's already-installed native runtime. */
+/** Both compatibility names use Bun 1.4.4's already-installed native runtime. */
 describe("compiling the Windows binaries", () => {
     const stepNamed = (name) => {
         const start = windows.indexOf(`- name: ${name}`);
@@ -245,9 +245,9 @@ describe("the MSI a release publishes", () => {
     });
 });
 
-/** Bun 1.4.2 is the verified unified-baseline runtime for release artifacts. */
+/** Bun 1.4.4 is the verified unified-baseline runtime for release artifacts. */
 describe("the unified x64 runtime contract", () => {
-    const BUN_RUNTIME_VERSION = "1.4.2";
+    const BUN_RUNTIME_VERSION = "1.4.4";
 
     it("compiles with a pinned Bun rather than whatever is latest", () => {
         assert.doesNotMatch(binaries, /bun-version:\s*latest/,

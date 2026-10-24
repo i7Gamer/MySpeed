@@ -12,7 +12,7 @@ const SHA = 'a'.repeat(40);
 const ID = 'synthetic-test-only';
 
 const LABEL = 'org.myspeed.qualification.run';
-const PINNED_IMAGE = 'oven/bun:1.4.2@sha256:9114c058aeae42162ee16dd5084b95fe9473970bb6bcb5b232ab1630f0546895';
+const PINNED_IMAGE = 'oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d';
 
 const daemonPath = value => value.replace(/\\/g, '/').replace(/^([A-Za-z]):\//,
     (_match, drive) => `/run/desktop/mnt/host/${drive.toLowerCase()}/`);

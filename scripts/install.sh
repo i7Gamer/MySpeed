@@ -100,7 +100,7 @@ fi
 ARCH=$(uname -m)
 case "$ARCH" in
     x86_64)
-        # Bun 1.4.2 x64 default/baseline assets are compatibility aliases: both
+        # Bun 1.4.4 x64 default/baseline assets are compatibility aliases: both
         # target Nehalem/SSE4.2 and dispatch newer AVX instructions at runtime.
         # Keep the CPU-based name choice and both asset names for old URLs.
         if grep -qw avx2 /proc/cpuinfo 2>/dev/null; then
@@ -302,7 +302,7 @@ release_asset_url() {
 RELEASE_URL=$(release_asset_url "$BINARY_NAME")
 if [ -z "$RELEASE_URL" ] && [ -n "$BINARY_FALLBACK" ]; then
     # Keep the fallback one-way: older releases may require AVX2 for the default
-    # name. Bun 1.4.2-based builds unify the runtime floor, but a missing baseline
+    # name. Bun 1.4.4-based builds unify the runtime floor, but a missing baseline
     # asset does not prove that the published default is one of those builds.
     if [ "$BINARY_FALLBACK" = "MySpeed-linux-x64" ]; then
         echo -e "$RED✗ ABORTED"
