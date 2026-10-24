@@ -33,7 +33,7 @@ describe("body parser errors", () => {
      * stack trace instead of body-parser's own 400.
      */
     it("answers an undecodable body without running the route", async () => {
-        const {status, body} = await post('{"resumeIn":1}', {"content-encoding": "br"});
+        const {status, body} = await post('{"resumeIn":1}', {"content-encoding": "gzip"});
 
         assert.equal(status, 400);
         assert.doesNotMatch(body?.message ?? "", /paused/i);
@@ -41,7 +41,7 @@ describe("body parser errors", () => {
     });
 
     it("never leaks a stack trace in the response body", async () => {
-        const {text} = await post('{"resumeIn":1}', {"content-encoding": "br"});
+        const {text} = await post('{"resumeIn":1}', {"content-encoding": "gzip"});
         assert.doesNotMatch(text, /at .*\.js:\d+/);
     });
 });

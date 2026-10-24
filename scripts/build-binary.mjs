@@ -10,7 +10,7 @@ const HARFBUZZ_ADAPTER = path.join(SCRIPT_DIRECTORY, "binary", "embedded-harfbuz
 const PRODUCTION_EXTERNALS = ["pg", "pg-hstore"];
 const WINDOWS_TARGET_PREFIX = "bun-windows-";
 const WINDOWS_VERSION_PATTERN = /^\d+\.\d+\.\d+\.\d+$/;
-export const QUALIFIED_BUN_VERSION = "1.4.2";
+export const QUALIFIED_BUN_VERSION = "1.4.4";
 
 export const assertQualifiedBunRuntime = (runtimeVersion) => {
     if (runtimeVersion === QUALIFIED_BUN_VERSION) return;

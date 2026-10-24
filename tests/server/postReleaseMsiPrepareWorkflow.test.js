@@ -120,7 +120,7 @@ describe("post-release MSI hosted preparation workflow", () => {
         assert.match(WORKFLOW, /CANDIDATE_SOURCE_SHA:\s*4fa4dd40a89a062735f98bd85d685e0624ff46a8/u);
         assert.match(WORKFLOW, /ref: \$\{\{ env\.CANDIDATE_SOURCE_SHA \}\}[\s\S]*path: candidate-source/u);
         assert.match(WORKFLOW, /actions\/setup-node@[0-9a-f]{40}[\s\S]*node-version: 22\.19\.0/u);
-        assert.match(WORKFLOW, /oven-sh\/setup-bun@[0-9a-f]{40}[\s\S]*bun-version: 1\.4\.2/u);
+        assert.match(WORKFLOW, /oven-sh\/setup-bun@[0-9a-f]{40}[\s\S]*bun-version: 1\.4\.4/u);
         assert.match(WORKFLOW, /bun install --frozen-lockfile[\s\S]*generate-migrations\.js[\s\S]*generate-integrations\.js/u);
         assert.match(WORKFLOW, /post-release-msi-prepare-controller\.mjs/u);
         assert.match(WORKFLOW, /Get-Command pwsh -CommandType Application/u);

@@ -10,6 +10,7 @@ import errorMiddleware from './middlewares/error.js';
 import securityHeaders from './middlewares/securityHeaders.js';
 import { basePath, stripBasePath } from './middlewares/basePath.js';
 import httpsRedirect from './middlewares/httpsRedirect.js';
+import rejectBrotliBody from './middlewares/rejectBrotliBody.js';
 import { createRateLimit } from './middlewares/rateLimit.js';
 import { parseTrustProxy } from './util/trustProxy.js';
 import configRoutes from './routes/config.js';
@@ -114,6 +115,9 @@ app.use(stripBasePath(basePath()));
 
 app.use(httpsRedirect());
 app.use(securityHeaders());
+
+// Ahead of every body parser, including the import routes' own.
+app.use(rejectBrotliBody());
 
 // body-parser marks the request as read, so whichever parser runs first wins.
 // The import routes are skipped here and parse their own body after their

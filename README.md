@@ -47,7 +47,7 @@ Download a Linux binary from the [releases page](https://github.com/i7Gamer/MySp
 - `MySpeed-linux-x64-baseline` — x64 baseline-name compatibility alias
 - `MySpeed-linux-arm64` — aarch64
 
-In Bun 1.4.2-based builds, the x64 aliases target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
+In Bun 1.4.4-based builds, the x64 aliases target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
 the names are retained for download and installer compatibility. The install script
 still selects the baseline-name alias when `/proc/cpuinfo` has no `avx2` flag.
 
@@ -64,7 +64,7 @@ run, `chooser.sh` at the same address puts the question first.
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*
 Linux — a container is fine. Cross-compiling from macOS or Windows embeds the host's
 native addons (e.g. `@resvg/resvg-js`), producing a binary that starts and then fails
-at runtime. Standalone compilation is qualified only with Bun **exactly 1.4.2** and
+at runtime. Standalone compilation is qualified only with Bun **exactly 1.4.4** and
 rejects any other Bun version; running MySpeed from source still supports the minimum
 documented below.
 
@@ -77,7 +77,7 @@ Download from the [releases page](https://github.com/i7Gamer/MySpeed/releases/la
 - `MySpeed-installer.msi` and `MySpeed-installer-baseline.msi` — the same two as an
   installer, which registers MySpeed as a Windows service
 
-In Bun 1.4.2-based builds, both x64 names target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
+In Bun 1.4.4-based builds, both x64 names target Nehalem/SSE4.2 and dispatch AVX/AVX2/AVX-512 code at runtime;
 the default and baseline names remain as download/MSI compatibility aliases. Either
 Windows executable or MSI variant is therefore suitable for supported x64 hardware.
 
@@ -136,7 +136,7 @@ The route trace (switched on under *Optimal values*) uses the operating system's
 <details>
 <summary><strong>Build and run it yourself</strong> — the binaries above are this, already built</summary>
 
-Requires [Bun](https://bun.sh) **1.4.2 or newer**. Upgrade the Bun runtime before
+Requires [Bun](https://bun.sh) **1.4.4 or newer**. Upgrade the Bun runtime before
 installing dependencies; a source ZIP does not carry its own runtime. Node.js
 **22.19.0 or newer** is required for Node-based development and tests.
 

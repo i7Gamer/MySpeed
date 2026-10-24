@@ -47,7 +47,7 @@ Lade eine Linux-Binary von der [Releases-Seite](https://github.com/i7Gamer/MySpe
 - `MySpeed-linux-x64-baseline` - x64-Kompatibilitätsalias mit Baseline-Namen
 - `MySpeed-linux-arm64` - aarch64
 
-Bei Builds mit Bun 1.4.2 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
+Bei Builds mit Bun 1.4.4 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
 AVX/AVX2/AVX-512-Pfade werden zur Laufzeit ausgewählt. Beide Namen bleiben für bestehende
 Downloads und Installer erhalten. Ohne `avx2`-Flag in `/proc/cpuinfo` wählt das
 Installationsskript weiterhin den Baseline-Namen.
@@ -66,7 +66,7 @@ Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* L
 geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die
 nativen Module des Host-Systems (z. B. `@resvg/resvg-js`) in der Binary; sie startet dann
 zwar, scheitert aber zur Laufzeit. Die eigenständige Kompilierung ist nur mit Bun
-**genau 1.4.2** qualifiziert und lehnt jede andere Bun-Version ab; für den Betrieb aus dem
+**genau 1.4.4** qualifiziert und lehnt jede andere Bun-Version ab; für den Betrieb aus dem
 Quellcode gilt weiterhin die unten angegebene Mindestversion.
 
 #### 🪟 Windows
@@ -78,7 +78,7 @@ Lade von der [Releases-Seite](https://github.com/i7Gamer/MySpeed/releases/latest
 - `MySpeed-installer.msi` und `MySpeed-installer-baseline.msi` - dieselben beiden als
   Installer, der MySpeed als Windows-Dienst einrichtet
 
-Bei Builds mit Bun 1.4.2 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
+Bei Builds mit Bun 1.4.4 unterstützen beide x64-Namen Nehalem/SSE4.2; schnellere
 AVX/AVX2/AVX-512-Pfade werden zur Laufzeit ausgewählt. Die Standard- und Baseline-Namen
 bleiben als Download-/MSI-Kompatibilitätsaliase erhalten. Für unterstützte x64-Hardware
 kannst du daher jede der beiden Exe- oder MSI-Varianten verwenden.
@@ -140,7 +140,7 @@ Die Routenverfolgung wird unter *Optimale Werte* eingeschaltet und verwendet das
 <details>
 <summary><strong>Selbst bauen und starten</strong> - die Binaries oben sind genau das, nur schon gebaut</summary>
 
-Benötigt [Bun](https://bun.sh) **1.4.2 oder neuer**. Aktualisiere Bun vor der
+Benötigt [Bun](https://bun.sh) **1.4.4 oder neuer**. Aktualisiere Bun vor der
 Installation der Abhängigkeiten; das Quellcode-ZIP enthält keine Laufzeitumgebung.
 Für Node-basierte Entwicklung und Tests wird Node.js **22.19.0 oder neuer** benötigt.
 

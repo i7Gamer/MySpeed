@@ -69,9 +69,11 @@ describe("standalone binary build arguments", () => {
 describe("standalone binary compiler runtime", () => {
     it("accepts only the exact Bun runtime qualified for release artifacts", () => {
         assert.doesNotThrow(() => assertQualifiedBunRuntime(QUALIFIED_BUN_VERSION));
-        assert.throws(() => assertQualifiedBunRuntime("1.4.1"), /requires Bun 1\.4\.2.*received 1\.4\.1/);
-        assert.throws(() => assertQualifiedBunRuntime("1.4.3"), /requires Bun 1\.4\.2.*received 1\.4\.3/);
-        assert.throws(() => assertQualifiedBunRuntime(undefined), /requires Bun 1\.4\.2.*non-Bun runtime/);
+        assert.throws(() => assertQualifiedBunRuntime("1.4.1"), /requires Bun 1\.4\.4.*received 1\.4\.1/);
+        // CVE-2026-111497: 1.4.2's bundled Brotli decoder is the vulnerable one.
+        assert.throws(() => assertQualifiedBunRuntime("1.4.2"), /requires Bun 1\.4\.4.*received 1\.4\.2/);
+        assert.throws(() => assertQualifiedBunRuntime("1.4.3"), /requires Bun 1\.4\.4.*received 1\.4\.3/);
+        assert.throws(() => assertQualifiedBunRuntime(undefined), /requires Bun 1\.4\.4.*non-Bun runtime/);
     });
 });
 
@@ -174,7 +176,7 @@ describe("the build-only HarfBuzz replacement", () => {
         await assert.rejects(() => buildBinary({root: ROOT, outfile: "binary"}, async () => {
             invoked = true;
             return {success: true, logs: []};
-        }, "1.4.1"), /requires Bun 1\.4\.2/);
+        }, "1.4.1"), /requires Bun 1\.4\.4/);
         assert.equal(invoked, false);
     });
 });

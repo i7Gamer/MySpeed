@@ -172,7 +172,7 @@ describe("the root privilege guard", () => {
 });
 
 /**
- * Bun 1.4.2 builds both x64 compatibility names from the qualified Nehalem
+ * Bun 1.4.4 builds both x64 compatibility names from the qualified Nehalem
  * runtime. The installer retains its CPU-based name choice because older
  * releases may still carry an AVX2-only default asset; substituting that older
  * default on a pre-AVX2 host would create a Restart=always crash loop.

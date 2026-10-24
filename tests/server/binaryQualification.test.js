@@ -170,7 +170,7 @@ it('executes the packaged source ZIP on minimum Node and Bun before upload', () 
     assert.match(verify, /unzip -q MySpeed\.zip/);
     assert.match(verify, /bun install --production --frozen-lockfile/);
     assert.match(verify, /node:22\.19\.0-bookworm-slim/);
-    assert.match(verify, /oven\/bun:1\.4\.2/);
+    assert.match(verify, /oven\/bun:1\.4\.4/);
     assert.match(verify, /--network none/);
     assert.match(verify, /check-artifact\.mjs/);
     assert.match(verify, /--arg \/source\/server\/index\.js/);

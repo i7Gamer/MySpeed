@@ -25,7 +25,7 @@ describe("Bun runtime guidance", () => {
 
     it("keeps German runtime and CPU guidance aligned", () => {
         const readme = read("README.de.md");
-        assert.ok(readme.includes("1.4.2"), "German source instructions omit the Bun floor");
+        assert.ok(readme.includes("1.4.4"), "German source instructions omit the Bun floor");
         assert.ok(readme.includes("22.19.0"), "German Node instructions omit the Node floor");
         assert.ok(/Kompatibilitätsalias/.test(readme));
         assert.ok(!/Standard-Ziel von Bun \(benötigt \*\*AVX2\*\*\)/.test(readme));
@@ -34,7 +34,7 @@ describe("Bun runtime guidance", () => {
     it("documents the verified source and Node development minimums", () => {
         const readme = read("README.md");
 
-        assert.match(readme, /Bun[\s\S]*?1\.4\.2[\s\S]*?before[\s\S]*?install/i,
+        assert.match(readme, /Bun[\s\S]*?1\.4\.4[\s\S]*?before[\s\S]*?install/i,
             "source users are not told to upgrade Bun before installing dependencies");
         assert.match(readme, /Node(?:\.js)?[\s\S]*?22\.19\.0[\s\S]*?(?:development|test)/i,
             "Node development/test minimum is not documented");

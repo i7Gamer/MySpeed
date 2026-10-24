@@ -141,6 +141,29 @@ describe("request body limits", () => {
     });
 });
 
+describe("brotli request bodies", () => {
+    // Not a valid brotli stream: the point is that nothing tries to decode it.
+    const brotliLabelled = (method) => ({
+        method,
+        headers: {...REMOTE, "content-type": "application/json", "content-encoding": "br"},
+        body: Buffer.from([0xce, 0xb2, 0xcf, 0x81, 0x6f, 0x74, 0x6c, 0x69])
+    });
+
+    // CVE-2026-111497: the JSON parser ran the runtime's brotli decoder on an
+    // anonymous caller's body before any password check.
+    it("refuses one on an ordinary route before authentication", async () => {
+        const {status} = await api(server.baseUrl, "/config/ping", brotliLabelled("PATCH"));
+
+        assert.equal(status, 415);
+    });
+
+    it("refuses one on the import routes, which parse their own body", async () => {
+        const {status} = await api(server.baseUrl, "/storage/tests/history", brotliLabelled("PUT"));
+
+        assert.equal(status, 415);
+    });
+});
+
 describe("query bounds", () => {
     it("refuses a range no retention policy could produce", async () => {
         const {status, body} = await api(server.baseUrl, "/speedtests/statistics?from=1900-01-01&to=2100-01-01");
