@@ -12,7 +12,7 @@ const pkg = JSON.parse(readSource('package.json'));
 describe('qualified release version and assets', () => {
     it('freezes both package manifests at the approved maintenance version', () => {
         const client = JSON.parse(readSource('client/package.json'));
-        assert.equal(pkg.version, '1.7.1');
+        assert.equal(pkg.version, '1.7.2');
         assert.equal(client.version, pkg.version);
     });
     it('requires exact source, version, Windows stamp and run attempt at promotion', () => {
