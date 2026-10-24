@@ -287,6 +287,24 @@ export function validateHostedContext(value) {
     return deepFreeze(structuredClone(value));
 }
 
+/**
+ * Whether a context sealed in one job names the same run as the context the
+ * observing job derives for itself.
+ *
+ * Everything must match except ImageVersion. The two jobs are separate VMs, and
+ * during a GitHub runner-image rollout they can land on different images of the
+ * same OS - run 40093100811 failed twice that way. Each job's image stays on
+ * record: the sealed one in closure.json, the observing one in the result.
+ */
+export function sameSealedContext(sealed, observed) {
+    const withoutImageVersion = (value) => {
+        const copy = structuredClone(validateHostedContext(value));
+        delete copy.environment.ImageVersion;
+        return JSON.stringify(copy);
+    };
+    return withoutImageVersion(sealed) === withoutImageVersion(observed);
+}
+
 export function createClosureManifest({context, moduleBytes}) {
     const checkedContext = validateHostedContext(context);
     if (!Buffer.isBuffer(moduleBytes) || moduleBytes.length === 0 || moduleBytes.length > CAPABILITY_LIMITS.resultBytes)
@@ -303,7 +321,7 @@ export function validateClosureManifest({manifest, moduleBytes, expectedContext}
     if (manifest.module.name !== expected.module.name || manifest.module.bytes !== expected.module.bytes ||
         manifest.module.sha256 !== expected.module.sha256)
         throw new TypeError("manifest module identity mismatch");
-    if (expectedContext && JSON.stringify(validateHostedContext(expectedContext)) !== JSON.stringify(manifest.context))
+    if (expectedContext && !sameSealedContext(manifest.context, expectedContext))
         throw new TypeError("manifest context mismatch");
     return deepFreeze(structuredClone(manifest));
 }
@@ -517,7 +535,7 @@ export function buildCapabilityEvidence({context, manifest, resources, sourceSha
     process: processValue, rawStreams, probe, startedMonotonicNs, finishedMonotonicNs}) {
     const checkedContext = validateHostedContext(context);
     assertKeys(manifest, MANIFEST_KEYS, "manifest");
-    if (JSON.stringify(manifest.context) !== JSON.stringify(checkedContext)) throw new TypeError("manifest context mismatch");
+    if (!sameSealedContext(manifest.context, checkedContext)) throw new TypeError("manifest context mismatch");
     assertExactString(sourceSha256, SHA256, "sourceSha256");
     if (sourceSha256 !== sha256(Buffer.from(KVM_PROBE_SOURCE))) throw new TypeError("probe source hash mismatch");
     assertKeys(probeBinary, ["after", "before"], "probeBinary");
@@ -854,7 +872,7 @@ function sanitizeFailure(error) {
 export async function runCapabilityObservation({context, manifest, workRoot, resultPath}, operations) {
     const checkedContext = validateHostedContext(context);
     assertKeys(manifest, MANIFEST_KEYS, "manifest");
-    if (JSON.stringify(manifest.context) !== JSON.stringify(checkedContext)) throw new TypeError("manifest context mismatch");
+    if (!sameSealedContext(manifest.context, checkedContext)) throw new TypeError("manifest context mismatch");
     if (!operations || typeof operations !== "object") throw new TypeError("operations are required");
     for (const name of ["monotonicNs", "readOwnedFile", "readResources", "resolveCompiler", "runOwned", "writeExclusive"])
         if (typeof operations[name] !== "function") throw new TypeError(`operations.${name} is required`);
@@ -956,7 +974,7 @@ async function invokeProbe(options) {
         throw new Error("manifest size is invalid");
     const manifest = validateClosureManifest({manifest: JSON.parse(manifestBytes.toString(UTF8)), moduleBytes,
         expectedContext: context});
-    if (JSON.stringify(manifest.context) !== JSON.stringify(context)) throw new Error("closure context mismatch");
+    if (!sameSealedContext(manifest.context, context)) throw new Error("closure context mismatch");
     const workRoot = path.join(runnerTemp, `myspeed-kvm-capability-${context.nonce}`);
     fs.mkdirSync(workRoot, {recursive: false, mode: 0o700});
     const resultPath = assertDirectChild(workRoot, options.result, RESULT_NAME);

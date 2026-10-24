@@ -16,6 +16,7 @@ import {
     resolveCgroupLayout,
     runCapabilityObservation,
     runOwnedProcess,
+    sameSealedContext,
     validateClosureManifest,
     validateHostedContext
 } from "../../scripts/qualification/linux-kvm-capability.mjs";
@@ -162,6 +163,47 @@ describe("hosted Linux KVM capability contract", () => {
             assert.throws(() => validateClosureManifest({manifest: changed, moduleBytes: bytes,
                 expectedContext: context()}));
         }
+    });
+
+    /**
+     * The sealing job and the observing job are separate VMs, and during a
+     * GitHub runner-image rollout they can land on different images of the same
+     * OS. Run 40093100811 failed twice that way with "manifest context mismatch".
+     * Each job's image stays on record (closure.json and the result); only
+     * equality between them is not demanded.
+     */
+    it("accepts a closure sealed on another image version of the same run", () => {
+        const bytes = Buffer.from("reviewed module bytes\n");
+        const manifest = createClosureManifest({context: context(), moduleBytes: bytes});
+        const observer = context();
+        observer.environment.ImageVersion = "20261023.334.3";
+
+        assert.deepEqual(validateClosureManifest({manifest, moduleBytes: bytes, expectedContext: observer}), manifest);
+        assert.equal(sameSealedContext(manifest.context, observer), true);
+    });
+
+    it("still demands every other context field match across jobs", () => {
+        for (const mutate of [
+            value => { value.environment.ImageOS = "ubuntu22"; },
+            value => { value.runAttempt = "3"; },
+            value => { value.runId = "987654321"; },
+            value => { value.nonce = "f".repeat(32); },
+            value => { value.sourceSha = "c".repeat(40); },
+            value => { value.eventSha = "c".repeat(40); }
+        ]) {
+            const observer = context();
+            mutate(observer);
+            // Refused either way: a mismatch, or a context that fails validation outright.
+            let accepted;
+            try { accepted = sameSealedContext(context(), observer); } catch { accepted = false; }
+            assert.equal(accepted, false);
+        }
+    });
+
+    it("rejects an invalid image version on either side", () => {
+        const observer = context();
+        observer.environment.ImageVersion = "bad version";
+        assert.throws(() => sameSealedContext(context(), observer), /ImageVersion/);
     });
 
     it("records the informational statfs product and computes effective cgroup memory", () => {
@@ -353,6 +395,25 @@ describe("hosted Linux KVM capability contract", () => {
         assert.equal(failed.status, "failed");
         assert.equal(failed.capability, "timeout");
         assert.equal(failed.qualifying, false);
+    });
+
+    it("records the observing job's own image when the closure was sealed on another", () => {
+        const manifest = createClosureManifest({context: context(), moduleBytes: Buffer.from("bytes")});
+        const observer = context();
+        observer.environment.ImageVersion = "20261023.334.3";
+        const evidence = buildCapabilityEvidence({
+            context: observer, manifest, resources: parseResourceObservation(rawResources()),
+            sourceSha256: crypto.createHash("sha256").update(Buffer.from(KVM_PROBE_SOURCE)).digest("hex"),
+            probeBinary: {before: Buffer.from("probe"), after: Buffer.from("probe")},
+            compiler: compilerRecord(),
+            process: processRecord(), rawStreams: {stdout: Buffer.from(`${JSON.stringify(passedProbe())}\n`),
+                stderr: Buffer.alloc(0)}, probe: passedProbe(),
+            startedMonotonicNs: "100", finishedMonotonicNs: "200"
+        });
+        assert.equal(evidence.context.environment.ImageVersion, "20261023.334.3");
+
+        observer.runAttempt = "3";
+        assert.throws(() => buildCapabilityEvidence({context: observer, manifest}), /manifest context mismatch/);
     });
 
     it("runs the real orchestration seam and retains bounded failure evidence", async () => {
