@@ -11,7 +11,8 @@ import {
     buildPrivilegedArguments,
     createPrivilegedClosureManifest,
     runPrivilegedRetry,
-    validateOrdinaryPermissionDenied
+    validateOrdinaryPermissionDenied,
+    validatePrivilegedClosureManifest
 } from "../../scripts/qualification/linux-kvm-privileged-capability.mjs";
 import {
     createClosureManifest,
@@ -114,6 +115,29 @@ describe("hosted Linux privileged KVM capability retry", () => {
         assert.deepEqual(manifest.files.map(file => file.name), ["closure.json", "linux-kvm-capability.mjs",
             "linux-kvm-privileged-capability.mjs"]);
         assert.equal(Object.isFrozen(manifest), true);
+    });
+
+    // The seal and the retry are separate jobs that a runner-image rollout can
+    // put on different images; see linuxKvmCapability.test.js.
+    it("accepts a privileged closure sealed on another image version of the same run", () => {
+        const coreManifest = createClosureManifest({context: context(), moduleBytes: CORE_BYTES});
+        const coreManifestBytes = Buffer.from(`${JSON.stringify(coreManifest)}\n`);
+        const manifest = createPrivilegedClosureManifest({context: context(), coreBytes: CORE_BYTES,
+            extensionBytes: EXTENSION_BYTES, coreManifestBytes});
+        const observer = context();
+        observer.environment.ImageVersion = "20261023.334.3";
+        const inputs = {coreBytes: CORE_BYTES, extensionBytes: EXTENSION_BYTES, coreManifestBytes};
+
+        assert.doesNotThrow(() => validatePrivilegedClosureManifest({manifest, context: observer, ...inputs}));
+        for (const mutate of [
+            value => { value.context.runAttempt = "3"; },
+            value => { value.files[1].sha256 = "0".repeat(64); },
+            value => { value.extra = true; }
+        ]) {
+            const changed = structuredClone(manifest);
+            mutate(changed);
+            assert.throws(() => validatePrivilegedClosureManifest({manifest: changed, context: observer, ...inputs}));
+        }
     });
 
     it("retries only an exact same-context ordinary permission denial", () => {

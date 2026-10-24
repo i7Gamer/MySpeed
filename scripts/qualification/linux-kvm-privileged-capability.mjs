@@ -11,6 +11,7 @@ import {
     createClosureManifest,
     KVM_PROBE_SOURCE,
     runOwnedProcess,
+    sameSealedContext,
     validateClosureManifest,
     validateHostedContext
 } from "./linux-kvm-capability.mjs";
@@ -93,10 +94,14 @@ export function createPrivilegedClosureManifest({context, coreBytes, extensionBy
     ]});
 }
 
-function validatePrivilegedClosureManifest({manifest, context, coreBytes, extensionBytes, coreManifestBytes}) {
+// The context is compared with sameSealedContext: the seal ran in another job,
+// which a runner-image rollout can put on another image.
+export function validatePrivilegedClosureManifest({manifest, context, coreBytes, extensionBytes, coreManifestBytes}) {
     assertKeys(manifest, ["context", "files", "schemaVersion"], "privileged manifest");
     const expected = createPrivilegedClosureManifest({context, coreBytes, extensionBytes, coreManifestBytes});
-    if (!sameJson(manifest, expected)) throw new TypeError("privileged closure manifest mismatch");
+    if (manifest.schemaVersion !== expected.schemaVersion || !sameJson(manifest.files, expected.files) ||
+        !sameSealedContext(manifest.context, context))
+        throw new TypeError("privileged closure manifest mismatch");
     return expected;
 }
 
