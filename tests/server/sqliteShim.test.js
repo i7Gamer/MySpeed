@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Database } from "../../server/util/bun-sqlite-shim.js";
+import { readSource, withoutComments } from "../helpers/source.js";
 
 /**
  * The pragmas the shim opens every database with.
@@ -61,7 +62,9 @@ describe("the sqlite shim's connection settings", () => {
      * directory), and the server exited with "Could not open the database".
      */
     it("arms the busy timeout before the first statement that needs a lock", () => {
-        const source = fs.readFileSync(new URL("../../server/util/bun-sqlite-shim.js", import.meta.url), "utf8");
+        // Comments stripped, so one that names either pragma cannot stand in
+        // for the statement.
+        const source = withoutComments(readSource("server/util/bun-sqlite-shim.js"));
         const timeout = source.indexOf("PRAGMA busy_timeout");
         const journal = source.indexOf("PRAGMA journal_mode");
 
