@@ -116,7 +116,10 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
             reject(error);
         });
 
-        answerDeadline = setTimeout(() => request.destroy(timedOutError(timeout)), timeout);
+        // Only for a real bound: 0 switches the transport's idle timer off,
+        // and as a deadline it would end every request on the next tick.
+        if (Number.isFinite(timeout) && timeout > 0)
+            answerDeadline = setTimeout(() => request.destroy(timedOutError(timeout)), timeout);
 
         // `timeout` only arms the socket's idle timer; it does not end the
         // request. Without this a node that accepts the connection and then says

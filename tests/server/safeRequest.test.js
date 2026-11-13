@@ -2,6 +2,7 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import dns from "node:dns";
+import { EventEmitter } from "node:events";
 import { safeRequest, MAX_RESPONSE_BYTES, REQUEST_TIMED_OUT } from "../../server/util/safeRequest.js";
 import { safeLookup } from "../../server/util/safeUrl.js";
 
@@ -171,7 +172,8 @@ describe("a request the runtime never times out", () => {
         const {transports, built} = silentTransport();
         const pending = safeRequest(url("/"), {timeout: SHORT_TIMEOUT_MS, transports});
 
-        const response = new (await import("node:events")).EventEmitter();
+        // Answered in the same turn: anything awaited first races the deadline.
+        const response = new EventEmitter();
         response.statusCode = 200;
         response.headers = {};
         built[0].request.respond(response);
@@ -183,6 +185,19 @@ describe("a request the runtime never times out", () => {
         const result = await pending;
         assert.equal(result.body.toString(), "late");
         assert.equal(built[0].request.destroyed, null);
+    });
+
+    // 0 has always meant "no idle timer" to the transport; as a deadline it
+    // would refuse every request on the next tick instead.
+    it("arms no deadline when the timeout is switched off", async () => {
+        const {transports, built} = silentTransport();
+        const pending = safeRequest(url("/"), {timeout: 0, transports});
+
+        await new Promise((resolve) => setTimeout(resolve, SHORT_TIMEOUT_MS));
+        assert.equal(built[0].request.destroyed, null, "a zero timeout ended the request at once");
+
+        built[0].request.destroy(new Error("done"));
+        await assert.rejects(() => pending, /done/);
     });
 
     it("hands the timeout to the transport as well", async () => {
