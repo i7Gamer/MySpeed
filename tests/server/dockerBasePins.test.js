@@ -12,6 +12,9 @@ import {readSource} from "../helpers/source.js";
  */
 const SHA256_HEX_LENGTH = 64;
 const DIGEST = new RegExp(`@sha256:[0-9a-f]{${SHA256_HEX_LENGTH}}$`);
+// The tag is whatever follows the last colon before the digest and holds no
+// slash, so a registry port (`host:5000/image@sha256:...`) is not taken for one.
+const TAG_BEFORE_DIGEST = /^[^@\s]+:[^@\s/:]+@sha256:/;
 
 const dockerfile = readSource("Dockerfile");
 const froms = [...dockerfile.matchAll(/^FROM\s+(\S+)(?:\s+AS\s+(\S+))?/gim)]
@@ -35,7 +38,14 @@ describe("Dockerfile base image pins", () => {
 
     it("keeps the tag next to the digest", () => {
         for (const ref of registryImages)
-            assert.match(ref, /^[^:@\s]+(\/[^:@\s]+)*:[^@\s]+@sha256:/, `${ref} lost its readable tag`);
+            assert.match(ref, TAG_BEFORE_DIGEST, `${ref} lost its readable tag`);
+    });
+
+    it("tells a tag from a registry port", () => {
+        for (const tagged of ["bun:1-alpine@sha256:ab", "oven/bun:1@sha256:ab", "host:5000/oven/bun:1@sha256:ab"])
+            assert.match(tagged, TAG_BEFORE_DIGEST);
+        for (const untagged of ["bun@sha256:ab", "oven/bun@sha256:ab", "host:5000/oven/bun@sha256:ab"])
+            assert.doesNotMatch(untagged, TAG_BEFORE_DIGEST);
     });
 
     it("does not demand a digest of a reference to an earlier stage", () => {
