@@ -412,6 +412,11 @@ function Get-MySpeedOwner {
 
     # Null for an owner that cannot be read, which no list of trusted owners
     # contains: a descriptor that hides from SYSTEM is not one to trust.
+    #
+    # Of a link, this is the owner of the link and not of what it points at -
+    # for a junction and for a symbolic link to a directory or a file. Whether
+    # a link is one an administrator made rests on that, and the tests hold it
+    # to it.
     try {
         return (Get-Acl -LiteralPath $Path).GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     } catch {

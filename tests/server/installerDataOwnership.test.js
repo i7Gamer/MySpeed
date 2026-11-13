@@ -620,6 +620,61 @@ describe("protecting a data directory", {skip: elevated ? false : "needs Windows
             assert.equal(security(root)[0].owner, ADMINISTRATORS_SID);
         });
 
+        describe("whose target the service's own account owns", () => {
+            // A link is judged by who made the link. Were its owner read
+            // through it, a link any account planted at a folder SYSTEM owns
+            // would pass for one an administrator made and be left in place,
+            // for its maker to point somewhere else once the service runs.
+            // Windows PowerShell reads the link's own owner; these keep it so.
+            const systemOwned = (directory) => {
+                const elsewhere = outside(directory);
+                ownedBy(elsewhere.canary, SYSTEM_SID);
+                ownedBy(elsewhere.target, SYSTEM_SID);
+
+                return {...elsewhere, before: security(elsewhere.target, elsewhere.canary)};
+            };
+
+            for (const [kind, type, leaf, aim] of [
+                ["junction", "junction", "bin", "target"],
+                ["directory symbolic link", "dir", "bin", "target"],
+                ["file symbolic link", "file", path.join("bin", "iperf3.exe"), "canary"],
+            ]) {
+                it(`removes a planted ${kind} from the data directory`, () => {
+                    const {directory, root} = programData();
+                    const elsewhere = systemOwned(directory);
+                    write(path.join(root, "data", "storage.db"));
+                    const link = path.join(root, leaf);
+                    fs.mkdirSync(path.dirname(link), {recursive: true});
+                    fs.symlinkSync(elsewhere[aim], link, type);
+                    ownedBy(link, USERS_SID);
+
+                    succeeded(protect(root));
+
+                    assert.throws(() => fs.lstatSync(link), {code: "ENOENT"}, "the link passed for one an administrator made");
+                    untouched(elsewhere);
+                    assert.ok(fs.readFileSync(path.join(onlyQuarantine(directory), "README.txt"), "utf8").includes(elsewhere[aim]),
+                        "the note does not say where the link pointed");
+                });
+            }
+
+            for (const [kind, type] of [["junction", "junction"], ["directory symbolic link", "dir"]]) {
+                it(`replaces a planted ${kind} standing where the data directory belongs`, () => {
+                    const {directory, root} = programData();
+                    const elsewhere = systemOwned(directory);
+                    fs.symlinkSync(elsewhere.target, root, type);
+                    ownedBy(root, USERS_SID);
+
+                    const result = protect(root);
+                    succeeded(result);
+
+                    assert.doesNotMatch(result.stdout, /a link an administrator created/);
+                    assert.equal(fs.lstatSync(root).isSymbolicLink(), false, "the service would still write wherever the link points");
+                    assert.deepEqual(fs.readdirSync(root).sort(), ["data", "logs"]);
+                    untouched(elsewhere);
+                });
+            }
+        });
+
         it("leaves a link an administrator made, and what it points at, alone", () => {
             // The operator who moved the database to another volume did it on
             // purpose - the same reading install.sh gives a symlinked data
