@@ -179,6 +179,8 @@ the dropdown menu. A new token is issued on every restart and is never written t
 disk. On a network you fully trust you can skip this with `ALLOW_NO_PASSWORD=true`
 — on a public address, don't.
 
+Requests from the machine itself are let in without the token. A reverse proxy on the same machine counts as "the machine itself" unless it says it is a proxy, so keep the `proxy_set_header` lines from the [nginx example](#put-a-reverse-proxy-in-front) below or set `TRUST_PROXY`: an nginx `proxy_pass` with none of them makes every visitor look local to an instance that has no password. Setting a password closes this whatever the proxy does.
+
 Behind Authelia, Authentik or another forward-auth proxy, sign-in can be
 delegated to the proxy entirely: set `TRUSTED_AUTH_HEADER` and
 `TRUSTED_AUTH_PROXIES` from the table below and the login prompt never appears.
@@ -326,6 +328,7 @@ The full list the server reads — including database and preview/testing variab
 | `FRAME_ANCESTORS` | `'none'` | CSP origins allowed to embed MySpeed in an iframe, for dashboards like Homepage or Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Send network callers to the HTTPS listener when `data/certs` holds a certificate. Set `false` if a proxy terminates TLS and `TRUST_PROXY` is not set. |
 | `ALLOW_LOCAL_NODES` | `false` | Permit remote nodes on loopback or link-local addresses. Off by default so a node URL cannot be used to probe the host. |
+| `SMTP_ALLOW_PLAINTEXT` | `false` | Let the email integration talk to a relay that offers no TLS. Off by default: without implicit TLS the connection must upgrade through STARTTLS or the send fails, so nobody on the path can strip the upgrade and read the relay password. Set `true` only for a relay on your own network that speaks no TLS at all. |
 | `ALLOWED_NODE_HOSTS` | unset | Restrict remote nodes to these hosts, comma-separated, each with an optional port — `192.168.1.50,myspeed.example.net:5216,[fd00::1]`. Unset permits any host outside the blocked ranges. Worth setting on an instance reachable from the internet. |
 
 #### What is protected, and what is not

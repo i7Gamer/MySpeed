@@ -183,6 +183,8 @@ Menü ein richtiges Passwort fest. Bei jedem Neustart wird ein neues Token erzeu
 gespeichert wird es nie. In einem vertrauenswürdigen Netz lässt sich das mit
 `ALLOW_NO_PASSWORD=true` überspringen – bei einer öffentlichen Adresse nicht.
 
+Anfragen vom Rechner selbst kommen ohne Token durch. Ein Reverse-Proxy auf demselben Rechner zählt als „der Rechner selbst“, solange er sich nicht als Proxy zu erkennen gibt – deshalb die `proxy_set_header`-Zeilen aus dem nginx-Beispiel unten beibehalten oder `TRUST_PROXY` setzen: Ein nginx-`proxy_pass` ohne diese Zeilen lässt jeden Besucher einer Instanz ohne Passwort lokal erscheinen. Ein gesetztes Passwort schließt das unabhängig vom Proxy.
+
 Hinter Authelia, Authentik oder einem anderen Forward-Auth-Proxy lässt sich die
 Anmeldung ganz an den Proxy abgeben: `TRUSTED_AUTH_HEADER` und
 `TRUSTED_AUTH_PROXIES` aus der Tabelle unten setzen, und die Passwortabfrage
@@ -342,6 +344,7 @@ Die vollständige Liste, die der Server liest - auch die hier nicht gezeigten Da
 | `FRAME_ANCESTORS` | `'none'` | CSP-Ursprünge, die MySpeed in einem iframe einbetten dürfen – etwa Dashboards wie Homepage oder Heimdall. |
 | `HTTPS_REDIRECT` | `true` | Netzwerk-Anfragen auf den HTTPS-Listener umleiten, wenn in `data/certs` ein Zertifikat liegt. Auf `false` setzen, wenn ein Proxy TLS übernimmt und `TRUST_PROXY` nicht gesetzt ist. |
 | `ALLOW_LOCAL_NODES` | `false` | Erlaubt Nodes auf Loopback- und Link-Local-Adressen. Standardmäßig aus, damit eine Node-URL den Host nicht abtasten kann. |
+| `SMTP_ALLOW_PLAINTEXT` | `false` | Erlaubt der E-Mail-Integration ein Relay ohne TLS. Standardmäßig aus: Ohne implizites TLS muss die Verbindung per STARTTLS verschlüsselt werden, sonst schlägt der Versand fehl – so kann niemand auf dem Weg das Upgrade entfernen und das Relay-Passwort mitlesen. Nur für ein Relay im eigenen Netz auf `true` setzen, das gar kein TLS spricht. |
 | `ALLOWED_NODE_HOSTS` | nicht gesetzt | Beschränkt Nodes auf diese Hosts, kommagetrennt, jeweils mit optionalem Port — `192.168.1.50,myspeed.example.net:5216,[fd00::1]`. Nicht gesetzt erlaubt jeden Host außerhalb der gesperrten Bereiche. Bei einer aus dem Internet erreichbaren Instanz sinnvoll. |
 
 #### Was geschützt ist – und was nicht

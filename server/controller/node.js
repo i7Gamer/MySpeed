@@ -149,11 +149,18 @@ export const checkStatus = async (url, password) => {
 // reached the child carrying both - which a real node refuses outright
 // (HPE_INVALID_CONTENT_LENGTH) and a gateway that resolves the ambiguity
 // instead turns into a request-smuggling primitive.
+//
+// And the browser's account of its own origin, which describes the parent's
+// page and means nothing one hop on: the child weighs these to tell whether a
+// browser attributes a request to another origin (namesForeignOrigin), and the
+// parent's origin is never the child's. The parent is the caller here, and has
+// already decided whether to act for the browser behind it.
 const SKIP_HEADERS = new Set(["host", "content-length", "connection", "cookie", "authorization",
     "accept-encoding", "content-encoding",
     "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-port",
     "x-real-ip", "x-client-ip",
-    "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "proxy-connection"]);
+    "transfer-encoding", "te", "trailer", "upgrade", "keep-alive", "proxy-connection",
+    "origin", "referer", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "sec-fetch-user"]);
 
 // Match clientAddress's relay evidence, without preserving an identity that
 // the caller can choose. Host/protocol-only assertions never implied a relay.

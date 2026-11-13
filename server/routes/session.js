@@ -1,5 +1,5 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
+import { comparePassword } from '../util/passwordComparison.js';
 import * as config from '../controller/config.js';
 import { matchesSetupToken } from '../util/setupToken.js';
 import { createSession, destroySession, isValidSession, sessionGeneration, SESSION_COOKIE, SESSION_MAX_AGE_SECONDS } from '../util/session.js';
@@ -56,7 +56,7 @@ app.post("/", async (req, res) => {
 
         valid = unconfigured
             ? matchesSetupToken(supplied)
-            : await bcrypt.compare(supplied, passwordHash);
+            : await comparePassword(supplied, passwordHash);
         compared = true;
     } finally {
         // Released whatever happened, and counted as a failure only if a

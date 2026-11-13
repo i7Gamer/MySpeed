@@ -161,8 +161,9 @@ const refuseBlocked = (host, activity) => {
  * What nodemailer is asked to build.
  *
  * `secure` is "wrap the socket in TLS immediately", which is port 465. False is
- * not plaintext: nodemailer still upgrades through STARTTLS when the server
- * offers it, which is what port 587 does.
+ * not plaintext: the session must upgrade through STARTTLS, which is what port
+ * 587 does, and fails if it cannot - see allowsPlaintext in smtpOptions.js for
+ * why "when the server offers it" was not enough, and for the opt-out.
  *
  * `auth` is omitted rather than sent empty when no username is set. A relay that
  * needs no credentials is ordinary on a LAN, and nodemailer answers an auth

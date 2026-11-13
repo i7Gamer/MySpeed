@@ -32,6 +32,8 @@ it("the default email integration reports guarded DNS failure and recovery", asy
     };
     setupEmail((name, callback) => { events[name] = callback; });
     console.error = (...values) => errors.push(values.join(" "));
+    // The fixture relay speaks no TLS, which is refused by default.
+    process.env.SMTP_ALLOW_PLAINTEXT = "true";
     try {
         await events.testFinished({data: config}, {}, failed => notes.push(failed));
         assert.deepEqual(notes, [true]);
@@ -45,6 +47,45 @@ it("the default email integration reports guarded DNS failure and recovery", asy
         dns.lookup = original.lookup;
         net.connect = original.connect;
         console.error = original.error;
+        delete process.env.SMTP_ALLOW_PLAINTEXT;
+        await fixture.close();
+    }
+});
+
+/**
+ * The downgrade, end to end. A relay whose greeting carries no STARTTLS line is
+ * exactly what an attacker in the path makes of one that offered it, so the
+ * plain fixture stands in for the stripped greeting without anything having to
+ * rewrite bytes on the wire.
+ */
+it("a greeting without STARTTLS ends the session before the login or the message", async () => {
+    const fixture = await smtpFixture();
+    const events = {}, notes = [], errors = [];
+    const originalError = console.error;
+    const config = {host: LOOPBACK, port: fixture.port, username: "synthetic", password: "synthetic",
+        from: "sender@fixture.invalid", to: "recipient@fixture.invalid", send_finished: true,
+        finished_subject: "synthetic", finished_message: "synthetic"};
+
+    setupEmail((name, callback) => { events[name] = callback; });
+    console.error = (...values) => errors.push(values.join(" "));
+    delete process.env.SMTP_ALLOW_PLAINTEXT;
+    try {
+        await events.testFinished({data: config}, {}, failed => notes.push(failed));
+
+        assert.deepEqual(notes, [true]);
+        assert.equal(fixture.seen.auth, 0, "the credentials were sent over an unencrypted session");
+        assert.equal(fixture.seen.messages.length, 0);
+
+        // And the same relay is reachable once the operator says it may be.
+        process.env.SMTP_ALLOW_PLAINTEXT = "true";
+        await events.testFinished({data: config}, {}, failed => notes.push(failed));
+
+        assert.deepEqual(notes, [true, false]);
+        assert.equal(fixture.seen.auth, 1);
+        assert.equal(fixture.seen.messages.length, 1);
+    } finally {
+        console.error = originalError;
+        delete process.env.SMTP_ALLOW_PLAINTEXT;
         await fixture.close();
     }
 });

@@ -90,3 +90,66 @@ export const namesLoopbackHost = (req) => {
 
     return LOOPBACK_NAMES.has(name) || LOOPBACK_IPV4.test(normaliseAddress(name));
 };
+
+/**
+ * What a browser reports for a request the app's own page made, and for one the
+ * user typed or bookmarked. "same-site" is deliberately not here: on a public
+ * name it is a sibling subdomain and on loopback it is another port, and either
+ * is a different application.
+ */
+export const OWN_FETCH_SITES = new Set(["same-origin", "none"]);
+
+/**
+ * The host an Origin or Referer names, or null for one that names none - the
+ * opaque "null" of a sandboxed frame, an array where a proxy sent the header
+ * twice, anything that does not parse.
+ */
+export const hostOfOrigin = (value) => {
+    if (typeof value !== "string") return null;
+
+    try {
+        return new URL(value).host.toLowerCase();
+    } catch {
+        return null;
+    }
+};
+
+// A write carries the first, and a read the second wherever the page's
+// referrer policy lets it.
+const ORIGIN_HEADERS = ["origin", "referer"];
+
+/**
+ * Whether a browser says this request belongs to some other origin than the
+ * host it was sent to.
+ *
+ * A loopback socket and a loopback Host say where a request arrived, not who
+ * made it, and two callers satisfy both without being the operator at the
+ * console. A page on any other site, open in the operator's own browser, can
+ * post a form at http://127.0.0.1:5216. And a remote browser behind a same-host
+ * proxy that rewrites Host to the upstream and adds no forwarding header -
+ * nginx with a bare proxy_pass - arrives looking exactly as local as the
+ * console does, while still naming the public origin in the headers the proxy
+ * passes through untouched.
+ *
+ * The fetch metadata is not allowed to settle it alone, which is the difference
+ * from isCrossSiteWrite in trustedProxyAuth.js: the proxied browser honestly
+ * reports "same-origin", about an origin that is not the one that was asked.
+ *
+ * This narrows the waiver and no more. A caller that is not a browser sends
+ * none of these headers, so behind such a proxy a script is still let through,
+ * and so is a browser's read: this app's own pages send no Referer. Nothing in
+ * the request can tell those from the console - only a password, the setup
+ * token, or the proxy saying it is one (TRUST_PROXY, or any forwarding header)
+ * closes that.
+ */
+export const namesForeignOrigin = (req) => {
+    const headers = req.headers ?? {};
+
+    const fetchSite = headers["sec-fetch-site"];
+    if (fetchSite !== undefined && !OWN_FETCH_SITES.has(String(fetchSite).toLowerCase())) return true;
+
+    const host = typeof headers.host === "string" ? headers.host.toLowerCase() : null;
+
+    return ORIGIN_HEADERS.some((name) =>
+        headers[name] !== undefined && (host === null || hostOfOrigin(headers[name]) !== host));
+};

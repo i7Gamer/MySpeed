@@ -150,5 +150,29 @@ describe("setup token", () => {
             assert.doesNotMatch(banner, /one-time/i);
             assert.match(banner, /until the next restart/i);
         });
+
+        /**
+         * "Requests from other machines need this token" has an exception the
+         * operator cannot see from here: a reverse proxy on the same machine
+         * that does not say it is one makes other machines' requests arrive as
+         * this machine's. Nothing in such a request can show it, so the banner
+         * is the one place the instance can say so before it matters.
+         */
+        it("says what a same-machine reverse proxy has to declare", () => {
+            const lines = [];
+            const original = console.log;
+            console.log = (...parts) => lines.push(parts.join(" "));
+
+            try {
+                announceSetupToken(NOW);
+            } finally {
+                console.log = original;
+            }
+
+            const banner = lines.join("\n");
+            assert.match(banner, /reverse proxy/i);
+            assert.match(banner, /X-Forwarded-For/);
+            assert.match(banner, /TRUST_PROXY/);
+        });
     });
 });

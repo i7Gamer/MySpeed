@@ -1,8 +1,8 @@
 import * as config from '../controller/config.js';
-import bcrypt from 'bcryptjs';
+import { comparePassword } from '../util/passwordComparison.js';
 import { readPasswords } from '../util/passwordHeader.js';
 import { announceSetupToken, matchesSetupToken } from '../util/setupToken.js';
-import { isLoopbackRequest, namesLoopbackHost } from '../util/clientAddress.js';
+import { isLoopbackRequest, namesForeignOrigin, namesLoopbackHost } from '../util/clientAddress.js';
 import { clientKey } from '../util/clientKey.js';
 import { isValidSession, sessionGeneration, SESSION_COOKIE } from '../util/session.js';
 import { authPolicyRevision } from '../util/authPolicy.js';
@@ -43,6 +43,26 @@ export const MAX_TRACKED_CLIENTS = 10000;
  * liveReservations.
  */
 const MAX_ATTEMPTS_IN_FLIGHT = MAX_FAILED_ATTEMPTS;
+
+/**
+ * How many comparisons the whole server will hold at once, whoever asked.
+ *
+ * The cap above is per client, and a client is an address: twenty addresses, or
+ * one IPv6 subscriber with a /56 of them, each got their own twenty and between
+ * them kept the one thread comparing for as long as they liked. Nothing bounded
+ * the sum.
+ *
+ * Comparisons run one at a time (util/passwordComparison.js), so this is the
+ * length of a queue and therefore a wait: at the default cost a comparison is
+ * well under a tenth of a second, which puts the last caller admitted a few
+ * seconds from an answer. Past it a caller is told the server is busy and to
+ * come back in a second, which costs them nothing from their failure budget.
+ *
+ * A multiple of the per-client cap rather than equal to it, so that one address
+ * at its own limit cannot be the reason everybody else is refused.
+ */
+const CLIENTS_AT_THEIR_CAP_BEFORE_FULL = 3;
+export const MAX_ATTEMPTS_IN_FLIGHT_TOTAL = MAX_ATTEMPTS_IN_FLIGHT * CLIENTS_AT_THEIR_CAP_BEFORE_FULL;
 
 // Confirmed wrong guesses per client in the current window. Only a comparison
 // that came back wrong lands here, which is the whole point of splitting it from
@@ -248,6 +268,19 @@ const releaseWith = (key, ticket) => {
     };
 };
 
+/**
+ * Every comparison the server is holding, for all clients together.
+ *
+ * Walked rather than kept as a running number: a counter would have to be
+ * decremented by expiry as well as by release, and expiry is lazy, so it would
+ * drift upwards with every reservation that went stale unobserved. The walk is
+ * short by construction - the total it enforces is what bounds the map.
+ *
+ * The keys are copied first because liveReservations deletes as it sweeps.
+ */
+const totalInFlight = (now) => [...attemptsInFlight.keys()]
+    .reduce((total, key) => total + (liveReservations(key, now)?.length ?? 0), 0);
+
 /** Releases nothing, for the refusals and for a request that carried no guess. */
 const releaseNothing = () => undefined;
 
@@ -262,19 +295,18 @@ export const reserveAttempt = (req, attempts = 1) => {
         return {outcome: ATTEMPT_BUSY, settle: releaseNothing};
 
     /*
-     * Bounded like failedAttempts, for the same reason and by the same rule.
+     * And across every client, after the caller's own cap so that a client at
+     * its limit is not counted against the server as well.
      *
-     * Expiry here is lazy: a deadline is only noticed when that same client
-     * comes back, so a reservation whose release never arrived from a client
-     * who never returns would sit in the map for good. No path can produce one
-     * today - every one releases in a `finally` - which is exactly why the
-     * bound belongs here rather than in a comment promising it cannot happen.
-     * Evicting a live entry only under-counts, which is the safe direction, and
-     * reaching this at all means ten thousand clients with comparisons running
-     * at once.
+     * This is also what bounds the map. It used to be capped at
+     * MAX_TRACKED_CLIENTS by evicting the oldest key, which under-counted a
+     * live reservation; now every key holds at least one live reservation and
+     * there can be no more of those than this total, and the count that
+     * enforces it sweeps every stale one on the way past - including those of
+     * a client who never comes back, which lazy per-client expiry never saw.
      */
-    if (!attemptsInFlight.has(key) && attemptsInFlight.size >= MAX_TRACKED_CLIENTS)
-        attemptsInFlight.delete(attemptsInFlight.keys().next().value);
+    if (totalInFlight(now) + attempts > MAX_ATTEMPTS_IN_FLIGHT_TOTAL)
+        return {outcome: ATTEMPT_BUSY, settle: releaseNothing};
 
     // One token per request, shared by the reservations it took, so the release
     // finds exactly its own however the list has changed since.
@@ -304,9 +336,15 @@ export const clearFailedAttempts = (req) => failedAttempts.delete(clientKey(req)
  * admin API with the setup token never asked for; such requests still name
  * the public host. Here rather than in isLoopbackRequest, which the HTTPS
  * redirect shares and which must keep treating a proxied request as local.
+ *
+ * And not one a browser attributes to another origin: see namesForeignOrigin,
+ * including for what that check cannot see. It is a narrowing, and the waiver
+ * behind a proxy that rewrites Host and declares nothing is still open to a
+ * caller that is not a browser.
  */
 export const allowsPasswordlessAccess = (req) =>
-    process.env.ALLOW_NO_PASSWORD === "true" || (isLoopbackRequest(req) && namesLoopbackHost(req));
+    process.env.ALLOW_NO_PASSWORD === "true"
+    || (isLoopbackRequest(req) && namesLoopbackHost(req) && !namesForeignOrigin(req));
 
 const tooManyAttempts = (res) =>
     res.status(429).json({
@@ -471,7 +509,7 @@ export default (allowViewAccess) => async (req, res, next) => {
             // for the entire cost of the hash, so a handful of wrong passwords
             // stalled every other request on the server, /api/health included.
             for (const candidate of candidates) {
-                if (await bcrypt.compare(candidate, passwordHash)) {
+                if (await comparePassword(candidate, passwordHash)) {
                     matched = true;
                     break;
                 }

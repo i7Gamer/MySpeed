@@ -63,3 +63,30 @@ describe("a request the proxy signed in", () => {
         assert.equal(response.status, 401);
     });
 });
+
+/**
+ * The cross-site write, end to end: refused by the header, it falls through to
+ * the password check like any caller the proxy never vouched for.
+ */
+describe("a cross-site write through the proxy", () => {
+    const CONTINUE = "/speedtests/continue";
+    const post = (headers) => api(server.baseUrl, CONTINUE, {method: "POST", headers: {"Remote-User": "timo", ...headers}});
+
+    it("is not admitted on the proxy's word", async () => {
+        const response = await post({"Sec-Fetch-Site": "cross-site"});
+
+        assert.equal(response.status, 401);
+    });
+
+    it("is admitted from the app's own pages", async () => {
+        const response = await post({"Sec-Fetch-Site": "same-origin"});
+
+        assert.notEqual(response.status, 401);
+    });
+
+    it("still works with the password, which no other site can supply", async () => {
+        const response = await post({"Sec-Fetch-Site": "cross-site", "x-password": PASSWORD});
+
+        assert.notEqual(response.status, 401);
+    });
+});

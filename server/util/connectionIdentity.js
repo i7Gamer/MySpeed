@@ -32,6 +32,20 @@
 const PRIVATE_SERVER_PROVIDERS = new Set(["iperf3", "libre", "openspeedtest"]);
 const PRIVATE_SERVER_ERROR = "Private server test failed";
 
+/**
+ * A failed run's error as a reader who is not the operator may see it.
+ *
+ * The text is the tool's own stderr, and for a server the operator runs that
+ * names the endpoint - "dial tcp 192.168.1.20:5201" - which is the address
+ * serverHost is nulled to withhold. A public provider's error names nothing the
+ * reader could not look up, so it is left as it is.
+ *
+ * On its own because the statistics series carries the text without the row:
+ * it has no row to hand stripConnectionIdentity, only a provider and a message.
+ */
+export const viewerFacingError = (provider, error) =>
+    error && PRIVATE_SERVER_PROVIDERS.has(provider) ? PRIVATE_SERVER_ERROR : error;
+
 export const stripConnectionIdentity = (row) => {
     if (!row) return row;
 
@@ -39,7 +53,7 @@ export const stripConnectionIdentity = (row) => {
     row.externalIp = null;
     if (PRIVATE_SERVER_PROVIDERS.has(row.provider)) {
         row.serverHost = null;
-        if (row.error) row.error = PRIVATE_SERVER_ERROR;
+        if (row.error) row.error = viewerFacingError(row.provider, row.error);
     }
     delete row.resultId;
 

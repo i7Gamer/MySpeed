@@ -73,6 +73,10 @@ function installDNS() {
   };
   Math.random = () => 0;
 }
+// Most scenarios drive a relay that speaks no TLS at all, which production
+// refuses unless the operator opts out - see allowsPlaintext in smtpOptions.js.
+// The refusal itself is covered in tests/server/smtpIntegration.test.js.
+process.env.SMTP_ALLOW_PLAINTEXT = 'true';
 function options(fixture, mode, extra = {}) {
   return {
     _smtpFixture: fixture,

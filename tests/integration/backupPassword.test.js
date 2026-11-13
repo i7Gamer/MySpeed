@@ -123,6 +123,52 @@ describe("the admin password in a config backup", () => {
         assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword(OWNER_PASSWORD))).status, 200);
     });
 
+    /**
+     * A well-formed hash is not yet a usable one. The two digits after the
+     * version are the cost, and each step doubles the work: this instance
+     * writes 10, and a backup somebody else prepared can say 31, at which one
+     * comparison runs for days. Every password guess from anyone would then
+     * hold the only thread that long, and the owner's own password could never
+     * be checked again - a lockout and a standing denial of service, restored
+     * by the operator's own hand from a file that passed every other check.
+     */
+    describe("a backup whose hash names a cost", () => {
+        const SALT_AND_DIGEST = "abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234";
+        const hashAt = (cost) => `$2b$${String(cost).padStart(2, "0")}$${SALT_AND_DIGEST}`;
+
+        const restore = async (planted) => {
+            await setConfig(server.config, "password", OWNER_PASSWORD);
+            const {body: backup} = await exportConfig("?includeSecrets=true");
+
+            return importConfig({...backup, config: {...backup.config, password: planted}});
+        };
+
+        it("is refused above what a comparison may cost", async () => {
+            for (const cost of [13, 14, 20, 31, 99]) {
+                const {status} = await restore(hashAt(cost));
+
+                assert.equal(status, 500, `accepted a cost of ${cost}`);
+                assert.notEqual(await server.config.getValue("password"), hashAt(cost));
+            }
+
+            assert.equal((await api(server.baseUrl, "/speedtests?limit=1", withPassword(OWNER_PASSWORD))).status, 200,
+                "a refused restore changed the password");
+        });
+
+        // What this instance writes, and what a neighbouring tool reasonably
+        // might: the ceiling must not turn away an ordinary backup.
+        it("is accepted at and below the ceiling", async () => {
+            for (const cost of [4, 10, 12])
+                assert.equal((await restore(hashAt(cost))).status, 200, `refused a cost of ${cost}`);
+        });
+
+        // bcrypt itself has no cost below 4, so such a hash can match nothing.
+        it("is refused below what bcrypt accepts", async () => {
+            for (const cost of [0, 3])
+                assert.equal((await restore(hashAt(cost))).status, 500, `accepted a cost of ${cost}`);
+        });
+    });
+
     // The export is machine-independent apart from this: an adapter name from
     // another host would be rejected and fail the whole import.
     /**

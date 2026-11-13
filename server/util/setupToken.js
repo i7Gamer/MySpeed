@@ -73,6 +73,12 @@ export const announceSetupToken = (now = Date.now()) => {
     console.log("  The token holds until the next restart, which issues a new one. Set");
     console.log("  ALLOW_NO_PASSWORD=true to run without one, only on a network you trust.");
     console.log("");
+    // The one thing the waiver cannot detect for itself - see namesForeignOrigin
+    // in clientAddress.js - so it is said here, where a fresh install is read.
+    console.log("  Requests from this machine are let in without it. A reverse proxy on");
+    console.log("  this machine counts as this machine unless it says otherwise: make it");
+    console.log("  send X-Forwarded-For, or set TRUST_PROXY, before it faces a network.");
+    console.log("");
 };
 
 /**
