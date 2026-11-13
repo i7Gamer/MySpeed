@@ -323,7 +323,7 @@ export const missingBinaryMessage = (mode, binaryPath, errorCode, musl = isMuslL
         return `${MUSL_CLOUDFLARE_REASON}, so ${binaryPath} could not be downloaded. `
             + 'The MySpeed image ships a musl build in bin/; restore it, or install cfspeedtest into bin/ yourself';
 
-    return `The speedtest CLI ${binaryPath} is not there. It is downloaded when the server starts, `
+    return `The speedtest CLI ${binaryPath} is not there. It is downloaded once the server has started, `
         + 'so the server log says why that did not finish';
 };
 

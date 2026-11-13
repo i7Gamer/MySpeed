@@ -452,9 +452,9 @@ db.authenticate().then(() => {
         });
     }
 
-    // Startup is not optional: a failure here leaves a listening server with no
-    // migrations, no defaults and no scheduler, which is worse than not
-    // starting at all.
+    // Startup is not optional: a failure here leaves a server with no
+    // migrations, no defaults or no scheduler - listening already, when it is
+    // the scheduler that failed - which is worse than not running at all.
     run().catch(err => {
         // describeError, not the bare message: a failed migration or a stored
         // value the model refuses arrives here as sequelize's "Validation
