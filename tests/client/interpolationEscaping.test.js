@@ -23,12 +23,19 @@ const source = readSource(path.join(CLIENT_SRC, "i18n.js"));
  * 15.08.2026, so the German build - and every test written against it - was
  * clean. An ISP or server name containing an ampersand has the same fault.
  *
+ * i18next 27 dropped the slash from its escaper, so the date is clean there
+ * even by default - but it still escapes `&`, `<`, `>` and quotes, which is
+ * why the ampersand carries the proof below.
+ *
  * The app's own module cannot be imported here: i18n.js pulls in fifteen .webp
  * flags, which node cannot parse. So the mechanism is proven against the real
  * i18next below, and the app is checked for the option that switches it off.
  */
 describe("a value interpolated into a translation", () => {
-    const translate = async (interpolation) => {
+    const DATE = "8/15/2026 14:53";
+    const ISP = "AT&T";
+
+    const translate = async (interpolation, date = DATE) => {
         const instance = i18next.createInstance();
 
         await instance.init({
@@ -38,13 +45,13 @@ describe("a value interpolated into a translation", () => {
             ...(interpolation ? {interpolation} : {})
         });
 
-        return instance.t("line", {date: "8/15/2026 14:53"});
+        return instance.t("line", {date});
     };
 
     // The bug, stated as a fact about the library rather than about the app:
     // if this ever stops being true the rule below is guarding nothing.
     it("is HTML-escaped by i18next unless it is told not to", async () => {
-        assert.match(await translate(null), /&#x2F;/,
+        assert.match(await translate(null, ISP), /AT&amp;T/,
             "i18next no longer escapes interpolated values, so escapeValue guards nothing");
     });
 
