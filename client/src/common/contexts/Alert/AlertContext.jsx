@@ -19,7 +19,16 @@ export const AlertProvider = ({children}) => {
     const alertIdRef = useRef(0);
     const resolversRef = useRef(new Map());
 
-    const showAlert = useCallback((config) => {
+    const closeAlert = useCallback((id, result = null) => {
+        const resolver = resolversRef.current.get(id);
+        if (resolver) {
+            resolver(result);
+            resolversRef.current.delete(id);
+        }
+        setAlerts(prev => prev.filter(a => a.id !== id));
+    }, []);
+
+    const showAlert = useCallback(({dismissSignal, ...config}) => {
         return new Promise((resolve) => {
             const id = ++alertIdRef.current;
             resolversRef.current.set(id, resolve);
@@ -29,17 +38,15 @@ export const AlertProvider = ({children}) => {
             // the alert's own field, and giving focus back would mean giving it
             // to an element that has just been unmounted.
             setAlerts(prev => [...prev, {...config, id, openedFrom: document.activeElement}]);
-        });
-    }, []);
 
-    const closeAlert = useCallback((id, result = null) => {
-        const resolver = resolversRef.current.get(id);
-        if (resolver) {
-            resolver(result);
-            resolversRef.current.delete(id);
-        }
-        setAlerts(prev => prev.filter(a => a.id !== id));
-    }, []);
+            // Closed by whoever opened it, once what it reports is over - the
+            // "API not reachable" alert cannot be closed by the reader, and
+            // stays up only while the server is actually down. Resolves with
+            // null, like any close that is not an answer.
+            if (dismissSignal?.aborted) closeAlert(id);
+            else dismissSignal?.addEventListener("abort", () => closeAlert(id), {once: true});
+        });
+    }, [closeAlert]);
 
     const openAlert = useCallback((title, description, options = {}) =>
         showAlert({
