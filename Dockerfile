@@ -114,9 +114,10 @@ VOLUME ["/myspeed/data"]
 
 EXPOSE 5216
 
-# The start period is generous because the first boot downloads the Ookla and
-# librespeed CLIs before the server begins listening. The Cloudflare one is
-# baked in above, so it is the one provider that costs nothing here.
+# The start period is generous because migrations on a large database run
+# before the server begins listening. The first boot's Ookla and librespeed CLI
+# downloads no longer do - they follow the bind - and the Cloudflare one is
+# baked in above.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
     CMD wget -qO- "http://127.0.0.1:${SERVER_PORT:-5216}/api/health" || exit 1
 

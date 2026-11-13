@@ -37,6 +37,11 @@ const client = (outcome) => {
             end() {
                 this.ended = true;
 
+                // Bun never fires the request's own `timeout` on a connect or
+                // lookup that does not answer, so the request simply never
+                // settles.
+                if (outcome === "hung") return;
+
                 // Settled on the next turn, as a real socket would.
                 setImmediate(() => {
                     if (outcome === "answered") return onResponse({});
@@ -57,9 +62,31 @@ const client = (outcome) => {
     return {request, Agent, built, agents};
 };
 
-const probe = (outcome, address = "192.168.1.10", family = 4) => {
+/** Timers that record what was armed and cleared, and fire only on demand. */
+const manualTimers = () => {
+    const armed = new Map();
+    let nextId = 0;
+
+    return {
+        armed,
+        setTimeout(callback, delay) {
+            const id = ++nextId;
+            armed.set(id, {callback, delay});
+            return id;
+        },
+        clearTimeout(id) { armed.delete(id); },
+        fireAll() {
+            for (const [id, {callback}] of armed) {
+                armed.delete(id);
+                callback();
+            }
+        }
+    };
+};
+
+const probe = (outcome, address = "192.168.1.10", family = 4, timers = undefined) => {
     const scripted = client(outcome);
-    return {scripted, result: probeAddress(address, family, scripted)};
+    return {scripted, result: probeAddress(address, family, {...scripted, timers})};
 };
 
 /**
@@ -134,6 +161,57 @@ describe("probing one address", () => {
 
         assert.equal(scripted.built[0].req.destroyed, true, "the probe response was left unread");
     });
+
+    /*
+     * Issue #135. The request's `timeout` option is Node's socket idle timer,
+     * and Bun - which every release runs on - never fires it while a connect
+     * or a lookup is still waiting. requestInterfaces is awaited during
+     * start-up, so a probe that cannot settle on its own must still be ended
+     * by a deadline the probe keeps itself.
+     */
+    describe("when the request never settles on its own", () => {
+        it("gives up once its own deadline passes, and reports no answer", async () => {
+            const timers = manualTimers();
+            const {result} = probe("hung", "192.168.1.10", 4, timers);
+
+            assert.equal(timers.armed.size, 1, "no deadline was armed");
+            assert.equal([...timers.armed.values()][0].delay, PROBE_TIMEOUT);
+
+            timers.fireAll();
+
+            assert.equal(await result, false);
+        });
+
+        it("tears down the request and the agent it gave up on", async () => {
+            const timers = manualTimers();
+            const {scripted, result} = probe("hung", "192.168.1.10", 4, timers);
+
+            timers.fireAll();
+            await result;
+
+            assert.equal(scripted.built[0].req.destroyed, true, "the abandoned request kept its socket");
+            assert.equal(scripted.agents[0].destroyed, true);
+        });
+
+        it("settles on real timers when none are injected", async () => {
+            // A mistake wiring up the default timers shows here as a probe
+            // that never returns, which node:test reports as a pending test.
+            const scripted = client("hung");
+            const SHORT_DEADLINE_MS = 1;
+
+            assert.equal(await probeAddress("192.168.1.10", 4, {...scripted, deadline: SHORT_DEADLINE_MS}), false);
+        });
+    });
+
+    for (const outcome of ["answered", "refused", "silent"])
+        it(`clears its deadline once the probe has ${outcome === "silent" ? "timed out" : outcome}`, async () => {
+            const timers = manualTimers();
+            const {result} = probe(outcome, "192.168.1.10", 4, timers);
+
+            await result;
+
+            assert.equal(timers.armed.size, 0, "a settled probe left a timer behind");
+        });
 
     it("sends the request rather than building one and stopping", async () => {
         const {scripted, result} = probe("answered");
