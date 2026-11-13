@@ -171,3 +171,49 @@ describe("a password-less instance behind a header-less forwarder", () => {
         assert.equal(status, 200);
     });
 });
+
+/**
+ * The same waiver from the other side: a loopback socket and a loopback Host,
+ * and a browser saying the request is not the instance's own. See
+ * namesForeignOrigin in util/clientAddress.js for the two callers this is.
+ */
+describe("a password-less instance asked by a page that is not its own", () => {
+    const CONTINUE = "/speedtests/continue";
+    const post = (headers) => api(server.baseUrl, CONTINUE, {method: "POST", headers});
+    const ownOrigin = () => new URL(server.baseUrl).origin;
+
+    it("asks a cross-site form for the setup token", async () => {
+        const {status, body} = await post({"sec-fetch-site": "cross-site", origin: "https://evil.example"});
+
+        assert.equal(status, 401, "another site's page drove a password-less instance");
+        assert.equal(body.type, SETUP_TOKEN_REQUIRED);
+    });
+
+    // nginx with a bare proxy_pass: Host rewritten to the upstream, the
+    // browser's own headers passed through.
+    it("asks a browser that reached it through a public origin", async () => {
+        const {status, body} = await post({"sec-fetch-site": "same-origin", origin: "https://myspeed.example"});
+
+        assert.equal(status, 401);
+        assert.equal(body.type, SETUP_TOKEN_REQUIRED);
+    });
+
+    it("still serves its own interface", async () => {
+        const {status} = await post({"sec-fetch-site": "same-origin", origin: ownOrigin()});
+
+        assert.notEqual(status, 401);
+    });
+
+    it("still serves a caller that is not a browser", async () => {
+        assert.notEqual((await post({})).status, 401);
+    });
+
+    // The scraper shares the waiver, so it shares the line.
+    it("holds the metrics endpoint to the same line", async () => {
+        const foreign = await api(server.baseUrl, "/prometheus/metrics", {headers: {"sec-fetch-site": "cross-site"}});
+        const own = await api(server.baseUrl, "/prometheus/metrics");
+
+        assert.equal(foreign.status, 401);
+        assert.equal(own.status, 200);
+    });
+});

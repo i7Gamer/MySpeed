@@ -1,6 +1,6 @@
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { isLoopbackRequest, namesLoopbackHost } from "../../server/util/clientAddress.js";
+import { isLoopbackRequest, namesLoopbackHost, namesForeignOrigin } from "../../server/util/clientAddress.js";
 
 /**
  * This is the gate that decides whether a password-less instance answers a
@@ -136,5 +136,75 @@ describe("namesLoopbackHost", () => {
     // HTTP/1.0 sends none, and so do the requests the tests above build.
     it("allows an absent Host header", () => {
         assert.equal(namesLoopbackHost(request()), true);
+    });
+});
+
+/**
+ * A loopback socket and a loopback Host say where the request arrived, not who
+ * made it. Two callers satisfy both without being the operator at the console:
+ *
+ * A page on any other site, open in the operator's own browser, posting a form
+ * at http://127.0.0.1:5216 - the browser is local, the request is not theirs.
+ *
+ * A remote browser behind a same-host proxy that rewrites Host to the upstream
+ * and adds no forwarding header, which is nginx with a bare proxy_pass. The
+ * browser still names the public origin in what it sends, and the proxy passes
+ * that through untouched.
+ *
+ * Neither is proof - a caller that is not a browser sends none of these - so
+ * this narrows the waiver; it does not make it safe behind such a proxy.
+ */
+describe("namesForeignOrigin", () => {
+    const local = (headers = {}) => request({headers: {host: "127.0.0.1:5216", ...headers}});
+
+    it("is false for a request that names no origin at all", () => {
+        assert.equal(namesForeignOrigin(local()), false);
+        assert.equal(namesForeignOrigin(request()), false);
+    });
+
+    it("is false for the app's own requests and for an address typed or bookmarked", () => {
+        for (const site of ["same-origin", "none", "Same-Origin"])
+            assert.equal(namesForeignOrigin(local({"sec-fetch-site": site})), false, site);
+    });
+
+    // "same-site" is another port on this machine: a different application.
+    it("is true when the browser says another site or another port made the request", () => {
+        for (const site of ["cross-site", "same-site", "anything-else", ""])
+            assert.equal(namesForeignOrigin(local({"sec-fetch-site": site})), true, site);
+    });
+
+    it("is false when the Origin is the host that was asked", () => {
+        assert.equal(namesForeignOrigin(local({origin: "http://127.0.0.1:5216"})), false);
+        assert.equal(namesForeignOrigin(request({headers: {host: "LocalHost:5216", origin: "http://localhost:5216"}})), false);
+        assert.equal(namesForeignOrigin(request({headers: {host: "[::1]:5216", origin: "http://[::1]:5216"}})), false);
+    });
+
+    it("is true when the Origin is anything else", () => {
+        for (const origin of ["https://myspeed.example", "http://127.0.0.1:8080", "http://localhost:5216", "null", "not a url", ""])
+            assert.equal(namesForeignOrigin(local({origin})), true, origin);
+    });
+
+    // The proxied browser: it believes the request is same-origin, and it is
+    // right about the origin it knows - which is not the one that was asked.
+    it("believes the Origin over a browser that calls the request same-origin", () => {
+        assert.equal(namesForeignOrigin(local({"sec-fetch-site": "same-origin", origin: "https://myspeed.example"})), true);
+    });
+
+    // A read carries no Origin; where the page's policy allows a Referer, it
+    // says the same thing.
+    it("reads a Referer the way it reads an Origin", () => {
+        assert.equal(namesForeignOrigin(local({referer: "http://127.0.0.1:5216/statistics"})), false);
+        assert.equal(namesForeignOrigin(local({referer: "https://myspeed.example/"})), true);
+        assert.equal(namesForeignOrigin(local({referer: "garbage"})), true);
+    });
+
+    // No Host is HTTP/1.0, which namesLoopbackHost allows; an origin beside it
+    // has nothing to agree with.
+    it("is true when an origin is named and no host is", () => {
+        assert.equal(namesForeignOrigin(request({headers: {origin: "http://127.0.0.1:5216"}})), true);
+    });
+
+    it("ignores a header that is not a single string", () => {
+        assert.equal(namesForeignOrigin(local({origin: ["http://127.0.0.1:5216", "https://evil.example"]})), true);
     });
 });

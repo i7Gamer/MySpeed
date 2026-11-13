@@ -3,6 +3,7 @@ import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
 import { isFailedTest, isSuccessfulTest, measuredPing, usableFigure } from './testOutcome.js';
 import { metricValue } from './metricValue.js';
 import { targetMetOver } from './targetLimits.js';
+import { viewerFacingError } from './connectionIdentity.js';
 
 export const TARGET_CHART_POINTS = 300;
 
@@ -25,7 +26,10 @@ export const STATISTICS_COLUMNS = ["created", "error", "ping", "jitter", "downlo
     // still about the whole selection - but the failure streak is a claim about
     // one target, and on the unfiltered path no two rows in a row belong to the
     // same one. See reliabilityOver.
-    "targetId"];
+    "targetId",
+    // Whose server a failed row was measured against, read only to decide
+    // whether its error text may be shown - see errorTextFor.
+    "provider"];
 
 /**
  * How far the client may push the resolution of a chart.
@@ -317,16 +321,27 @@ const loadedLatencyOver = (succeeded, placeable) => {
     };
 };
 
+/**
+ * What a failed row's error reads as in the series.
+ *
+ * The operator gets the text as stored. Everyone else gets what every other
+ * read route gives them - see viewerFacingError - because the series is the
+ * same rows by another door: the tooltip of a failed point is its error.
+ */
+const errorTextFor = (redactErrors) => redactErrors
+    ? (entry) => viewerFacingError(entry.provider, entry.error)
+    : (entry) => entry.error;
+
 const emptySeries = () => ({
     labels: [], failed: [], errors: [], failedCounts: [],
     data: {ping: [], jitter: [], download: [], upload: [], time: [],
         downloadLatency: [], uploadLatency: []}
 });
 
-const fullSeries = (sorted) => ({
+const fullSeries = (sorted, errorText) => ({
     labels: sorted.map(point => new Date(point.time).toISOString()),
     failed: sorted.map(({entry}) => isFailedTest(entry)),
-    errors: sorted.map(({entry}) => entry.error),
+    errors: sorted.map(({entry}) => errorText(entry)),
     // Null throughout: this path never buckets more than one test into a
     // point, so there is no bucket-of-failures count to carry - only
     // downsampledSeries's mixed bucket below ever produces one.
@@ -364,7 +379,7 @@ const fullSeries = (sorted) => ({
     }
 });
 
-const downsampledSeries = (sorted, from, to, targetPoints) => {
+const downsampledSeries = (sorted, from, to, targetPoints, errorText) => {
     const timeSpan = to.getTime() - from.getTime();
 
     // Zero when the range has no width and NaN when a bound itself does not
@@ -397,7 +412,7 @@ const downsampledSeries = (sorted, from, to, targetPoints) => {
         if (!(index >= 0)) return;
 
         buckets[index].entries.push(entry);
-        if (isFailedTest(entry)) buckets[index].errors.push(entry.error);
+        if (isFailedTest(entry)) buckets[index].errors.push(errorText(entry));
     });
 
     const series = emptySeries();
@@ -600,6 +615,8 @@ const reliabilityOver = (sorted) => {
  */
 export const buildStatistics = (entries, {from, to}, options = {}) => {
     const {offsetMinutes, zone, maxPoints} = options;
+    // True for a reader who is not the operator - see errorTextFor.
+    const errorText = errorTextFor(options.redactErrors === true);
     // An offset outside any real zone is answered on the server's own clock
     // rather than thrown on: this is pure aggregation, and the route it came
     // through is where a nonsense parameter earns its 400.
@@ -633,8 +650,8 @@ export const buildStatistics = (entries, {from, to}, options = {}) => {
     if (!ordered) sorted.sort((a, b) => a.time - b.time);
 
     const series = sorted.length <= targetPoints
-        ? fullSeries(sorted)
-        : downsampledSeries(sorted, from, to, targetPoints);
+        ? fullSeries(sorted, errorText)
+        : downsampledSeries(sorted, from, to, targetPoints, errorText);
 
     // Measured, not merely present: an imported history can hold -1
     // placeholders in the nullable columns, and admitted here one of them set

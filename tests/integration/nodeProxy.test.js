@@ -650,3 +650,31 @@ describe("the proxy and hop-by-hop headers", () => {
         assert.equal(headers["proxy-connection"], undefined);
     });
 });
+
+/**
+ * The browser's account of where a request came from describes the parent's
+ * page, and stops at the parent.
+ *
+ * The child reads these headers to decide whether a browser attributes a
+ * request to another origin - see namesForeignOrigin - and the parent's origin
+ * is by definition not the child's. Forwarded, they made every write a browser
+ * sent through the parent look cross-origin to a child that would otherwise
+ * have served it; and they were never the child's to weigh, because the parent
+ * is the caller on this hop and has already decided whether to act for the
+ * browser behind it.
+ */
+describe("the proxy and the browser's origin headers", () => {
+    it("does not hand them to the child", async () => {
+        received = [];
+        const origin = new URL(server.baseUrl).origin;
+
+        await api(server.baseUrl, `/nodes/${nodeId}/speedtests/status`, {headers: {
+            origin, referer: `${origin}/`,
+            "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty", "sec-fetch-user": "?1"
+        }});
+
+        const {headers} = received.at(-1);
+        for (const name of ["origin", "referer", "sec-fetch-site", "sec-fetch-mode", "sec-fetch-dest", "sec-fetch-user"])
+            assert.equal(headers[name], undefined, `${name} reached the child`);
+    });
+});

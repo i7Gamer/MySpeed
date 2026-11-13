@@ -1,4 +1,4 @@
-import { describe, it, beforeEach } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupEmail, { SUBJECT_LIMIT } from "../../server/integrations/email.js";
 import { OUTBOUND_TIMEOUT } from "../../server/util/integrationActivity.js";
@@ -87,6 +87,62 @@ describe("the transport", () => {
         created = [];
         await finish({secure: false});
         assert.equal(created[0].secure, false);
+    });
+
+    /**
+     * Opportunistic STARTTLS is decided by the server's own greeting, which
+     * travels in the clear: whoever sits between this instance and the relay
+     * deletes the one STARTTLS line and nodemailer carries on in plaintext,
+     * login and message included. `requireTLS` is what makes the missing line a
+     * failure instead of a downgrade.
+     */
+    describe("refuses to be downgraded to plaintext", () => {
+        const previous = process.env.SMTP_ALLOW_PLAINTEXT;
+
+        afterEach(() => {
+            if (previous === undefined) delete process.env.SMTP_ALLOW_PLAINTEXT;
+            else process.env.SMTP_ALLOW_PLAINTEXT = previous;
+        });
+
+        it("demands STARTTLS whenever the socket is not TLS from the start", async () => {
+            delete process.env.SMTP_ALLOW_PLAINTEXT;
+
+            await finish({secure: false});
+            assert.equal(created[0].requireTLS, true);
+
+            created = [];
+            await finish();
+            assert.equal(created[0].requireTLS, true, "an unset `secure` fell back to opportunistic TLS");
+        });
+
+        // Already encrypted before the first byte, so there is no upgrade to
+        // demand - and nodemailer never issues STARTTLS on a secure socket.
+        it("leaves implicit TLS alone", async () => {
+            delete process.env.SMTP_ALLOW_PLAINTEXT;
+
+            await finish({secure: true});
+            assert.equal(created[0].requireTLS, undefined);
+        });
+
+        // A relay on the operator's own LAN that speaks no TLS at all is real,
+        // and has to be something they said rather than something a stripped
+        // greeting can say for them.
+        it("goes back to opportunistic only when the operator opted out", async () => {
+            process.env.SMTP_ALLOW_PLAINTEXT = "true";
+
+            await finish({secure: false});
+            assert.equal(created[0].requireTLS, undefined);
+        });
+
+        it("reads nothing but the literal opt-out as one", async () => {
+            for (const value of ["", "1", "yes", "TRUE", "false"]) {
+                process.env.SMTP_ALLOW_PLAINTEXT = value;
+                created = [];
+
+                await finish({secure: false});
+                assert.equal(created[0].requireTLS, true, `"${value}" turned the requirement off`);
+            }
+        });
     });
 
     // A relay on the operator's own LAN that needs no credentials is ordinary,

@@ -4,7 +4,7 @@ import * as targetsController from '../controller/targets.js';
 import promClient from 'prom-client';
 import * as config from '../controller/config.js';
 import * as serverController from '../controller/servers.js';
-import bcrypt from 'bcryptjs';
+import { comparePassword } from '../util/passwordComparison.js';
 import {
     ATTEMPT_BUSY, ATTEMPT_LOCKED_OUT, allowsPasswordlessAccess, clearFailedAttempts, reserveAttempt
 } from '../middlewares/password.js';
@@ -97,7 +97,7 @@ const authorizeMetrics = async (req, res) => {
     try {
         valid = unconfigured
             ? matchesSetupToken(credentials.password)
-            : await bcrypt.compare(credentials.password, passwordHash);
+            : await comparePassword(credentials.password, passwordHash);
         compared = true;
     } finally {
         // Released whatever happened, and counted as a failure only if a

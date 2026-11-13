@@ -9,6 +9,7 @@ let ATTEMPT_ADMITTED;
 let ATTEMPT_LOCKED_OUT;
 let ATTEMPT_BUSY;
 let MAX_TRACKED_CLIENTS;
+let MAX_ATTEMPTS_IN_FLIGHT_TOTAL;
 let clearFailedAttempts;
 let passwordMiddleware;
 
@@ -20,7 +21,8 @@ before(async () => {
     const module = await import("../../server/middlewares/password.js");
 
     ({resetFailedAttempts, reserveAttempt, clearFailedAttempts,
-        ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY, MAX_TRACKED_CLIENTS} = module);
+        ATTEMPT_ADMITTED, ATTEMPT_LOCKED_OUT, ATTEMPT_BUSY, MAX_TRACKED_CLIENTS,
+        MAX_ATTEMPTS_IN_FLIGHT_TOTAL} = module);
     // The same middleware the routes mount, for the assertions that need calls
     // to genuinely overlap - see "attempts made at the same time".
     passwordMiddleware = module.default(false);
@@ -548,15 +550,86 @@ describe("password attempt throttling", () => {
          * argue it cannot happen.
          */
         it("does not grow a key per client for ever", async () => {
-            const MAX_TRACKED_CLIENTS = 10000;
+            const stranger = (i) => ({headers: {}, socket: {remoteAddress: `10.${i >> 16 & 255}.${i >> 8 & 255}.${i & 255}`}});
 
             // Well past the bound, each from a different address, each holding
             // a reservation that is never released.
-            for (let i = 0; i < MAX_TRACKED_CLIENTS + 500; i++)
-                reserveAttempt({headers: {}, socket: {remoteAddress: `10.${i >> 16 & 255}.${i >> 8 & 255}.${i & 255}`}});
+            const outcomes = Array.from({length: MAX_ATTEMPTS_IN_FLIGHT_TOTAL + 500},
+                (_, i) => reserveAttempt(stranger(i)).outcome);
 
-            // Still serving: the eviction frees a slot rather than refusing.
-            assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED);
+            assert.equal(outcomes.filter((outcome) => outcome === ATTEMPT_ADMITTED).length,
+                MAX_ATTEMPTS_IN_FLIGHT_TOTAL, "the table grew past the comparisons it may hold");
+
+            // And what was never released does not hold the table for good.
+            const realNow = Date.now;
+            try {
+                Date.now = () => realNow() + 61_000;
+                assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED);
+            } finally {
+                Date.now = realNow;
+            }
+        });
+
+        /**
+         * The cap across every caller, which the per-client one cannot be.
+         *
+         * bcryptjs is JavaScript on the one thread, so a comparison is CPU the
+         * whole server waits behind. Twenty in flight per address bounds an
+         * address; it does nothing about twenty addresses, or about one IPv6
+         * subscriber holding a /56 of them, and that was enough to keep the
+         * event loop busy for as long as the caller cared to.
+         */
+        describe("across every caller at once", () => {
+            const stranger = (i) => ({headers: {}, socket: {remoteAddress: `198.51.100.${i}`}});
+
+            const fill = () => {
+                const held = [];
+                for (let i = 0; held.length < MAX_ATTEMPTS_IN_FLIGHT_TOTAL; i++) {
+                    const admission = reserveAttempt(stranger(i));
+                    assert.equal(admission.outcome, ATTEMPT_ADMITTED, `caller ${i} was refused early`);
+                    held.push(admission);
+                }
+                return held;
+            };
+
+            it("is wider than one client's own allowance", () => {
+                assert.ok(MAX_ATTEMPTS_IN_FLIGHT_TOTAL > MAX_FAILED_ATTEMPTS,
+                    "one address at its own cap would shut everyone else out");
+            });
+
+            it("refuses a caller who has nothing in flight once the server is full", () => {
+                fill();
+
+                assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_BUSY);
+            });
+
+            it("counts the guesses a request carries, not the request", () => {
+                const held = fill();
+                held.pop().settle();
+
+                assert.equal(reserveAttempt(CALLER, 2).outcome, ATTEMPT_BUSY,
+                    "two comparisons were admitted into one free slot");
+                assert.equal(reserveAttempt(CALLER, 1).outcome, ATTEMPT_ADMITTED);
+            });
+
+            // Busy is about the server and clears with the work; it is never a
+            // lockout, and it must not cost the refused caller any budget.
+            it("admits again as soon as a comparison finishes", () => {
+                const held = fill();
+
+                assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_BUSY);
+                held[0].settle({failed: 1});
+                assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_ADMITTED);
+            });
+
+            // A locked-out caller is told so even on a full server: that answer
+            // is the one they can act on, and it lasts the window.
+            it("still reports a lockout ahead of a full server", () => {
+                reserveAttempt(CALLER, MAX_FAILED_ATTEMPTS).settle({failed: MAX_FAILED_ATTEMPTS});
+                fill();
+
+                assert.equal(reserveAttempt(CALLER).outcome, ATTEMPT_LOCKED_OUT);
+            });
         });
 
         /**

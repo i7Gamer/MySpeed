@@ -1,5 +1,5 @@
 import net from 'node:net';
-import { normaliseAddress } from './clientAddress.js';
+import { hostOfOrigin, normaliseAddress, OWN_FETCH_SITES } from './clientAddress.js';
 
 /**
  * Header authentication for a reverse proxy that has already signed the
@@ -115,12 +115,53 @@ const trustedProxies = (text) => {
     return cachedProxies;
 };
 
+// Methods that change nothing, and that a link from anywhere must keep working
+// for: a bookmark, a redirect back from the sign-in page.
+const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/**
+ * Whether a browser was made to send this write by a page that is not ours.
+ *
+ * The proxy vouches for whoever holds its credential, and a browser attaches
+ * that credential - cached Basic auth, an SSO cookie without SameSite - to a
+ * form another site posts here. The session cookie is SameSite=Strict and never
+ * travels on such a request; the proxy's assertion always does, so the line has
+ * to be drawn here instead.
+ *
+ * The browser's own account of the request first, since a page cannot forge it.
+ * Failing that, the Origin, which every browser sends on a cross-site write,
+ * against the host that was asked for - as the proxy forwarded it, or as it
+ * arrived. With neither, the caller is not a browser: there is no ambient
+ * credential for another site to borrow, and a script behind the proxy keeps
+ * working.
+ */
+export const isCrossSiteWrite = (req) => {
+    if (typeof req.method !== "string" || SAFE_METHODS.has(req.method.toUpperCase())) return false;
+
+    const fetchSite = req.headers?.["sec-fetch-site"];
+    if (fetchSite !== undefined) return !OWN_FETCH_SITES.has(String(fetchSite).toLowerCase());
+
+    const origin = req.headers?.origin;
+    if (origin === undefined) return false;
+
+    // Null for the opaque "null" of a sandboxed frame or a redirected form, and
+    // for anything else that is not an origin. No host is no match.
+    const asked = hostOfOrigin(origin);
+    const ours = [req.headers["x-forwarded-host"], req.headers.host]
+        .filter((host) => typeof host === "string")
+        .map((host) => host.toLowerCase());
+
+    return asked === null || !ours.includes(asked);
+};
+
 /**
  * The identity the trusted proxy asserted for this request, or null.
  *
  * Null is every kind of no: the feature is not configured, the socket is not
  * a listed proxy, the header is absent, empty, or not the single plain
- * string a proxy sends. The value itself is not interpreted - MySpeed has one
+ * string a proxy sends - or the request is a write another site's page made the
+ * browser send, which falls through to the password check like any caller the
+ * proxy never vouched for. The value itself is not interpreted - MySpeed has one
  * operator, not accounts - so its only job is to be non-empty, but it is
  * returned rather than swallowed so a caller that wants to log it can.
  */
@@ -133,6 +174,8 @@ export const trustedProxyUser = (req) => {
 
     const asserted = req.headers?.[headerName];
     if (typeof asserted !== "string" || asserted.trim() === "") return null;
+
+    if (isCrossSiteWrite(req)) return null;
 
     return asserted.trim();
 };

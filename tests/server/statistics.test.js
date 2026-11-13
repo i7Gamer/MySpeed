@@ -1549,3 +1549,65 @@ describe("data used, read through the shared reader", () => {
         assert.deepEqual(stats.dataUsed, {download: 1000, upload: 400, total: 1400});
     });
 });
+
+/**
+ * A failed private-server run's error is the tool's own stderr, and that names
+ * the operator's endpoint ("dial tcp 192.168.1.20:5201"). The list, the export,
+ * the status payload and the single row all mask it for a reader who is not the
+ * operator; the series here carried it to the same reader untouched, in the
+ * tooltip of every failed point.
+ */
+describe("error text for a reader who is not the operator", () => {
+    const PRIVATE_ERROR = "dial tcp 192.168.1.20:5201: connect: connection refused";
+    const PUBLIC_ERROR = "Too many requests. Please try again later";
+    const MASKED = "Private server test failed";
+
+    const failed = (iso, provider, error) =>
+        at(iso, {provider, error, ping: null, download: null, upload: null});
+
+    const few = [
+        failed("2026-08-07T01:00:00.000Z", "iperf3", PRIVATE_ERROR),
+        failed("2026-08-07T02:00:00.000Z", "ookla", PUBLIC_ERROR),
+        at("2026-08-07T03:00:00.000Z", {provider: "libre"}),
+        failed("2026-08-07T04:00:00.000Z", "libre", PRIVATE_ERROR),
+        failed("2026-08-07T05:00:00.000Z", "openspeedtest", PRIVATE_ERROR)
+    ];
+
+    it("is left alone for the operator", () => {
+        const stats = buildStatistics(few, DAY, {offsetMinutes: 0});
+
+        assert.deepEqual(stats.errors, [PRIVATE_ERROR, PUBLIC_ERROR, null, PRIVATE_ERROR, PRIVATE_ERROR]);
+    });
+
+    it("masks a private server's error and keeps a public provider's", () => {
+        const stats = buildStatistics(few, DAY, {offsetMinutes: 0, redactErrors: true});
+
+        assert.deepEqual(stats.errors, [MASKED, PUBLIC_ERROR, null, MASKED, MASKED]);
+    });
+
+    // Past MIN_CHART_POINTS the series is bucketed and a bucket of nothing but
+    // failures joins their messages - the second place the text is written.
+    it("masks the joined messages of a bucketed range too", () => {
+        const HOUR_MS = 3600000;
+        const start = new Date("2026-08-01T00:00:00.000Z").getTime();
+        const WEEK = range("2026-08-01T00:00:00.000Z", "2026-08-07T23:59:59.999Z");
+        const many = Array.from({length: MIN_CHART_POINTS + 10}, (_, i) =>
+            failed(new Date(start + i * (HOUR_MS / 4)).toISOString(), "iperf3", PRIVATE_ERROR));
+
+        const open = buildStatistics(many, WEEK, {offsetMinutes: 0, maxPoints: MIN_CHART_POINTS});
+        const masked = buildStatistics(many, WEEK, {offsetMinutes: 0, maxPoints: MIN_CHART_POINTS, redactErrors: true});
+
+        assert.ok(open.errors.some((text) => text?.includes("192.168.1.20")), "the fixture never bucketed an error");
+        assert.equal(masked.errors.filter((text) => text?.includes("192.168")).length, 0);
+        assert.ok(masked.errors.some((text) => text?.includes(MASKED)));
+    });
+
+    // A row from before targets existed names no provider, and is therefore
+    // not a private server's.
+    it("passes a row with no provider through", () => {
+        const stats = buildStatistics([failed("2026-08-07T01:00:00.000Z", undefined, PUBLIC_ERROR)], DAY,
+            {offsetMinutes: 0, redactErrors: true});
+
+        assert.deepEqual(stats.errors, [PUBLIC_ERROR]);
+    });
+});

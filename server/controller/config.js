@@ -219,9 +219,30 @@ export const passwordPolicyProblem = (value) =>
  * carrying a plaintext password would lock the owner out of their own instance
  * with no way back short of editing the database.
  */
-const BCRYPT_HASH = /^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/;
+const BCRYPT_HASH = /^\$2[aby]\$(\d{2})\$[./A-Za-z0-9]{53}$/;
 
-const isStoredPassword = (value) => value === NO_PASSWORD || BCRYPT_HASH.test(String(value ?? ""));
+/**
+ * The cost a restored hash may name.
+ *
+ * Well-formed is not the same as usable: the two digits are a power of two, so
+ * a backup somebody else prepared can carry a hash at 31 whose every comparison
+ * runs for days on the one thread - the owner locked out and any stranger's
+ * guess a denial of service, from a file that looks exactly like a backup.
+ *
+ * The floor is bcrypt's own; below it nothing can match. The ceiling is four
+ * times the work of what this instance writes, which leaves room for a hash
+ * made by another tool without leaving room for one made to hurt.
+ */
+const MIN_RESTORED_HASH_ROUNDS = 4;
+const MAX_RESTORED_HASH_ROUNDS = PASSWORD_HASH_ROUNDS + 2;
+
+const isUsableHash = (value) => {
+    const cost = Number(BCRYPT_HASH.exec(value)?.[1]);
+
+    return cost >= MIN_RESTORED_HASH_ROUNDS && cost <= MAX_RESTORED_HASH_ROUNDS;
+};
+
+const isStoredPassword = (value) => value === NO_PASSWORD || isUsableHash(String(value ?? ""));
 
 // Tables importConfig replaces wholesale, mapped to the payload key carrying them.
 const IMPORTED_TABLES = [

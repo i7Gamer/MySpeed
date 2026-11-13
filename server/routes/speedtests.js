@@ -313,6 +313,9 @@ app.get("/statistics", password(true), async (req, res) => {
     const options = {
         zone: timezone.zone,
         maxPoints: points,
+        // The series carries each failed test's error text, which the other
+        // read routes mask row by row and this one has no rows to mask.
+        redactErrors: isUntrustedReader(req),
         // Whether to summarise a second window at all, for the
         // period-over-period deltas. Opt-in: it costs a second table scan.
         compare: compare !== undefined,

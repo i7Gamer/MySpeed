@@ -1,6 +1,6 @@
-import { describe, it, before, after, beforeEach } from "node:test";
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { bootServer, api, seedTarget, seedTests } from "./helpers/boot.js";
+import { bootServer, api, seedTarget, seedTests, setConfig } from "./helpers/boot.js";
 
 let server;
 const at = (iso, overrides = {}) => ({created: iso, ...overrides});
@@ -1206,5 +1206,55 @@ describe("GET /api/speedtests/statistics", () => {
             assert.equal(body.hourlyAverages[1].count, 1);
             assert.equal(body.hourlyAverages[23].count, 0);
         });
+    });
+});
+
+/**
+ * The wiring for the unit tests beside util/statistics.js: who the route asks
+ * the aggregation to mask for.
+ */
+describe("GET /api/speedtests/statistics for a read-only viewer", () => {
+    const PRIVATE_ERROR = "dial tcp 192.168.1.20:5201: connect: connection refused";
+    const QUERY = "from=2026-08-07&to=2026-08-07&tzOffset=0";
+
+    beforeEach(async () => {
+        await seedTests(server.tests, [at("2026-08-07T10:00:00.000Z",
+            {provider: "iperf3", error: PRIVATE_ERROR})]);
+        await setConfig(server.config, "password", "Hunter2!");
+        await setConfig(server.config, "passwordLevel", "read");
+    });
+
+    afterEach(async () => {
+        await setConfig(server.config, "password", "none");
+        await setConfig(server.config, "passwordLevel", "none");
+    });
+
+    it("does not carry a private server's error text", async () => {
+        const {status, body} = await statistics(QUERY);
+
+        assert.equal(status, 200);
+        assert.deepEqual(body.errors, ["Private server test failed"]);
+        assert.doesNotMatch(JSON.stringify(body), /192\.168\.1\.20/);
+    });
+
+    it("still carries it for the operator", async () => {
+        const {body} = await api(server.baseUrl, `/speedtests/statistics?${QUERY}`,
+            {headers: {"x-password": "Hunter2!"}});
+
+        assert.deepEqual(body.errors, [PRIVATE_ERROR]);
+    });
+
+    // The batch is built by its own function in the controller, so it is its
+    // own place for the option to go missing.
+    it("masks every answer of a batched request", async () => {
+        const lan = await seedTarget({provider: "iperf3", name: "LAN", host: "192.168.1.20"});
+        await seedTests(server.tests, [at("2026-08-07T10:00:00.000Z",
+            {provider: "iperf3", targetId: lan.id, error: PRIVATE_ERROR})]);
+
+        const {status, body} = await statistics(`${QUERY}&targets=${lan.id}`);
+
+        assert.equal(status, 200);
+        assert.deepEqual(body.byTarget[lan.id].errors, ["Private server test failed"]);
+        assert.doesNotMatch(JSON.stringify(body), /192\.168\.1\.20/);
     });
 });

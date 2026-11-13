@@ -177,3 +177,89 @@ describe("trustedProxyUser", () => {
         assert.equal(trustedProxyUser(request("10.0.0.1", {"remote-user": "timo"})), null);
     });
 });
+
+/**
+ * The proxy vouches for whoever holds its credential, and a browser attaches
+ * that credential to requests the page's owner never made: cached Basic auth,
+ * or an SSO cookie that is not SameSite. A form on any other site posting to
+ * /api/speedtests/run therefore arrived with Remote-User set and was admitted
+ * as the operator. The session cookie never had this problem - it is
+ * SameSite=Strict - so the header has to be held to the same line by hand.
+ */
+describe("a write the operator's browser was made to send", () => {
+    const PROXY = "172.18.0.2";
+    const from = (method, headers = {}) =>
+        ({method, socket: {remoteAddress: PROXY}, headers: {"remote-user": "timo", host: "myspeed.example", ...headers}});
+
+    beforeEach(() => armed("Remote-User", PROXY));
+
+    it("is refused when the browser says the request came from another site", () => {
+        for (const site of ["cross-site", "same-site"])
+            assert.equal(trustedProxyUser(from("POST", {"sec-fetch-site": site})), null, site);
+    });
+
+    it("is admitted from the app's own pages and from the address bar", () => {
+        for (const site of ["same-origin", "none"])
+            assert.equal(trustedProxyUser(from("POST", {"sec-fetch-site": site})), "timo", site);
+    });
+
+    it("covers every method that changes something", () => {
+        for (const method of ["POST", "PUT", "PATCH", "DELETE"])
+            assert.equal(trustedProxyUser(from(method, {"sec-fetch-site": "cross-site"})), null, method);
+    });
+
+    // A link followed from another site is how anyone arrives anywhere, and a
+    // read changes nothing. Refusing it would break every bookmark and every
+    // redirect back from the sign-in page.
+    it("leaves a cross-site read alone", () => {
+        for (const method of ["GET", "HEAD", "OPTIONS"])
+            assert.equal(trustedProxyUser(from(method, {"sec-fetch-site": "cross-site"})), "timo", method);
+    });
+
+    describe("from a browser too old to say where it came from", () => {
+        it("is refused when the Origin is another site's", () => {
+            assert.equal(trustedProxyUser(from("POST", {origin: "https://evil.example"})), null);
+        });
+
+        // What a sandboxed frame and a redirected form both send.
+        it("is refused when the Origin is opaque", () => {
+            assert.equal(trustedProxyUser(from("POST", {origin: "null"})), null);
+        });
+
+        it("is refused when the Origin cannot be read at all", () => {
+            assert.equal(trustedProxyUser(from("POST", {origin: "not a url"})), null);
+        });
+
+        it("is admitted when the Origin is the host that was asked", () => {
+            assert.equal(trustedProxyUser(from("POST", {origin: "https://myspeed.example"})), "timo");
+            assert.equal(trustedProxyUser(from("POST", {origin: "https://MySpeed.Example"})), "timo");
+        });
+
+        // A proxy that rewrites Host to the upstream's says what the browser
+        // asked for here instead.
+        it("is admitted when the Origin is the host the proxy forwarded for", () => {
+            assert.equal(trustedProxyUser(from("POST",
+                {host: "myspeed:5216", "x-forwarded-host": "myspeed.example", origin: "https://myspeed.example"})), "timo");
+        });
+
+        it("compares the port as well as the name", () => {
+            assert.equal(trustedProxyUser(from("POST",
+                {host: "myspeed.example:8443", origin: "https://myspeed.example:8443"})), "timo");
+            assert.equal(trustedProxyUser(from("POST",
+                {host: "myspeed.example:8443", origin: "https://myspeed.example:9000"})), null);
+        });
+    });
+
+    // curl, a script, a monitoring job behind the same proxy: not a browser,
+    // so there is no ambient credential for another site to borrow.
+    it("is admitted with neither header, which no browser sends a cross-site write without", () => {
+        assert.equal(trustedProxyUser(from("POST")), "timo");
+    });
+
+    // The fetch metadata is the browser's own statement and wins over an
+    // Origin that happens to match.
+    it("believes the fetch metadata over the Origin", () => {
+        assert.equal(trustedProxyUser(from("POST",
+            {"sec-fetch-site": "cross-site", origin: "https://myspeed.example"})), null);
+    });
+});
