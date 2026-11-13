@@ -813,6 +813,43 @@ describe("the latency the runner measures for it", () => {
         assert.equal(reading, null);
     });
 
+    /**
+     * A socket the runtime never times out. Bun never fires the idle timer
+     * `setTimeout` arms while the lookup or the connect is still waiting, so
+     * against a host that drops packets a sample ran until the kernel gave up,
+     * about 21s instead of LATENCY_TIMEOUT_MS - five times over per run.
+     */
+    describe("when the runtime never fires the socket's timeout", () => {
+        const SHORT_TIMEOUT_MS = 5;
+
+        it("drops the sample on its own deadline", async () => {
+            const reading = await sampleHandshake({host: "h", port: 1, timeoutMs: SHORT_TIMEOUT_MS,
+                connect: socketThat(() => undefined)});
+
+            assert.equal(reading, null);
+        });
+
+        it("tears down the socket it gave up on", async () => {
+            let destroyed = false;
+            const connect = () => {
+                const socket = socketThat(() => undefined)();
+                socket.destroy = () => { destroyed = true; };
+                return socket;
+            };
+
+            await sampleHandshake({host: "h", port: 1, timeoutMs: SHORT_TIMEOUT_MS, connect});
+
+            assert.equal(destroyed, true);
+        });
+
+        it("keeps a handshake that completed before the deadline", async () => {
+            const reading = await sampleHandshake({host: "h", port: 1, timeoutMs: SHORT_TIMEOUT_MS,
+                connect: socketThat((socket) => socket.emit("connect"))});
+
+            assert.equal(typeof reading, "number");
+        });
+    });
+
     it("answers nothing at all when no handshake completed", async () => {
         const latency = await measureLatency({host: "h", port: 1, samples: 3,
             connect: socketThat((socket) => socket.emit("error", new Error("nope")))});
