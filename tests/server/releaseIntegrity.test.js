@@ -207,14 +207,22 @@ describe("install.sh verifies what it downloaded", () => {
             "a mismatched binary carries on to the service and the success banner");
     });
 
-    // A release cut before SHA256SUMS existed carries none, and refusing to
-    // install a version that was published without one helps nobody. It has to
-    // say so rather than pass silently.
-    it("says so when the release publishes no checksums", () => {
+    // A release cut before SHA256SUMS existed carries none - and so does one
+    // whose list somebody removed, which looks exactly the same from here.
+    // Either used to be installed under a warning, so removing one asset from a
+    // release was enough to have an unverified binary installed as a service
+    // that root runs. Refused now, unless the operator said this is the release
+    // they mean, and still said out loud when they did. installUpgrade.test.js
+    // runs both branches.
+    it("refuses a release that publishes no checksums unless told to accept it", () => {
         const absent = from(source, 'if [ -z "$CHECKSUM_URL" ]');
+        const refusal = absent.slice(0, absent.indexOf("Warning"));
 
-        assert.match(absent.slice(0, 300), /Warning/,
-            "an unverifiable download is accepted with nothing said");
+        assert.match(refusal, /if \[ "\$ALLOW_UNVERIFIED" != true \]/,
+            "an unverifiable download is installed without anybody having asked for that");
+        assert.match(refusal, /exit 1/, "the refusal carries on to the installation");
+        assert.match(absent.slice(0, 700), /Warning/,
+            "an unverifiable download the operator accepted is installed with nothing said");
     });
 
     // Verified before it is stated executable and moved into place, not after.

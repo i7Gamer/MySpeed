@@ -9,9 +9,23 @@ PURPLE='\033[0;35m'
 
 INSTALLATION_PATH="/opt/myspeed"
 
+# Named once, up here, because the installation root is judged against the
+# service account long before the account itself is created further down.
+SERVICE_USER="myspeed"
+ROOT_USER="root"
+
+# Off unless the operator asks, because it switches off the one check standing
+# between a stripped or unreachable SHA256SUMS and a root-run binary nobody
+# verified. Named once so the parser, the help text and the refusals agree.
+ALLOW_UNVERIFIED_FLAG="--allow-unverified"
+ALLOW_UNVERIFIED=false
+
 usage() {
-  echo -e "$NORMAL Usage: install.sh [-d /path/to/installation]"
+  echo -e "$NORMAL Usage: install.sh [-d /path/to/installation] [$ALLOW_UNVERIFIED_FLAG]"
   echo -e "$NORMAL   -d          installation directory (default: /opt/myspeed)"
+  echo -e "$NORMAL   $ALLOW_UNVERIFIED_FLAG  install even when the download cannot be checked against"
+  echo -e "$NORMAL                    a SHA256SUMS (a release without one, or a host without a sha256 tool)."
+  echo -e "$NORMAL                    A checksum that does not match is still refused."
   echo -e "$NORMAL   -h, --help  show this help without installing"
 }
 
@@ -35,6 +49,9 @@ while [ $# -gt 0 ]; do
         usage
         exit 1
       fi
+      ;;
+    "$ALLOW_UNVERIFIED_FLAG")
+      ALLOW_UNVERIFIED=true
       ;;
     -h|--help)
       usage
@@ -370,6 +387,39 @@ if ! cd "$INSTALLATION_PATH"; then
     exit 1
 fi
 
+# Take the installation root back from the service account before anything is
+# written into it.
+#
+# An older installer handed $INSTALLATION_PATH to that account whole, and this
+# one only ever re-owns `data` and `bin`, so an upgraded install can still have a
+# root the account owns. Everything below writes into that directory as root: an
+# account that owns it can plant a symlink where root is about to open a file,
+# and `wget -O` and `chmod` then follow it to truncate or re-mode whatever it
+# points at. The account has no need of the root - it writes `data` and `bin`
+# only - so it is taken back, and the directory itself only: a recursive chown
+# would reach `data` too, which the account does need.
+#
+# `find -user` rather than reading `ls -ld` or `stat`: `stat -c` is GNU-only and
+# `ls` output has to be split on whitespace, whereas this needs nothing beyond
+# the -maxdepth the reachability check below already relies on, and matches the
+# owner exactly. Exactly, because a directory owned by anyone else was chosen by
+# the operator and is not this script's to re-own. An account that does not exist
+# yet makes find fail, which reads as "not owned" - correct, nobody can own the
+# directory as an account that is not there.
+#
+# Asked of "path/." rather than of the path: find judges a symlink it is handed
+# by the link, which root usually owns, while everything below writes through
+# it into the directory behind. The trailing component makes the kernel resolve
+# the link first, which needs no option that one find has and another lacks.
+if [ -n "$(find "$INSTALLATION_PATH/." -maxdepth 0 -user "$SERVICE_USER" 2> /dev/null)" ]; then
+    echo -e "$YELLOW⚠ Warning: $NORMAL $INSTALLATION_PATH was owned by $SERVICE_USER; giving it back to $ROOT_USER."
+    if ! chown "$ROOT_USER" "$INSTALLATION_PATH"; then
+        echo -e "$RED✗ Could not take $INSTALLATION_PATH back from $SERVICE_USER."
+        echo -e "$NORMALℹ Any existing installation has been left untouched."
+        exit 1
+    fi
+fi
+
 clear
 echo -e "$BLUEℹ Info: $NORMAL Downloading MySpeed binary. Please wait..."
 sleep 2
@@ -386,7 +436,17 @@ sleep 2
 #
 # This is the same conclusion the AVX2 check above reaches: a permanent crash
 # loop announced as a finished installation is worse than stopping.
-DOWNLOAD_TMP="myspeed.download.$$"
+#
+# Named by mktemp, never by anything guessable such as this process's id: a name
+# an unprivileged account can predict is a name it can plant a symlink under, and
+# root's `wget -O` would follow it. It stays inside the installation directory
+# because the final `mv` is only an atomic rename on the same filesystem, and
+# the template carries the old prefix so a leftover is still recognisable.
+DOWNLOAD_TMP=$(mktemp "$INSTALLATION_PATH/myspeed.download.XXXXXX") || {
+    echo -e "$RED✗ Could not create a temporary file in $INSTALLATION_PATH."
+    echo -e "$NORMALℹ Any existing installation has been left untouched."
+    exit 1
+}
 
 if ! wget --timeout=30 -O "$DOWNLOAD_TMP" "$RELEASE_URL"; then
     rm -f "$DOWNLOAD_TMP"
@@ -413,9 +473,14 @@ fi
 # against at all. The release publishes a SHA256SUMS over every asset it
 # carries; this refuses a binary that does not match it.
 #
-# A release cut before that file existed cannot be verified, and saying so
-# plainly is more use than refusing to install a version that was published
-# without one.
+# A download that cannot be checked at all - no SHA256SUMS on the release, or no
+# sha256 tool on the host - is refused too. These used to warn and carry on, so
+# anybody able to strip the asset from a release, or a host that simply lacked the
+# tool, got an unverified binary installed as a root-run service behind one yellow
+# line. Failing open is what made the check optional for exactly the attacker it
+# is there for. An old release that predates SHA256SUMS, or a minimal host, is a
+# real case, so the operator can say so with $ALLOW_UNVERIFIED_FLAG; that excuses
+# only "could not be checked", never a list that omits the binary or a mismatch.
 sha256_of() {
     if command -v sha256sum &> /dev/null; then
         sha256sum "$1" | cut -d ' ' -f 1
@@ -429,6 +494,13 @@ sha256_of() {
 CHECKSUM_URL=$(release_asset_url "SHA256SUMS")
 
 if [ -z "$CHECKSUM_URL" ]; then
+    if [ "$ALLOW_UNVERIFIED" != true ]; then
+        rm -f "$DOWNLOAD_TMP"
+        echo -e "$RED✗ This release publishes no SHA256SUMS, so the download cannot be verified."
+        echo -e "$NORMALℹ Pass $ALLOW_UNVERIFIED_FLAG to install it anyway."
+        echo -e "$NORMALℹ Any existing installation has been left untouched."
+        exit 1
+    fi
     echo -e "$YELLOW⚠ Warning:$NORMAL this release publishes no SHA256SUMS, so the download could not be verified."
 else
     EXPECTED=$(curl -sf --max-time 15 -L "$CHECKSUM_URL" | grep -E "[[:space:]]${BINARY_NAME}$" | head -1 | cut -d ' ' -f 1)
@@ -440,6 +512,13 @@ else
         echo -e "$NORMALℹ Any existing installation has been left untouched."
         exit 1
     elif [ -z "$ACTUAL" ]; then
+        if [ "$ALLOW_UNVERIFIED" != true ]; then
+            rm -f "$DOWNLOAD_TMP"
+            echo -e "$RED✗ No sha256 tool on this host (looked for sha256sum, shasum and openssl), so the download cannot be verified."
+            echo -e "$NORMALℹ Install one of them, or pass $ALLOW_UNVERIFIED_FLAG to install it anyway."
+            echo -e "$NORMALℹ Any existing installation has been left untouched."
+            exit 1
+        fi
         echo -e "$YELLOW⚠ Warning:$NORMAL no sha256 tool on this host, so the download could not be verified."
     elif [ "$EXPECTED" != "$ACTUAL" ]; then
         rm -f "$DOWNLOAD_TMP"
@@ -580,7 +659,8 @@ sleep 2
 # will reach for. That path is handled below by falling back to root rather than
 # by the sandbox, but a directive that would break it for the fallback too is
 # still the wrong thing to add.
-SERVICE_USER="myspeed"
+#
+# SERVICE_USER is defined with the other constants at the top of the script.
 
 if ! id -u "$SERVICE_USER" > /dev/null 2>&1 && command -v useradd &> /dev/null; then
     useradd --system --no-create-home --home-dir "$INSTALLATION_PATH" \

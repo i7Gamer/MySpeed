@@ -8,7 +8,7 @@ import { readSource } from "../helpers/source.js";
 import {INSTALL_SANDBOX_TIMEOUT as TIMEOUT, installSandbox as upgrade,
     sandboxBash as bash} from "../helpers/installSandbox.js";
 
-for (const failure of ["api", "asset", "download", "empty", "checksum", "chmod", "backup"]) {
+for (const failure of ["api", "asset", "download", "empty", "checksum", "chmod", "backup", "mktemp"]) {
     it(`keeps the working service and binary when ${failure} fails`, {skip: !bash && "Bash unavailable"}, (t) => {
         const result = upgrade(t, failure);
         assert.equal(result.status, 1, result.output);
@@ -176,4 +176,90 @@ it("stops only after download and restarts after replacement", {skip: !bash && "
     assert.equal(result.binary, "new binary");
     assert.equal(result.active, true);
     assert.match(result.calls, /download[\s\S]*stop myspeed[\s\S]*move[\s\S]*restart myspeed/);
+});
+
+it("names the download unpredictably, beside the binary, and leaves nothing behind", {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t);
+    assert.equal(result.status, 0, result.output);
+    assert.equal(result.binary, "new binary");
+    assert.deepEqual(result.leftovers, [], "a download temp file survived the rename");
+});
+
+it("takes the installation root back from a service-owned directory without recursing", {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t, "", true, {serviceOwned: true});
+    assert.equal(result.status, 0, result.output);
+    assert.match(result.calls, new RegExp(`chown root ${result.installation}\n`));
+    assert.doesNotMatch(result.calls, /chown -\w*R\w* root/);
+    assert.match(result.output, /owned by myspeed.*root/i);
+    assert.ok(result.calls.indexOf("chown root") < result.calls.indexOf("download"),
+        "the root was reclaimed after the download had started");
+});
+
+it("leaves a directory owned by anyone else alone", {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t);
+    assert.equal(result.status, 0, result.output);
+    assert.doesNotMatch(result.calls, /chown root/);
+});
+
+it("stops before downloading when the root cannot be taken back", {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t, "reclaim", true, {serviceOwned: true});
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /left untouched/i);
+    assert.equal(result.binary, "old binary");
+    assert.equal(result.active, true);
+    assert.doesNotMatch(result.calls, /download|stop|move/);
+});
+
+it("a failing mktemp leaves the existing installation untouched and says so", {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t, "mktemp");
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /left untouched/i);
+    assert.doesNotMatch(result.calls, /download/);
+});
+
+const ALLOW_UNVERIFIED = "--allow-unverified";
+const FLAG_HINT = new RegExp(ALLOW_UNVERIFIED);
+
+// The two ways a download cannot be checked at all, each with what the refusal
+// has to tell the operator beyond the flag.
+for (const [failure, mentions] of [["no-sums", /SHA256SUMS/], ["no-sha-tool", /sha256sum.*shasum.*openssl/]]) {
+    it(`refuses an unverifiable download by default (${failure})`, {skip: !bash && "Bash unavailable"}, (t) => {
+        const result = upgrade(t, failure);
+        assert.equal(result.status, 1, result.output);
+        assert.match(result.output, mentions);
+        assert.match(result.output, FLAG_HINT, "the refusal does not name the way out");
+        assert.match(result.output, /left untouched/i);
+        assert.equal(result.binary, "old binary");
+        assert.equal(result.active, true);
+        assert.deepEqual(result.leftovers, [], "the unverified download was not removed");
+        assert.doesNotMatch(result.calls, /stop|move|start/);
+        assert.doesNotMatch(result.output, /Installation completed/);
+    });
+
+    it(`installs it with ${ALLOW_UNVERIFIED}, after warning (${failure})`, {skip: !bash && "Bash unavailable"}, (t) => {
+        const result = upgrade(t, failure, true, {args: [ALLOW_UNVERIFIED]});
+        assert.equal(result.status, 0, result.output);
+        assert.match(result.output, /could not be verified/);
+        assert.equal(result.binary, "new binary");
+    });
+}
+
+it(`${ALLOW_UNVERIFIED} does not excuse a checksum mismatch`, {skip: !bash && "Bash unavailable"}, (t) => {
+    const result = upgrade(t, "checksum", true, {args: [ALLOW_UNVERIFIED]});
+    assert.equal(result.status, 1, result.output);
+    assert.match(result.output, /does not match the checksum/);
+    assert.equal(result.binary, "old binary");
+    assert.deepEqual(result.leftovers, []);
+});
+
+// Fetching an existing SHA256SUMS can fail too; that leaves nothing to compare
+// against and has to land in the hard "does not cover" refusal, not a warning.
+it(`${ALLOW_UNVERIFIED} does not excuse a checksum list that cannot be fetched`, {skip: !bash && "Bash unavailable"}, (t) => {
+    for (const args of [[], [ALLOW_UNVERIFIED]]) {
+        const result = upgrade(t, "sums-unreachable", true, {args});
+        assert.equal(result.status, 1, result.output);
+        assert.match(result.output, /does not cover/);
+        assert.equal(result.binary, "old binary");
+        assert.deepEqual(result.leftovers, []);
+    }
 });
