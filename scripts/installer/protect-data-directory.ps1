@@ -49,6 +49,364 @@ $script:MySpeedReadmeName = 'README.txt'
 # because either may just have been moved away.
 $script:MySpeedServiceFolders = @('data', 'logs')
 
+# What a quarantined item is given: administrators as its owner and a DACL of
+# its own that names SYSTEM and administrators and inherits from nobody.
+$script:MySpeedLockedDirectory = "O:BA$($script:MySpeedProtectedDacl)"
+$script:MySpeedLockedFile = 'O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)'
+
+# Held by SYSTEM and by an elevated administrator, and switched off until asked
+# for. With them an item can be opened whatever its previous owner wrote into
+# its DACL, including one written to keep administrators out.
+$script:MySpeedPrivileges = @('SeBackupPrivilege', 'SeRestorePrivilege')
+
+# Everything done to an item somebody else may control is done through one
+# handle to it, because a path is only a name and can be made to mean something
+# else between two uses of it. The account that planted a directory can still
+# reach it once it has been moved and closed - through a handle opened
+# beforehand, or by path, since passing through a folder one cannot read is a
+# right every account has - and can empty it and turn it into a junction. From
+# then on "directory\child" names a file in another service's folder, and a
+# path is followed through every component but its last.
+#
+# So an item is opened once, without following it if it is a link itself, and
+# the handle is asked where the item really is. Only when that is where it was
+# expected to be - which no path through a link can be - is anything read from
+# it or done to it, and then on that same handle: its owner, whether it is a
+# link, its security, its removal, its new name.
+#
+# Compiled only when something has to be quarantined; an installation that
+# finds nothing never loads it.
+$script:MySpeedNativeSource = @'
+    using System;
+    using System.ComponentModel;
+    using System.Runtime.InteropServices;
+    using System.Security.Principal;
+    using System.Text;
+    using Microsoft.Win32.SafeHandles;
+
+    public sealed class MySpeedHandle : IDisposable
+    {
+        const uint DeleteAccess = 0x00010000;
+        const uint ReadControl = 0x00020000;
+        const uint WriteDac = 0x00040000;
+        const uint WriteOwner = 0x00080000;
+        const uint FileReadAttributes = 0x00000080;
+
+        public const uint ForReading = ReadControl | FileReadAttributes;
+        public const uint ForSecuring = ForReading | WriteDac | WriteOwner;
+        public const uint ForRemoving = ForReading | DeleteAccess;
+
+        const uint ShareReadWriteDelete = 0x00000007;
+        const uint OpenExisting = 3;
+        const uint FlagBackupSemantics = 0x02000000;
+        const uint FlagOpenReparsePoint = 0x00200000;
+        const uint AttributeDirectory = 0x00000010;
+        const uint AttributeReparsePoint = 0x00000400;
+        const uint ReparseTagNameSurrogate = 0x20000000;
+        const int FileRenameInfo = 3;
+        const int FileDispositionInfo = 4;
+        const int FileDispositionInfoEx = 21;
+        const uint DispositionDelete = 0x00000001;
+        const uint DispositionPosixSemantics = 0x00000002;
+        const uint DispositionIgnoreReadOnly = 0x00000010;
+        const uint VolumeNameDos = 0x0;
+        const uint VolumeNameGuid = 0x1;
+        const int FileAttributeTagInfo = 9;
+        const int FileObject = 1;
+        const uint OwnerInformation = 0x00000001;
+        const uint DaclInformation = 0x00000004;
+        const uint SddlRevision = 1;
+        const uint TokenAdjustPrivileges = 0x0020;
+        const uint TokenQuery = 0x0008;
+        const uint PrivilegeEnabled = 0x00000002;
+        const int InitialPathCapacity = 512;
+        const string ExtendedPrefix = @"\\?\";
+        const string NetworkPrefix = @"\\";
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct FileInformation
+        {
+            public uint Attributes;
+            public System.Runtime.InteropServices.ComTypes.FILETIME Created;
+            public System.Runtime.InteropServices.ComTypes.FILETIME Accessed;
+            public System.Runtime.InteropServices.ComTypes.FILETIME Written;
+            public uint VolumeSerial;
+            public uint SizeHigh;
+            public uint SizeLow;
+            public uint Links;
+            public uint IndexHigh;
+            public uint IndexLow;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        struct AttributeTag
+        {
+            public uint Attributes;
+            public uint ReparseTag;
+        }
+
+        [StructLayout(LayoutKind.Sequential, Pack = 4)]
+        struct TokenPrivilege
+        {
+            public uint Count;
+            public long Luid;
+            public uint Attributes;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFileInformationByHandle(SafeFileHandle handle, out FileInformation information);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool GetFileInformationByHandleEx(SafeFileHandle handle, int kind, out AttributeTag information, uint size);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle, StringBuilder path, uint capacity, uint flags);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        static extern bool SetFileInformationByHandle(SafeFileHandle handle, int kind, IntPtr information, uint size);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr LocalFree(IntPtr memory);
+
+        [DllImport("kernel32.dll")]
+        static extern IntPtr GetCurrentProcess();
+
+        [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr handle);
+
+        [DllImport("advapi32.dll")]
+        static extern uint GetSecurityInfo(SafeFileHandle handle, int type, uint information, out IntPtr owner, IntPtr group, IntPtr dacl, IntPtr sacl, out IntPtr descriptor);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool SetKernelObjectSecurity(SafeFileHandle handle, uint information, IntPtr descriptor);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string sddl, uint revision, out IntPtr descriptor, IntPtr size);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool LookupPrivilegeValueW(string system, string name, out long luid);
+
+        [DllImport("advapi32.dll", SetLastError = true)]
+        static extern bool AdjustTokenPrivileges(IntPtr token, bool disableAll, ref TokenPrivilege state, uint length, IntPtr previous, IntPtr returned);
+
+        readonly SafeFileHandle handle;
+
+        public string FinalPath { get; private set; }
+        public string Owner { get; private set; }
+        public bool IsDirectory { get; private set; }
+        public bool IsLink { get; private set; }
+        public bool IsHardLink { get; private set; }
+
+        // The exact name, with none of the rewriting a plain path is given: a
+        // name ending in a dot or a space would otherwise open its neighbour.
+        static string Extended(string path)
+        {
+            return path.StartsWith(NetworkPrefix, StringComparison.Ordinal) ? path : ExtendedPrefix + path;
+        }
+
+        static Win32Exception LastError()
+        {
+            return new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        // Best effort: a privilege the account does not hold stays off, and
+        // the open that needed it then fails and says so.
+        public static void EnablePrivileges(string[] names)
+        {
+            IntPtr token;
+            if (!OpenProcessToken(GetCurrentProcess(), TokenAdjustPrivileges | TokenQuery, out token)) return;
+
+            try
+            {
+                foreach (string name in names)
+                {
+                    TokenPrivilege state = new TokenPrivilege();
+                    state.Count = 1;
+                    state.Attributes = PrivilegeEnabled;
+
+                    if (LookupPrivilegeValueW(null, name, out state.Luid))
+                        AdjustTokenPrivileges(token, false, ref state, 0, IntPtr.Zero, IntPtr.Zero);
+                }
+            }
+            finally
+            {
+                CloseHandle(token);
+            }
+        }
+
+        // The item the path names, and never what it points at: a link is
+        // opened as the link.
+        public static MySpeedHandle Open(string path, uint access)
+        {
+            SafeFileHandle handle = CreateFileW(Extended(path), access, ShareReadWriteDelete, IntPtr.Zero, OpenExisting,
+                FlagBackupSemantics | FlagOpenReparsePoint, IntPtr.Zero);
+
+            if (handle.IsInvalid) throw LastError();
+
+            try
+            {
+                return new MySpeedHandle(handle);
+            }
+            catch
+            {
+                handle.Dispose();
+                throw;
+            }
+        }
+
+        MySpeedHandle(SafeFileHandle opened)
+        {
+            handle = opened;
+
+            FileInformation information;
+            AttributeTag tag;
+
+            if (!GetFileInformationByHandle(handle, out information)) throw LastError();
+            if (!GetFileInformationByHandleEx(handle, FileAttributeTagInfo, out tag, (uint)Marshal.SizeOf(typeof(AttributeTag)))) throw LastError();
+
+            bool reparse = (information.Attributes & AttributeReparsePoint) != 0;
+
+            // A directory carrying a reparse point of any kind is a link here:
+            // the only safe thing to do with a tag this does not know is not
+            // to walk through it. A file is one when its tag stands for
+            // another name.
+            IsDirectory = (information.Attributes & AttributeDirectory) != 0;
+            IsLink = reparse && (IsDirectory || (tag.ReparseTag & ReparseTagNameSurrogate) != 0);
+            IsHardLink = !IsDirectory && information.Links > 1;
+            FinalPath = ReadFinalPath();
+            Owner = ReadOwner();
+        }
+
+        // By drive letter, or by volume where the volume has none: the same
+        // form for every item on it, which is all a comparison needs.
+        string ReadFinalPath()
+        {
+            string path = QueryFinalPath(VolumeNameDos) ?? QueryFinalPath(VolumeNameGuid);
+
+            if (path == null) throw LastError();
+
+            return path;
+        }
+
+        string QueryFinalPath(uint form)
+        {
+            StringBuilder path = new StringBuilder(InitialPathCapacity);
+            uint length = GetFinalPathNameByHandleW(handle, path, (uint)path.Capacity, form);
+
+            if (length > path.Capacity)
+            {
+                path = new StringBuilder((int)length);
+                length = GetFinalPathNameByHandleW(handle, path, (uint)path.Capacity, form);
+            }
+
+            return length == 0 || length > path.Capacity ? null : path.ToString();
+        }
+
+        // Null for an owner that cannot be read, which no list of trusted
+        // owners contains.
+        string ReadOwner()
+        {
+            IntPtr owner;
+            IntPtr descriptor;
+
+            if (GetSecurityInfo(handle, FileObject, OwnerInformation, out owner, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, out descriptor) != 0) return null;
+
+            try
+            {
+                return new SecurityIdentifier(owner).Value;
+            }
+            finally
+            {
+                LocalFree(descriptor);
+            }
+        }
+
+        // Owner and DACL of this one item, exactly as stated. Nothing is
+        // handed down to what is beneath it, so a file that has a second name
+        // somewhere else cannot have its security rewritten from here.
+        public void Secure(string sddl)
+        {
+            IntPtr descriptor;
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl, SddlRevision, out descriptor, IntPtr.Zero)) throw LastError();
+
+            try
+            {
+                if (!SetKernelObjectSecurity(handle, OwnerInformation | DaclInformation, descriptor)) throw LastError();
+            }
+            finally
+            {
+                LocalFree(descriptor);
+            }
+        }
+
+        // The name this handle was opened by. A link goes and what it points
+        // at stays; a file with other names keeps them, and its read-only
+        // attribute, which belongs to all of them, is left as it is.
+        //
+        // Gone the moment this handle closes, where the file system can do
+        // that. The older kind of deletion waits for every other handle to
+        // close as well, and any of them may call it off in the meantime.
+        public void Delete()
+        {
+            if (SetDisposition(FileDispositionInfoEx, sizeof(uint), DispositionDelete | DispositionPosixSemantics | DispositionIgnoreReadOnly)) return;
+            if (!SetDisposition(FileDispositionInfo, sizeof(byte), DispositionDelete)) throw LastError();
+        }
+
+        bool SetDisposition(int kind, int size, uint value)
+        {
+            IntPtr flags = Marshal.AllocHGlobal(sizeof(uint));
+
+            try
+            {
+                Marshal.WriteInt32(flags, (int)value);
+
+                return SetFileInformationByHandle(handle, kind, flags, (uint)size);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(flags);
+            }
+        }
+
+        // Fails where the destination exists. The layout is FILE_RENAME_INFO's:
+        // a flag, a root handle that stays empty, the name's length in bytes,
+        // the name.
+        public void Rename(string destination)
+        {
+            byte[] name = Encoding.Unicode.GetBytes(Extended(destination));
+            int lengthOffset = 2 * IntPtr.Size;
+            int nameOffset = lengthOffset + sizeof(int);
+            int size = nameOffset + name.Length + sizeof(char);
+            IntPtr buffer = Marshal.AllocHGlobal(size);
+
+            try
+            {
+                for (int offset = 0; offset < size; offset++) Marshal.WriteByte(buffer, offset, 0);
+
+                Marshal.WriteInt32(buffer, lengthOffset, name.Length);
+                Marshal.Copy(name, 0, IntPtr.Add(buffer, nameOffset), name.Length);
+
+                if (!SetFileInformationByHandle(handle, FileRenameInfo, buffer, (uint)size)) throw LastError();
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+
+        public void Dispose()
+        {
+            handle.Dispose();
+        }
+    }
+'@
+
 function Get-MySpeedOwner {
     param([string]$Path)
 
@@ -98,21 +456,12 @@ function Test-MySpeedLink {
     return $reparse -and ($Item.PSIsContainer -or [bool]$Item.LinkType)
 }
 
-function Test-MySpeedHardLink {
-    param($Item)
-
-    # A second name for a file that also lives somewhere else. It has no
-    # reparse point to give it away, and it shares one security descriptor with
-    # its other names - so taking ownership of this name, or resetting its
-    # DACL, would do the same to a file outside the directory.
-    return (-not $Item.PSIsContainer) -and ($Item.LinkType -eq 'HardLink')
-}
-
 function Remove-MySpeedLink {
     param($Item)
 
-    # The link itself: neither call descends, so what it points at is untouched,
-    # and deleting one name of a hard-linked file leaves the others standing.
+    # For the data root only, whose path runs through nothing another account
+    # can rearrange. The link itself: neither call descends, so what it points
+    # at is untouched.
     if ($Item.PSIsContainer) {
         [System.IO.Directory]::Delete($Item.FullName, $false)
     } else {
@@ -123,6 +472,9 @@ function Remove-MySpeedLink {
 function Move-MySpeedItem {
     param($Item, [string]$Destination)
 
+    # For the data root only, whose path runs through nothing another account
+    # can rearrange, and a rename does not follow the name it is given.
+    #
     # Fatal, and said in words. An item that cannot be moved cannot be left
     # where it is either - an open handle on a planted file, or a name too long
     # to exist under the quarantine's longer path, would otherwise be a way to
@@ -202,84 +554,204 @@ function New-MySpeedQuarantine {
     return $path
 }
 
-function Set-MySpeedAdministratorOwned {
+function Import-MySpeedNative {
+    if ('MySpeedHandle' -as [type]) { return }
+
+    Add-Type -TypeDefinition $script:MySpeedNativeSource
+    [MySpeedHandle]::EnablePrivileges($script:MySpeedPrivileges)
+}
+
+function Open-MySpeedVerified {
+    param([string]$Path, [string]$ExpectedFinal, [uint32]$Access)
+
+    # The one way an item somebody else may control is ever opened. What comes
+    # back is a handle to the item that is really at $ExpectedFinal; a path
+    # that reached anything else - through a parent that was swapped for a
+    # link - is refused before a thing is read from it. The caller closes it.
+    $opened = [MySpeedHandle]::Open($Path, $Access)
+
+    if (-not [string]::Equals($opened.FinalPath, $ExpectedFinal, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $final = $opened.FinalPath
+        $opened.Dispose()
+
+        throw "$Path changed while it was being checked: the name now leads to $final."
+    }
+
+    return $opened
+}
+
+function Get-MySpeedFinalPath {
     param([string]$Path)
 
-    # takeown rather than a descriptor write, because it holds the privilege
-    # that overrides a DACL written to keep administrators out. One item, by
-    # full path, and never a link: the caller has checked.
-    #
-    # Its own preference, local to this function: Windows PowerShell turns a
-    # native command's redirected error output into error records, and under
-    # Stop the first of them would end the installation over a message.
-    $ErrorActionPreference = 'Continue'
+    # Where a directory this script vouches for really is, in the form a
+    # handle reports it - which is what the items in it are compared against.
+    Import-MySpeedNative
+    $opened = [MySpeedHandle]::Open($Path, [MySpeedHandle]::ForReading)
 
-    & (Join-Path $env:SystemRoot 'System32\takeown.exe') /A /F $Path 2>&1 | Out-Null
+    try {
+        return $opened.FinalPath
+    } finally {
+        $opened.Dispose()
+    }
+}
 
-    if ($LASTEXITCODE -ne 0) { throw "Could not take ownership of $Path." }
+function Get-MySpeedLinkTarget {
+    param([string]$Path)
+
+    # For the note only. Read by path, so it is never acted on.
+    try {
+        return @((Get-Item -LiteralPath $Path -Force).Target) -join ', '
+    } catch {
+        return 'a target that could not be read'
+    }
+}
+
+function Remove-MySpeedVerifiedLink {
+    param([string]$Path, [string]$ExpectedFinal)
+
+    # Opened again, because removing needs a right that locking does not ask
+    # for, and judged again on the new handle: it is the link that is removed,
+    # or nothing is.
+    $opened = Open-MySpeedVerified -Path $Path -ExpectedFinal $ExpectedFinal -Access ([MySpeedHandle]::ForRemoving)
+
+    try {
+        if (-not ($opened.IsLink -or $opened.IsHardLink)) {
+            throw "$Path changed while it was being checked: it is no longer a link."
+        }
+
+        $opened.Delete()
+    } finally {
+        $opened.Dispose()
+    }
 }
 
 function Lock-MySpeedQuarantined {
-    param([string]$Path, [System.Collections.Generic.List[string]]$Notes)
+    param([string]$Path, [string]$ExpectedFinal, [System.Collections.Generic.List[string]]$Notes)
 
-    # From the top down, one level at a time: once a directory answers to
-    # administrators only, nobody else can add to it or swap what is in it
-    # while the level below is being dealt with.
+    # From the top down, every item through a handle of its own - see the note
+    # on the native source for why a path will not do. $ExpectedFinal is where
+    # the item must really be: its parent's own location and its name.
     try {
-        $item = Get-Item -LiteralPath $Path -Force
+        Import-MySpeedNative
+        $opened = Open-MySpeedVerified -Path $Path -ExpectedFinal $ExpectedFinal -Access ([MySpeedHandle]::ForSecuring)
 
-        if (Test-MySpeedLink $item) {
-            $Notes.Add("removed link  $Path  ->  $(@($item.Target) -join ', ')")
-            Remove-MySpeedLink $item
+        try {
+            $isDirectory = $opened.IsDirectory
+            $isLink = $opened.IsLink
+            $isHardLink = $opened.IsHardLink
+
+            # A link is not locked but removed, below: a hard link shares its
+            # security with the file's other names, and a junction is nothing
+            # an administrator should find themselves walking through.
+            if (-not ($isLink -or $isHardLink)) {
+                $opened.Secure($(if ($isDirectory) { $script:MySpeedLockedDirectory } else { $script:MySpeedLockedFile }))
+            }
+        } finally {
+            $opened.Dispose()
+        }
+
+        if ($isLink) {
+            $target = Get-MySpeedLinkTarget $Path
+            Remove-MySpeedVerifiedLink -Path $Path -ExpectedFinal $ExpectedFinal
+            $Notes.Add("removed link  $Path  ->  $target")
 
             return
         }
 
-        if (Test-MySpeedHardLink $item) {
+        if ($isHardLink) {
+            Remove-MySpeedVerifiedLink -Path $Path -ExpectedFinal $ExpectedFinal
             $Notes.Add("removed hard link  $Path  (the file keeps its other names)")
-            Remove-MySpeedLink $item
 
             return
         }
 
-        Set-MySpeedAdministratorOwned $Path
+        if (-not $isDirectory) { return }
 
-        # An empty DACL that inherits: whatever the previous owner wrote is
-        # gone, and the quarantine folder's own applies.
-        if ($item.PSIsContainer) {
-            # The names in it that are links go first. Writing a directory's
-            # DACL re-applies inheritance to its children, and a hard-linked
-            # child shares its descriptor with a file somewhere else - which
-            # would have its inherited entries rewritten along with it.
-            try {
-                foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force)) {
-                    if ((Test-MySpeedLink $child) -or (Test-MySpeedHardLink $child)) {
-                        Lock-MySpeedQuarantined -Path $child.FullName -Notes $Notes
-                    }
-                }
-            } catch {
-                # Its previous owner's DACL does not let it be listed yet. It
-                # is listed below, once the DACL is this script's own.
-                $Notes.Add("could not be read before it was locked  $Path")
-            }
+        # Listed by path, which can be made to list some other directory - so
+        # the names are only candidates, and each is refused by its own check
+        # unless it really is in this one.
+        foreach ($entry in [System.IO.Directory]::GetFileSystemEntries($Path)) {
+            $name = [System.IO.Path]::GetFileName($entry)
 
-            $security = New-Object System.Security.AccessControl.DirectorySecurity
-            $security.SetAccessRuleProtection($false, $false)
-            [System.IO.Directory]::SetAccessControl($Path, $security)
-
-            foreach ($child in @(Get-ChildItem -LiteralPath $Path -Force)) {
-                Lock-MySpeedQuarantined -Path $child.FullName -Notes $Notes
-            }
-        } else {
-            $security = New-Object System.Security.AccessControl.FileSecurity
-            $security.SetAccessRuleProtection($false, $false)
-            [System.IO.File]::SetAccessControl($Path, $security)
+            Lock-MySpeedQuarantined -Path "$Path\$name" -ExpectedFinal "$ExpectedFinal\$name" -Notes $Notes
         }
     } catch {
         # Already out of the data directory, which is what the service's
         # safety rests on; a quarantined item that could not be locked is
         # reported, not allowed to fail the installation.
         $Notes.Add("COULD NOT LOCK  $Path  ($($_.Exception.Message))")
+    }
+}
+
+function Lock-MySpeedQuarantinedTree {
+    param([string]$Quarantine, [string]$Relative, [System.Collections.Generic.List[string]]$Notes)
+
+    # The quarantine folder was made by this installation moments ago, under a
+    # name nobody could predict and closed from its first instant, so where it
+    # is can be taken from it and everything beneath measured against that.
+    try {
+        $final = Get-MySpeedFinalPath $Quarantine
+    } catch {
+        $Notes.Add("COULD NOT LOCK  $Quarantine\$Relative  ($($_.Exception.Message))")
+
+        return
+    }
+
+    Lock-MySpeedQuarantined -Path "$Quarantine\$Relative" -ExpectedFinal "$final\$Relative" -Notes $Notes
+}
+
+function Move-MySpeedForeignItem {
+    param([string]$Path, [string]$ExpectedFinal, [string]$Destination, [string]$Relative,
+        [string[]]$Trusted, [System.Collections.Generic.List[string]]$Notes)
+
+    # Out of the data directory, through one handle: the item is judged again
+    # on it - the search that found it went by path - and then renamed, or
+    # removed if it is a link, by that handle and not by its name. True when
+    # it now stands in the quarantine and is still to be locked.
+    #
+    # Fatal, and said in words. An item that cannot be moved cannot be left
+    # where it is either - an open handle on a planted file would otherwise be
+    # a way to keep it in the directory - and a name that stopped meaning what
+    # it meant a moment ago is somebody rearranging the directory under the
+    # check. Either way the installation stops, and the log says over what.
+    $problem = "MySpeed: {0} does not belong to an administrator and could not be taken out of the data directory ({1}). " +
+        'Remove or rename it from an elevated prompt and run the installer again.'
+
+    try {
+        Import-MySpeedNative
+        $opened = Open-MySpeedVerified -Path $Path -ExpectedFinal $ExpectedFinal -Access ([MySpeedHandle]::ForRemoving)
+    } catch {
+        throw ($problem -f $Path, $_.Exception.Message)
+    }
+
+    try {
+        # Changed hands since the search: an administrator's now, and theirs
+        # to keep.
+        if ($Trusted -contains $opened.Owner) { return $false }
+
+        $owner = Get-MySpeedOwnerLabel $opened.Owner
+
+        # A link is renamed out like anything else and removed where it lands,
+        # by the step that locks what was moved. A rename takes effect at once
+        # whoever else holds the item open; a deletion may be left waiting for
+        # them, and a link waiting to be deleted is a link still in the
+        # directory.
+        $kind = ''
+        if ($opened.IsLink) {
+            $kind = " link to $(Get-MySpeedLinkTarget $Path)"
+        } elseif ($opened.IsHardLink) {
+            $kind = ' hard link'
+        }
+
+        [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $Destination))
+        $opened.Rename($Destination)
+        $Notes.Add("moved$kind  $Relative  (owner $owner)")
+
+        return $true
+    } catch {
+        throw ($problem -f $Path, $_.Exception.Message)
+    } finally {
+        $opened.Dispose()
     }
 }
 
@@ -314,8 +786,8 @@ function Move-MySpeedRootAside {
         [System.Collections.Generic.List[string]]$Notes)
 
     # Renamed before anything in it is read: a rename cannot be raced into
-    # following a link, and what arrives in the quarantine is then judged there,
-    # where nobody else can swap it.
+    # following a link, and what arrives in the quarantine is then judged
+    # there, each item through a handle of its own.
     $label = Get-MySpeedOwnerLabel $Owner
 
     if (Test-MySpeedLink $RootItem) {
@@ -329,7 +801,7 @@ function Move-MySpeedRootAside {
     Move-MySpeedItem -Item $RootItem -Destination $destination
 
     $Notes.Add("moved the whole of $($RootItem.FullName) to $Name  (owner $label)")
-    Lock-MySpeedQuarantined -Path $destination -Notes $Notes
+    Lock-MySpeedQuarantinedTree -Quarantine $Quarantine -Relative $Name -Notes $Notes
 }
 
 function New-MySpeedDataRoot {
@@ -392,7 +864,8 @@ function Write-MySpeedQuarantineReadme {
         '',
         '  If you do not recognise these items, delete this folder. If you did not put them there, somebody else on this machine did.',
         "  If one of them is yours, copy it back into $Root from an elevated prompt. Copy, do not move: a copy made by an administrator is owned by administrators, a moved file keeps its old owner and would be quarantined again by the next update.",
-        '  If the whole directory was moved, your earlier data is in the folder of the same name inside this one, and MySpeed has started with an empty one.'
+        '  If the whole directory was moved, your earlier data is in the folder of the same name inside this one, and MySpeed has started with an empty one.',
+        '  Whatever is in this folder was made by an account this installation did not trust. Should a folder in it turn out to be a link, do not open it or copy from it.'
     )
 
     [System.IO.File]::WriteAllLines((Join-Path $Quarantine $script:MySpeedReadmeName), $lines)
@@ -432,33 +905,26 @@ function Protect-MySpeedDataRoot {
             return
         }
 
+        $rootFinal = $null
+
         $sweep = {
+            # The search goes by path and only reads, so what it returns are
+            # candidates: each is opened and judged again before it is touched.
             foreach ($found in @(Get-MySpeedForeignItems -Directory $root -Trusted $trusted)) {
-                if (-not $quarantine) { $quarantine = New-MySpeedQuarantine $root }
+                if (-not $quarantine) {
+                    $rootFinal = Get-MySpeedFinalPath $root
+                    $quarantine = New-MySpeedQuarantine $root
+                }
 
                 $relative = $found.Item.FullName.Substring($root.Length).TrimStart('\')
-                $owner = Get-MySpeedOwnerLabel $found.Owner
 
-                if (Test-MySpeedLink $found.Item) {
-                    $notes.Add("removed link  $relative  ->  $(@($found.Item.Target) -join ', ')  (owner $owner)")
-                    Remove-MySpeedLink $found.Item
+                $moved = Move-MySpeedForeignItem -Path $found.Item.FullName -ExpectedFinal "$rootFinal\$relative" `
+                    -Destination (Join-Path (Join-Path $quarantine $leaf) $relative) -Relative $relative `
+                    -Trusted $trusted -Notes $notes
 
-                    continue
+                if ($moved) {
+                    Lock-MySpeedQuarantinedTree -Quarantine $quarantine -Relative "$leaf\$relative" -Notes $notes
                 }
-
-                if (Test-MySpeedHardLink $found.Item) {
-                    $notes.Add("removed hard link  $relative  (owner $owner; the file keeps its other names)")
-                    Remove-MySpeedLink $found.Item
-
-                    continue
-                }
-
-                $destination = Join-Path (Join-Path $quarantine $leaf) $relative
-                [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
-                Move-MySpeedItem -Item $found.Item -Destination $destination
-
-                $notes.Add("moved  $relative  (owner $owner)")
-                Lock-MySpeedQuarantined -Path $destination -Notes $notes
             }
         }
 

@@ -65,7 +65,7 @@ describe("the data-directory protection the installer ships", () => {
         const topLevel = script.split("\n").filter((line) => /^\S/.test(line));
 
         for (const line of topLevel)
-            assert.match(line, /^(#|function |\}|\$script:[A-Za-z]+ = |Set-StrictMode )/,
+            assert.match(line, /^(#|function |\}|\$script:[A-Za-z]+ = |Set-StrictMode |'@$)/,
                 `a top-level statement runs on load: ${line}`);
         assert.doesNotMatch(script, new RegExp(`^${ENTRY_POINT}\\b`, "m"), "the script calls its own entry point");
     });
@@ -95,6 +95,74 @@ describe("the data-directory protection the installer ships", () => {
         assert.doesNotMatch(script, /takeown(\.exe)?['"]?\s[^\n]*\/R\b/i, "takeown /R follows junctions");
         assert.doesNotMatch(script, /icacls(\.exe)?['"]?\s[^\n]*\/T\b/i, "icacls /T follows junctions");
         assert.doesNotMatch(script, /-Recurse\b/, "a recursive cmdlet decides for itself what a directory is");
+    });
+
+    describe("what it does to an item another account may still control", () => {
+        // A path is a name, and the account that planted a directory can make
+        // "directory\child" name a file somewhere else between two uses of it.
+        // The behavioural half proves the outcome on Windows; this half keeps
+        // the means from quietly coming back on the runners that cannot.
+        const native = script.slice(script.indexOf("$script:MySpeedNativeSource = @'"), script.indexOf("\n'@"));
+        const body = (name) => {
+            const start = script.indexOf(`function ${name} {`);
+            assert.notEqual(start, -1, `the script defines no ${name}`);
+
+            return script.slice(start, script.indexOf("\n}\n", start));
+        };
+        const acting = ["Lock-MySpeedQuarantined", "Remove-MySpeedVerifiedLink", "Move-MySpeedForeignItem"];
+
+        it("opens it without following it, and asks the handle where it is", () => {
+            assert.match(native, /FlagOpenReparsePoint = 0x00200000;/);
+            assert.match(native, /FlagBackupSemantics \| FlagOpenReparsePoint/, "an item is opened through whatever it links to");
+            assert.match(native, /GetFinalPathNameByHandleW\(handle,/);
+            assert.match(body("Open-MySpeedVerified"), /\[string\]::Equals\(\$opened\.FinalPath, \$ExpectedFinal,/,
+                "nothing compares where the item is with where it was expected to be");
+        });
+
+        it("reaches it only through that check", () => {
+            for (const name of acting)
+                assert.match(body(name), /Open-MySpeedVerified -Path \$Path -ExpectedFinal \$ExpectedFinal/,
+                    `${name} opens an item some other way`);
+            assert.equal(script.split("[MySpeedHandle]::Open(").length - 1, 2,
+                "an item is opened outside Open-MySpeedVerified and the lookup of a directory this script vouches for");
+        });
+
+        it("changes, moves and removes it by its handle and never by its name", () => {
+            for (const name of acting) {
+                const text = body(name);
+
+                assert.doesNotMatch(text, /SetAccessControl|Set-Acl|icacls|takeown/i, `${name} sets security by path`);
+                assert.doesNotMatch(text, /\]::(Move|Delete)\(|Remove-Item|Move-Item|Rename-Item/, `${name} moves or removes by path`);
+            }
+            assert.doesNotMatch(script, /takeown/i, "takeown works on a path");
+            assert.match(native, /SetKernelObjectSecurity\(handle,/);
+            assert.doesNotMatch(native, /SetNamedSecurityInfo|SetFileSecurity/, "security is set by path");
+        });
+
+        it("hands nothing down to what is beneath it", () => {
+            // Propagation rewrites the inherited entries of every child, and a
+            // hard-linked child shares its descriptor with a file elsewhere.
+            assert.doesNotMatch(native, /\bSetSecurityInfo\b/, "SetSecurityInfo propagates to children");
+            assert.ok(script.includes("$script:MySpeedLockedFile = 'O:BAD:P(A;;FA;;;SY)(A;;FA;;;BA)'"));
+            assert.ok(script.includes('$script:MySpeedLockedDirectory = "O:BA$($script:MySpeedProtectedDacl)"'));
+        });
+
+        it("compiles nothing until there is something to quarantine", () => {
+            assert.equal(script.split("Add-Type").length - 1, 1);
+            assert.match(body("Import-MySpeedNative"), /Add-Type -TypeDefinition \$script:MySpeedNativeSource/);
+            assert.doesNotMatch(script.slice(script.indexOf(`function ${ENTRY_POINT}`)), /Import-MySpeedNative|\[MySpeedHandle\]/,
+                "an installation with nothing to move would compile the native source anyway");
+        });
+
+        it("keeps to the C# that Windows PowerShell's own compiler accepts", () => {
+            // Add-Type in Windows PowerShell 5.1 compiles C# 5. None of this
+            // can be compiled on the runners a pull request is checked on.
+            assert.doesNotMatch(native, /\$"/, "interpolated strings are C# 6");
+            assert.doesNotMatch(native, /\?\.|\?\[/, "null-conditional access is C# 6");
+            assert.doesNotMatch(native, /\bnameof\(/, "nameof is C# 6");
+            assert.doesNotMatch(native, /\)\s*=>|\bout var\b/, "expression bodies and inline out variables are newer than C# 5");
+            assert.doesNotMatch(native, /\{ get; \}/, "getter-only auto-properties are C# 6");
+        });
     });
 
     describe("its place in the installer", () => {
@@ -346,6 +414,11 @@ describe("protecting a data directory", {skip: elevated ? false : "needs Windows
             assert.equal(entry.users, false, "a quarantined item is still open to every local account");
         }
         assert.match(all[0].sddl, /^D:P(AI)?\(A;OICI;FA;;;SY\)\(A;OICI;FA;;;BA\)$/);
+        // Each item's DACL is its own and inherits from nobody, so it stays
+        // closed wherever an administrator later moves it.
+        assert.equal(all[1].sddl, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)");
+        assert.equal(all[2].sddl, "D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)");
+        assert.equal(all[3].sddl, "D:P(A;;FA;;;SY)(A;;FA;;;BA)");
     });
 
     it("says what it moved, and why, where the administrator will find it", () => {
@@ -562,6 +635,258 @@ describe("protecting a data directory", {skip: elevated ? false : "needs Windows
             assert.equal(fs.lstatSync(link).isSymbolicLink(), true, "the operator's own link was removed");
             untouched(elsewhere);
             assert.deepEqual(quarantines(directory), []);
+        });
+    });
+
+    describe("a directory swapped for a link while it is being dealt with", () => {
+        // The check and the act are two steps, and the account that planted a
+        // directory can still reach it between them: through a handle it opened
+        // beforehand, or by path, since traversing a closed folder is a right
+        // every account has. Emptying a directory and turning it into a
+        // junction then makes "directory\child" name a file somewhere else -
+        // and a path is followed through every component but its last.
+        //
+        // The race is reproduced, not run: a function the script calls between
+        // its two steps is wrapped, and the wrapper makes the swap at exactly
+        // the moment the planter would have to win.
+        const LOAD = `Get-Content -Raw -LiteralPath ${quoted(SCRIPT_FILE)} | Invoke-Expression; `;
+
+        /** Somewhere else, holding a file whose security is its own and not inherited. */
+        const guarded = (directory, name) => {
+            const target = path.join(directory, "elsewhere");
+            const victim = write(path.join(target, name), "another service's file");
+            icacls(victim, "/inheritance:r", "/grant:r", `*${SYSTEM_SID}:F`, `*${ADMINISTRATORS_SID}:F`, "/Q");
+            ownedBy(victim, SYSTEM_SID);
+
+            return {target, victim, before: security(target, victim)};
+        };
+
+        const untouched = ({target, victim, before}) => {
+            assert.equal(fs.existsSync(victim), true, "a file outside the data directory was moved or deleted");
+            assert.equal(fs.readFileSync(victim, "utf8"), "another service's file");
+            assert.deepEqual(security(target, victim), before, "a file outside the data directory had its security rewritten");
+        };
+
+        const swap = (parent, target) => `[System.IO.File]::Delete((Join-Path ${quoted(parent)} ${quoted(path.basename(target.victim))})); `
+            + `[System.IO.Directory]::Delete(${quoted(parent)}); `
+            + `[void](New-Item -ItemType Junction -Path ${quoted(parent)} -Target ${quoted(target.target)}); `;
+
+        it("does not lock a file outside the quarantine", () => {
+            const {directory, root} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            write(path.join(root, "data", "storage.db"));
+            const planted = path.join(root, "build");
+            write(path.join(planted, "assets", "payload.js"), "decoy");
+            ownedBy(planted, USERS_SID);
+
+            // The swap happens after `assets` has been listed and before the
+            // file in it is dealt with, wherever the quarantine has put it.
+            const result = powershell(`${LOAD}$lock = \${function:Lock-MySpeedQuarantined}; $script:swapped = $false; `
+                + "function Lock-MySpeedQuarantined { param([string]$Path, [string]$ExpectedFinal, [System.Collections.Generic.List[string]]$Notes) "
+                + "if (-not $script:swapped -and $Path -like '*\\assets\\payload.js') { $script:swapped = $true; $parent = Split-Path -Parent $Path; "
+                + "[System.IO.File]::Delete($Path); [System.IO.Directory]::Delete($parent); "
+                + `[void](New-Item -ItemType Junction -Path $parent -Target ${quoted(elsewhere.target)}) } `
+                + "& $lock @PSBoundParameters }; "
+                + `${ENTRY_POINT} -DataRoot ${quoted(root + path.sep)}`);
+
+            succeeded(result);
+            untouched(elsewhere);
+            assert.match(fs.readFileSync(path.join(onlyQuarantine(directory), "README.txt"), "utf8"), /COULD NOT LOCK[^\n]*payload\.js/,
+                "the note does not say that an item could not be vouched for");
+        });
+
+        it("does not move a file from outside the data directory, and stops the installation", () => {
+            const {directory, root} = programData();
+            const elsewhere = guarded(directory, "iperf3.exe");
+            write(path.join(root, "data", "storage.db"));
+            const bin = path.join(root, "bin");
+            ownedBy(write(path.join(bin, "iperf3.exe"), "payload"), USERS_SID);
+
+            // The swap happens after the directory has been searched and
+            // before what the search found is moved.
+            const result = powershell(`${LOAD}$scan = \${function:Get-MySpeedForeignItems}; $script:depth = 0; $script:swapped = $false; `
+                + "function Get-MySpeedForeignItems { param([string]$Directory, [string[]]$Trusted) "
+                + "$script:depth++; $found = @(& $scan @PSBoundParameters); $script:depth--; "
+                + `if ($script:depth -eq 0 -and -not $script:swapped) { $script:swapped = $true; ${swap(bin, elsewhere)}} `
+                + "$found }; "
+                + `${ENTRY_POINT} -DataRoot ${quoted(root + path.sep)}`);
+
+            untouched(elsewhere);
+            assert.notEqual(result.status, 0, "a service would be started over a directory that changed under the check");
+            assert.match(`${result.stdout}${result.stderr}`, /changed while it was being checked/);
+        });
+
+        // A deletion can be left pending for as long as somebody else holds the
+        // item open, and called off by them once the installer has gone. So a
+        // link has to be out of the directory the moment it is dealt with, and
+        // gone for good - seen here while the planter's handle is still open.
+        const listing = (label, directory) => `if (Test-Path -LiteralPath ${quoted(directory)}) { `
+            + `[System.IO.Directory]::GetFileSystemEntries(${quoted(directory)}) | ForEach-Object { '${label} ' + [System.IO.Path]::GetFileName($_) } }; `;
+
+        const whileHeld = (held, root, ...listings) => powershell(`${LOAD}Import-MySpeedNative; `
+            + `$held = [MySpeedHandle]::Open(${quoted(held)}, [MySpeedHandle]::ForRemoving); `
+            + `try { ${ENTRY_POINT} -DataRoot ${quoted(root + path.sep)} | Out-Null; ${listings.join("")}} finally { $held.Dispose() }`);
+
+        const lines = (result) => result.stdout.trim().split(/\r?\n/).filter(Boolean).sort();
+
+        it("takes a planted link out of the data directory at once, whoever holds it open", () => {
+            const {directory, root} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            write(path.join(root, "data", "storage.db"));
+            const link = path.join(root, "bin");
+            junction(link, elsewhere.target);
+            ownedBy(link, USERS_SID);
+
+            const result = whileHeld(link, root, listing("root", root),
+                `Get-ChildItem -LiteralPath ${quoted(directory)} -Filter '${QUARANTINE_PREFIX}*' | ForEach-Object { `
+                + "[System.IO.Directory]::GetFileSystemEntries((Join-Path $_.FullName 'MySpeed')) | ForEach-Object { 'quarantine ' + [System.IO.Path]::GetFileName($_) } }; ");
+
+            succeeded(result);
+            assert.deepEqual(lines(result), ["root data", "root logs"],
+                "the link is still in the data directory, or waiting in the quarantine for its deletion to be called off");
+            untouched(elsewhere);
+        });
+
+        it("removes a link inside a quarantined directory at once, whoever holds it open", () => {
+            // The locking step on its own: a directory cannot be moved at all
+            // while something in it is held open, which stops the installation
+            // before this step is reached.
+            const {directory} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            const planted = path.join(directory, "build");
+            write(path.join(planted, "index.html"));
+            junction(path.join(planted, "assets"), elsewhere.target);
+
+            const result = powershell(`${LOAD}$ErrorActionPreference = 'Stop'; $notes = New-Object System.Collections.Generic.List[string]; `
+                + `$final = Get-MySpeedFinalPath ${quoted(directory)}; `
+                + `$held = [MySpeedHandle]::Open(${quoted(path.join(planted, "assets"))}, [MySpeedHandle]::ForRemoving); `
+                + `try { Lock-MySpeedQuarantined -Path ${quoted(planted)} -ExpectedFinal "$final\\build" -Notes $notes; `
+                + `${listing("build", planted)}$notes | ForEach-Object { "note $_" } } finally { $held.Dispose() }`);
+
+            succeeded(result);
+            const [entry, note, ...rest] = lines(result);
+            assert.equal(entry, "build index.html", "the link's deletion is pending, and its holder can call it off");
+            assert.match(note, /^note removed link /);
+            assert.deepEqual(rest, []);
+            untouched(elsewhere);
+        });
+
+        it("stops the installation over a planted directory that is held open from inside", () => {
+            const {directory, root} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            write(path.join(root, "data", "storage.db"));
+            const planted = path.join(root, "build");
+            write(path.join(planted, "index.html"));
+            junction(path.join(planted, "assets"), elsewhere.target);
+            ownedBy(planted, USERS_SID);
+
+            const result = whileHeld(path.join(planted, "assets"), root);
+
+            assert.notEqual(result.status, 0, "a directory that could not be moved was left for the service to use");
+            assert.match(result.stderr, /could not be taken out of the data directory/);
+            untouched(elsewhere);
+        });
+
+        it("drops a second name for a read-only file", () => {
+            const {directory, root} = programData();
+            write(path.join(root, "data", "storage.db"));
+            const original = write(path.join(directory, "elsewhere", "shared.txt"), "shared");
+            ownedBy(original, USERS_SID);
+            const link = path.join(root, "bin", "iperf3.exe");
+            fs.mkdirSync(path.dirname(link), {recursive: true});
+            fs.linkSync(original, link);
+            fs.chmodSync(original, 0o444);
+
+            try {
+                succeeded(protect(root));
+
+                assert.equal(fs.existsSync(link), false, "a read-only attribute kept a planted name in the directory");
+                assert.equal(fs.readFileSync(original, "utf8"), "shared");
+                assert.equal(fs.statSync(original).mode & 0o200, 0, "the file elsewhere lost its read-only attribute");
+            } finally {
+                fs.chmodSync(original, 0o666);
+            }
+        });
+
+        /** A step of the script on its own, with the location of `directory` as a handle reports it in $final. */
+        const step = (directory, command) => powershell(`${LOAD}$ErrorActionPreference = 'Stop'; `
+            + "$notes = New-Object System.Collections.Generic.List[string]; "
+            + `$final = Get-MySpeedFinalPath ${quoted(directory)}; ${command}`);
+
+        it("opens an item only where it is expected to be", () => {
+            const {directory} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            const link = path.join(directory, "link");
+            junction(link, elsewhere.target);
+
+            const through = step(directory, `Open-MySpeedVerified -Path ${quoted(path.join(link, "payload.js"))} `
+                + "-ExpectedFinal \"$final\\link\\payload.js\" -Access ([MySpeedHandle]::ForReading)");
+            assert.notEqual(through.status, 0, "a path through a link was taken for the item it names");
+            assert.match(through.stderr, /changed while it was being checked/);
+
+            const direct = step(elsewhere.target, `$opened = Open-MySpeedVerified -Path ${quoted(elsewhere.victim)} `
+                + "-ExpectedFinal \"$final\\payload.js\" -Access ([MySpeedHandle]::ForReading); "
+                + "\"$($opened.Owner) $($opened.IsLink) $($opened.IsHardLink) $($opened.IsDirectory)\"; $opened.Dispose()");
+            succeeded(direct);
+            assert.equal(direct.stdout.trim(), `${SYSTEM_SID} False False False`);
+        });
+
+        it("reads a link as a link and a second name as a second name", () => {
+            const {directory} = programData();
+            const elsewhere = guarded(directory, "payload.js");
+            const link = path.join(directory, "link");
+            const second = path.join(directory, "second.js");
+            junction(link, elsewhere.target);
+            fs.linkSync(elsewhere.victim, second);
+
+            const result = step(directory, "foreach ($name in 'link', 'second.js') { "
+                + `$opened = Open-MySpeedVerified -Path (Join-Path ${quoted(directory)} $name) -ExpectedFinal "$final\\$name" `
+                + "-Access ([MySpeedHandle]::ForReading); \"$($opened.IsLink) $($opened.IsHardLink) $($opened.IsDirectory)\"; $opened.Dispose() }");
+
+            succeeded(result);
+            assert.deepEqual(result.stdout.trim().split(/\r?\n/), ["True False True", "False True False"]);
+        });
+
+        it("leaves an item that an administrator owns by the time it is opened", () => {
+            const {directory, root} = programData();
+            const kept = write(path.join(root, "bin", "speedtest.exe"), "cli");
+            const destination = path.join(directory, "quarantine", "speedtest.exe");
+
+            const result = step(root, `Move-MySpeedForeignItem -Path ${quoted(kept)} -ExpectedFinal "$final\\bin\\speedtest.exe" `
+                + `-Destination ${quoted(destination)} -Relative 'bin\\speedtest.exe' `
+                + `-Trusted @('${ADMINISTRATORS_SID}', ${quoted(currentUserSid())}) -Notes $notes; $notes.Count`);
+
+            succeeded(result);
+            assert.deepEqual(result.stdout.trim().split(/\r?\n/), ["False", "0"]);
+            assert.equal(fs.readFileSync(kept, "utf8"), "cli");
+            assert.equal(fs.existsSync(destination), false);
+        });
+
+        it("removes nothing that turned out not to be a link", () => {
+            const {root} = programData();
+            const file = write(path.join(root, "bin", "speedtest.exe"), "cli");
+
+            const result = step(root, `Remove-MySpeedVerifiedLink -Path ${quoted(file)} -ExpectedFinal "$final\\bin\\speedtest.exe"`);
+
+            assert.notEqual(result.status, 0);
+            assert.match(result.stderr, /no longer a link/);
+            assert.equal(fs.readFileSync(file, "utf8"), "cli", "a file was deleted as though it were a link");
+        });
+
+        it("says so, and moves nothing, where an item cannot be opened for moving", () => {
+            const {directory, root} = programData();
+            const planted = write(path.join(root, "bin", "iperf3.exe"), "payload");
+            ownedBy(planted, USERS_SID);
+
+            // Held open without leave to delete, as a planter would hold it.
+            const result = step(root, `$held = [System.IO.File]::Open(${quoted(planted)}, 'Open', 'Read', 'Read'); `
+                + `try { Move-MySpeedForeignItem -Path ${quoted(planted)} -ExpectedFinal "$final\\bin\\iperf3.exe" `
+                + `-Destination ${quoted(path.join(directory, "quarantine", "iperf3.exe"))} -Relative 'bin\\iperf3.exe' `
+                + `-Trusted @('${ADMINISTRATORS_SID}') -Notes $notes } finally { $held.Dispose() }`);
+
+            assert.notEqual(result.status, 0, "an item that stayed in the data directory was passed over in silence");
+            assert.match(result.stderr, /could not be taken out of the data directory/);
+            assert.equal(fs.readFileSync(planted, "utf8"), "payload");
         });
     });
 
