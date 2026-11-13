@@ -126,6 +126,17 @@ describe("resolveInterfaces", () => {
             assert.equal(next.eth0, V6);
         });
 
+        // 169.254/16 is what an adapter gives itself when DHCP did not answer,
+        // and it routes nowhere - holding it would pin the adapter to a dead
+        // address while IPv6 works.
+        it("does not hold a self-assigned link-local IPv4 address", () => {
+            const LINK_LOCAL_V4 = "169.254.12.34";
+            const next = resolveInterfaces({eth0: LINK_LOCAL_V4}, {eth0: [V6]},
+                {eth0: addresses(LINK_LOCAL_V4, V6)});
+
+            assert.equal(next.eth0, V6);
+        });
+
         it("only holds the adapter whose own IPv4 is still assigned", () => {
             const next = resolveInterfaces({eth0: V4, wlan0: "192.168.1.40"},
                 {eth0: [V6], wlan0: ["2001:db8::40"]},

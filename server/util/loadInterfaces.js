@@ -45,7 +45,7 @@ export const resolveInterfaces = (previous, probed, present) => {
         if (addresses.length === 0) continue;
 
         const answeredV4 = addresses.find(isIpv4);
-        if (!answeredV4 && isIpv4(next[name])) continue;
+        if (!answeredV4 && isIpv4(next[name]) && !isLinkLocalIpv4(next[name])) continue;
 
         next[name] = answeredV4 ?? addresses[0];
     }
@@ -55,6 +55,13 @@ export const resolveInterfaces = (previous, probed, present) => {
 
 /** The same test the address choice has always used: IPv4 is the dotted one. */
 const isIpv4 = (address) => typeof address === "string" && address.includes(".");
+
+/**
+ * 169.254/16: the address an adapter gives itself when DHCP did not answer. It
+ * routes nowhere, so it is never worth holding on to over a working IPv6 one.
+ */
+const LINK_LOCAL_V4_PREFIX = "169.254.";
+const isLinkLocalIpv4 = (address) => address.startsWith(LINK_LOCAL_V4_PREFIX);
 
 /** What the probe asks for: the smallest response Cloudflare will send. */
 const PROBE_HOST = "speed.cloudflare.com";
