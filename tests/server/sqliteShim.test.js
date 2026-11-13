@@ -51,6 +51,23 @@ describe("the sqlite shim's connection settings", () => {
         const [{timeout}] = await all(db, "PRAGMA busy_timeout");
         assert.equal(timeout, 5000, "busy_timeout is unset, so concurrent writes fail with SQLITE_BUSY");
     });
+
+    /*
+     * Order, read from the source for the reason the header gives. Switching
+     * to WAL needs a lock - and on the first open after an unclean stop it
+     * also recovers the old WAL - so set first, with the timeout still 0, it
+     * failed SQLITE_BUSY at once whenever another process held the file for a
+     * moment (an old instance still shutting down on the same data
+     * directory), and the server exited with "Could not open the database".
+     */
+    it("arms the busy timeout before the first statement that needs a lock", () => {
+        const source = fs.readFileSync(new URL("../../server/util/bun-sqlite-shim.js", import.meta.url), "utf8");
+        const timeout = source.indexOf("PRAGMA busy_timeout");
+        const journal = source.indexOf("PRAGMA journal_mode");
+
+        assert.ok(timeout !== -1 && journal !== -1, "the shim no longer sets both pragmas");
+        assert.ok(timeout < journal, "journal_mode = WAL runs before busy_timeout is set");
+    });
 });
 
 /**
