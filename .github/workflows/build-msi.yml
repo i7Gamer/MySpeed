@@ -143,6 +143,35 @@ jobs:
           }
           Copy-Item -LiteralPath $env:WINSW_LICENSE_SOURCE -Destination "installer\WinSW-LICENSE.txt" -ErrorAction Stop
 
+      # The script the installer runs as SYSTEM over the data directory - see
+      # the ProtectDataDirectory action in the WiX source below. Taken from the
+      # qualified source like the notice above, and in a checkout of its own:
+      # that one is pinned to exactly one path by releaseIntegrity.test.js, and
+      # a second file riding along in it is what that pin exists to refuse.
+      - name: Checkout exact data-directory protection script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: protection-script-source
+          sparse-checkout: |
+            scripts/installer/protect-data-directory.ps1
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Stage the data-directory protection script
+        shell: pwsh
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PROTECTION_SCRIPT_CHECKOUT: "protection-script-source"
+          PROTECTION_SCRIPT_SOURCE: "protection-script-source/scripts/installer/protect-data-directory.ps1"
+        run: |
+          $checkedOutSha = (git -C $env:PROTECTION_SCRIPT_CHECKOUT rev-parse HEAD).Trim()
+          if ($checkedOutSha -cne $env:SOURCE_SHA) {
+            throw "Protection script checkout differs from the qualified source"
+          }
+          Copy-Item -LiteralPath $env:PROTECTION_SCRIPT_SOURCE -Destination "installer\protect-data-directory.ps1" -ErrorAction Stop
+
       # The working directory is what decides where MySpeed keeps its database:
       # the server resolves data/ against the current directory, so pointing it at
       # ProgramData is what gets the database out of Program Files. %BASE% (the
@@ -325,6 +354,13 @@ jobs:
                 <Component Id="WinSWLicenseNotice" Guid="*">
                   <File Id="WinSWLicense" Source="WinSW-LICENSE.txt" KeyPath="yes" />
                 </Component>
+                <!-- Here, under Program Files, and not in the data directory it
+                     is run against: this is executed as SYSTEM, and the whole
+                     point of it is that the data directory may hold things an
+                     unprivileged account put there. -->
+                <Component Id="DataDirectoryProtection" Guid="*">
+                  <File Id="ProtectDataDirectoryScript" Source="protect-data-directory.ps1" KeyPath="yes" />
+                </Component>
               </ComponentGroup>
           
               <!-- New GUIDs: all three components changed directory, and a component
@@ -377,8 +413,43 @@ jobs:
               <CustomAction Id="MigrateLegacyData" Directory="DATAROOTFOLDER" Execute="immediate" Return="ignore"
                             ExeCommand="&quot;[System64Folder]cmd.exe&quot; /c if exist &quot;[LEGACYINSTALLFOLDER]data\storage.db&quot; if not exist &quot;[DATAROOTFOLDER]data\storage.db&quot; xcopy &quot;[LEGACYINSTALLFOLDER]data&quot; &quot;[DATAROOTFOLDER]data&quot; /E /I /Y /Q" />
 
+              <!-- Who owns the data directory, which the DACL above cannot decide.
+                   ProgramData lets any local account create a folder, the
+                   creator owns it, and an owner can rewrite a DACL at will - so
+                   an account that made ProgramData\MySpeed before the first
+                   install kept control of the directory a LocalSystem service
+                   runs executables from. The script moves whatever is not an
+                   administrator's into a quarantine folder beside it and leaves
+                   the rest owned by, and open to, SYSTEM and administrators
+                   only; scripts/installer/protect-data-directory.ps1 has the
+                   reasoning and installerDataOwnership.test.js the cases.
+
+                   Deferred and not impersonated, so it runs as SYSTEM: taking
+                   ownership needs that, and an immediate action runs as the
+                   installing user before elevation. After InstallFiles, because
+                   the script is one of those files, and so after CreateFolders
+                   and MigrateLegacyData and ahead of StartServices. Checked: a
+                   failure here leaves a directory nobody vouched for, and the
+                   service must not be started in one.
+
+                   Piped into the session and then called, rather than run with
+                   -File: a script file is subject to the execution policy, and
+                   where group policy sets one -ExecutionPolicy is ignored and
+                   the installation would fail for a reason nobody could see.
+                   Loading the file runs nothing; the call names the directory.
+
+                   The command line avoids two characters on purpose. A square
+                   bracket outside a property reference is one to Windows
+                   Installer and resolves to nothing, and a dollar sign is a
+                   variable to the here-string this source is written in. -->
+              <SetProperty Id="ProtectDataDirectory" Sequence="execute" Before="ProtectDataDirectory"
+                           Value="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -Command &quot;Get-Content -Raw -LiteralPath '[#ProtectDataDirectoryScript]' | Invoke-Expression; Protect-MySpeedDataRoot -DataRoot '[DATAROOTFOLDER]'&quot;" />
+              <CustomAction Id="ProtectDataDirectory" BinaryKey="WixCA" DllEntry="WixQuietExec64"
+                            Execute="deferred" Impersonate="no" Return="check" />
+
               <InstallExecuteSequence>
                 <Custom Action="MigrateLegacyData" Before="StartServices">NOT Installed</Custom>
+                <Custom Action="ProtectDataDirectory" After="InstallFiles">NOT REMOVE</Custom>
               </InstallExecuteSequence>
             </Product>
           </Wix>
