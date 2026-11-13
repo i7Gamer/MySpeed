@@ -69,6 +69,72 @@ describe("resolveInterfaces", () => {
         assert.equal(next.eth0, "2001:db8::1");
     });
 
+    /**
+     * The other side of that rule. A dual-stack adapter whose IPv4 probe
+     * missed one round while its IPv6 one answered was repointed at IPv6 for
+     * the hour until the next round - and the Ookla CLI, whose configuration
+     * endpoint is IPv4 only, failed every run in that hour with "Could not
+     * retrieve or read configuration (Network is unreachable)". Twelve of
+     * twelve such failures on a Windows install were runs bound to the
+     * adapter's IPv6 address. A lost lease takes the address off the adapter;
+     * a missed probe does not, and only the first is a reason to change family.
+     */
+    describe("when only IPv6 answered on an adapter that had IPv4", () => {
+        const V4 = "192.168.1.24";
+        const V6 = "2001:db8::bd78";
+
+        it("keeps the IPv4 address while the adapter still has it", () => {
+            const next = resolveInterfaces({eth0: V4}, {eth0: [V6]}, {eth0: addresses(V4, V6)});
+
+            assert.equal(next.eth0, V4);
+        });
+
+        it("comes through a missed round and back on the same address", () => {
+            const present = {eth0: addresses(V4, V6)};
+
+            const first = resolveInterfaces({}, {eth0: [V4, V6]}, present);
+            const missed = resolveInterfaces(first, {eth0: [V6]}, present);
+            const recovered = resolveInterfaces(missed, {eth0: [V4, V6]}, present);
+
+            assert.deepEqual([first.eth0, missed.eth0, recovered.eth0], [V4, V4, V4]);
+        });
+
+        it("moves to IPv6 once the IPv4 address is gone from the adapter", () => {
+            const next = resolveInterfaces({eth0: V4}, {eth0: [V6]}, {eth0: addresses(V6)});
+
+            assert.equal(next.eth0, V6);
+        });
+
+        it("moves to the adapter's new IPv4 address when that is the one answering", () => {
+            const NEW_V4 = "192.168.1.30";
+            const next = resolveInterfaces({eth0: V4}, {eth0: [NEW_V4, V6]}, {eth0: addresses(V4, NEW_V4, V6)});
+
+            assert.equal(next.eth0, NEW_V4);
+        });
+
+        // Nothing stored means nothing was ever shown to work over IPv4, so
+        // there is no address to hold on to and the answer is taken as it is.
+        it("takes IPv6 when nothing was stored for the adapter", () => {
+            const next = resolveInterfaces({}, {eth0: [V6]}, {eth0: addresses(V4, V6)});
+
+            assert.equal(next.eth0, V6);
+        });
+
+        it("leaves an adapter already on IPv6 there", () => {
+            const next = resolveInterfaces({eth0: V6}, {eth0: [V6]}, {eth0: addresses(V4, V6)});
+
+            assert.equal(next.eth0, V6);
+        });
+
+        it("only holds the adapter whose own IPv4 is still assigned", () => {
+            const next = resolveInterfaces({eth0: V4, wlan0: "192.168.1.40"},
+                {eth0: [V6], wlan0: ["2001:db8::40"]},
+                {eth0: addresses(V4, V6), wlan0: addresses("2001:db8::40")});
+
+            assert.deepEqual(next, {eth0: V4, wlan0: "2001:db8::40"});
+        });
+    });
+
     it("changes nothing when the round found the same addresses", () => {
         const previous = {eth0: "192.168.1.2"};
 

@@ -34,12 +34,27 @@ export const resolveInterfaces = (previous, probed, present) => {
     // address used to read the stored map, so once an adapter had an IPv4
     // address it could never be updated to an IPv6-only one - which is exactly
     // what happens when a dual-stack interface loses its v4 lease.
-    for (const [name, addresses] of Object.entries(probed))
-        if (addresses.length > 0)
-            next[name] = addresses.find((address) => address.includes(".")) ?? addresses[0];
+    //
+    // With one exception: an IPv4 address that is still assigned is not given
+    // up because only IPv6 answered this round. A lost lease removes the
+    // address, which the first loop has already noticed; a probe that missed
+    // once does not, and changing family on it repointed every run for the
+    // following hour - Ookla's configuration endpoint is IPv4 only, so each of
+    // them failed with "Could not retrieve or read configuration".
+    for (const [name, addresses] of Object.entries(probed)) {
+        if (addresses.length === 0) continue;
+
+        const answeredV4 = addresses.find(isIpv4);
+        if (!answeredV4 && isIpv4(next[name])) continue;
+
+        next[name] = answeredV4 ?? addresses[0];
+    }
 
     return next;
 };
+
+/** The same test the address choice has always used: IPv4 is the dotted one. */
+const isIpv4 = (address) => typeof address === "string" && address.includes(".");
 
 /** What the probe asks for: the smallest response Cloudflare will send. */
 const PROBE_HOST = "speed.cloudflare.com";
