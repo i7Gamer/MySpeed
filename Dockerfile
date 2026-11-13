@@ -118,6 +118,6 @@ EXPOSE 5216
 # librespeed CLIs before the server begins listening. The Cloudflare one is
 # baked in above, so it is the one provider that costs nothing here.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
-    CMD wget -qO- "http://127.0.0.1:${SERVER_PORT:-5216}/api/health" || exit 1
+    CMD host="${SERVER_HOST:-127.0.0.1}"; case "$host" in 0.0.0.0|::) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac; wget -qO- "http://$host:${SERVER_PORT:-5216}/api/health" || exit 1
 
 CMD ["bun", "run", "server/index.js"]
