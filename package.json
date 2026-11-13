@@ -63,7 +63,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "espree": "^11.2.0",
     "globals": "^17.14.0",
-    "jsdom": "^30.1.3",
+    "jsdom": "^31.0.0",
     "sass": "^1.107.1",
     "yaml": "^2.9.1"
   }
