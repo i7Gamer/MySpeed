@@ -17,6 +17,12 @@ const FLOORS = {
         // GHSA-27r3-jxmh-p828: trailing bytes after a compressed body hang the
         // parser, and express.json() runs before any password check.
         "body-parser": {floor: "2.4.0"},
+        // GHSA-6pq8-jhm2-2vcw: qs.stringify throws on a crafted array under
+        // arrayFormat "comma". Nothing here calls stringify - express only
+        // parses - so this is a floor for the audit, not a reachable fault;
+        // express's own range (^6.16.0) is what let the old copy stand beside
+        // the one body-parser already required.
+        "qs": {floor: "6.16.1"},
         // GHSA-4p3w-j4w9-5jqw: path traversal via a crafted locale name (sequelize).
         "moment": {floor: "2.31.0"},
         // GHSA-mrhx-c7xc-m3w5: memory exhaustion on oversized collections (eslint plugin).

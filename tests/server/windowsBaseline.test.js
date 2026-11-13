@@ -293,7 +293,7 @@ describe("the unified x64 runtime contract", () => {
 describe("the container runs on the pinned Bun", () => {
     const dockerfile = readSource("Dockerfile");
     const pinned = binaries.match(/bun-version:\s*"?(\d+\.\d+\.\d+)"?/)?.[1];
-    const stages = [...dockerfile.matchAll(/^FROM oven\/bun:(\S+)/gm)].map((match) => match[1]);
+    const stages = [...dockerfile.matchAll(/^FROM oven\/bun:([^@\s]+)/gm)].map((match) => match[1]);
 
     // The client build, the server install and the runtime - three stages that
     // run Bun, so an image tag that drifts in one of them is still caught.
