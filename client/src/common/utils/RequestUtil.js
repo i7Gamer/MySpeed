@@ -1,8 +1,10 @@
-import { SERVER_BUSY } from "@/common/utils/AuthOutcome";
+import { NODE_REFUSAL_HEADER, SERVER_BUSY } from "@/common/utils/AuthOutcome";
+import {reportSessionExpired} from "@/common/utils/SessionExpiry";
 import {readStored, removeStored} from "@/common/utils/Storage";
 import {withBasePath} from "@/common/utils/BasePath";
 
 const REQUEST_TIMEOUT = 10000;
+const HTTP_UNAUTHORIZED = 401;
 
 // How long a download's blob url is kept alive after the click that uses it.
 // Long enough for any browser to have started reading it, short enough that the
@@ -49,15 +51,36 @@ const getApiRoot = () => {
  * The bound guards the time to the response headers only. It is cleared once
  * fetch resolves, so reading a large export body afterwards is not raced.
  */
-const timedFetch = async (url, init = {}) => {
+const timedFetch = async (url, init = {}, {reportsExpiry = true} = {}) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
+    let response;
     try {
-        return await fetch(url, {...init, signal: controller.signal});
+        response = await fetch(url, {...init, signal: controller.signal});
     } finally {
         clearTimeout(timeout);
     }
+
+    if (reportsExpiry) noticeExpiry(response);
+    return response;
+}
+
+/**
+ * Says so when a request was refused because this browser's session is gone -
+ * see SessionExpiry for why that cannot be left to each caller.
+ *
+ * Not when the refusal carries the node header: that is a remote node turning
+ * down the password this instance stores for it, which the visitor's own
+ * password does not answer. And not for the two requests that read their own
+ * 401 into the prompt - signing in, and the config load - since reporting
+ * those would only ask the prompt to open itself again.
+ */
+const noticeExpiry = (response) => {
+    if (response?.status !== HTTP_UNAUTHORIZED) return;
+    if (response.headers?.get(NODE_REFUSAL_HEADER) != null) return;
+
+    reportSessionExpired();
 }
 
 /**
@@ -75,7 +98,7 @@ export const login = async (password) => {
             method: "POST",
             headers: {"content-type": "application/json"},
             body: JSON.stringify({password})
-        });
+        }, {reportsExpiry: false});
     } catch {
         return {ok: false, unreachable: true};
     }
@@ -134,12 +157,13 @@ export const baseRequest = async (path, method = "GET", body = {}, headers = {})
 
 // Run a plain request with all default values. Bounded like the rest - without
 // it a stalled connection, or a proxied node that accepted and then went quiet,
-// hung the fetch forever with nothing said on screen.
-export const request = async (path, method = "GET", body = {}, headers = {}) =>
+// hung the fetch forever with nothing said on screen. `options` is timedFetch's:
+// the config load passes {reportsExpiry: false} because it handles its own 401.
+export const request = async (path, method = "GET", body = {}, headers = {}, options = {}) =>
     timedFetch(getApiRoot() + path, {
         headers: {...getHeaders(), ...headers}, method,
         body: method !== "GET" ? JSON.stringify(body) : undefined
-    });
+    }, options);
 
 /**
  * Turns a non-2xx response into a RequestError carrying the server's own

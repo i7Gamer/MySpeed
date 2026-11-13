@@ -784,12 +784,18 @@ if command -v systemctl &> /dev/null; then
   if ! cat << EOF > "$SERVICE_FILE"
 [Unit]
 Description=MySpeed
-After=network.target
+# network.target only means the stack exists; the first scheduled test and the
+# interface probe want an address and a route.
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 ExecStart=$UNIT_EXECUTABLE
 Restart=always
+# Without a pause systemd restarts after 100ms and gives up for good after five
+# starts in ten seconds - a boot whose data mount is late left the service dead.
+RestartSec=5
 User=$SERVICE_ACCOUNT
 # MySpeed-WorkingDirectory-Encoding: percent-v1
 WorkingDirectory=$UNIT_WORKING_DIRECTORY

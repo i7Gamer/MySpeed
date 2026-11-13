@@ -119,6 +119,6 @@ EXPOSE 5216
 # downloads no longer do - they follow the bind - and the Cloudflare one is
 # baked in above.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
-    CMD wget -qO- "http://127.0.0.1:${SERVER_PORT:-5216}/api/health" || exit 1
+    CMD host="${SERVER_HOST:-127.0.0.1}"; case "$host" in 0.0.0.0|::) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac; wget -qO- "http://$host:${SERVER_PORT:-5216}/api/health" || exit 1
 
 CMD ["bun", "run", "server/index.js"]

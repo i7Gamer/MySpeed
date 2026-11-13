@@ -85,8 +85,11 @@ class Database {
             const readonly = typeof mode === "number" && !(mode & OPEN_READWRITE);
             this.db = openDatabase(filename, readonly);
             this.filename = filename;
-            this.db.exec("PRAGMA journal_mode = WAL");
+            // The timeout first: switching to WAL takes a lock (and recovers a
+            // WAL an unclean stop left behind), and with the timeout still 0 a
+            // file another process held for a moment failed the open outright.
             this.db.exec(`PRAGMA busy_timeout = ${BUSY_TIMEOUT_MS}`);
+            this.db.exec("PRAGMA journal_mode = WAL");
             if (callback) process.nextTick(() => callback(null));
         } catch (err) {
             if (callback) process.nextTick(() => callback(err));

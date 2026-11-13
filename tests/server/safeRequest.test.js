@@ -2,6 +2,7 @@ import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
 import dns from "node:dns";
+import { EventEmitter } from "node:events";
 import { safeRequest, MAX_RESPONSE_BYTES, REQUEST_TIMED_OUT } from "../../server/util/safeRequest.js";
 import { safeLookup } from "../../server/util/safeUrl.js";
 
@@ -107,6 +108,104 @@ describe("safeRequest", () => {
 
     it("rejects a malformed url", async () => {
         await assert.rejects(() => safeRequest("not a url"));
+    });
+});
+
+/**
+ * A request the runtime never times out.
+ *
+ * `timeout` is the socket's idle timer, and Bun - which every release runs on
+ * - never fires it while the lookup or the connect is still waiting: measured,
+ * a blackholed host held the request until the kernel gave up, about 21s
+ * against a 15s budget. Node fires it, so the real transport cannot show the
+ * gap here; a transport whose request never emits anything stands in for Bun.
+ */
+describe("a request the runtime never times out", () => {
+    const SHORT_TIMEOUT_MS = 20;
+
+    /** A transport whose request goes nowhere and reports nothing. */
+    const silentTransport = () => {
+        const built = [];
+        const transport = {
+            request(target, options, onResponse) {
+                const handlers = {};
+                const request = {
+                    destroyed: null,
+                    on(event, handler) { handlers[event] = handler; return this; },
+                    write() {},
+                    end() {},
+                    destroy(error) {
+                        this.destroyed = error ?? true;
+                        if (error) handlers.error?.(error);
+                    },
+                    respond(response) { onResponse(response); }
+                };
+                built.push({options, request});
+                return request;
+            }
+        };
+        return {transports: {http: transport, https: transport}, built};
+    };
+
+    it("gives up on its own deadline and says it timed out", async () => {
+        const {transports} = silentTransport();
+
+        await assert.rejects(() => safeRequest(url("/"), {timeout: SHORT_TIMEOUT_MS, transports}),
+            (error) => error.code === REQUEST_TIMED_OUT);
+    });
+
+    it("tears down the request it gave up on", async () => {
+        const {transports, built} = silentTransport();
+
+        await assert.rejects(() => safeRequest(url("/"), {timeout: SHORT_TIMEOUT_MS, transports}));
+
+        assert.ok(built[0].request.destroyed, "the abandoned request kept its socket");
+    });
+
+    /*
+     * The deadline is for getting an answer, not for reading it: a large
+     * export from a slow node keeps arriving well past it, and the idle
+     * timer - which does fire once there is a connection - covers a body
+     * that stalls.
+     */
+    it("stops counting once the response has begun", async () => {
+        const {transports, built} = silentTransport();
+        const pending = safeRequest(url("/"), {timeout: SHORT_TIMEOUT_MS, transports});
+
+        // Answered in the same turn: anything awaited first races the deadline.
+        const response = new EventEmitter();
+        response.statusCode = 200;
+        response.headers = {};
+        built[0].request.respond(response);
+
+        await new Promise((resolve) => setTimeout(resolve, SHORT_TIMEOUT_MS * 3));
+        response.emit("data", Buffer.from("late"));
+        response.emit("end");
+
+        const result = await pending;
+        assert.equal(result.body.toString(), "late");
+        assert.equal(built[0].request.destroyed, null);
+    });
+
+    // 0 has always meant "no idle timer" to the transport; as a deadline it
+    // would refuse every request on the next tick instead.
+    it("arms no deadline when the timeout is switched off", async () => {
+        const {transports, built} = silentTransport();
+        const pending = safeRequest(url("/"), {timeout: 0, transports});
+
+        await new Promise((resolve) => setTimeout(resolve, SHORT_TIMEOUT_MS));
+        assert.equal(built[0].request.destroyed, null, "a zero timeout ended the request at once");
+
+        built[0].request.destroy(new Error("done"));
+        await assert.rejects(() => pending, /done/);
+    });
+
+    it("hands the timeout to the transport as well", async () => {
+        const {transports, built} = silentTransport();
+
+        await assert.rejects(() => safeRequest(url("/"), {timeout: SHORT_TIMEOUT_MS, transports}));
+
+        assert.equal(built[0].options.timeout, SHORT_TIMEOUT_MS);
     });
 });
 

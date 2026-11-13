@@ -13,6 +13,8 @@ import LockedNotice from "@/common/components/LockedNotice";
 import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
 import {readStored} from "@/common/utils/Storage";
+import {onSessionExpired} from "@/common/utils/SessionExpiry";
+import {configRetryDelay, SESSION_RECOVERY_PAUSE_MS} from "@/common/contexts/Config/configRetry";
 
 export const ConfigContext = createContext({});
 
@@ -26,13 +28,21 @@ export const ConfigProvider = (props) => {
     const navigate = useNavigate();
 
 
-    const openAlertDialog = useCallback(async (dialogConfig) => {
-        await alert.openAlert(dialogConfig.title, dialogConfig.description, {
+    const openAlertDialog = useCallback(async (dialogConfig, dismissSignal) => {
+        const answer = await alert.openAlert(dialogConfig.title, dialogConfig.description, {
             buttonText: dialogConfig.buttonText,
-            disableClose: dialogConfig.disableCloseButton
+            disableClose: dialogConfig.disableCloseButton,
+            dismissSignal
         });
-        dialogConfig.onSuccess?.();
+        // These dialogs cannot be closed by the reader, so null means this
+        // provider closed it because what it reported is over - not that Retry
+        // was pressed, and reloading the page then would be for nothing.
+        if (answer !== null) dialogConfig.onSuccess?.();
     }, [alert]);
+
+    // Up while a credential prompt is, so a poll refused in the meantime does
+    // not open a second one over it - see the session expiry listener below.
+    const credentialOpen = useRef(false);
 
     /**
      * Asks for whichever credential the server says it wants, until it is
@@ -86,12 +96,18 @@ export const ConfigProvider = (props) => {
         // leave the two stacked.
         setLocked(null);
 
-        const accepted = await promptUntilAccepted(
-            (previous) => ask(previous ? previous.type : initialType, previous !== null),
-            // Exchanged for a session cookie and then dropped; the credential is
-            // never written anywhere this script can read it back.
-            login
-        );
+        credentialOpen.current = true;
+        let accepted;
+        try {
+            accepted = await promptUntilAccepted(
+                (previous) => ask(previous ? previous.type : initialType, previous !== null),
+                // Exchanged for a session cookie and then dropped; the credential is
+                // never written anywhere this script can read it back.
+                login
+            );
+        } finally {
+            credentialOpen.current = false;
+        }
 
         // Giving up used to return to nothing: the config stayed {} and the
         // dashboard behind the prompt rendered an empty shell, which is what
@@ -110,10 +126,32 @@ export const ConfigProvider = (props) => {
         window.location.reload();
     }, [alert, openAlertDialog]);
 
+    /*
+     * While the config load cannot reach the server: the retry waiting to run,
+     * how many have run, and the handle that closes the "API not reachable"
+     * dialog - which is also what says the load is failing at all. The dialog
+     * used to offer only a manual reload, so a tab left open across a restart
+     * sat behind it until someone came back and pressed the button.
+     */
+    const retryTimer = useRef(null);
+    const retryAttempt = useRef(0);
+    const unreachableDialog = useRef(null);
+
+    const stopRetrying = useCallback(() => {
+        clearTimeout(retryTimer.current);
+        retryTimer.current = null;
+        retryAttempt.current = 0;
+        unreachableDialog.current?.abort();
+        unreachableDialog.current = null;
+    }, []);
+
     const showErrorDialog = useCallback(async (reason) => {
         if (reason?.credential) return askForCredential(reason.type);
 
-        return openAlertDialog(apiErrorDialog());
+        // One dialog however many retries fail; the open one already says it.
+        if (unreachableDialog.current) return;
+        unreachableDialog.current = new AbortController();
+        return openAlertDialog(apiErrorDialog(), unreachableDialog.current.signal);
     }, [askForCredential, openAlertDialog]);
 
     // Which reload is current, the way Status, Node, Targets and the
@@ -133,7 +171,16 @@ export const ConfigProvider = (props) => {
         const generation = ++requestGeneration.current;
         const superseded = () => generation !== requestGeneration.current;
 
-        request("/config").then(async res => {
+        // Again, a little later each time, while the server is not answering -
+        // see configRetry for the schedule.
+        const retryLater = () => {
+            clearTimeout(retryTimer.current);
+            retryTimer.current = setTimeout(reloadConfig, configRetryDelay(retryAttempt.current++));
+        };
+
+        // Not reported as a lost session: this is the one request that reads
+        // its own 401 into the prompt, and reporting it would load it again.
+        return request("/config", "GET", {}, {}, {reportsExpiry: false}).then(async res => {
             // The refusal says which credential it wants, and that is the whole
             // reason the right question can be asked. Throwing a bare 1 here
             // discarded it one line before it was needed, so every refusal -
@@ -171,6 +218,7 @@ export const ConfigProvider = (props) => {
             }
         }).then(result => {
             if (superseded()) return;
+            stopRetrying();
 
             // Stored unconditionally. This was a ternary - navigate *or* store -
             // and the redirect took the config with it, leaving every consumer
@@ -189,11 +237,19 @@ export const ConfigProvider = (props) => {
             // The reason travels with it: a refusal that wants a credential is
             // not a node that has gone away, and only one of the two is
             // answered by moving the visitor - see failureOutcome.
-            if (failureOutcome(readStored("currentNode"), reason).redirectToNodes) return navigate("/nodes");
+            if (failureOutcome(readStored("currentNode"), reason).redirectToNodes) {
+                stopRetrying();
+                return navigate("/nodes");
+            }
+
+            // A refusal is an answer: the server is back, and what it wants
+            // now is a credential, which no amount of retrying supplies.
+            if (reason?.credential) stopRetrying();
+            else retryLater();
 
             showErrorDialog(reason);
         });
-    }, [navigate, showErrorDialog]);
+    }, [navigate, showErrorDialog, stopRetrying]);
 
     const checkConfig = useCallback(async () => (await request("/config")).json(), []);
 
@@ -201,7 +257,83 @@ export const ConfigProvider = (props) => {
     // honest spelling of the old "once, at mount" comment, which existed
     // because reloadConfig used to be rebuilt on every render.
     useEffect(() => {
+        // The ref objects, held for the cleanup: it bumps the counter and
+        // clears the timer the ref holds at that moment, which is the point.
+        const generations = requestGeneration;
+        const retry = retryTimer;
+
         reloadConfig();
+
+        // An answer still in flight is dropped like a superseded one, and the
+        // retry waiting for the next one never runs.
+        return () => {
+            generations.current++;
+            clearTimeout(retry.current);
+        };
+    }, [reloadConfig]);
+
+    // Coming back online or to the tab is the likeliest moment the server is
+    // reachable again, so a failing load is retried then rather than at the
+    // end of a wait that may have grown to its cap. Nothing happens on either
+    // while the config is loading fine.
+    useEffect(() => {
+        const retryNow = () => {
+            if (!unreachableDialog.current || document.visibilityState === "hidden") return;
+
+            clearTimeout(retryTimer.current);
+            reloadConfig();
+        };
+
+        window.addEventListener("online", retryNow);
+        document.addEventListener("visibilitychange", retryNow);
+        return () => {
+            window.removeEventListener("online", retryNow);
+            document.removeEventListener("visibilitychange", retryNow);
+        };
+    }, [reloadConfig]);
+
+    // Read by the listener below, which outlives the render it was made in.
+    const viewOnly = useRef(false);
+    const lockedOut = useRef(false);
+    useEffect(() => {
+        viewOnly.current = config?.viewMode === true;
+        lockedOut.current = locked !== null;
+    }, [config, locked]);
+
+    /*
+     * A request anywhere was refused for want of a session - the server
+     * restarted, and sessions live in its memory. The config load already
+     * knows what to ask for, so it is simply run again: the usual prompt
+     * appears, and the login it ends in reloads the page, polls and all.
+     *
+     * Once per lost session, not once per refused poll: not while a load it
+     * started is still out, not while a prompt is up, and not after the
+     * operator dismissed one - the locked notice is how they ask again. And
+     * never on a read-only view, where the visitor is unauthenticated by
+     * design and a 401 is the expected answer to a control they reached.
+     */
+    //
+    // And not again for a while after a check that came back without a
+    // prompt: then the session is alive and the refusal was a route's own, so
+    // `recovering` stays raised for SESSION_RECOVERY_PAUSE_MS. A check that
+    // did prompt ends in a login, which reloads the page anyway.
+    const recovering = useRef(false);
+    useEffect(() => {
+        let pause;
+        const unsubscribe = onSessionExpired(() => {
+            if (recovering.current || credentialOpen.current || lockedOut.current || viewOnly.current) return;
+
+            recovering.current = true;
+            reloadConfig().finally(() => {
+                pause = setTimeout(() => { recovering.current = false; }, SESSION_RECOVERY_PAUSE_MS);
+            });
+        });
+
+        return () => {
+            unsubscribe();
+            clearTimeout(pause);
+            recovering.current = false;
+        };
     }, [reloadConfig]);
 
     // One identity per change, the way AlertContext hands its value out: the

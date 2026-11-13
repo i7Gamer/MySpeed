@@ -56,8 +56,15 @@ const timedOutError = (timeout) => {
     return error;
 };
 
+const DEFAULT_TRANSPORTS = {http, https};
+
+/**
+ * `transports` exists for the tests: Node fires the idle timer during a
+ * connect and Bun does not, so the gap the answer deadline closes can only be
+ * shown with a transport that behaves like Bun.
+ */
 export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = DEFAULT_TIMEOUT, signal,
-    maxBytes = MAX_RESPONSE_BYTES} = {}) =>
+    maxBytes = MAX_RESPONSE_BYTES, transports = DEFAULT_TRANSPORTS} = {}) =>
     new Promise((resolve, reject) => {
         let target;
         try {
@@ -66,9 +73,20 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
             return reject(error);
         }
 
-        const transport = target.protocol === "https:" ? https : http;
+        const transport = target.protocol === "https:" ? transports.https : transports.http;
+
+        // The deadline for an answer, kept here rather than left to `timeout`:
+        // that is the socket's idle timer, and Bun never fires it while the
+        // lookup or the connect is still waiting - a node whose host drops
+        // packets held the caller until the kernel gave up, about 21s against
+        // the 15s asked for. Cleared once the response begins, so a large
+        // export that keeps arriving is not cut off; the idle timer covers a
+        // body that stalls.
+        let answerDeadline;
+        const stopAnswerDeadline = () => clearTimeout(answerDeadline);
 
         const request = transport.request(target, {method, headers, lookup: safeLookup, timeout}, (response) => {
+            stopAnswerDeadline();
             const chunks = [];
             let held = 0;
 
@@ -93,7 +111,15 @@ export const safeRequest = (url, {method = "GET", headers = {}, body, timeout = 
             }));
         });
 
-        request.on("error", reject);
+        request.on("error", (error) => {
+            stopAnswerDeadline();
+            reject(error);
+        });
+
+        // Only for a real bound: 0 switches the transport's idle timer off,
+        // and as a deadline it would end every request on the next tick.
+        if (Number.isFinite(timeout) && timeout > 0)
+            answerDeadline = setTimeout(() => request.destroy(timedOutError(timeout)), timeout);
 
         // `timeout` only arms the socket's idle timer; it does not end the
         // request. Without this a node that accepts the connection and then says

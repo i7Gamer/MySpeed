@@ -96,10 +96,12 @@ export const sampleHandshake = ({host, port, localAddress, timeoutMs = LATENCY_T
     connect = net.connect} = {}) => new Promise((resolve) => {
     const started = process.hrtime.bigint();
     let settled = false;
+    let deadline;
 
     const done = (value) => {
         if (settled) return;
         settled = true;
+        clearTimeout(deadline);
         resolve(value);
     };
 
@@ -117,10 +119,17 @@ export const sampleHandshake = ({host, port, localAddress, timeoutMs = LATENCY_T
         ? {localAddress, family: net.isIP(localAddress) === 6 ? 6 : 4}
         : {})});
 
-    socket.setTimeout?.(timeoutMs, () => {
+    // The socket's own timer alone did not bound the sample: it is an idle
+    // timer, and Bun never fires it while the lookup or the connect is still
+    // waiting, so a host that drops packets held each sample until the kernel
+    // gave up - about 21s rather than timeoutMs. This deadline is the sample's.
+    const giveUp = () => {
         socket.destroy();
         done(null);
-    });
+    };
+
+    deadline = setTimeout(giveUp, timeoutMs);
+    socket.setTimeout?.(timeoutMs, giveUp);
 
     socket.once("connect", () => {
         const elapsed = Number(process.hrtime.bigint() - started) / NS_PER_MS;
