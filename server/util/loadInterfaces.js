@@ -63,13 +63,23 @@ export const PROBE_TIMEOUT = 5000;
  * only ever went up. Nothing broke; the process simply held more than it needed
  * to, forever.
  *
- * `request` and `Agent` are injected so this is testable without the network.
+ * The request's `timeout` is not enough on its own to bound it. That option is
+ * the socket's idle timer, and Bun - which every release runs on - never fires
+ * it while a lookup or a connect is still waiting, so a host whose uplink is not
+ * up yet could hold the probe for as long as the kernel kept retrying. The
+ * deadline below is the probe's own, and it ends the probe whatever the runtime
+ * does with the option (issue #135).
+ *
+ * `request`, `Agent` and `timers` are injected so this is testable without the
+ * network or the clock; `deadline` so the real-timer path can be tested quickly.
  *
  * @returns whether the address answered
  */
-export const probeAddress = (address, family, {request = https.request, Agent = https.Agent} = {}) => {
+export const probeAddress = (address, family, {request = https.request, Agent = https.Agent,
+                                               timers = globalThis, deadline = PROBE_TIMEOUT} = {}) => {
     const options = {hostname: PROBE_HOST, path: PROBE_PATH, method: "GET", family, timeout: PROBE_TIMEOUT};
     const agent = new Agent(options);
+    let timer;
 
     return new Promise((resolve) => {
         const req = request({...options, agent, localAddress: address}, () => {
@@ -82,8 +92,19 @@ export const probeAddress = (address, family, {request = https.request, Agent = 
         req.on('error', () => resolve(false));
         req.on('timeout', () => req.destroy());
 
+        // Resolved here rather than left to the error destroy() emits: a
+        // request stuck where the runtime will not time it out is not one to
+        // trust to report its own teardown either.
+        timer = timers.setTimeout(() => {
+            req.destroy();
+            resolve(false);
+        }, deadline);
+
         req.end();
-    }).finally(() => agent.destroy());
+    }).finally(() => {
+        timers.clearTimeout(timer);
+        agent.destroy();
+    });
 };
 
 /**

@@ -310,21 +310,7 @@ const run = async () => {
     intervals.push(setInterval(() => requestInterfaces().catch(err =>
         console.error(`Could not refresh the network interfaces: ${err?.message ?? err}`)), INTERFACE_REFRESH_INTERVAL));
 
-    if (process.env.PREVIEW_MODE !== "true") await loadCli();
-
     await config.insertDefaults();
-
-    timerTask.startTimer(await config.getValue("cron"), await config.getValue("timezone"));
-    intervals.push(setInterval(() => removeOld().catch(err =>
-        console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL));
-
-    integrationTask.startTimer();
-    if (process.env.RUN_TEST_ON_STARTUP === "true") {
-        // Now, not after the schedule offset: a boot is not a tick, and the
-        // sleep only let a real tick land first and drop this run as an overlap.
-        timerTask.runTask({immediate: true}).catch(err =>
-            console.error(`The startup speedtest failed: ${err?.message ?? err}`));
-    }
 
     await announceAccess();
 
@@ -426,6 +412,25 @@ const run = async () => {
             console.error(`Failed to start HTTPS server: ${err.message}`);
         }
     }
+
+    // Behind the bind, not ahead of it (issue #135). The first boot downloads
+    // the provider CLIs here, and every second of that was a second the web
+    // interface looked hung. Nothing a request needs comes from it: a run
+    // fetches a missing binary itself before it starts. The scheduler follows
+    // the download, so the first scheduled run does not race it.
+    if (process.env.PREVIEW_MODE !== "true") await loadCli();
+
+    timerTask.startTimer(await config.getValue("cron"), await config.getValue("timezone"));
+    intervals.push(setInterval(() => removeOld().catch(err =>
+        console.error(`Could not apply the retention policy: ${err?.message ?? err}`)), RETENTION_SWEEP_INTERVAL));
+
+    integrationTask.startTimer();
+    if (process.env.RUN_TEST_ON_STARTUP === "true") {
+        // Now, not after the schedule offset: a boot is not a tick, and the
+        // sleep only let a real tick land first and drop this run as an overlap.
+        timerTask.runTask({immediate: true}).catch(err =>
+            console.error(`The startup speedtest failed: ${err?.message ?? err}`));
+    }
 }
 
 db.authenticate().then(() => {
@@ -447,9 +452,9 @@ db.authenticate().then(() => {
         });
     }
 
-    // Startup is not optional: a failure here leaves a listening server with no
-    // migrations, no defaults and no scheduler, which is worse than not
-    // starting at all.
+    // Startup is not optional: a failure here leaves a server with no
+    // migrations, no defaults or no scheduler - listening already, when it is
+    // the scheduler that failed - which is worse than not running at all.
     run().catch(err => {
         // describeError, not the bare message: a failed migration or a stored
         // value the model refuses arrives here as sequelize's "Validation

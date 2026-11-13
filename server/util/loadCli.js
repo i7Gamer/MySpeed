@@ -17,8 +17,8 @@ const PROVIDERS = Object.values(REGISTRY)
 /**
  * Downloads whichever provider CLIs are not on disk yet.
  *
- * A failure here is reported, never propagated. index.js awaits this before it
- * listens and exits 112 if it throws, so one unreachable download took the
+ * A failure here is reported, never propagated. index.js awaits this (after it
+ * listens, since #135) and exits 112 if it throws, so one unreachable download took the
  * whole instance down: a container upgrade during a brief github.com outage
  * left it crash-looping with its entire mounted history unreachable, and any
  * platform missing from the binary list could not start at all.
