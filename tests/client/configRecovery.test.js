@@ -6,7 +6,7 @@ import {act, cleanup, click, createElement, render, window} from "../helpers/ren
 import {AlertProvider} from "@/common/contexts/Alert";
 import {ConfigContext, ConfigProvider} from "@/common/contexts/Config";
 import {request} from "@/common/utils/RequestUtil";
-import {CONFIG_RETRY_BASE_MS, CONFIG_RETRY_MAX_MS} from "@/common/contexts/Config/configRetry";
+import {CONFIG_RETRY_BASE_MS, CONFIG_RETRY_MAX_MS, SESSION_RECOVERY_PAUSE_MS} from "@/common/contexts/Config/configRetry";
 
 const HTTP_OK = 200;
 const HTTP_UNAUTHORIZED = 401;
@@ -163,6 +163,44 @@ describe("a session lost behind an open tab", () => {
 
         assert.equal(view.calls.config, 1);
         assert.equal(view.dialogs(PASSWORD_TITLE).length, 0);
+    });
+
+    /*
+     * A 401 that the config load does not share is not a lost session - a
+     * route refusing for its own reasons while /config still answers. Without
+     * a pause every refused poll reloaded the config again, for as long as
+     * the tab stayed open.
+     */
+    it("does not reload on every refusal once a recovery found the session alive", async (context) => {
+        const view = mount(context, {config: ok({viewMode: false})});
+        await view.flush();
+        view.state.status = refused();
+
+        await request("/status");
+        await view.flush();
+        assert.equal(view.calls.config, 2, "the first refusal is checked");
+
+        for (let poll = 0; poll < REPEATED_REFUSALS; poll++) {
+            await request("/status");
+            await view.flush();
+        }
+
+        assert.equal(view.calls.config, 2, "each later refusal reloaded the config again");
+        assert.equal(view.dialogs(PASSWORD_TITLE).length, 0);
+    });
+
+    it("checks again once the pause is over", async (context) => {
+        const view = mount(context, {config: ok({viewMode: false})});
+        await view.flush();
+        view.state.status = refused();
+        await request("/status");
+        await view.flush();
+
+        await view.tick(SESSION_RECOVERY_PAUSE_MS);
+        await request("/status");
+        await view.flush();
+
+        assert.equal(view.calls.config, 3);
     });
 
     it("stops listening once unmounted", async (context) => {

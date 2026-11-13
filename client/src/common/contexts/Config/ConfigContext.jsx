@@ -14,7 +14,7 @@ import {useNavigate} from "react-router-dom";
 import {configOutcome, failureOutcome} from "@/common/contexts/Config/configOutcome";
 import {readStored} from "@/common/utils/Storage";
 import {onSessionExpired} from "@/common/utils/SessionExpiry";
-import {configRetryDelay} from "@/common/contexts/Config/configRetry";
+import {configRetryDelay, SESSION_RECOVERY_PAUSE_MS} from "@/common/contexts/Config/configRetry";
 
 export const ConfigContext = createContext({});
 
@@ -257,13 +257,18 @@ export const ConfigProvider = (props) => {
     // honest spelling of the old "once, at mount" comment, which existed
     // because reloadConfig used to be rebuilt on every render.
     useEffect(() => {
+        // The ref objects, held for the cleanup: it bumps the counter and
+        // clears the timer the ref holds at that moment, which is the point.
+        const generations = requestGeneration;
+        const retry = retryTimer;
+
         reloadConfig();
 
         // An answer still in flight is dropped like a superseded one, and the
         // retry waiting for the next one never runs.
         return () => {
-            requestGeneration.current++;
-            clearTimeout(retryTimer.current);
+            generations.current++;
+            clearTimeout(retry.current);
         };
     }, [reloadConfig]);
 
@@ -307,15 +312,29 @@ export const ConfigProvider = (props) => {
      * never on a read-only view, where the visitor is unauthenticated by
      * design and a 401 is the expected answer to a control they reached.
      */
+    //
+    // And not again for a while after a check that came back without a
+    // prompt: then the session is alive and the refusal was a route's own, so
+    // `recovering` stays raised for SESSION_RECOVERY_PAUSE_MS. A check that
+    // did prompt ends in a login, which reloads the page anyway.
     const recovering = useRef(false);
-    useEffect(() => onSessionExpired(() => {
-        if (recovering.current || credentialOpen.current || lockedOut.current || viewOnly.current) return;
+    useEffect(() => {
+        let pause;
+        const unsubscribe = onSessionExpired(() => {
+            if (recovering.current || credentialOpen.current || lockedOut.current || viewOnly.current) return;
 
-        recovering.current = true;
-        reloadConfig().finally(() => {
-            recovering.current = false;
+            recovering.current = true;
+            reloadConfig().finally(() => {
+                pause = setTimeout(() => { recovering.current = false; }, SESSION_RECOVERY_PAUSE_MS);
+            });
         });
-    }), [reloadConfig]);
+
+        return () => {
+            unsubscribe();
+            clearTimeout(pause);
+            recovering.current = false;
+        };
+    }, [reloadConfig]);
 
     // One identity per change, the way AlertContext hands its value out: the
     // providers nest, and an inline array re-rendered everything below on
