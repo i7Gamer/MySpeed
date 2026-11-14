@@ -133,6 +133,8 @@ Docker Desktop for Windows and macOS, where the traffic goes through a VM either
 
 The route trace (switched on under *Optimal values*) uses the operating system's own tool: `tracert` on Windows, `traceroute` on macOS and Linux. The Docker image ships `tracepath` instead, because `traceroute` needs a raw socket and the container runs as an unprivileged user; on a bare Linux install, either one on the `PATH` is used.
 
+If you cap the container's memory (`mem_limit`, or `deploy.resources.limits.memory` in Compose), allow at least **256 MB**. The server alone resides at around 100 MB, Bun runtime included, and a running speed test adds its CLI on top. Under a tighter limit the container is not killed: it keeps running while the kernel evicts its pages, so the health check can still pass while the web interface times out with "API not reachable".
+
 #### 🔧 From source
 
 <details>
