@@ -18,7 +18,8 @@ export const posixPath = (value) => value.replaceAll("\\", "/")
 
 /** Run the complete installer against fake host commands and temporary paths. */
 export const installSandbox = (t, failure = "", active = true, {
-    fresh = false, existingData = false, reachable = true, attempts = 1, name = "installation"
+    fresh = false, existingData = false, reachable = true, attempts = 1, name = "installation",
+    serviceOwned = false, args = []
 } = {}) => {
     const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "myspeed-upgrade-")));
     t.after(() => fs.rmSync(root, {recursive: true, force: true}));
@@ -33,7 +34,13 @@ export const installSandbox = (t, failure = "", active = true, {
     if (active) fs.writeFileSync(path.join(root, "active"), "");
     const stub = (name, body) => fs.writeFileSync(path.join(bin, name), `#!/bin/sh\n${body}\n`, {mode: 0o755});
     for (const name of ["apt-get", "useradd"]) stub(name, "exit 0");
-    stub("chown", '[ "$FAILURE" != ownership ]');
+    // The first operand tells the two chowns apart: the installer takes the
+    // installation root back for root, and hands data and bin to the account.
+    stub("chown", `echo "chown $*" >> "$SANDBOX/calls"
+[ "$1" = root ] && [ "$FAILURE" = reclaim ] && exit 1
+[ "$1" = root ] || [ "$FAILURE" != ownership ]`);
+    stub("mktemp", `[ "$FAILURE" = mktemp ] && exit 1
+exec /bin/mktemp "$@"`);
     stub("mkdir", `case "$*" in
   */data) [ "$FAILURE" = data-directory ] && exit 1 ;;
   */bin) [ "$FAILURE" = binary-directory ] && exit 1 ;;
@@ -43,15 +50,23 @@ exec /bin/mkdir "$@"`);
     // Linux mkdtemp creates a private directory; Git Bash reports different
     // permissions. Control this host input so failure injection reaches the
     // intended account branch. Real traversal is covered by separate tests.
-    stub("find", `[ "$2 $3 $4 $5" = "-maxdepth 0 -perm -o=x" ] || exit ${GUARD_FAILURE}
+    // The owner probe is the one other question the installer puts to find: an
+    // exact match on the service account, which only SERVICE_OWNED answers yes to.
+    stub("find", `if [ "$2 $3 $4 $5" = "-maxdepth 0 -user myspeed" ]; then
+  [ "$DIRECTORY_OWNER" = service ] && echo "$1"
+  exit 0
+fi
+[ "$2 $3 $4 $5" = "-maxdepth 0 -perm -o=x" ] || exit ${GUARD_FAILURE}
 [ "$DIRECTORY_REACHABLE" = true ] && echo "$1"`);
     stub("uname", "echo aarch64");
     stub("curl", `case "$*" in
   *api.github.com*)
     [ "$FAILURE" = api ] && exit 1
     if [ "$FAILURE" = asset ]; then echo '{"browser_download_url":"https://example.test/other"}'
+    elif [ "$FAILURE" = no-sums ]; then echo '{"browser_download_url":"https://example.test/MySpeed-linux-arm64"}'
     else echo '{"browser_download_url":"https://example.test/MySpeed-linux-arm64","browser_download_url":"https://example.test/SHA256SUMS"}'; fi ;;
   *SHA256SUMS*)
+    [ "$FAILURE" = sums-unreachable ] && exit 22
     if [ "$FAILURE" = checksum ]; then echo 'bad MySpeed-linux-arm64'
     else echo 'valid MySpeed-linux-arm64'; fi ;;
   *) echo 192.0.2.1 ;;
@@ -60,7 +75,9 @@ esac`);
 [ "$FAILURE" = download ] && exit 1
 [ "$FAILURE" = empty ] && { : > "$3"; exit 0; }
 echo 'new binary' > "$3"`);
-    stub("sha256sum", "echo valid");
+    // no-sha-tool: the tool answers with nothing, which is all the installer can
+    // see of a host that has none of the three it looks for.
+    stub("sha256sum", '[ "$FAILURE" = no-sha-tool ] || echo valid');
     stub("chmod", `[ "$FAILURE" = chmod ] && exit 1
 case "$*" in */data) [ "$FAILURE" = data-mode ] && exit 1 ;; esac
 exit 0`);
@@ -103,16 +120,16 @@ esac`);
         .replace(/^(\s*)sleep \d+$/gm, "$1:")
         .replace(/^(\s*)clear$/gm, "$1:");
     source = 'export PATH="$SANDBOX/bin:$PATH"\n'
-        + 'for mocked in apt-get chown useradd id find uname curl wget sha256sum chmod mkdir mv cp cat systemctl; do\n'
+        + 'for mocked in apt-get chown useradd id find uname curl wget mktemp sha256sum chmod mkdir mv cp cat systemctl; do\n'
         + ` [ "$(command -v "$mocked")" = "$SANDBOX/bin/$mocked" ] || exit ${GUARD_FAILURE}\ndone\n`
         + source;
     const script = path.join(root, "install.sh");
     fs.writeFileSync(script, source);
     let result;
     for (let attempt = 0; attempt < attempts; attempt++) {
-        result = spawnSync(sandboxBash, [script, "-d", posixPath(installation)], {
+        result = spawnSync(sandboxBash, [script, "-d", posixPath(installation), ...args], {
             env: {...process.env, SANDBOX: posixPath(root), FAILURE: failure,
-                DIRECTORY_REACHABLE: String(reachable)},
+                DIRECTORY_REACHABLE: String(reachable), DIRECTORY_OWNER: serviceOwned ? "service" : "root"},
             encoding: "utf8", timeout: INSTALL_SANDBOX_TIMEOUT
         });
         assert.ifError(result.error);
@@ -123,6 +140,7 @@ esac`);
         backups: fs.readdirSync(installation).filter((file) => file.startsWith("myspeed.previous."))
             .map((file) => fs.readFileSync(path.join(installation, file), "utf8").trim()),
         unit: fs.existsSync(unit) ? fs.readFileSync(unit, "utf8") : null,
+        leftovers: fs.readdirSync(installation).filter((file) => file.startsWith("myspeed.download")),
         installation: posixPath(installation), nativeInstallation: installation,
         active: fs.existsSync(path.join(root, "active"))};
 };

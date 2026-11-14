@@ -3,7 +3,13 @@
 # download names are compatibility aliases, not different CPU requirements.
 # tests/server/windowsBaseline.test.js holds all Bun stages to the exact runtime
 # used for release binaries so source, container and compiled installs agree.
-FROM oven/bun:1.4.4-alpine AS client-build
+#
+# Every base image is also pinned by the digest of its multi-arch index. A tag can
+# be re-pushed, so by tag alone a release is built from whatever the registry
+# serves that day; the digest makes the base reviewed and reproducible, and the
+# tag beside it keeps the line readable and lets Dependabot move both together.
+# tests/server/dockerBasePins.test.js holds every registry FROM to that shape.
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS client-build
 
 WORKDIR /client
 # The lockfile is copied with the manifest so the install is reproducible and
@@ -25,7 +31,7 @@ RUN bun run build
 # records a failed test every run with nothing naming the cause. The crate is
 # published, so the same version is compiled against musl here and shipped in
 # bin/, where fileExists() finds it and the download is skipped.
-FROM rust:1.99.1-alpine AS cfspeedtest-build
+FROM rust:1.99.1-alpine@sha256:44819b27be4c97b0e4d7203bd2e02c4820f97700211b6a37fb4c246a2de59383 AS cfspeedtest-build
 
 # Reviewed by the release maintainer; see CLI_MAINTENANCE.md for the dated
 # upstream check and refresh procedure. muslCloudflare.test.js keeps this in
@@ -37,7 +43,7 @@ ARG CFSPEEDTEST_VERSION=2.2.2
 RUN apk add --no-cache musl-dev
 RUN cargo install cfspeedtest --locked --version ${CFSPEEDTEST_VERSION} --root /out
 
-FROM oven/bun:1.4.4-alpine AS server-build
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS server-build
 
 WORKDIR /myspeed
 
@@ -49,7 +55,7 @@ COPY ./scripts /myspeed/scripts
 RUN bun run generate-migrations
 RUN bun run generate-integrations
 
-FROM oven/bun:1.4.4-alpine
+FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a
 
 # ca-certificates for TLS to the speedtest providers, tzdata so the configured
 # TZ resolves - both are needed at runtime. apk --no-cache leaves no index behind,

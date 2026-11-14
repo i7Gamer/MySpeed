@@ -8,7 +8,7 @@ import { checkNodeTarget } from '../util/safeUrl.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
 import { importBody } from './storage.js';
 import { appPath } from '../middlewares/basePath.js';
-import { childPath } from '../util/nodePath.js';
+import { childPath, staysWithinApi } from '../util/nodePath.js';
 import { nodeNameProblem } from '../util/nodeName.js';
 
 const app = express.Router();
@@ -204,7 +204,13 @@ app.all("/:nodeId/*route", password(false),
     // child has no BASE_PATH of its own, so nothing matched and its SPA
     // fallback answered every proxied call with the index page. childPath
     // folds the node prefix back to /api, anchored at the front - see there.
-    const url = stripTrailingSlashes(node.url) + childPath(appPath(req));
+    const path = childPath(appPath(req));
+
+    // Before the node's password is attached to anything - see staysWithinApi.
+    if (!staysWithinApi(path))
+        return res.status(400).json({message: "A node can only be reached through its API", type: "INVALID_PATH"});
+
+    const url = stripTrailingSlashes(node.url) + path;
 
     passwordHeaderNames.forEach(name => delete req.headers[name]);
     Object.assign(req.headers, writePasswordHeaders(node.password));

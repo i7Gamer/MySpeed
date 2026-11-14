@@ -59,8 +59,11 @@ sudo bash /tmp/myspeed-install.sh
 ```
 
 Das Installationsskript prüft den Download vor der Installation gegen die
-`SHA256SUMS` des Releases. Wer lieber gefragt werden möchte, welche der beiden
-Installationsarten laufen soll, nimmt `chooser.sh` unter derselben Adresse.
+`SHA256SUMS` des Releases und bricht ab, wenn das nicht möglich ist: Ein Release ohne
+diese Liste oder ein Host ohne `sha256sum`, `shasum` und `openssl` wird abgelehnt,
+solange `--allow-unverified` nicht angegeben ist. Wer lieber gefragt werden möchte,
+welche der beiden Installationsarten laufen soll, nimmt `chooser.sh` unter derselben
+Adresse.
 
 Eine Linux-Binary selbst zu bauen (`bun run build:binary:baseline`) muss *auf* Linux
 geschehen - ein Container reicht. Wird von macOS oder Windows aus kompiliert, landen die

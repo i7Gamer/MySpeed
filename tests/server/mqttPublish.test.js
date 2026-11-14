@@ -208,6 +208,43 @@ describe("credentials", () => {
 });
 
 /**
+ * A string field is prefixed with a two-byte length, so 65,535 bytes is the
+ * most one can hold. The form caps these fields long before that, but a
+ * restored backup is written without passing through the form - and the packet
+ * used to be built inside the socket's connect listener, where a throw is not
+ * a rejected promise but an uncaught exception, which index.js answers by
+ * exiting. One oversized value in a backup stopped the server at the first
+ * notification after every restart.
+ */
+describe("a field too long for its length prefix", () => {
+    const LONGEST_FIELD_BYTES = 0xffff;
+    const tooLong = "a".repeat(LONGEST_FIELD_BYTES + 1);
+
+    for (const field of ["username", "password", "clientId"]) {
+        it(`rejects an oversized ${field} instead of throwing out of the socket`, async () => {
+            await assert.rejects(send({username: "user", password: "pass", [field]: tooLong}),
+                /longer than the 65535 bytes an MQTT string can hold/);
+        });
+    }
+
+    it("never opens a connection for a packet it cannot build", async () => {
+        await assert.rejects(send({username: tooLong}));
+
+        assert.equal(seen.length, 0, "the broker was dialled for a CONNECT that could not be written");
+    });
+
+    it("rejects an oversized topic the same way", async () => {
+        await assert.rejects(send({topic: tooLong}), /longer than the 65535 bytes an MQTT string can hold/);
+    });
+
+    it("still accepts a field of exactly the largest size", async () => {
+        await send({username: "a".repeat(LONGEST_FIELD_BYTES)});
+
+        assert.ok(await sawType(CONNECT), "a username that fits its prefix was refused");
+    });
+});
+
+/**
  * What the operator is told. A broker refuses with a single byte and closes, so
  * anything not translated here reaches the integration card as silence.
  */

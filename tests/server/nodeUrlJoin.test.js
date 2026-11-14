@@ -2,7 +2,7 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { bodyOf, readSource } from "../helpers/source.js";
 import { stripTrailingSlashes } from "../../server/util/helpers.js";
-import { childPath } from "../../server/util/nodePath.js";
+import { childPath, staysWithinApi } from "../../server/util/nodePath.js";
 
 /**
  * A node URL is joined to a path, and the operator's copy of it usually ends
@@ -64,7 +64,61 @@ describe("the path the child is asked for", () => {
     });
 });
 
+/**
+ * The proxy exists to reach a node's API, with the node's own password
+ * attached. The path is joined to the node's address as text and parsed
+ * afterwards, and the parser resolves dot segments: `/api/nodes/5/../../x`
+ * folds to `/api/../../x`, which the request then sends as `/x` - outside the
+ * API the proxy is scoped to, credentials and all.
+ *
+ * Judged with the parser the request itself uses, so the spellings it folds -
+ * a percent-encoded dot, a backslash - are folded here the same way.
+ */
+describe("the scope of the path the child is asked for", () => {
+    it("accepts the API root and everything under it", () => {
+        assert.equal(staysWithinApi("/api"), true);
+        assert.equal(staysWithinApi("/api/config"), true);
+        assert.equal(staysWithinApi("/api/storage/tests/history/json?from=1"), true);
+    });
+
+    it("accepts dot segments that stay inside the API", () => {
+        assert.equal(staysWithinApi("/api/speedtests/../config"), true);
+    });
+
+    it("refuses dot segments that climb out of it", () => {
+        assert.equal(staysWithinApi("/api/../x"), false);
+        assert.equal(staysWithinApi("/api/../../x"), false);
+        assert.equal(staysWithinApi("/api/config/../../x"), false);
+    });
+
+    it("refuses the spellings the parser folds into dot segments", () => {
+        assert.equal(staysWithinApi("/api/%2e%2e/x"), false);
+        assert.equal(staysWithinApi("/api/%2E%2E/x"), false);
+        assert.equal(staysWithinApi("/api\\..\\x"), false);
+        assert.equal(staysWithinApi("/api/.%2e/x"), false);
+    });
+
+    it("refuses a sibling that merely starts with the same letters", () => {
+        assert.equal(staysWithinApi("/apifoo"), false);
+        assert.equal(staysWithinApi("/api/../apifoo"), false);
+    });
+
+    it("refuses what does not parse as a path at all", () => {
+        assert.equal(staysWithinApi(undefined), false);
+        assert.equal(staysWithinApi(""), false);
+    });
+});
+
 describe("the two places a node is reached", () => {
+    it("refuses a proxied path that leaves the API before any request is made", () => {
+        const handler = bodyOf(readSource("server/routes/nodes.js"), 'app.all("/:nodeId/*route"');
+        const refusal = handler.indexOf("staysWithinApi(");
+        const request = handler.indexOf("nodes.proxyRequest(");
+
+        assert.notEqual(refusal, -1, "the proxy sends whatever path the parser makes of the request");
+        assert.ok(refusal < request, "the scope is checked after the node has already been asked");
+    });
+
     it("normalises the proxy target", () => {
         const handler = bodyOf(readSource("server/routes/nodes.js"), 'app.all("/:nodeId/*route"');
 

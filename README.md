@@ -58,7 +58,9 @@ sudo bash /tmp/myspeed-install.sh
 ```
 
 The installer verifies the download against the release's `SHA256SUMS` before it
-installs anything. If you would rather be asked which of the two installations to
+installs anything, and stops if it cannot: a release without that list, or a host
+with none of `sha256sum`, `shasum` and `openssl`, is refused unless you pass
+`--allow-unverified`. If you would rather be asked which of the two installations to
 run, `chooser.sh` at the same address puts the question first.
 
 Building a Linux binary yourself (`bun run build:binary:baseline`) has to happen *on*

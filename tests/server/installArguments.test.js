@@ -66,3 +66,14 @@ it("installer permits an explicitly relative dash-prefixed directory", {skip: no
     assert.equal(result.status, 0, result.output);
     assert.ok(result.output.includes(`PARSED=${result.root}/./-name\n`), result.output);
 });
+
+it("installer accepts --allow-unverified, alone and with -d, and documents it", {skip: noBash}, t => {
+    for (const [args, expected] of [[["--allow-unverified"], "/opt/myspeed"],
+        [["-d", "/tmp/x", "--allow-unverified"], "/tmp/x"]]) {
+        const result = parse(t, args);
+        assert.equal(result.status, 0, result.output);
+        assert.ok(result.output.includes(`PARSED=${expected}\n`), result.output);
+    }
+    const help = parse(t, ["--help"]);
+    assert.match(help.output, /--allow-unverified/);
+});

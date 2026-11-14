@@ -558,7 +558,7 @@ describe("install.sh registers a service that is not root", () => {
         assert.ok(created, "nothing runs useradd - the only mention of it is the check for whether the host has it");
         assert.match(created, /--system\b/, "the account is created as a login account rather than a system one");
         assert.match(created, /"\$SERVICE_USER"/, "useradd is given some other name than the one the unit holds");
-        assert.ok(source.indexOf("useradd") < source.indexOf("chown"),
+        assert.ok(source.indexOf("useradd") < source.indexOf("chown -Rh"),
             "the installation is handed to an account that does not exist yet");
     });
 
@@ -569,7 +569,7 @@ describe("install.sh registers a service that is not root", () => {
     it("hands the installation to the account that will run it", () => {
         assert.match(source, /chown -Rh "\$SERVICE_USER" "\$INSTALLATION_PATH\/data" "\$INSTALLATION_PATH\/bin"/,
             "the new account cannot write the database it inherits");
-        assert.ok(source.indexOf("chown") < unitStart,
+        assert.ok(source.indexOf("chown -Rh") < unitStart,
             "the service is registered before it can read its own directory");
     });
 
@@ -1310,7 +1310,8 @@ describe("install.sh registers a service that is not root", () => {
      * means the service account cannot rewrite the binary it runs.
      */
     it("takes ownership of nothing but the directories the server writes", () => {
-        const targets = [...source.matchAll(/^[ \t]*(?:if ! )?(chown.*?)(?:; then)?$/gm)].map((m) => m[1]);
+        const targets = [...source.matchAll(/^[ \t]*(?:if ! )?(chown.*?)(?:; then)?$/gm)].map((m) => m[1])
+            .filter((line) => line !== 'chown "$ROOT_USER" "$INSTALLATION_PATH"');
 
         assert.notEqual(targets.length, 0, "the installation is never handed to the service account");
 
@@ -1606,5 +1607,46 @@ describe("docker-install.sh fetches the engine installer safely", () => {
             "a failed download is not checked before the file is run");
         assert.match(source, /sh "\$installer"/, "the fetched file is not what is run");
         assert.match(source, /rm -f "\$installer"/, "the temporary file is left behind");
+    });
+});
+
+/**
+ * The download lands in a directory an older installer may have handed to the
+ * service account, so it must not be reachable by a name that account can guess.
+ */
+describe("install.sh downloads somewhere the service account cannot pre-plant", () => {
+    const code = read("install.sh").split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
+    const CLAIM = 'chown "$ROOT_USER" "$INSTALLATION_PATH"';
+    const DOWNLOAD = "wget --timeout";
+
+    it("names the download with mktemp inside the installation directory, and stops if that fails", () => {
+        assert.doesNotMatch(code, /myspeed\.download\.\$\$/, "the download name is still the guessable pid");
+        const at = code.indexOf("DOWNLOAD_TMP=$(mktemp");
+        assert.notEqual(at, -1, "the download is not named by mktemp");
+        const failure = code.slice(at, code.indexOf(DOWNLOAD));
+        assert.match(failure, /mktemp "\$INSTALLATION_PATH\/myspeed\.download\.XXXXXX"\)/,
+            "the temp file is not made inside the installation directory, so the rename is not atomic");
+        assert.match(failure, /left untouched/, "a failing mktemp does not say the installation was left alone");
+        assert.match(failure, /exit 1/);
+    });
+
+    it("takes the root back, non-recursively and only from the service account, before the download", () => {
+        const claim = code.indexOf(CLAIM);
+        assert.notEqual(claim, -1, "nothing takes the installation root back from the service account");
+        assert.ok(claim < code.indexOf("mktemp"), "the root is reclaimed after the download name is made");
+        assert.ok(claim < code.indexOf(DOWNLOAD), "the root is reclaimed after the download starts");
+        // Through the trailing "/.", so that an installation path which is a
+        // symlink is judged by the directory it leads to - the one the download
+        // is written into - and not by the link, which root usually owns.
+        assert.match(code, /find "\$INSTALLATION_PATH\/\." -maxdepth 0 -user "\$SERVICE_USER"/,
+            "the owner is not matched exactly against the service account, or a symlinked path is judged by its link");
+        assert.equal(code.match(/SERVICE_USER="myspeed"/g).length, 1, "the account name is defined more than once");
+        assert.ok(code.indexOf('SERVICE_USER="myspeed"') < claim, "SERVICE_USER is used before it is defined");
+    });
+
+    it("stops before anything is downloaded when the root cannot be taken back", () => {
+        const refusal = code.slice(code.indexOf(CLAIM), code.indexOf(DOWNLOAD));
+        assert.match(refusal, /left untouched/);
+        assert.match(refusal, /exit 1/);
     });
 });

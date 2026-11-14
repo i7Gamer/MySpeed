@@ -92,9 +92,17 @@ export const encodeLength = (value) => {
  * following field at the wrong offset, which is the same malformed packet as
  * above.
  */
+export const MAX_STRING_BYTES = 0xffff;
+
 export const encodeString = (value) => {
     const body = Buffer.from(String(value ?? ""), "utf8");
     const header = Buffer.alloc(2);
+
+    // Said here, in words, rather than left to writeUInt16BE's range error: the
+    // caller is told which limit it met, and the message does not carry the
+    // value - which for two of these fields is a credential.
+    if (body.length > MAX_STRING_BYTES)
+        throw new Error(`A ${body.length}-byte field is longer than the ${MAX_STRING_BYTES} bytes an MQTT string can hold`);
 
     header.writeUInt16BE(body.length);
 
@@ -326,16 +334,22 @@ export const publishAll = ({host: configuredHost, port, secure, username, passwo
 
     let acknowledged = 0;
 
+    /*
+     * Every packet, built before the socket exists.
+     *
+     * A field longer than its length prefix cannot be encoded, and encoding
+     * throws. Built where they were written - CONNECT in the connect listener -
+     * that throw left the promise behind: an exception out of an event listener
+     * is uncaught, which index.js answers by exiting, so one oversized username
+     * in a restored backup stopped the server at its first notification. Here it
+     * is an ordinary rejection, and no broker is dialled for an exchange that
+     * could never have been completed.
+     */
+    let connectBytes;
+    let publishBytes;
+
     const sendMessages = () => {
-        messages.forEach((message, index) => socket.write(publishPacket({
-            topic: message.topic,
-            payload: message.payload,
-            qos,
-            // Per message rather than per call: a discovery config has to be
-            // retained and the result beside it does not.
-            retain: message.retain === true,
-            packetId: identifierFor(index)
-        })));
+        publishBytes.forEach((bytes) => socket.write(bytes));
 
         // At QoS 0 there is nothing to wait for: the broker acknowledges
         // nothing, so the messages are as delivered as they are ever going to be
@@ -359,6 +373,21 @@ export const publishAll = ({host: configuredHost, port, secure, username, passwo
     };
 
     try {
+        connectBytes = connectPacket({
+            clientId: clientId || generateClientId(),
+            username, password,
+            keepAlive: KEEP_ALIVE_SECONDS
+        });
+        publishBytes = messages.map((message, index) => publishPacket({
+            topic: message.topic,
+            payload: message.payload,
+            qos,
+            // Per message rather than per call: a discovery config has to be
+            // retained and the result beside it does not.
+            retain: message.retain === true,
+            packetId: identifierFor(index)
+        }));
+
         socket = connect({host, port, secure});
     } catch (error) {
         return fail(error);
@@ -374,11 +403,7 @@ export const publishAll = ({host: configuredHost, port, secure, username, passwo
      * nothing was ever published over TLS: the operator saw ECONNRESET and no
      * reason for it.
      */
-    socket.once(readyEvent(secure), () => socket.write(connectPacket({
-        clientId: clientId || generateClientId(),
-        username, password,
-        keepAlive: KEEP_ALIVE_SECONDS
-    })));
+    socket.once(readyEvent(secure), () => socket.write(connectBytes));
 
     socket.on("data", (chunk) => {
         if (settled) return;
