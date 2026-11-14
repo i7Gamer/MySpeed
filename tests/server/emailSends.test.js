@@ -2,6 +2,9 @@ import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import setupEmail, { SUBJECT_LIMIT } from "../../server/integrations/email.js";
 import { OUTBOUND_TIMEOUT } from "../../server/util/integrationActivity.js";
+import net from "node:net";
+
+const LOOPBACK = "127.0.0.1";
 
 /**
  * Email, which is upstream #1259: "In Settings Notifications there is not a
@@ -68,6 +71,34 @@ const finish = async (overrides = {}) => {
 };
 
 describe("the transport", () => {
+    /**
+     * The production path, which hands in no factory: nodemailer is loaded at
+     * the first send rather than at startup (util/lazyImport.js). Dialled at a
+     * loopback port nothing listens on, so the refusal comes back at once and
+     * proves the real mailer ran - a load failure would read differently.
+     */
+    it("loads nodemailer itself at the first send when no factory is given", async () => {
+        const closed = net.createServer();
+        await new Promise((resolve) => closed.listen(0, LOOPBACK, resolve));
+        const {port} = closed.address();
+        await new Promise((resolve) => closed.close(resolve));
+
+        const events = {};
+        setupEmail((name, callback) => { events[name] = callback; });
+        const errors = [];
+        const original = console.error;
+        console.error = (message) => errors.push(String(message));
+
+        try {
+            await fire(events, "testFinished", {...CONFIG, host: LOOPBACK, port}, RESULT);
+        } finally {
+            console.error = original;
+        }
+
+        assert.deepEqual(notes, [true]);
+        assert.match(errors.join("\n"), /ECONNREFUSED/);
+    });
+
     it("is built from the configured server", async () => {
         await finish();
 

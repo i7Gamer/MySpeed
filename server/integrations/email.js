@@ -1,5 +1,5 @@
 import { phrase } from '../util/notificationLocale.js';
-import nodemailer from "nodemailer";
+import { lazyImport } from "../util/lazyImport.js";
 import { replaceVariables, truncate } from "../util/helpers.js";
 import { checkOutboundHost } from "../util/safeUrl.js";
 import { noteActivity } from "../util/integrationActivity.js";
@@ -180,18 +180,27 @@ const refuseBlocked = (host, activity) => {
 export {transportOptions};
 
 /**
- * @param createTransport  defaulted, and passed only by the tests, which hand in
- * a recorder. The registry calls `setup(registerEvent(name))` with one argument,
- * so nothing in production ever supplies it. The alternative is a test that
- * opens a real socket to a real relay, which is the one thing tests/server must
- * never do.
+ * nodemailer, loaded at the first send rather than when the integration
+ * registry is built: its import costs ~19 MiB on every instance, and most never
+ * configure email - see util/lazyImport.js.
  */
-export default (registerEvent, createTransport = nodemailer.createTransport) => {
+const loadNodemailer = lazyImport(() => import("nodemailer"));
+
+/**
+ * @param createTransport  passed only by the tests, which hand in a recorder.
+ * The registry calls `setup(registerEvent(name))` with one argument, so in
+ * production it is undefined and nodemailer's own is loaded at the first send.
+ * The alternative is a test that opens a real socket to a real relay, which is
+ * the one thing tests/server must never do.
+ */
+export default (registerEvent, createTransport) => {
     const send = async (c, subject, text, activity) => {
         if (refuseBlocked(c.host, activity)) return;
 
         try {
-            const transport = createTransport(transportOptions(c));
+            // Inside the try: a failed load is a failed send, reported like one.
+            const create = createTransport ?? (await loadNodemailer()).default.createTransport;
+            const transport = create(transportOptions(c));
 
             await transport.sendMail({
                 from: `${SENDER_NAME} <${c.from}>`,

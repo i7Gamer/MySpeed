@@ -1,4 +1,11 @@
 import fs from 'node:fs';
+import moment from 'moment-timezone';
+import * as tests from './speedtests.js';
+import * as targetsController from './targets.js';
+import { parseDateRange } from '../util/dateRange.js';
+import { isFailedTest, measuredPing, usableFigure } from '../util/testOutcome.js';
+import { lazyImport } from '../util/lazyImport.js';
+import htm from 'htm';
 
 /**
  * resvg, fetched when an image is actually asked for rather than at boot.
@@ -15,23 +22,15 @@ import fs from 'node:fs';
  * which already answers every failure by redirecting to the project banner. The
  * social preview falls back to a static image and everything else runs.
  *
- * The promise is kept, not the module: a second caller during the first load
- * waits on the same import, and a failed load is retried rather than cached as
- * broken - a binding can be absent because the volume was not mounted yet.
+ * lazyImport keeps the promise, so concurrent callers share one load and a
+ * failed one is retried.
  */
-let resvg = null;
+const loadResvg = lazyImport(() => import('@resvg/resvg-js'));
 
-const loadResvg = () => (resvg ??= import('@resvg/resvg-js').catch((error) => {
-    resvg = null;
-    throw error;
-}));
-import moment from 'moment-timezone';
-import * as tests from './speedtests.js';
-import * as targetsController from './targets.js';
-import { parseDateRange } from '../util/dateRange.js';
-import { isFailedTest, measuredPing, usableFigure } from '../util/testOutcome.js';
-import htm from 'htm';
-import satori from 'satori';
+// satori, for memory rather than for boot safety: it is pure JavaScript and
+// WebAssembly, but its import alone costs ~42 MiB on every instance, including
+// the many that never render a share image - see util/lazyImport.js.
+const loadSatori = lazyImport(() => import('satori'));
 
 const html = htm.bind((type, props, ...children) => ({type, props: {...props, children: children.flat()}}));
 
@@ -313,7 +312,9 @@ export function openGraphMarkup({ date, time, logo, test }) {
 }
 
 /** Lays the markup out as an SVG with the bundled font. */
-export function renderOpenGraphSvg(markup, font) {
+export async function renderOpenGraphSvg(markup, font) {
+  const { default: satori } = await loadSatori();
+
   return satori(markup, {
     width: 1200,
     height: 600,
