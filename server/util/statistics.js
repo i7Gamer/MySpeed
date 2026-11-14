@@ -1,6 +1,6 @@
 import { mapFixed, mapRounded } from './helpers.js';
 import { localHourAt, serverZone, zoneFromOffset } from './timezone.js';
-import { isFailedTest, isSuccessfulTest, measuredPing, usableFigure } from './testOutcome.js';
+import { isFailedTest, measuredPing, usableFigure } from './testOutcome.js';
 import { metricValue } from './metricValue.js';
 import { targetMetOver } from './targetLimits.js';
 import { viewerFacingError } from './connectionIdentity.js';
@@ -192,44 +192,308 @@ const consistencyScore = (values) => {
     };
 };
 
-const buildHourlyAverages = (entries, zone) => {
-    const buckets = Array.from({length: HOURS_PER_DAY}, () => ({download: [], upload: [], ping: [], jitter: []}));
 
-    entries.forEach(({entry, time}) => {
-        const bucket = buckets[localHourAt(zone, new Date(time))];
-        // Readable at the door, like the two guarded pushes below - and so the
-        // count reported beside the hour's figure counts what the figure used,
-        // rather than presenting one readable row as an average backed by ten.
-        const download = usableFigure(entry.download);
-        if (download !== null) bucket.download.push(download);
-        const upload = usableFigure(entry.upload);
-        if (upload !== null) bucket.upload.push(upload);
-        // Guarded like the jitter below it, and for the same reason: a
-        // fabricated zero is not a reading, and one in an hour's bucket halved
-        // that hour's latency. Through measuredPing, so the coercion the other
-        // columns get reaches this one too.
-        const ping = measuredPing(entry.ping);
-        if (ping !== null) bucket.ping.push(ping);
-        // usableFigure rather than a null check: an imported -1 placeholder
-        // was an hour's whole jitter reading. Bound and pushed, like its three
-        // siblings - computing the cleaned value and pushing the raw one left
-        // this the one array still holding whatever the column held.
-        const jitter = usableFigure(entry.jitter);
-        if (jitter !== null) bucket.jitter.push(jitter);
-    });
+/*
+ * The rows a summary is built from, held as columns rather than as objects.
+ *
+ * A wide range used to arrive as one object per row and stay that way for the
+ * whole aggregation: an all-time request over a year of five-minute tests held
+ * 105 000 of them at once - about 200 MB of resident memory over a node process
+ * already holding the app - and minutely testing reaches five times that. Under
+ * a 100 MB container limit (#135) that is the request that stalls the instance.
+ *
+ * Every figure below reads a row through one fixed reader per column: the ping
+ * through measuredPing, every other measurement through usableFigure. Those
+ * readers answer a finite number or null, so each column is a Float64Array with
+ * NaN standing for null - no reader ever produces a NaN of its own - and the
+ * cleaned reading is taken once, at the door, instead of on every pass. The
+ * readers are idempotent on what they answer, so a figure that reads the cleaned
+ * value through its reader again (loadedIncrease, mapRange, meetsLimits) gets
+ * exactly what it got from the raw row.
+ *
+ * What is not a number is kept only where it differs from what can be rebuilt:
+ * `created` is rebuilt from the instant whenever it was the canonical ISO
+ * spelling every write produces, and kept verbatim otherwise; the error text
+ * and its provider are kept only for rows that have one; the target id is
+ * interned. Sums nothing else reads - the transfer totals and the packet loss -
+ * are folded at the door in the same order the old pass folded them, so they
+ * cost no column at all.
+ *
+ * Filled a page at a time by the controller, so the raw rows of one page are
+ * the only objects alive at once.
+ */
+
+// A column that holds readings stores "no reading" as NaN, which no reader
+// answers - see above.
+const NO_READING = NaN;
+const INITIAL_CAPACITY = 1024;
+const GROWTH_FACTOR = 2;
+const FAILED = 1;
+
+const READING_COLUMNS = ["ping", "jitter", "download", "upload", "duration", "downloadLatency", "uploadLatency"];
+
+const readingOrNull = (value) => Number.isNaN(value) ? null : value;
+
+export class StatisticsColumns {
+    #length = 0;
+    #capacity;
+    #placeable = 0;
+    #succeeded = 0;
+    #ordered = true;
+    #previousTime = -Infinity;
+    #first = Infinity;
+    #last = -Infinity;
+    #targets = [];
+    #targetCodes = new Map();
+    // created values the instant cannot rebuild, by row.
+    #createdAsStored = new Map();
+    // {error, provider} for every row whose error is not null, by row - one
+    // shared record per distinct pair, since a failing line repeats itself.
+    #errorRecords = new Map();
+    #errorPairs = new Map();
+    #packetLossTotal = 0;
+    #packetLossCount = 0;
+    #bytesDownloaded = null;
+    #bytesUploaded = null;
+
+    /** @param capacity the rows expected; a guess, since the store grows past it */
+    constructor(capacity = INITIAL_CAPACITY) {
+        this.#capacity = Math.max(1, Math.trunc(capacity) || 1);
+        this.instant = new Float64Array(this.#capacity);
+        this.failed = new Uint8Array(this.#capacity);
+        this.target = new Uint32Array(this.#capacity);
+        for (const column of READING_COLUMNS) this[column] = new Float64Array(this.#capacity);
+    }
+
+    get length() {
+        return this.#length;
+    }
+
+    get succeeded() {
+        return this.#succeeded;
+    }
+
+    #grow() {
+        this.#capacity *= GROWTH_FACTOR;
+        for (const column of ["instant", "failed", "target", ...READING_COLUMNS]) {
+            const grown = new this[column].constructor(this.#capacity);
+            grown.set(this[column]);
+            this[column] = grown;
+        }
+    }
+
+    #codeOf(targetId) {
+        let code = this.#targetCodes.get(targetId);
+        if (code === undefined) {
+            code = this.#targets.length;
+            this.#targets.push(targetId);
+            this.#targetCodes.set(targetId, code);
+        }
+        return code;
+    }
+
+    #errorRecordOf(error, provider) {
+        let byError = this.#errorPairs.get(provider);
+        if (byError === undefined) this.#errorPairs.set(provider, byError = new Map());
+        let record = byError.get(error);
+        if (record === undefined) byError.set(error, record = Object.freeze({error, provider}));
+        return record;
+    }
+
+    /** Takes one stored row in; the row itself is not kept. */
+    append(entry) {
+        if (this.#length === this.#capacity) this.#grow();
+        const index = this.#length++;
+
+        const failed = isFailedTest(entry);
+        this.failed[index] = failed ? FAILED : 0;
+        if (!failed) this.#succeeded++;
+
+        const created = entry.created;
+        const time = new Date(created).getTime();
+        this.instant[index] = time;
+        if (Number.isNaN(time) || typeof created !== "string" || new Date(time).toISOString() !== created)
+            this.#createdAsStored.set(index, created);
+        // Undateable rows still count in aggregates, but have no position on
+        // charts, hourly averages or the reliability timeline.
+        if (!Number.isNaN(time)) {
+            this.#placeable++;
+            if (time < this.#previousTime) this.#ordered = false;
+            this.#previousTime = time;
+            this.#first = Math.min(this.#first, time);
+            this.#last = Math.max(this.#last, time);
+        }
+
+        this.ping[index] = measuredPing(entry.ping) ?? NO_READING;
+        this.jitter[index] = usableFigure(entry.jitter) ?? NO_READING;
+        this.download[index] = usableFigure(entry.download) ?? NO_READING;
+        this.upload[index] = usableFigure(entry.upload) ?? NO_READING;
+        this.duration[index] = usableFigure(entry.time) ?? NO_READING;
+        this.downloadLatency[index] = usableFigure(entry.downloadLatency) ?? NO_READING;
+        this.uploadLatency[index] = usableFigure(entry.uploadLatency) ?? NO_READING;
+        this.target[index] = this.#codeOf(entry.targetId ?? null);
+
+        if (entry.error !== null) this.#errorRecords.set(index, this.#errorRecordOf(entry.error, entry.provider));
+
+        // Averaged over the successes that measured it - see packetLoss below.
+        if (!failed) {
+            const loss = usableFigure(entry.packetLoss);
+            if (loss !== null) {
+                this.#packetLossTotal += loss;
+                this.#packetLossCount++;
+            }
+        }
+
+        // What the testing itself cost in traffic, over every row - see
+        // transferTotals below.
+        const downloaded = usableFigure(entry.bytesDownloaded);
+        const uploaded = usableFigure(entry.bytesUploaded);
+        if (downloaded !== null) this.#bytesDownloaded = (this.#bytesDownloaded ?? 0) + downloaded;
+        if (uploaded !== null) this.#bytesUploaded = (this.#bytesUploaded ?? 0) + uploaded;
+    }
+
+    /** The row's created exactly as stored. */
+    createdAt(index) {
+        return this.#createdAsStored.has(index)
+            ? this.#createdAsStored.get(index)
+            : new Date(this.instant[index]).toISOString();
+    }
+
+    /** {error, provider} of a row whose error is not null, else undefined. */
+    errorRecordAt(index) {
+        return this.#errorRecords.get(index);
+    }
+
+    targetAt(index) {
+        return this.#targets[this.target[index]];
+    }
+
+    /** The distinct targets in the order they first appear, absent as null. */
+    targetIds() {
+        return [...this.#targets];
+    }
+
+    /** The earliest and latest placeable instants, or null when none is. */
+    extent() {
+        return this.#placeable === 0 ? null : {first: this.#first, last: this.#last};
+    }
+
+    packetLoss() {
+        return this.#packetLossCount > 0 ? round(this.#packetLossTotal / this.#packetLossCount) : null;
+    }
+
+    transferTotals() {
+        const download = this.#bytesDownloaded;
+        const upload = this.#bytesUploaded;
+        return {
+            download,
+            upload,
+            total: download === null && upload === null ? null : (download ?? 0) + (upload ?? 0)
+        };
+    }
+
+    /**
+     * The placeable rows, oldest first, as row indices.
+     *
+     * Database readers already order by created, so the store notes whether
+     * the instants arrived in order and sorts only when they did not - legacy
+     * timestamp spellings and pure callers with unsorted input. Ties keep their
+     * arrival order, as the stable sort this replaces did.
+     */
+    timeline() {
+        const sorted = new Uint32Array(this.#placeable);
+        let next = 0;
+        for (let index = 0; index < this.#length; index++)
+            if (!Number.isNaN(this.instant[index])) sorted[next++] = index;
+
+        if (!this.#ordered) {
+            const {instant} = this;
+            sorted.sort((a, b) => (instant[a] - instant[b]) || (a - b));
+        }
+        return sorted;
+    }
+
+    /**
+     * Each success in arrival order, as one reused object carrying its cleaned
+     * readings under the row's own column names - for the shared helpers that
+     * read a row (mapRange, targetMetOver), which keep nothing they are handed.
+     */
+    *successes() {
+        const view = {};
+        for (let index = 0; index < this.#length; index++) {
+            if (this.failed[index] === FAILED) continue;
+            view.ping = readingOrNull(this.ping[index]);
+            view.jitter = readingOrNull(this.jitter[index]);
+            view.download = readingOrNull(this.download[index]);
+            view.upload = readingOrNull(this.upload[index]);
+            view.time = readingOrNull(this.duration[index]);
+            view.downloadLatency = readingOrNull(this.downloadLatency[index]);
+            view.uploadLatency = readingOrNull(this.uploadLatency[index]);
+            view.targetId = this.targetAt(index);
+            yield view;
+        }
+    }
+
+    /** The readings of one column over the successes that measured it, in arrival order. */
+    successReadings(column) {
+        const values = [];
+        const readings = this[column];
+        for (let index = 0; index < this.#length; index++) {
+            if (this.failed[index] === FAILED || Number.isNaN(readings[index])) continue;
+            values.push(readings[index]);
+        }
+        return values;
+    }
+}
+
+/** A store holding these rows, sized for them. */
+export const columnsOf = (entries) => {
+    const columns = new StatisticsColumns(entries.length);
+    for (const entry of entries) columns.append(entry);
+    return columns;
+};
+
+// A running mean, folded in the order the values arrive - the same sum the
+// average() reducer takes over the same values in the same order.
+const tally = () => ({total: 0, count: 0});
+const add = (running, value) => {
+    if (value === null) return;
+    running.total += value;
+    running.count++;
+};
+const meanOrNull = (running, transform = round) =>
+    running.count > 0 ? transform(running.total / running.count) : null;
+
+const buildHourlyAverages = (columns, zone) => {
+    const buckets = Array.from({length: HOURS_PER_DAY},
+        () => ({download: tally(), upload: tally(), ping: tally(), jitter: tally()}));
+
+    // Every success that can be placed, in arrival order, as every aggregate.
+    for (let index = 0; index < columns.length; index++) {
+        if (columns.failed[index] === FAILED || Number.isNaN(columns.instant[index])) continue;
+
+        const bucket = buckets[localHourAt(zone, new Date(columns.instant[index]))];
+        // Readable at the door, so the count reported beside the hour's figure
+        // counts what the figure used, rather than presenting one readable row
+        // as an average backed by ten. The ping refuses the fabricated zero and
+        // the jitter an imported -1 placeholder, as their readers do.
+        add(bucket.download, readingOrNull(columns.download[index]));
+        add(bucket.upload, readingOrNull(columns.upload[index]));
+        add(bucket.ping, readingOrNull(columns.ping[index]));
+        add(bucket.jitter, readingOrNull(columns.jitter[index]));
+    }
 
     return buckets.map((bucket, hour) => ({
         hour,
-        download: averageOrNull(bucket.download),
-        upload: averageOrNull(bucket.upload),
+        download: meanOrNull(bucket.download),
+        upload: meanOrNull(bucket.upload),
         // Two decimals, like every other metric here: the column stopped being
         // an INTEGER, and rounding the bucket to a whole millisecond would
         // discard the precision at the last step.
-        ping: averageOrNull(bucket.ping),
-        jitter: averageOrNull(bucket.jitter),
-        // The readings the download figure above was taken over - the guarded
-        // push is what keeps this honest.
-        count: bucket.download.length
+        ping: meanOrNull(bucket.ping),
+        jitter: meanOrNull(bucket.jitter),
+        // The readings the download figure above was taken over.
+        count: bucket.download.count
     }));
 };
 
@@ -270,67 +534,56 @@ const loadedIncrease = (entry) => {
 };
 
 /**
- * What the line does under load across the whole range.
- *
- * Averaged over the tests that measured it, exactly as packet loss is. This
- * used to be the grade of the single newest test, taken from a request that
- * carried no date range at all - which put a figure about one moment beside
- * three aggregates about the range, and left it unchanged when the range moved.
- */
-/**
  * The added latency across the range, and the newest few readings behind it.
  *
- * Two inputs, because the two answers want different rows. The average is over
- * every success that measured it - a row whose `created` does not parse still
- * measured a real latency, and every other aggregate here counts it, so
- * dropping it would quietly change the figure. The trend is a timeline, and a
- * row with no placeable instant has no place on one.
- *
- * `placeable` arrives already sorted, from the copy buildStatistics builds for
- * everything that reads a timestamp. Sorting locally instead - which is what
- * this did - was wrong twice over: it repeated a sort the caller had already
- * paid for, and it sorted rows that had not been filtered by isPlaceable, so a
- * single unparseable `created` made the comparator return NaN. A NaN compares
- * as equal to everything, which makes the ordering non-transitive and lets V8
- * return an arbitrary permutation - defeating, on exactly the input it was
- * added to defend against, the guarantee it was added to make.
+ * Averaged over the tests that measured it, exactly as packet loss is. The
+ * average is over every success that measured it - a row whose `created` does
+ * not parse still measured a real latency, and every other aggregate here
+ * counts it, so dropping it would quietly change the figure. The trend is a
+ * timeline, and a row with no placeable instant has no place on one, so it is
+ * walked off `sorted`, the placeable rows already in order.
  */
-const loadedLatencyOver = (succeeded, placeable) => {
-    const measured = [];
-    for (const entry of succeeded) {
-        const increase = loadedIncrease(entry);
-        if (increase !== null) measured.push(increase);
-    }
+const loadedLatencyOver = (columns, sorted) => {
+    const view = {};
+    const increaseAt = (index) => {
+        view.ping = readingOrNull(columns.ping[index]);
+        view.downloadLatency = readingOrNull(columns.downloadLatency[index]);
+        view.uploadLatency = readingOrNull(columns.uploadLatency[index]);
+        return loadedIncrease(view);
+    };
 
-    // The trend needs only the latest measured rows, not an allocation and
-    // second latency calculation for the whole placeable history.
+    const measured = tally();
+    for (let index = 0; index < columns.length; index++)
+        if (columns.failed[index] !== FAILED) add(measured, increaseAt(index));
+
+    // The trend needs only the latest measured rows.
     const trend = [];
-    for (let index = placeable.length - 1; index >= 0 && trend.length < TREND_POINTS; index--) {
-        const {entry} = placeable[index];
-        if (!isSuccessfulTest(entry)) continue;
-        const increase = loadedIncrease(entry);
-        if (increase !== null) trend.push({created: entry.created, increase});
+    for (let position = sorted.length - 1; position >= 0 && trend.length < TREND_POINTS; position--) {
+        const index = sorted[position];
+        if (columns.failed[index] === FAILED) continue;
+        const increase = increaseAt(index);
+        if (increase !== null) trend.push({created: columns.createdAt(index), increase});
     }
 
     return {
-        increase: averageOrNull(measured,
-            (value) => round(value, INCREASE_DECIMALS)),
-        tests: measured.length,
+        increase: meanOrNull(measured, (value) => round(value, INCREASE_DECIMALS)),
+        tests: measured.count,
         // Oldest first, so time reads left to right the way the dots are drawn.
         trend: trend.reverse()
     };
 };
 
 /**
- * What a failed row's error reads as in the series.
+ * What a row's error reads as in the series.
  *
  * The operator gets the text as stored. Everyone else gets what every other
  * read route gives them - see viewerFacingError - because the series is the
- * same rows by another door: the tooltip of a failed point is its error.
+ * same rows by another door: the tooltip of a failed point is its error. A row
+ * with no record held a null error, which both readings answer as null.
  */
 const errorTextFor = (redactErrors) => redactErrors
-    ? (entry) => viewerFacingError(entry.provider, entry.error)
-    : (entry) => entry.error;
+    ? (record) => record === undefined ? null : viewerFacingError(record.provider, record.error)
+    : (record) => record === undefined ? null : record.error;
 
 const emptySeries = () => ({
     labels: [], failed: [], errors: [], failedCounts: [],
@@ -338,48 +591,39 @@ const emptySeries = () => ({
         downloadLatency: [], uploadLatency: []}
 });
 
-const fullSeries = (sorted, errorText) => ({
-    labels: sorted.map(point => new Date(point.time).toISOString()),
-    failed: sorted.map(({entry}) => isFailedTest(entry)),
-    errors: sorted.map(({entry}) => errorText(entry)),
-    // Null throughout: this path never buckets more than one test into a
-    // point, so there is no bucket-of-failures count to carry - only
-    // downsampledSeries's mixed bucket below ever produces one.
-    failedCounts: sorted.map(() => null),
-    data: {
-        // A gap where the latency was fabricated rather than measured, exactly
-        // as jitter and the loaded latencies below already draw an absent
-        // reading. The summary above this chart has skipped the fabricated zero
-        // since UNMEASURED_LATENCY was written; the line did not, so a range
-        // could report a minimum of 20 ms over a chart that visibly touched
-        // nought - the same instance answering one question two ways.
-        ping: sorted.map(({entry}) => isSuccessfulTest(entry) ? measuredPing(entry.ping) : null),
-        // Through usableFigure, the same reading the live write gives these
-        // columns: a history imported before the import refused negatives can
-        // hold -1 placeholders, and passed through they drew a jitter dipping
-        // below zero on a chart whose summary skipped the same row.
-        jitter: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.jitter) : null),
-        // usableFigure like the downsampled branch beside this one, not raw:
-        // a corrupt stored string shipped here reached the client as JSON
-        // text, where the chart's own average reducer concatenated it - the
-        // exact total-plus-value bug average() was fixed for, reproduced in
-        // the browser on every range small enough not to bucket - and an
-        // imported -1 placeholder drew a chart point below zero. Unreadable
-        // is a null, which the line already draws as a gap.
-        download: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.download) : null),
-        upload: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.upload) : null),
-        // usableFigure, matching the measuredOnly("time") read the downsampled
-        // branch gives the same column.
-        time: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.time) : null),
-        // Null where unmeasured - a gap in the line, like jitter. usableFigure
-        // answers null for the absent key of a row from before the columns
-        // existed, and for an imported negative alike.
-        downloadLatency: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.downloadLatency) : null),
-        uploadLatency: sorted.map(({entry}) => isSuccessfulTest(entry) ? usableFigure(entry.uploadLatency) : null)
-    }
-});
+const fullSeries = (columns, sorted, errorText) => {
+    // Null where the row failed or the reading is absent - a gap in the line.
+    // Every column was read through its reader at the door: the ping refuses
+    // the fabricated zero, the rest refuse corrupt text and imported -1
+    // placeholders, so the chart agrees with the summary drawn above it.
+    const measured = (column) =>
+        Array.from(sorted, (index) => columns.failed[index] === FAILED ? null : readingOrNull(column[index]));
 
-const downsampledSeries = (sorted, from, to, targetPoints, errorText) => {
+    return {
+        labels: Array.from(sorted, (index) => new Date(columns.instant[index]).toISOString()),
+        failed: Array.from(sorted, (index) => columns.failed[index] === FAILED),
+        errors: Array.from(sorted, (index) => errorText(columns.errorRecordAt(index))),
+        // Null throughout: this path never buckets more than one test into a
+        // point, so there is no bucket-of-failures count to carry - only
+        // downsampledSeries's mixed bucket below ever produces one.
+        failedCounts: Array.from(sorted, () => null),
+        data: {
+            ping: measured(columns.ping),
+            jitter: measured(columns.jitter),
+            download: measured(columns.download),
+            upload: measured(columns.upload),
+            time: measured(columns.duration),
+            downloadLatency: measured(columns.downloadLatency),
+            uploadLatency: measured(columns.uploadLatency)
+        }
+    };
+};
+
+// The series keys, each with the column it is drawn from.
+const SERIES_COLUMNS = [["ping", "ping"], ["jitter", "jitter"], ["download", "download"], ["upload", "upload"],
+    ["time", "duration"], ["downloadLatency", "downloadLatency"], ["uploadLatency", "uploadLatency"]];
+
+const downsampledSeries = (columns, sorted, from, to, targetPoints, errorText) => {
     const timeSpan = to.getTime() - from.getTime();
 
     // Zero when the range has no width and NaN when a bound itself does not
@@ -388,10 +632,10 @@ const downsampledSeries = (sorted, from, to, targetPoints, errorText) => {
     if (!Number.isFinite(timeSpan) || timeSpan <= 0) return emptySeries();
 
     const bucketSize = timeSpan / targetPoints;
-    const buckets = Array.from({length: targetPoints}, () => ({entries: [], errors: []}));
+    const buckets = Array.from({length: targetPoints}, () => ({valid: 0, errors: [], readings: null}));
 
-    sorted.forEach(({entry, time}) => {
-        const offset = time - from.getTime();
+    for (const index of sorted) {
+        const offset = columns.instant[index] - from.getTime();
         /*
          * Clamped at the top rather than dropped, and that is load-bearing.
          *
@@ -402,26 +646,33 @@ const downsampledSeries = (sorted, from, to, targetPoints, errorText) => {
          * "wake up" the bounds check below would silently drop the final
          * reading of every range.
          */
-        const index = Math.min(Math.floor(offset / bucketSize), targetPoints - 1);
+        const position = Math.min(Math.floor(offset / bucketSize), targetPoints - 1);
 
-        // Which leaves only the floor to check: the clamp already guarantees
-        // the ceiling, so asking for it again was dead. Written as `>= 0`
-        // rather than `< 0` so a NaN index - an entry whose `created` does not
-        // parse - is refused too, where both halves of the old test let it
-        // through to a buckets[NaN] that has no entries to push onto.
-        if (!(index >= 0)) return;
+        // Which leaves only the floor to check. Written as `>= 0` rather than
+        // `< 0` so a NaN position is refused too.
+        if (!(position >= 0)) continue;
 
-        buckets[index].entries.push(entry);
-        if (isFailedTest(entry)) buckets[index].errors.push(errorText(entry));
-    });
+        const bucket = buckets[position];
+        if (columns.failed[index] === FAILED) {
+            bucket.errors.push(errorText(columns.errorRecordAt(index)));
+            continue;
+        }
+
+        // Measured-only per metric, in the order the bucket's rows arrive:
+        // jitter and the loaded latencies are absent on some providers, a
+        // fabricated zero ping and an imported negative placeholder are not
+        // readings either, and none of them may drag a bucket's average.
+        bucket.valid++;
+        bucket.readings ??= Object.fromEntries(SERIES_COLUMNS.map(([key]) => [key, tally()]));
+        for (const [key, column] of SERIES_COLUMNS) add(bucket.readings[key], readingOrNull(columns[column][index]));
+    }
 
     const series = emptySeries();
 
-    buckets.forEach((bucket, index) => {
-        const midTime = from.getTime() + index * bucketSize + bucketSize / 2;
-        const valid = bucket.entries.filter(isSuccessfulTest);
+    buckets.forEach((bucket, position) => {
+        const midTime = from.getTime() + position * bucketSize + bucketSize / 2;
 
-        if (valid.length === 0) {
+        if (bucket.valid === 0) {
             if (bucket.errors.length === 0) return;
 
             series.labels.push(new Date(midTime).toISOString());
@@ -435,97 +686,24 @@ const downsampledSeries = (sorted, from, to, targetPoints, errorText) => {
             return;
         }
 
-        // Measured-only per metric: jitter and the loaded latencies are absent
-        // on some providers, and a null must not drag a bucket's average.
-        // Through usableFigure, like the full-resolution branch: an imported
-        // negative placeholder is not a reading either, and guarded on one
-        // branch only, the same range answered two ways depending on row
-        // count - 300 rows drew gaps, 301 bucketed the -1s back in.
-        const measuredOnly = (key) => valid
-            .map(entry => usableFigure(entry[key]))
-            .filter(value => value !== null);
-
         series.labels.push(new Date(midTime).toISOString());
         series.failed.push(bucket.errors.length > 0);
         // English, unconditionally: a proxied node older than failedCounts
         // below never sends that array at all, and this sentence is the only
-        // thing such a node's tooltip has ever had to read. lineChartConfig's
-        // tooltip prefers the translated one when failedCounts names a count,
-        // so a current server keeps writing this for no reader still on this
-        // build - never for one that just upgraded past it.
+        // thing such a node's tooltip has ever had to read.
         series.errors.push(bucket.errors.length > 0 ? `${bucket.errors.length} failed in period` : null);
-        // The same count the sentence above already names, sent again as a
-        // number rather than English prose: statistics.failed_in_period is
-        // what a current client composes it from instead. Parallel to errors
-        // and null everywhere that is not this exact mixed-bucket case - an
-        // absent failedCounts array (an older node's whole payload) is the
-        // signal to fall back to the sentence above; a null AT one index,
-        // once the array exists, is this index's own producer saying it has
-        // no count to give, not the array being missing.
+        // The same count as a number, which statistics.failed_in_period is
+        // what a current client composes from instead. Null everywhere that is
+        // not this exact mixed-bucket case.
         series.failedCounts.push(bucket.errors.length > 0 ? bucket.errors.length : null);
-        // Measured-only like the three below it: a fabricated zero folded into
-        // a bucket average is a dip of the wrong depth rather than a visible
-        // nought, which is the harder of the two to catch. Null when a bucket
-        // held nothing else, since a bucket with no reading has no latency.
-        series.data.ping.push(averageOrNull(valid.map(entry => measuredPing(entry.ping))));
-        series.data.jitter.push(averageOrNull(measuredOnly("jitter")));
-        // averageOrNull like every sibling, not the bare mean: these two
-        // columns are NOT NULL, which is why a raw average looked safe - but a
-        // corrupt stored string is not null, and a bucket holding one either
-        // concatenated its way to an eight-figure point or, cleaned, can come
-        // up with no reading at all. No reading is a gap, which is what null
-        // already draws on this chart.
-        series.data.download.push(averageOrNull(valid.map(entry => usableFigure(entry.download))));
-        series.data.upload.push(averageOrNull(valid.map(entry => usableFigure(entry.upload))));
-        // Measured-only like jitter and the two latencies above, not raw: `time`
-        // is the one measurement column in this block that is nullable, and
-        // average() folds a null in as nought while still counting it in the
-        // divisor - so one absent duration deflated the whole bucket, and the
-        // chart then disagreed with the summary figure printed above it, which
-        // has skipped nulls since mapRange was written.
-        series.data.time.push(averageOrNull(measuredOnly("time"), Math.round));
-        series.data.downloadLatency.push(averageOrNull(measuredOnly("downloadLatency")));
-        series.data.uploadLatency.push(averageOrNull(measuredOnly("uploadLatency")));
+        // A bucket with no reading of a metric has no figure for it: a gap,
+        // which is what null already draws. `time` is a whole number of
+        // seconds; everything else carries two decimals.
+        for (const [key] of SERIES_COLUMNS)
+            series.data[key].push(meanOrNull(bucket.readings[key], key === "time" ? Math.round : round));
     });
 
     return series;
-};
-
-/**
- * What the testing itself cost in traffic, summed over the rows that measured
- * it.
- *
- * Over the entries rather than the successes: the figure is about traffic, not
- * about outcomes, and a failure that moved data still moved it. Rows from
- * before the transfer columns existed - and runs whose provider reported
- * nothing - hold nulls, which stay out of the sums the way an unmeasured
- * packet loss stays out of its average: a total over part of the range is a
- * lower bound, not a claim about rows that said nothing. Null when no row
- * measured either direction, because absence is not a total of nought.
- */
-const transferTotals = (entries) => {
-    let download = null;
-    let upload = null;
-
-    // Through the shared reader, like every other column: it refuses the -1
-    // placeholders a history imported before byteCount existed can hold
-    // (summed as bytes each one *subtracts* from the total), and it reads a
-    // count that arrived as text - a CSV import, a row through a node's proxy
-    // - which a private `typeof === "number"` check silently dropped.
-    const moved = (value) => usableFigure(value);
-
-    for (const entry of entries) {
-        const downloaded = moved(entry.bytesDownloaded);
-        const uploaded = moved(entry.bytesUploaded);
-        if (downloaded !== null) download = (download ?? 0) + downloaded;
-        if (uploaded !== null) upload = (upload ?? 0) + uploaded;
-    }
-
-    return {
-        download,
-        upload,
-        total: download === null && upload === null ? null : (download ?? 0) + (upload ?? 0)
-    };
 };
 
 const MS_PER_SECOND = 1000;
@@ -542,7 +720,7 @@ const MS_PER_SECOND = 1000;
  * already that timeline. Ties keep the first: the earlier outage is the one
  * the range met first, and flapping between equals redraws nothing.
  */
-const reliabilityOver = (sorted) => {
+const reliabilityOver = (columns, sorted) => {
     let longest = null;
     let lastFailureAt = null;
     let largestGap = null;
@@ -553,43 +731,40 @@ const reliabilityOver = (sorted) => {
      * interleaved.
      *
      * Read as row-adjacency it was wrong in both directions on any instance
-     * with more than one target, and plausible on screen both times: a NAS
-     * that failed every run for a week reported a streak of 1, because a
-     * working WAN test sat between each of its failures - and one bad round on
-     * four targets reported 4, which reads as an outage and was four different
-     * lines blinking once. The digest is instance-wide by construction, so its
-     * headline outage figure was the one nothing on screen could correct.
+     * with more than one target: a NAS that failed every run for a week
+     * reported a streak of 1, because a working WAN test sat between each of
+     * its failures - and one bad round on four targets reported 4, which
+     * reads as an outage and was four different lines blinking once.
      *
-     * Keyed on the id with null for absent, so a history from before targets
-     * existed and a single-target instance are each one line and read exactly
-     * as they did.
+     * Keyed on the interned id, absent as null, so a history from before
+     * targets existed and a single-target instance are each one line.
      */
     const running = new Map();
 
-    for (const point of sorted) {
-        const {entry, time} = point;
+    for (const index of sorted) {
+        const time = columns.instant[index];
         if (previous !== null) {
-            const seconds = Math.round(
-                (time - previous.time) / MS_PER_SECOND);
+            const seconds = Math.round((time - columns.instant[previous]) / MS_PER_SECOND);
 
             if (largestGap === null || seconds > largestGap.seconds)
-                largestGap = {seconds, from: previous.entry.created, to: entry.created};
+                largestGap = {seconds, from: columns.createdAt(previous), to: columns.createdAt(index)};
         }
-        previous = point;
+        previous = index;
 
-        const line = entry.targetId ?? null;
+        const line = columns.target[index];
 
-        if (!isFailedTest(entry)) {
+        if (columns.failed[index] !== FAILED) {
             running.delete(line);
             continue;
         }
 
-        lastFailureAt = entry.created;
+        const created = columns.createdAt(index);
+        lastFailureAt = created;
 
         const carried = running.get(line);
         const current = carried === undefined
-            ? {count: 1, from: entry.created, to: entry.created}
-            : {count: carried.count + 1, from: carried.from, to: entry.created};
+            ? {count: 1, from: created, to: created}
+            : {count: carried.count + 1, from: carried.from, to: created};
 
         running.set(line, current);
 
@@ -603,147 +778,107 @@ const reliabilityOver = (sorted) => {
  * Aggregates speedtest rows into the statistics payload the client renders.
  *
  * Pure: it never touches the database, so every branch is directly testable.
+ * The controller fills a StatisticsColumns page by page and calls
+ * statisticsOver itself; this is the same answer for rows already in hand.
  *
  * @param entries rows already restricted to the requested range, any order
+ * @param range   {from, to} Date boundaries, used for bucketing
+ * @param options see statisticsOver
+ */
+export const buildStatistics = (entries, range, options = {}) =>
+    statisticsOver(columnsOf(entries), range, options);
+
+/**
+ * The statistics payload, from rows already taken into columns.
+ *
+ * @param columns a StatisticsColumns holding the rows of the range
  * @param range   {from, to} Date boundaries, used for bucketing and the echo
  * @param options {zone} the clock hour-of-day bucketing is done on, or
  *                {offsetMinutes} a bare UTC offset to build one from,
  *                {maxPoints} requested chart resolution, clamped to the range
  *                the constants above allow,
  *                {limitsFor} (targetId) => the optimal values a row of that
- *                target is graded against, for the target-met count
+ *                target is graded against, for the target-met count,
+ *                {redactErrors} true for a reader who is not the operator
  */
-export const buildStatistics = (entries, {from, to}, options = {}) => {
+export const statisticsOver = (columns, {from, to}, options = {}) => {
     const {offsetMinutes, zone, maxPoints} = options;
-    // True for a reader who is not the operator - see errorTextFor.
     const errorText = errorTextFor(options.redactErrors === true);
     // An offset outside any real zone is answered on the server's own clock
     // rather than thrown on: this is pure aggregation, and the route it came
     // through is where a nonsense parameter earns its 400.
     const bucketZone = zone ?? zoneFromOffset(offsetMinutes).zone ?? serverZone;
     const targetPoints = clampPoints(maxPoints);
-    const succeeded = [];
-    const placeableSuccesses = [];
-    // Parse once per row, locally to this aggregation. Sorting used to
-    // parse both operands on every comparison, then each timeline parsed them
-    // again. Keep the original rows and stable tie ordering intact.
-    const sorted = [];
-    let ordered = true;
-    let previousTime = -Infinity;
-    for (const entry of entries) {
-        const successful = isSuccessfulTest(entry);
-        if (successful) succeeded.push(entry);
-        const time = new Date(entry.created).getTime();
-        // Undateable rows still count in aggregates, but have no position on
-        // charts, hourly averages or the reliability timeline.
-        if (Number.isNaN(time)) continue;
-        if (time < previousTime) ordered = false;
-        previousTime = time;
-        const point = {entry, time};
-        sorted.push(point);
-        // Retain input order for the hourly sums, just as for every aggregate.
-        if (successful) placeableSuccesses.push(point);
-    }
-    // Database readers already order by created, and grouping retains that
-    // order. Check the actual instants so legacy timestamp spellings and pure
-    // callers with unsorted inputs still take the stable numeric sort.
-    if (!ordered) sorted.sort((a, b) => a.time - b.time);
+    const sorted = columns.timeline();
 
     const series = sorted.length <= targetPoints
-        ? fullSeries(sorted, errorText)
-        : downsampledSeries(sorted, from, to, targetPoints, errorText);
+        ? fullSeries(columns, sorted, errorText)
+        : downsampledSeries(columns, sorted, from, to, targetPoints, errorText);
 
-    // Measured, not merely present: an imported history can hold -1
-    // placeholders in the nullable columns, and admitted here one of them set
-    // the range's minimum jitter and dragged its average - the summary
-    // disagreeing with the chart drawn under it, which shows the same row as
-    // a gap.
-    const withJitter = succeeded.filter(entry => usableFigure(entry.jitter) !== null);
-    // The same shape, for the same reason: a successful test can carry a
-    // latency nobody measured - see UNMEASURED_LATENCY - and averaging that
-    // fabricated zero as a 0 ms reading dragged every ping figure down while
-    // the alert gate, reading the same row, refused it.
-    const withPing = succeeded.filter(entry => measuredPing(entry.ping) !== null);
+    const pings = columns.successReadings("ping");
+    const jitters = columns.successReadings("jitter");
 
     return {
         tests: {
-            total: entries.length,
-            failed: entries.length - succeeded.length
+            total: columns.length,
+            failed: columns.length - columns.succeeded
         },
         // Averaged over the tests that measured it: only Ookla reports packet
         // loss, and the unmeasured rows must not drag the average. Null when no
-        // test in the range measured any - absence is not a clean line. Through
-        // usableFigure for the reason withJitter reads through it.
-        packetLoss: averageOrNull(succeeded
-            .map(entry => usableFigure(entry.packetLoss))
-            .filter(value => value !== null)),
+        // test in the range measured any - absence is not a clean line.
+        packetLoss: columns.packetLoss(),
         // mapFixed rather than mapRounded: the latency carries decimals now, and
-        // `time` below is the only column here that is genuinely whole.
-        ping: mapFixed(withPing, "ping"),
-        jitter: mapFixed(withJitter, "jitter"),
-        download: mapFixed(succeeded, "download", usableFigure),
-        upload: mapFixed(succeeded, "upload", usableFigure),
-        // usableFigure, like both chart branches: a -1 here is an imported
-        // placeholder, and read raw the span card printed "-1s" beside a chart
-        // drawing the same row as a gap.
-        time: mapRounded(succeeded, "time", usableFigure),
-        dataUsed: transferTotals(entries),
-        reliability: reliabilityOver(sorted),
-        // How often the line delivered, by the verdict every row already wears:
-        // a test counts as met when each figure it measured earns the good
-        // grade against its target's optimal values. Over the successes only -
-        // a failure's placeholders are not readings - and null when the caller
-        // handed in no way to resolve a row's limits, which the client reads as
-        // a row that does not render. See targetLimits.js for the rule.
-        targetMet: targetMetOver(succeeded, options.limitsFor),
+        // `time` below is the only column here that is genuinely whole. Each
+        // reads the success's cleaned reading, so a fabricated zero ping, an
+        // imported -1 placeholder and corrupt text are all left out, as the
+        // chart leaves them out.
+        ping: mapFixed(columns.successes(), "ping"),
+        jitter: mapFixed(columns.successes(), "jitter"),
+        download: mapFixed(columns.successes(), "download", usableFigure),
+        upload: mapFixed(columns.successes(), "upload", usableFigure),
+        time: mapRounded(columns.successes(), "time", usableFigure),
+        // Over the entries rather than the successes: the figure is about
+        // traffic, not about outcomes, and a failure that moved data still
+        // moved it. Null when no row measured either direction, because
+        // absence is not a total of nought.
+        dataUsed: columns.transferTotals(),
+        reliability: reliabilityOver(columns, sorted),
+        // How often the line delivered, by the verdict every row already wears.
+        // Over the successes only, and null when the caller handed in no way to
+        // resolve a row's limits. See targetLimits.js for the rule.
+        targetMet: targetMetOver(columns.successes(), options.limitsFor),
         data: series.data,
         labels: series.labels,
         failed: series.failed,
         errors: series.errors,
         // Undefined only ever at the whole-payload level, not per-index: a
-        // node built before this existed omits the key entirely (JSON drops
-        // it), which is what lets the client tell "too old to send a count"
-        // apart from "this point has none" - Statistics.jsx's own
-        // askedCompare === undefined check is the same cross-version idiom.
+        // node built before this existed omits the key entirely, which is what
+        // lets the client tell "too old to send a count" apart from "this
+        // point has none".
         failedCounts: series.failedCounts,
-        hourlyAverages: buildHourlyAverages(placeableSuccesses, bucketZone),
+        hourlyAverages: buildHourlyAverages(columns, bucketZone),
         consistency: {
-            download: consistencyScore(succeeded.map(entry => usableFigure(entry.download))),
-            upload: consistencyScore(succeeded.map(entry => usableFigure(entry.upload))),
+            download: consistencyScore(columns.successReadings("download")),
+            upload: consistencyScore(columns.successReadings("upload")),
             ping: {
-                // `deviation`, not `stdDev` like the speeds above: the speeds
-                // feed a consistency percentage whose formula wants the
-                // standard deviation, while this figure is read directly by a
-                // person - so it is the median kind, and named for what it is.
-                deviation: roundOrNull(medianAbsoluteDeviation(withPing.map(entry => measuredPing(entry.ping)))),
-                jitter: averageOrNull(withJitter.map(entry => usableFigure(entry.jitter)))
+                // `deviation`, not `stdDev` like the speeds above: this figure
+                // is read directly by a person - so it is the median kind.
+                deviation: roundOrNull(medianAbsoluteDeviation(pings)),
+                jitter: averageOrNull(jitters)
             },
             // The aggregate over every success, the trend over the ones that
             // can be placed on a timeline - already sorted, above.
-            loadedLatency: loadedLatencyOver(succeeded, sorted)
+            loadedLatency: loadedLatencyOver(columns, sorted)
         },
         dataPoints: series.labels.length,
         // The rows the chart could actually draw, which is the same count the
-        // branch above is chosen on. `entries.length` counted rows that never
-        // reached a bucket, so the note read "showing 287 of 1,000" for a range
-        // whose undateable rows were never on the chart to begin with.
+        // branch above is chosen on - undateable rows never reach a bucket.
         rawDataPoints: sorted.length,
-        // From the same count the branch above is chosen on. Computed from
-        // `entries` it disagreed with the branch whenever a row in range could
-        // not be placed on a timeline: with 301 rows of which one has an
-        // unparseable timestamp, the full series is returned - every point
-        // drawn, nothing averaged - beneath a note reading "Averaged · showing
-        // 300 of 301", which invites the reader to ask for a detail they are
-        // already looking at.
         downsampled: sorted.length > targetPoints,
         // Echoed so the client can tell "you are already seeing every test"
         // apart from "there is more detail available if you ask for it".
         maxDataPoints: targetPoints
         // No dateRange: listStatistics owns the echo, because only it knows
-        // which window was covered - all time is answered over the extent of
-        // the tests rather than over the range asked for. This used to return a
-        // day count here as well, and the controller spread its own dateRange
-        // over the top one line later, so the figure was computed on every
-        // request and thrown away before the response was written.
+        // which window was covered.
     };
 };

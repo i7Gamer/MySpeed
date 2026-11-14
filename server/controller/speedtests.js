@@ -1,6 +1,6 @@
 import tests from '../models/Speedtests.js';
 import { Op } from 'sequelize';
-import { buildStatistics, STATISTICS_COLUMNS } from '../util/statistics.js';
+import { columnsOf, STATISTICS_COLUMNS, StatisticsColumns, statisticsOver } from '../util/statistics.js';
 import { resolveLimits } from '../util/targetLimits.js';
 import { previousRange, shiftedRange, truncateToElapsed } from '../util/dateRange.js';
 import { FAILED_TEST_FILTER, SUCCESSFUL_TEST_FILTER, impossibleMeasurement, REQUIRED_MEASUREMENTS } from '../util/testOutcome.js';
@@ -711,24 +711,15 @@ export const targetFilter = (target) => {
 // (create() uses toISOString(), importTests() rejects anything else) - so a
 // lexicographic BETWEEN is chronologically correct on every supported backend.
 // Filtering here rather than in JS keeps the whole table out of memory.
-const findInRange = async ({from, to}, query = {}, target = undefined) => findEvery({
-    where: {
-        created: {[Op.between]: [from.toISOString(), to.toISOString()]},
-        ...targetFilter(target)
-    },
-    ...query
+const rangeWhere = ({from, to}, target = undefined) => ({
+    created: {[Op.between]: [from.toISOString(), to.toISOString()]},
+    ...targetFilter(target)
 });
 
-/**
- * How the rows a summary is built from are read.
- *
- * Only the columns the aggregation looks at, because a wide range holds all of
- * them in memory at once and the rest of a row is text nothing there reads -
- * see STATISTICS_COLUMNS. `raw` skips building a model instance per row, which
- * nothing here needs either: buildStatistics only reads properties. The export
- * below takes the whole row and so passes none of this.
- */
-const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
+const findInRange = async (range, query = {}, target = undefined) => findEvery({
+    where: rangeWhere(range, target),
+    ...query
+});
 
 /**
  * The same read plus the one column the aggregation itself never looks at:
@@ -767,6 +758,69 @@ const STATISTICS_QUERY = {attributes: STATISTICS_COLUMNS, raw: true};
 export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS], raw: true};
 
 /**
+ * How many rows one page of a summary read holds.
+ *
+ * The rows of a page are the only row objects alive at once - each is taken
+ * into a StatisticsColumns and dropped - so this bounds the transient part of a
+ * read whatever the range: a year of minutely testing is a hundred pages, not
+ * half a million objects. Large enough that the per-query overhead is noise.
+ */
+export const STATISTICS_PAGE_ROWS = 5000;
+
+// The page read: the summary's columns plus the key the next page resumes after.
+const PAGED_ROWS_QUERY = {...SUMMARISED_ROWS_QUERY, attributes: [...SUMMARISED_ROWS_QUERY.attributes, "id"]};
+const PAGE_ORDER = [["created", "ASC"], ["id", "ASC"]];
+
+/**
+ * Hands every row matching `where` to `visit`, oldest first, a page at a time.
+ *
+ * Keyset rather than OFFSET pagination, so each page is an index range on
+ * (created, id) rather than a walk past every row already read. Ordered by
+ * created as findEvery orders, with the id breaking ties - the same rowid order
+ * sqlite's index on created already returns ties in.
+ *
+ * Rows with no created at all sort first on both backends, and a cursor on
+ * created cannot step through them (nothing compares greater than NULL), so
+ * they are read first, by id, before the timeline proper.
+ *
+ * Exported, with the page size a parameter, for the test that pages a real
+ * database a few rows at a time.
+ */
+export const forEachSummarisedRow = async (where, visit, pageRows = STATISTICS_PAGE_ROWS) => {
+    const read = (after) => tests.findAll({
+        ...PAGED_ROWS_QUERY,
+        where: {[Op.and]: [where, after]},
+        order: PAGE_ORDER,
+        limit: pageRows
+    });
+    const readAll = async (firstPage, nextPage) => {
+        for (let page = await read(firstPage); ; page = await read(nextPage(page.at(-1)))) {
+            for (const row of page) visit(row);
+            if (page.length < pageRows) return;
+        }
+    };
+
+    // Any condition on created already refuses a NULL one - a ranged read has
+    // none to find - so only an unbounded read pays for the extra query. The
+    // batch promises one scan per window, and holds the query count to it.
+    if (where.created === undefined)
+        await readAll({created: null}, (last) => ({created: null, id: {[Op.gt]: last.id}}));
+    // The range half on created alone, so the read stays an index range; the
+    // tie on the last instant read is settled by the id.
+    await readAll({created: {[Op.ne]: null}}, (last) => ({[Op.and]: [
+        {created: {[Op.gte]: last.created}},
+        {[Op.or]: [{created: {[Op.gt]: last.created}}, {id: {[Op.gt]: last.id}}]}
+    ]}));
+};
+
+/** The rows matching `where`, taken into one StatisticsColumns. */
+const readColumns = async (where) => {
+    const columns = new StatisticsColumns(await tests.count({where}));
+    await forEachSummarisedRow(where, (row) => columns.append(row));
+    return columns;
+};
+
+/**
  * The distinct targets the summarised rows belong to, a row that names none
  * counted as null.
  *
@@ -776,8 +830,11 @@ export const SUMMARISED_ROWS_QUERY = {attributes: [...STATISTICS_COLUMNS], raw: 
  * compares these against target ids, and undefined would compare equal to
  * nothing while reading - in a log, in a test failure - exactly like the
  * absence it stands for.
+ *
+ * Takes the StatisticsColumns a summary was read into, or rows in hand.
  */
-export const targetsPresent = (entries) => [...new Set(entries.map((entry) => entry.targetId ?? null))];
+export const targetsPresent = (entries) =>
+    (entries instanceof StatisticsColumns ? entries : columnsOf(entries)).targetIds();
 
 // What a period-over-period comparison actually uses: the summary figures the
 // panels show. The series, labels and hourly buckets are deliberately not
@@ -825,7 +882,7 @@ const comparisonWindow = (range, options) => {
  * the whole point of the batch being that N targets cost one scan and not N.
  */
 const comparisonSummary = (entries, window, options) => {
-    const statistics = buildStatistics(entries, window, options);
+    const statistics = statisticsOver(entries, window, options);
 
     return {
         ...Object.fromEntries(SUMMARY_KEYS.map((key) => [key, statistics[key]])),
@@ -858,7 +915,7 @@ const previousSummary = async (range, options) => {
     // window compared against everyone's previous window would report a delta
     // between two different questions.
     return comparisonSummary(
-        await findInRange(window, STATISTICS_QUERY, options.target), window, options);
+        await readColumns(rangeWhere(window, options.target)), window, options);
 };
 
 /**
@@ -870,25 +927,18 @@ const previousSummary = async (range, options) => {
  * the whole history as a handful of points.
  */
 const extentOf = (entries) => {
-    // An instance that has never run a test has no extent at all; this moment is
-    // the one window that is certainly empty and certainly valid.
-    if (entries.length === 0) return {from: new Date(), to: new Date()};
+    // The placeable instants only: a row whose created does not parse cannot
+    // bound a window it has no place in - Math.min against NaN is NaN, so one
+    // of them turned both bounds into Invalid Dates, which the dateRange echo
+    // below throws on and the chart bucketing reads as a range of no width.
+    const extent = entries.extent();
 
-    const {first, last} = entries.reduce((extent, entry) => {
-        const time = new Date(entry.created).getTime();
+    // An instance that has never run a test - or whose every row is
+    // undateable - has no extent at all; this moment is the one window that is
+    // certainly empty and certainly valid.
+    if (extent === null) return {from: new Date(), to: new Date()};
 
-        // A row whose created does not parse cannot bound a window it has no
-        // place in. Math.min against NaN is NaN, so one of them turned both
-        // bounds into Invalid Dates - which the dateRange echo below throws on,
-        // and which the chart bucketing reads as a range of no width.
-        if (Number.isNaN(time)) return extent;
-
-        return {first: Math.min(extent.first, time), last: Math.max(extent.last, time)};
-    }, {first: Infinity, last: -Infinity});
-
-    // Every row the instance holds is undateable, which is the empty extent
-    // again: there is no window its tests can be said to cover.
-    if (!Number.isFinite(first)) return {from: new Date(), to: new Date()};
+    const {first, last} = extent;
 
     // A single test - or several sharing one instant - is an extent of zero
     // width, and the bucketing divides by it.
@@ -947,7 +997,7 @@ const summarise = (entries, range, options, previous) => {
     const elapsedDays = elapsedDaysOf(range, options.now);
 
     return {
-        ...buildStatistics(entries, covered, options),
+        ...statisticsOver(entries, covered, options),
         // Which targets these figures were actually built from. The client
         // cannot work that out from the target list alone - a single-target
         // instance still holds the rows of every target it has deleted, and
@@ -1020,10 +1070,7 @@ export const listStatistics = async (range, options = {}) => {
     // limits ride along the same way, so the previous window's target-met count
     // is judged by the same optima as this one's.
     const shared = {...options, now: options.now ?? new Date(), limitsFor: await limitsResolver()};
-    const targetWhere = options.target !== undefined ? {where: targetFilter(options.target)} : {};
-    const entries = range
-        ? await findInRange(range, SUMMARISED_ROWS_QUERY, options.target)
-        : await findEvery({...SUMMARISED_ROWS_QUERY, ...targetWhere});
+    const entries = await readColumns(range ? rangeWhere(range, options.target) : targetFilter(options.target));
 
     // Undefined rather than null when nothing asked for a comparison, which is
     // what leaves the key off the payload altogether - see summarise.
@@ -1050,11 +1097,14 @@ export const listStatistics = async (range, options = {}) => {
  * export, a test older than targets) lands on the key "null", which no
  * digits-only id can be, so it is dropped rather than folded into whichever
  * entry it was nearest.
+ *
+ * Each row is taken straight into its target's StatisticsColumns as its page
+ * arrives, so no target's rows are ever held as objects.
  */
-const groupByTarget = (entries, ids) => {
-    const grouped = new Map(ids.map((id) => [String(id), []]));
+const readByTarget = async (where, ids) => {
+    const grouped = new Map(ids.map((id) => [String(id), new StatisticsColumns()]));
 
-    for (const entry of entries) grouped.get(String(entry.targetId))?.push(entry);
+    await forEachSummarisedRow(where, (row) => grouped.get(String(row.targetId))?.append(row));
 
     return grouped;
 };
@@ -1101,11 +1151,7 @@ export const listStatisticsByTarget = async (range, ids, options = {}) => {
     // latestOfTargets keeps, for the same reason.
     if (wanted.length === 0) return {};
 
-    const entries = range
-        ? await findInRange(range, SUMMARISED_ROWS_QUERY, wanted)
-        : await findEvery({...SUMMARISED_ROWS_QUERY, where: targetFilter(wanted)});
-
-    const rows = groupByTarget(entries, wanted);
+    const rows = await readByTarget(range ? rangeWhere(range, wanted) : targetFilter(wanted), wanted);
 
     /*
      * The comparison window is a property of the range, so every target is
@@ -1117,7 +1163,7 @@ export const listStatisticsByTarget = async (range, ids, options = {}) => {
      */
     const comparison = range && options.compare ? comparisonWindow(range, shared) : undefined;
     const comparisonRows = comparison
-        ? groupByTarget(await findInRange(comparison, STATISTICS_QUERY, wanted), wanted)
+        ? await readByTarget(rangeWhere(comparison, wanted), wanted)
         : null;
 
     const previousFor = (key) => {
