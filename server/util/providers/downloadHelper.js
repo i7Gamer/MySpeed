@@ -3,9 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { get } from 'node:https';
 import { createHash, randomBytes } from 'node:crypto';
-import decompress from '@xhmikosr/decompress';
-import decompressTarGz from '@xhmikosr/decompress-targz';
-import decompressUnzip from '@xhmikosr/decompress-unzip';
+import { lazyImport } from '../lazyImport.js';
 
 /**
  * What a refused download is, as its own type.
@@ -248,7 +246,17 @@ export const RUNTIME_LIBRARY_MODE = 0o644;
 const PRIVILEGED_MODE_BITS = 0o7000;
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 const DRIVE_PREFIX = /^[a-z]:/i;
-const ARCHIVE_PLUGINS = [decompressTarGz(), decompressUnzip()];
+// The archive stack is only needed while a CLI is being installed - once per
+// provider and version - so it is loaded then instead of costing every running
+// instance 2-8 MiB of RSS from startup.
+const loadArchiveTools = lazyImport(async () => {
+    const [{default: decompress}, {default: decompressTarGz}, {default: decompressUnzip}] = await Promise.all([
+        import('@xhmikosr/decompress'),
+        import('@xhmikosr/decompress-targz'),
+        import('@xhmikosr/decompress-unzip')
+    ]);
+    return {decompress, plugins: [decompressTarGz(), decompressUnzip()]};
+});
 const installLocks = new Map();
 
 const lockKey = (outputDir) => path.resolve(outputDir);
@@ -330,7 +338,8 @@ const regexMatches = (regex, value) => {
 };
 
 const decodeSelected = async (archivePath, fileRegex, outputName, requiredFiles) => {
-    const entries = await decompress(archivePath, {plugins: ARCHIVE_PLUGINS});
+    const {decompress, plugins} = await loadArchiveTools();
+    const entries = await decompress(archivePath, {plugins});
     const matches = entries.filter((entry) => regexMatches(fileRegex, entry.path));
 
     if (matches.length === 0)

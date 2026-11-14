@@ -126,3 +126,92 @@ describe("a statement the shim is given no callback for", () => {
         assert.deepEqual(log.lines, []);
     });
 });
+
+/**
+ * bun:sqlite statements hold native memory the garbage collector does not
+ * count as pressure, so an idle server that prepares a statement per query
+ * grew by hundreds of MiB before anything reclaimed it. Every statement the
+ * shim prepares is finalized once used - on success and on failure alike.
+ * node:sqlite statements have no finalize; the shim must not require one.
+ */
+describe("the statements the shim prepares", () => {
+    const tracked = (db) => {
+        const finalized = [];
+        const prepare = db.db.prepare.bind(db.db);
+        db.db.prepare = (sql) => {
+            const statement = prepare(sql);
+            const entry = {sql, done: false};
+            finalized.push(entry);
+            return new Proxy(statement, {
+                get(target, key) {
+                    if (key === "finalize") return () => { entry.done = true; };
+                    const value = target[key];
+                    return typeof value === "function" ? value.bind(target) : value;
+                }
+            });
+        };
+        return finalized;
+    };
+    const quietly = (fn) => {
+        const original = console.error;
+        console.error = () => {};
+        try { fn(); } finally { console.error = original; }
+    };
+
+    it("finalizes a statement after run and after all", () => {
+        const db = new Database(":memory:");
+        const statements = tracked(db);
+        try {
+            db.run("CREATE TABLE t (id INTEGER)");
+            db.run("INSERT INTO t VALUES (?)", [1]);
+            db.all("SELECT * FROM t");
+        } finally {
+            db.close();
+        }
+        assert.equal(statements.length, 3);
+        assert.ok(statements.every(s => s.done), JSON.stringify(statements));
+    });
+
+    it("finalizes a statement whose execution throws", () => {
+        const db = new Database(":memory:");
+        db.run("CREATE TABLE t (id INTEGER PRIMARY KEY)");
+        db.run("INSERT INTO t VALUES (1)");
+        const statements = tracked(db);
+        try {
+            quietly(() => {
+                db.run("INSERT INTO t VALUES (1)");
+                db.all("SELECT * FROM t WHERE id = ?", [{bad: Symbol("x")}]);
+            });
+        } finally {
+            db.close();
+        }
+        assert.ok(statements.length >= 1);
+        assert.ok(statements.every(s => s.done), JSON.stringify(statements));
+    });
+
+    it("works with a driver whose statements have no finalize", () => {
+        const db = new Database(":memory:");
+        const prepare = db.db.prepare.bind(db.db);
+        db.db.prepare = (sql) => {
+            const statement = prepare(sql);
+            return new Proxy(statement, {
+                get(target, key) {
+                    if (key === "finalize") return undefined;
+                    const value = target[key];
+                    return typeof value === "function" ? value.bind(target) : value;
+                }
+            });
+        };
+        let rows;
+        try {
+            db.run("CREATE TABLE t (id INTEGER)");
+            db.all("SELECT 1 AS one", (error, result) => { rows = result; });
+        } finally {
+            db.close();
+        }
+        return new Promise((resolve) => process.nextTick(() => {
+            assert.deepEqual(rows.map(r => ({...r})), [{one: 1}]);
+            resolve();
+        }));
+    });
+});

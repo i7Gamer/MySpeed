@@ -144,8 +144,8 @@ describe("the read paths", () => {
                 `${reader} hands rows out without presenting the hop table`);
         });
 
-    it("exportTests names the column on every row", () => {
-        assert.match(bodyOf(controller, "export const exportTests ="), /hops: parsedHops\(entry\.hops\)/,
+    it("the dashboard export names the column on every row", () => {
+        assert.match(bodyOf(controller, "const exportRow ="), /hops: parsedHops\(entry\.hops\)/,
             "the export drops or mis-encodes the hop table");
     });
 

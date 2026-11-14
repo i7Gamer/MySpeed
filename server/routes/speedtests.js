@@ -14,7 +14,7 @@ import { ALL_TIME_RANGE, parseDateRange } from '../util/dateRange.js';
 import { resolveTimezone } from '../util/timezone.js';
 import { stripConnectionIdentity } from '../util/connectionIdentity.js';
 import { isUntrustedReader } from '../util/untrustedReader.js';
-import { toCsv } from '../util/csv.js';
+import { streamCsv, streamJsonArray } from '../util/exportStream.js';
 import { isFailedTest } from '../util/testOutcome.js';
 import * as timer from '../tasks/timer.js';
 
@@ -353,18 +353,25 @@ app.get("/export", password(true), async (req, res) => {
     if (target !== undefined && target === null)
         return res.status(400).json({message: "You need to provide a correct number in the target parameter"});
 
-    const exportData = await tests.exportTests(range, target);
-
-    if (isUntrustedReader(req)) exportData.forEach(stripConnectionIdentity);
+    // Streamed page by page: built as one array and one string, a year of
+    // five-minute tests peaked past 250 MB (issue #135). The bytes and headers
+    // are what res.send(toCsv(...)) and res.json(...) answered.
+    const redact = isUntrustedReader(req);
+    const pages = (async function* () {
+        for await (const rows of tests.exportPages(range, target)) {
+            if (redact) rows.forEach(stripConnectionIdentity);
+            yield rows;
+        }
+    })();
 
     if (format === 'csv') {
-        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Type', 'text/csv; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="myspeed-export-${from}-to-${to}.csv"`);
-        res.send(toCsv(exportData));
+        await streamCsv(res, pages);
     } else {
-        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
         res.setHeader('Content-Disposition', `attachment; filename="myspeed-export-${from}-to-${to}.json"`);
-        res.json(exportData);
+        await streamJsonArray(res, pages, {compact: true});
     }
 });
 
