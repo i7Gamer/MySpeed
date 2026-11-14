@@ -1293,20 +1293,7 @@ export const latestOfTargets = async (targetIds) => {
 // about what leaves the database. The cost is that a new column is exported as
 // empty until it is named here - which is how the server name and host stayed
 // out of every export from the moment they were added.
-export const exportTests = async (range, target = undefined) => {
-    // Resolved to names, because an export is read by people and other tools -
-    // and by the import on another instance: a bare targetId is meaningless
-    // outside this one, while the name says which line the row measured, and
-    // importedTargetId resolves it back against the local targets on a restore.
-    // Orphaned and pre-target rows export null.
-    //
-    // Through the shared index rather than an object built here: the lookup is
-    // by a value an older import could have left as a string, and one
-    // `names["toString"]` answering with Object.prototype's function is
-    // exactly the trap this file's neighbours keep being fixed for.
-    const {byId: names} = await targetsController.readTargetIndex();
-
-    return (await findInRange(range, {}, target)).map(entry => ({
+const exportRow = (entry, names) => ({
     id: entry.id,
     ping: entry.ping,
     jitter: entry.jitter,
@@ -1341,5 +1328,64 @@ export const exportTests = async (range, target = undefined) => {
     // Named on every row, null where nothing was traced: the export names
     // every column the model has, and the CSV writes the array as JSON text.
     hops: parsedHops(entry.hops)
-}));
+});
+
+/** Oldest first, ties settled by id - the cursor below pages by exactly these. */
+const EXPORT_ORDER = [["created", "ASC"], ["id", "ASC"]];
+
+const exportFilter = (range, target, after) => {
+    const where = {
+        created: {[Op.between]: [range.from.toISOString(), range.to.toISOString()]},
+        ...targetFilter(target)
+    };
+    if (!after) return where;
+
+    return {[Op.and]: [where, {
+        [Op.or]: [
+            {created: {[Op.gt]: after.created}},
+            {created: after.created, id: {[Op.gt]: after.id}}
+        ]
+    }]};
+};
+
+/**
+ * The dashboard export of one date range, one page at a time, oldest first.
+ *
+ * It used to read the whole range with one findAll, copy every row into the
+ * export shape and render the copy as one string: a year of five-minute tests
+ * peaked past 250 MB, which a 100 MB container limit cannot hold (issue #135).
+ * Paged by (created, id) for the reason listPages is: offsets drift under a
+ * concurrent insert.
+ */
+export const exportPages = async function* (range, target = undefined, pageSize = EXPORT_PAGE_ROWS) {
+    // Resolved to names, because an export is read by people and other tools -
+    // and by the import on another instance: a bare targetId is meaningless
+    // outside this one, while the name says which line the row measured, and
+    // importedTargetId resolves it back against the local targets on a restore.
+    // Orphaned and pre-target rows export null.
+    //
+    // Through the shared index rather than an object built here: the lookup is
+    // by a value an older import could have left as a string, and one
+    // `names["toString"]` answering with Object.prototype's function is
+    // exactly the trap this file's neighbours keep being fixed for.
+    const {byId: names} = await targetsController.readTargetIndex();
+    let after;
+
+    for (;;) {
+        const rows = await tests.findAll({where: exportFilter(range, target, after), order: EXPORT_ORDER, limit: pageSize});
+        if (rows.length === 0) return;
+
+        yield rows.map((entry) => exportRow(entry, names));
+
+        if (rows.length < pageSize) return;
+        const last = rows[rows.length - 1];
+        after = {created: last.created, id: last.id};
+    }
+};
+
+/** The whole range at once, for callers that need it in memory. */
+export const exportTests = async (range, target = undefined) => {
+    const rows = [];
+    for await (const page of exportPages(range, target)) rows.push(...page);
+    return rows;
 };

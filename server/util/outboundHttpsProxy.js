@@ -2,10 +2,14 @@ import {createHash} from "node:crypto";
 import {isIP} from "node:net";
 import tls from "node:tls";
 import {Readable} from "node:stream";
+import {BlockedAddressError, checkOutboundTarget, outboundLookup} from "./safeUrl.js";
+import {lazyImport} from "./lazyImport.js";
+
 // Bun intercepts the bare "undici" specifier with an incomplete built-in shim.
 // Its public package entry selects the pinned implementation on every runtime.
-import {Agent, Pool, ProxyAgent, buildConnector, request} from "undici/index.js";
-import {BlockedAddressError, checkOutboundTarget, outboundLookup} from "./safeUrl.js";
+// Loaded on the first proxied HTTPS send: only an HTTPS_PROXY deployment ever
+// reaches this lane, and undici costs every other instance 4-10 MiB of RSS.
+const loadUndici = lazyImport(() => import("undici/index.js"));
 
 const HTTPS_DEFAULT_PORT = "443";
 const CONNECT_SUCCESS = 200;
@@ -68,7 +72,7 @@ const release = (lease) => {
     while (idle.size > MAX_IDLE_HTTPS_DISPATCHERS) destroy(idle.values().next().value);
 };
 
-const acquire = (target, numeric, proxy, signal) => {
+const acquire = (target, numeric, proxy, signal, {Agent, Pool, ProxyAgent, buildConnector}) => {
     const hostname = target.hostname.replace(/^\[|\]$/g, "");
     // Authentication changes must select a different dispatcher, but keys must
     // never contain a proxy password that could appear in a diagnostic dump.
@@ -190,6 +194,7 @@ export const sendHttpsProxy = async (target, {headers, body, signal}, proxy) => 
             outboundLookup(hostname, {all: true}, (error, candidates) => error ? reject(error) : resolve(candidates));
         });
         const candidates = await Promise.race([resolved, aborted]);
+        const undici = await Promise.race([loadUndici(), aborted]);
         if (!candidates.length) throw new BlockedAddressError(hostname);
         for (const [index, {address}] of candidates.entries()) {
             if (signal?.aborted) throw abortReason(signal);
@@ -197,9 +202,9 @@ export const sendHttpsProxy = async (target, {headers, body, signal}, proxy) => 
             const family = isIP(address);
             if (!family) throw new BlockedAddressError(hostname);
             numeric.hostname = family === IPV6_FAMILY ? `[${address}]` : address;
-            lease = acquire(target, numeric, proxy, signal);
+            lease = acquire(target, numeric, proxy, signal, undici);
             try {
-                const response = await Promise.race([request(numeric, {
+                const response = await Promise.race([undici.request(numeric, {
                     dispatcher: lease.agent, method: "POST", body, headers: {...headers, host: target.host},
                     signal, idempotent: false, maxRedirections: 0
                 }), aborted]);
