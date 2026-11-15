@@ -235,7 +235,7 @@ export const LIST_ORDER = [["created", "DESC"], ["id", "DESC"]];
  * one object the second would silently replace the first and a filtered list
  * would page straight out of its own window.
  *
- * `created` is compared as ISO-8601 UTC strings, the way findInRange does it:
+ * `created` is compared as ISO-8601 UTC strings, the way rangeWhere does it:
  * every write guarantees that format, so a lexicographic comparison is
  * chronological on every backend the project supports.
  */
@@ -331,7 +331,7 @@ export const BASELINE_ROW_COLUMNS = BASELINE_METRICS;
  * same walk getLatest and watchedFailureStands already lean on.
  *
  * `created` is compared as ISO-8601 UTC strings, the way listFilter and
- * findInRange do it: every write guarantees that format, so a lexicographic
+ * rangeWhere do it: every write guarantees that format, so a lexicographic
  * comparison is chronological on every backend the project supports. Both
  * halves are joined explicitly, for the reason listFilter is - the shared
  * filter is keyed by Op.or, and a second Op-keyed clause written into the same
@@ -679,9 +679,6 @@ export const importTests = async (data) => {
     };
 }
 
-/** Every test there is, oldest first - the order the aggregation reads them in. */
-const findEvery = async (query = {}) => tests.findAll({order: [["created", "ASC"]], ...query});
-
 /**
  * The `where` fragment that narrows a read to one target, to several, or to no
  * target at all.
@@ -714,11 +711,6 @@ export const targetFilter = (target) => {
 const rangeWhere = ({from, to}, target = undefined) => ({
     created: {[Op.between]: [from.toISOString(), to.toISOString()]},
     ...targetFilter(target)
-});
-
-const findInRange = async (range, query = {}, target = undefined) => findEvery({
-    where: rangeWhere(range, target),
-    ...query
 });
 
 /**
@@ -776,7 +768,7 @@ const PAGE_ORDER = [["created", "ASC"], ["id", "ASC"]];
  *
  * Keyset rather than OFFSET pagination, so each page is an index range on
  * (created, id) rather than a walk past every row already read. Ordered by
- * created as findEvery orders, with the id breaking ties - the same rowid order
+ * created, with the id breaking ties - the same rowid order
  * sqlite's index on created already returns ties in.
  *
  * Rows with no created at all sort first on both backends, and a cursor on

@@ -36,7 +36,7 @@ const withoutComments = (source) => source
  *   /api/speedtests/run     starts a speedtest
  *   /api/speedtests/statistics
  *                           reads *every* row in the range and aggregates it.
- *                           `all` has no upper bound at all - findEvery carries
+ *                           `all` has no upper bound at all - the read carries
  *                           no limit - so a year of five-minute tests is
  *                           ~105 000 rows materialised per request, and the
  *                           statistics module's own note puts that near 128 MB.

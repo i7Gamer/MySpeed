@@ -566,7 +566,7 @@ describe("import validation", () => {
      * unescaped dot, so any single character stood where the dot belongs and
      * `12:00:00X123Z` passed a test written to demand an ISO-8601 instant. Every
      * read of the column compares it lexicographically as an ISO-8601 string -
-     * the retention sweep, findInRange, the list cursor - and such a row sorts
+     * the retention sweep, rangeWhere, the list cursor - and such a row sorts
      * outside every window they can ask for, so nothing sees it again.
      *
      * The route cannot show this: one usable row in the file is already
