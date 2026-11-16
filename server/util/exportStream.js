@@ -45,16 +45,25 @@ const flush = (res, chunk) => new Promise((resolve) => {
     res.write(chunk, () => resolve(!res.destroyed));
 });
 
-export const streamJsonArray = async (res, pages) => {
+// `compact` matches res.json - JSON.stringify(rows) - which the dashboard's
+// date-range export answered before it was streamed; the default matches the
+// indented backup document.
+const JSON_LAYOUTS = {
+    indented: {row: jsonRow, open: "[\n", separator: ",\n", close: "\n]"},
+    compact: {row: (row) => JSON.stringify(row), open: "[", separator: ",", close: "]"}
+};
+
+export const streamJsonArray = async (res, pages, {compact = false} = {}) => {
+    const layout = compact ? JSON_LAYOUTS.compact : JSON_LAYOUTS.indented;
     let opened = false;
 
     for await (const rows of pages) {
-        const lead = opened ? ",\n" : "[\n";
+        const lead = opened ? layout.separator : layout.open;
         opened = true;
-        if (!await flush(res, lead + rows.map(jsonRow).join(",\n"))) return;
+        if (!await flush(res, lead + rows.map(layout.row).join(layout.separator))) return;
     }
 
-    if (!await flush(res, opened ? "\n]" : "[]")) return;
+    if (!await flush(res, opened ? layout.close : "[]")) return;
     res.end();
 };
 

@@ -63,6 +63,20 @@ const bind = (statement, method, rawParams) => {
     return statement[method](params);
 };
 
+// bun:sqlite statements hold native memory that the garbage collector does
+// not count as pressure: preparing one per query without finalizing it grew an
+// idle server by hundreds of MiB before a collection returned it, and ran the
+// queries about half as fast. node:sqlite statements have no finalize - they
+// are freed by the collector - so the call is optional.
+const execute = (db, sql, method, params) => {
+    const statement = db.prepare(sql);
+    try {
+        return bind(statement, method, params);
+    } finally {
+        statement.finalize?.();
+    }
+};
+
 const parseArgs = (args) => {
     let params = [];
     let callback;
@@ -100,7 +114,7 @@ class Database {
     run(sql, ...args) {
         const [params, callback] = parseArgs(args);
         try {
-            const result = bind(this.db.prepare(sql), "run", params);
+            const result = execute(this.db, sql, "run", params);
 
             const context = {
                 lastID: toNumber(result.lastInsertRowid),
@@ -118,7 +132,7 @@ class Database {
     all(sql, ...args) {
         const [params, callback] = parseArgs(args);
         try {
-            const rows = bind(this.db.prepare(sql), "all", params);
+            const rows = execute(this.db, sql, "all", params);
             if (callback) process.nextTick(() => callback(null, rows));
         } catch (err) {
             if (callback) process.nextTick(() => callback(err, []));

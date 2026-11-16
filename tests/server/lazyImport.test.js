@@ -74,7 +74,11 @@ describe("heavy libraries load on first use, not at startup", () => {
     const cases = [
         {file: "server/controller/opengraph.js", module: "satori"},
         {file: "server/controller/opengraph.js", module: "@resvg/resvg-js"},
-        {file: "server/integrations/email.js", module: "nodemailer"}
+        {file: "server/integrations/email.js", module: "nodemailer"},
+        {file: "server/util/outboundHttpsProxy.js", module: "undici/index.js"},
+        {file: "server/util/providers/downloadHelper.js", module: "@xhmikosr/decompress"},
+        {file: "server/util/providers/downloadHelper.js", module: "@xhmikosr/decompress-targz"},
+        {file: "server/util/providers/downloadHelper.js", module: "@xhmikosr/decompress-unzip"}
     ];
 
     for (const {file, module} of cases) {
